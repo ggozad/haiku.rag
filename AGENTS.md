@@ -696,15 +696,14 @@ embedder = EmbedderWrapper(Embedder("openai:text-embedding-3-small"), vector_dim
 
 ## Evaluations
 
-Separate workspace package (`evaluations/`) for benchmarking. Run its tests from inside `evaluations/` (`cd evaluations && uv run pytest ...`): from the repo root, its `tests/` collides with the core `tests/`.
+Separate workspace package (`evaluations/`) for benchmarking. Its README is the operator guide. Runs use the full install, docling included, so sync from the repository root. Run its tests from inside `evaluations/` (`cd evaluations && uv run pytest ...`): from the repo root, its `tests/` collides with the core `tests/`.
 
 ```bash
-cd evaluations
-uv sync
-evaluations run <dataset>
-evaluations pair <treated>.jsonl <baseline>.jsonl
-evaluations download <dataset|all>           # Pre-built eval DBs from HuggingFace
-evaluations upload <dataset|all>             # Upload eval DBs
+uv sync --all-packages
+uv run evaluations run <dataset>
+uv run evaluations pair <treated>.jsonl <baseline>.jsonl
+uv run evaluations download <dataset|all>    # Pre-built eval DBs from HuggingFace
+uv run evaluations upload <dataset|all>      # Upload eval DBs
 ```
 
 Datasets: `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`, `t2_tatdqa`, `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_clapnq_live`, `mtrag_clapnq_live_uncompacted` (the four mtrag keys share one DB).

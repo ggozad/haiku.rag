@@ -164,7 +164,9 @@ Compaction cut input tokens per request by 44.9%. Of the 18 turns where the arms
 
 ### Retrieval metrics
 
-**Mean Average Precision (MAP)** scores the ranked results against the gold `expected_uris`:
+The retrieval benchmark runs one search per question through the configured search stack, with the reranker when one is configured and without context expansion. It keeps the top 5 chunks, 10 for MTRAG, and scores the distinct documents they come from, in rank order.
+
+**Mean Average Precision (MAP)** scores those documents against the gold `expected_uris`:
 
 - At each relevant document's position k, precision@k is the relevant documents in the top k divided by k.
 - Average precision (AP) is the sum of those precisions divided by the number of relevant documents.
@@ -178,76 +180,55 @@ A `pydantic-evals` LLM judge decides whether each answer is correct, and accurac
 
 A dataset with its own deterministic evaluator is scored by it, and no judge runs. T²-RAGBench is the only one, with `NumberMatchEvaluator`.
 
+A case that ends in an error gets no verdict, and accuracy is over judged cases. A floor in a footnote counts the unjudged as failures.
+
 ### Citation retrieval
 
 `cited_map` scores the URIs the capability registered with `cite` against the gold `expected_uris`, with the same MAP arithmetic. It comes from the same run as QA accuracy. Where retrieval MAP measures whether the retriever returned the gold document, `cited_map` measures whether the answer was grounded on it. The console also reports the cite rate, the share of cases with at least one citation, and mean citations per case.
 
+### Comparing runs
+
+Two runs are compared on the same cases: exact McNemar on the verdicts, the sign test on `cited_map`. Two runs of identical code and config already answer some cases differently, because the capability model samples and vLLM batching reorders near-tied scores, so a small difference needs that test before it means anything. See [Comparing two runs](https://github.com/ggozad/haiku.rag/blob/main/evaluations/README.md#comparing-two-runs) in the evaluations README.
+
 ## Running evaluations
 
-The `evaluations` CLI runs the benchmarks, orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals):
-
-```bash
-evaluations run hotpotqa
-evaluations run orb_text
-```
+The `evaluations` CLI in the repository's `evaluations/` package runs the benchmarks, orchestrated with [`pydantic-evals`](https://github.com/pydantic/pydantic-ai/tree/main/libs/pydantic-evals). Its [README](https://github.com/ggozad/haiku.rag/blob/main/evaluations/README.md) covers installation, every dataset and option, per-case result files, comparing two runs and restricting a run to part of a database.
 
 ### Pre-built databases
 
 Building an evaluation database takes long, especially for OpenRAG Bench. Pre-built ones are on HuggingFace:
 
 ```bash
-evaluations download hotpotqa
-evaluations download all
-evaluations download hotpotqa --force   # overwrite
+uv run evaluations download hotpotqa
+uv run evaluations download all
 ```
 
 | Dataset | Size |
 |---------|------|
-| `orb_text`: OpenRAG Bench, `qwen3-embedding:4b` with VLM picture descriptions in the chunk text | ~15.8 GB |
+| `orb_text`: OpenRAG Bench, `qwen3-embedding:4b` with VLM picture descriptions in the chunk text | ~15.9 GB |
 | `orb_multimodal`: OpenRAG Bench, multimodal `qwen3-vl-embedding-8b` | ~16.7 GB |
 | `orb_multimodal_nemotron`: OpenRAG Bench, multimodal `nvidia/llama-nemotron-embed-vl-1b-v2` | ~15.2 GB |
 | `t2_finqa`: T²-RAGBench FinQA, `qwen3-embedding:4b` | ~2.0 GB |
 | `t2_tatdqa`: T²-RAGBench TAT-DQA, `qwen3-embedding:4b` | ~1.8 GB |
 | `hotpotqa`: HotpotQA, `qwen3-embedding:4b` | ~1.2 GB |
 | `frames`: FRAMES, `nvidia/llama-nemotron-embed-vl-1b-v2` | ~7.2 GB |
-| `mtrag_clapnq`: MTRAG ClapNQ, `qwen3-embedding:4b`, shared by the `_rewrite`, `_live` and `_live_uncompacted` keys | ~2.7 GB |
+| `mtrag_clapnq`: MTRAG ClapNQ, `qwen3-embedding:4b`, shared by the `_rewrite`, `_live` and `_live_uncompacted` keys | ~2.8 GB |
 
 The hosted `frames` and `orb_multimodal_nemotron` databases are the corpora behind the current FRAMES and ORB rows.
 
-After downloading, run with `--skip-db` and the database's reference config from `evaluations/configs/`, since a database opens only against the embedder it was built with:
+A database opens only against the embedder recorded in it, so run a downloaded one with `--skip-db` and its reference config from `evaluations/configs/`:
 
 ```bash
-evaluations run orb_multimodal_nemotron --skip-db --config configs/orb_multimodal_nemotron.yaml
+uv run evaluations run orb_multimodal_nemotron --skip-db --config evaluations/configs/orb_multimodal_nemotron.yaml
 ```
 
-`t2_tatdqa` has no reference config of its own. `configs/t2_finqa.yaml` uses the same embedder and opens it.
+`t2_tatdqa` has no reference config of its own. `evaluations/configs/t2_finqa.yaml` uses the same embedder and opens it.
 
 The configs use vLLM endpoints. Point their `base_url` at your own OpenAI-compatible servers to run them.
 
-### Options
+### Judge settings
 
-```bash
-evaluations run hotpotqa --config /path/to/haiku.rag.yaml --db /path/to/custom.lancedb
-```
-
-- `--config PATH`: the `haiku.rag.yaml` to use. Without it, `./haiku.rag.yaml`, then the user config directory, then the defaults
-- `--db PATH`: the database path (default: the platform data directory)
-- `--skip-db`: do not update the evaluation database
-- `--skip-retrieval`, `--skip-qa`: skip one benchmark
-- `--limit N`: limit the number of cases
-- `--name NAME`: name the run, as a file name (letters, digits, dot, dash, underscore)
-- `--filter CLAUSE` / `-f CLAUSE`: restrict every benchmark search, see [Restricting the corpus](#restricting-the-corpus)
-- `--filter-ids PATH`: run only the QA cases whose ids the file lists, one per line. Retrieval is unaffected
-- `--multimodal-only`: only the queries that need image understanding
-- `--vacuum-interval N`: vacuum every N documents while populating (default 100)
-- `--results DIR`: directory for the per-case result file (default `evaluations/results/` in the haiku.rag data directory)
-- `--no-telemetry`: run without Logfire. Without it, a run refuses to start when Logfire finds no token (`LOGFIRE_TOKEN` or a credentials file)
-
-The capability runs on `qa.model` and the judge on `evaluations.judge`, both from the configuration.
-
-A QA run writes one JSON line per case to `<name>.<trace id>.jsonl` in the results directory. `evaluations pair TREATED BASELINE` joins two such files on their cases and prints the paired comparison, with exact McNemar on verdicts and the sign test on `cited_map`. See the [evaluations README](https://github.com/ggozad/haiku.rag/blob/main/evaluations/README.md#per-case-results).
-
-The recommended judge settings, pinned in YAML:
+The capability runs on `qa.model` and the judge on `evaluations.judge`, both from the configuration. The recommended judge settings, pinned in every reference config of a judged dataset:
 
 ```yaml
 evaluations:
@@ -332,20 +313,3 @@ Measured against Qwen3.8 alone, on fresh `orb_multimodal_nemotron` and `frames` 
 All 9 of Jev's ORB changes are fails below 0.2 on answers Qwen3.8 passed (McNemar exact p = 0.004), so a Jev-gated ORB run reads lower than Qwen3.8 alone. Tev1's changes go both ways. The splits of who was right rest on 2 to 9 cases per row and are too small to rank the endpoints. Neither model is deterministic between runs: replaying 390 labelled cases moved up to 11 across a band edge for Jev, and vLLM's batching moves Tev1's probabilities by up to 0.03, so a gated run does not reproduce verdict for verdict.
 
 Result rows record `judge_decided_by` (`system_one`, `fallback`, `fallback_on_error` or `fallback_conversation`), `judge_probability` and `system_one_model`, and the run prints the count of each. A gated run and an ungated run of the same system differ by the judge as well, so they do not form a null pair, and `evaluations pair` warns when only one of its two files was gated or when they were gated by different models.
-
-### Restricting the corpus
-
-When a database holds several corpora and a dataset's questions come from one, `--filter` restricts every benchmark search to it. It takes the SQL `WHERE` clause `haiku-rag search --filter` takes, over the document columns (`id`, `uri`, `title`, `created_at`, `updated_at`, `metadata`). Each dataset writes its own URIs: `orb_text` uses arXiv ids such as `2407.01528v3`, `hotpotqa` page titles.
-
-```bash
-evaluations run orb_text --skip-db --config haiku.rag.s3.yaml \
-  --filter "uri LIKE '2407%'"
-```
-
-A corpus distinguished by a tag rather than a URI can carry it as document metadata. `metadata` is stored as a `json.dumps` string with no subfield access, so match the serialized pair, including the space after the colon:
-
-```bash
-evaluations run orb_text --skip-db --filter "metadata LIKE '%\"corpus\": \"orb_text\"%'"
-```
-
-The clause applies to the retrieval benchmark and to every search the capability runs during QA, so both score the same subset. It is recorded as `document_filter` in the run's metadata. It restricts searches only: a run without `--skip-db` still populates the full corpus.

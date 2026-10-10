@@ -112,7 +112,7 @@ A run is one experiment span; its cases are direct children sharing its
   - `attributes->>'name'` — run label (the `--name` arg, or `{dataset}_qa_evaluation` / `{dataset}_retrieval_evaluation`).
   - `attributes->>'dataset_name'` — dataset.
   - `(attributes->>'assertion_pass_rate')::float` — overall judge pass rate (QA runs).
-  - `attributes->'logfire.experiment.metadata'->'metadata'` — run config: `target` (`rag-capability`|`analysis-capability`), `qa_model`, `embedder_model`, `chunk_size`, `search_limit`, `rerank_model`, `judge_model`, `qa_max_searches`, etc.
+  - `attributes->'logfire.experiment.metadata'->'metadata'` — run config and identity: `git_sha`, `git_dirty`, `config_hash`, the `db_*` corpus fingerprint, `capability_model` (QA runs only), `judge_model`, `embedder_model`, `rerank_model`, `search_limit`, `qa_max_searches`, `sandbox_code_timeout`, `pair_key`, `document_filter`, etc. The [evaluations README](../../../evaluations/README.md#run-identity-and-telemetry) lists them all.
   - `trace_id` — scopes the whole run.
 - Case span: `span_name = 'case: {case_name}'` (scope `pydantic-evals`).
   - `message` — `case: <id>`.
