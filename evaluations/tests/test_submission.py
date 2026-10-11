@@ -70,3 +70,31 @@ class TestBuildSubmissionRows:
             topk=3,
         )
         assert rows[0]["context_id"] == []
+
+
+class TestEnterpriseRagAnswers:
+    def test_row_per_case_with_deduped_cited_documents(self) -> None:
+        from evaluations.submission import enterprise_rag_answers
+
+        rows = [
+            {
+                "key": "qst_0001",
+                "answer": "Ten MiB.",
+                "attributes": {"cited_uris": ["dsid_b", "dsid_a", "dsid_b"]},
+            }
+        ]
+        assert enterprise_rag_answers(rows) == [
+            {
+                "question_id": "qst_0001",
+                "answer": "Ten MiB.",
+                "document_ids": ["dsid_b", "dsid_a"],
+            }
+        ]
+
+    def test_aborted_case_keeps_an_empty_row(self) -> None:
+        from evaluations.submission import enterprise_rag_answers
+
+        rows = [{"key": "qst_0002", "answer": None, "attributes": {}}]
+        assert enterprise_rag_answers(rows) == [
+            {"question_id": "qst_0002", "answer": "", "document_ids": []}
+        ]
