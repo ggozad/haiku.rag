@@ -826,6 +826,8 @@ class RAGCapability(AbstractCapability[Any]):
             """Search the knowledge base for evidence to analyze.
 
             Args:
+                query: A natural-language question or sentence. Start with the
+                    user's question as asked: keyword lists retrieve worse.
                 sources: Collections to search, by name. Omit to search every
                     collection this run covers; an empty list searches none.
             """

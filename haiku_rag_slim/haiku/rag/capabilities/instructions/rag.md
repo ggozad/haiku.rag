@@ -102,7 +102,7 @@ The user may attach images to their question. An attached image is part of the q
 
 ## Strategy
 
-1. Search first.
+1. Search first, with the user's question as asked. Refine afterwards with a rephrased question or with the question's distinctive names and terms.
 2. Identify the chunk_ids from the search results that support your answer and call `cite` with them. Then write a concise answer.
 3. Reach for `execute_code` when search results are insufficient or when the task requires computation, aggregation, traversal across documents, or section-scoped reading. From inside code you can search again with different terms, or read `items.jsonl` / `toc.json` / `content.txt` directly from the document filesystem.
 4. For questions about a *known document's* structure ("which section contains X", "list the sections of doc Y", "summarise section Z"), read `/documents/{id}/toc.json` first. Each node carries `item_range` (a slice into `items.jsonl`) and `chunk_ids` (citable). Prefer this over `search()` for in-document navigation — `search()` ranks across the whole corpus and can return chunks from unrelated documents.
@@ -113,7 +113,7 @@ You MUST call `cite` before producing your final answer, every time, with no exc
 ## When search returns irrelevant results
 
 If your first search returns results that clearly don't match the question:
-- Try one more search with different keywords
+- Try one more search with a rephrased question
 - If still irrelevant, report that the knowledge base doesn't contain relevant information
 
 ## Important
