@@ -14,29 +14,38 @@ storage:
 
 embeddings:
   model:
-    provider: openai
-    name: qwen3-embedding-4b
-    vector_dim: 2560
-    base_url: http://vllm:11431/v1
+    provider: vllm
+    name: google/embeddinggemma-2
+    vector_dim: 768
+    base_url: http://vllm:8020/v1
+    query_prefix: "task: question answering | query: "
+    document_prefix: "title: none | text: "
 
 reranking:
   model:
     provider: vllm
-    name: Qwen/Qwen3-Reranker-4B
-    base_url: http://vllm:11455
+    name: nvidia/llama-nemotron-rerank-vl-1b-v2
+    base_url: http://vllm:11434
+
+search:
+  limit: 10
+  rerank_pool_factor: 20
 
 qa:
   model:
     provider: openai
     name: Inferact/Qwen3.8-27B-NVFP4
     base_url: http://vllm:11439/v1
-    max_tokens: 16384
+    max_tokens: 32768
     temperature: 0.6
     extra_body:
       chat_template_kwargs:
         # qwen3.8 defaults to xhigh, which spends the output budget
         # deliberating and truncates the answer. low | medium | xhigh.
         reasoning_effort: low
+
+sandbox:
+  code_timeout: 120
 
 evaluations:
   judge:
