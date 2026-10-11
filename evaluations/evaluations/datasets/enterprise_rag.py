@@ -91,4 +91,5 @@ ENTERPRISE_RAG_SPEC = DatasetSpec(
     retrieval_limit=10,
     citation_evaluator=CitationMAPEvaluator(),
     ingest_batch_size=512,
+    case_id_key="question_id",
 )

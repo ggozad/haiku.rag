@@ -195,20 +195,20 @@ def _facts_metrics(report_cases) -> tuple[float, float, int] | None:
     return completeness, erb_score, len(judged)
 
 
-def _filter_qa_corpus(corpus, case_ids: set[str] | None):
-    """Keep only rows whose ``id`` is in ``case_ids`` (failure-subset reruns).
+def _filter_qa_corpus(corpus, case_ids: set[str] | None, id_key: str = "id"):
+    """Keep only rows whose ``id_key`` field is in ``case_ids`` (failure-subset reruns).
 
     Returns the corpus unchanged when ``case_ids`` is None; matching nothing
     raises.
     """
     if case_ids is None:
         return corpus
-    filtered = corpus.filter(lambda row: row.get("id") in case_ids)
+    filtered = corpus.filter(lambda row: row.get(id_key) in case_ids)
     if len(filtered) == 0:
         raise ValueError(
             f"--filter-ids matched none of the {len(corpus)} cases. "
             "Check that the ids belong to this dataset and that its rows are "
-            "keyed by `id`."
+            f"keyed by `{id_key}`."
         )
     return filtered
 
@@ -235,7 +235,7 @@ async def _prepare_qa_run(
 ) -> _QARun:
     """Shared setup for the QA runners: cases, models, name and metadata."""
     corpus = spec.qa_loader()
-    corpus = _filter_qa_corpus(corpus, case_ids)
+    corpus = _filter_qa_corpus(corpus, case_ids, spec.case_id_key)
     if limit is not None:
         corpus = corpus.select(range(min(limit, len(corpus))))
 
