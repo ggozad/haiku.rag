@@ -86,6 +86,8 @@ class DatasetSpec:
     experiment_metadata: dict[str, Any] | None = None
     # The case-metadata key two runs of this dataset pair on.
     pair_key: str = "question_id"
+    # The QA row field that `--filter-ids` matches.
+    case_id_key: str = "id"
 
     def uses_configured_databases(
         self, config: AppConfig, override_path: Path | None = None

@@ -1136,6 +1136,22 @@ class TestFilterQaCorpus:
         corpus = Dataset.from_list([{"id": "a"}])
         assert _filter_qa_corpus(corpus, None) is corpus
 
+    def test_matches_the_named_id_field(self) -> None:
+        from datasets import Dataset
+
+        from evaluations.qa import _filter_qa_corpus
+
+        corpus = Dataset.from_list(
+            [{"question_id": "a"}, {"question_id": "b"}, {"question_id": "c"}]
+        )
+        out = _filter_qa_corpus(corpus, {"a", "c"}, id_key="question_id")
+        assert out["question_id"] == ["a", "c"]
+
+    def test_enterprise_rag_filters_on_question_id(self) -> None:
+        from evaluations.datasets.enterprise_rag import ENTERPRISE_RAG_SPEC
+
+        assert ENTERPRISE_RAG_SPEC.case_id_key == "question_id"
+
 
 class TestLoadCaseIds:
     def test_reads_strips_and_drops_blanks(self, tmp_path: Path) -> None:
