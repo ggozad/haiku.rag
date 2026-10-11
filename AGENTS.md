@@ -121,8 +121,8 @@ evaluations/                # Benchmarking workspace
 │   ├── experiment.py       # build_experiment_metadata
 │   ├── config.py           # DatasetSpec, DocumentPayload, RetrievalSample
 │   ├── capability_runner.py # native capability evaluation runner
-│   ├── datasets/           # frames, hotpotqa, mtrag, open_rag_bench, t2_ragbench
-│   └── evaluators/         # judge, map, citation, retrieval, number_match, refusal, conversation, transcript
+│   ├── datasets/           # enterprise_rag, frames, hotpotqa, mtrag, open_rag_bench, t2_ragbench
+│   └── evaluators/         # judge, map, citation, retrieval, number_match, refusal, answer_facts, conversation, transcript
 └── tests/                  # benchmark and capability-runner tests
 docs/                       # Documentation (zensical, not mkdocs; nav lives in zensical.toml)
 docker/                     # Dockerfile (full), Dockerfile.slim (published)
@@ -706,9 +706,11 @@ uv run evaluations download <dataset|all>    # Pre-built eval DBs from HuggingFa
 uv run evaluations upload <dataset|all>      # Upload eval DBs
 ```
 
-Datasets: `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`, `t2_tatdqa`, `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_clapnq_live`, `mtrag_clapnq_live_uncompacted` (the four mtrag keys share one DB).
+Datasets: `enterprise_rag`, `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_nemotron`, `t2_finqa`, `t2_tatdqa`, `mtrag_clapnq`, `mtrag_clapnq_rewrite`, `mtrag_clapnq_live`, `mtrag_clapnq_live_uncompacted` (the four mtrag keys share one DB).
 
 **Capability runs** go end to end through a native Pydantic AI agent (`evaluations/capability_runner.py`). The capability model is `config.qa.model` and the judge `config.evaluations.judge`, with no command-line override for either.
+
+**Answer facts (`AnswerFactsJudge`, `evaluators/answer_facts.py`)**: every single-question QA run appends it beside `RefusalJudge`. A case whose metadata carries `answer_facts` (only `enterprise_rag`) gets `answer_completeness`, the fraction of facts the answer supports, from one judge call per fact with EnterpriseRAG-Bench's own validator prompt (verbatim, a "yes" on the reply's first line). That judge sees only the answer and the fact, and the `answer_equivalent` verdict never sees the facts: EnterpriseRAG-Bench judges the two independently. The summary prints mean completeness and mean `erb_score` (completeness if `answer_equivalent`, else 0, the paper's headline) over cases with both. QA Accuracy stays the `answer_equivalent` pass rate, and result rows record `answer_completeness`.
 
 **Citation retrieval metric**: `CitationMAPEvaluator` scores the URIs the capability registers via `cite` against gold `expected_uris`. Score key: `cited_map`.
 
@@ -720,7 +722,7 @@ Datasets: `frames`, `hotpotqa`, `orb_text`, `orb_multimodal`, `orb_multimodal_ne
 
 **Run identity**: experiment metadata carries `git_sha` and `git_dirty` (untracked files ignored), `config_hash` (SHA-256 of the resolved `AppConfig`; `populate_db` disables `storage.auto_vacuum` on a copy), and the corpus fingerprint `db_path`, `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`, `db_embedder_dim`, `db_version`, `db_written_at` (newest table version time). The fingerprint is all None when `lancedb.databases` places the set, and only `db_path` is set for a missing path. `evaluations run` prints the revision and hash at start.
 
-**Per-case result files**: a single-question QA run writes `<data dir>/evaluations/results/<name>.<trace id>.jsonl` (`evaluations/results.py`, `--results DIR`), one row per case: the `CaseOutcome` fields (`case_name`, `key`, `passed`, `cited`, `cited_map`, `aborted`), trace id, answer, judge reason, `judge_decided_by` / `judge_probability` / `system_one_model` (set by the gated judge, else None), attributes, task duration. A pydantic-evals `CaseLifecycle` appends rows to `<name>.<run id>.partial.jsonl` as cases finish, and `write_results` removes it. The run id (`new_run_id`) keeps concurrent runs of one name apart and names the file when there is no trace (`notrace-<run id>`); a `--no-telemetry` run's all-zero trace id counts as none. The final file is opened exclusively. `key` is the case-metadata field named by `DatasetSpec.pair_key`, recorded as `pair_key`. Live runs write none. `evaluations pair TREATED BASELINE` (`evaluations/pairing.py`) joins two files on `key` and prints per-arm accuracy, floor, cite rate, mean `cited_map`, aborts and unjudged, exact McNemar on verdicts, the sign test on `cited_map`, and the smallest significant `|b - c|`. It warns when only one arm was judged through `system_one`, or when the arms were judged through different `system_one` models.
+**Per-case result files**: a single-question QA run writes `<data dir>/evaluations/results/<name>.<trace id>.jsonl` (`evaluations/results.py`, `--results DIR`), one row per case: the `CaseOutcome` fields (`case_name`, `key`, `passed`, `cited`, `cited_map`, `aborted`), `answer_completeness`, trace id, answer, judge reason, `judge_decided_by` / `judge_probability` / `system_one_model` (set by the gated judge, else None), attributes, task duration. A pydantic-evals `CaseLifecycle` appends rows to `<name>.<run id>.partial.jsonl` as cases finish, and `write_results` removes it. The run id (`new_run_id`) keeps concurrent runs of one name apart and names the file when there is no trace (`notrace-<run id>`); a `--no-telemetry` run's all-zero trace id counts as none. The final file is opened exclusively. `key` is the case-metadata field named by `DatasetSpec.pair_key`, recorded as `pair_key`. Live runs write none. `evaluations pair TREATED BASELINE` (`evaluations/pairing.py`) joins two files on `key` and prints per-arm accuracy, floor, cite rate, mean `cited_map`, aborts and unjudged, exact McNemar on verdicts, the sign test on `cited_map`, and the smallest significant `|b - c|`. It warns when only one arm was judged through `system_one`, or when the arms were judged through different `system_one` models.
 
 **Telemetry**: `evaluations run` configures Logfire itself and refuses to start when it resolved no token (`logfire.DEFAULT_LOGFIRE_INSTANCE.config.token`, covering `LOGFIRE_TOKEN` and a credentials file; Logfire does not read the token from its file configuration), unless `--no-telemetry`.
 

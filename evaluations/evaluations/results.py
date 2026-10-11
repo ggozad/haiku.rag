@@ -69,12 +69,16 @@ def _case_row(case: ReportCase, pair_key: str, trace_id: str | None) -> dict[str
     decided_by = case.labels.get("answer_equivalent_decided_by")
     probability = case.scores.get("answer_equivalent_probability")
     served_model = case.labels.get("answer_equivalent_model")
+    completeness = case.scores.get("answer_completeness")
     return {
         "case_name": case.name,
         "key": _key(case.metadata, pair_key),
         "passed": _passed(case),
         "cited": bool(case.attributes.get("cited_uris")),
         "cited_map": None if cited_map is None else float(cited_map.value),
+        "answer_completeness": None
+        if completeness is None
+        else float(completeness.value),
         "aborted": False,
         "trace_id": _trace(case.trace_id) or _trace(trace_id),
         "answer": None if case.output is None else str(case.output),
