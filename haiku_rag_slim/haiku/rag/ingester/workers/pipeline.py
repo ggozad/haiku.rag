@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.sources.base import Source
+
+logger = logging.getLogger(__name__)
 
 
 class JobResult(BaseModel):
@@ -166,9 +169,28 @@ async def run_job(
                     if restored:
                         return JobResult(deleted=False)
                 doc = await client.get_document_by_uri(job.uri)
-                if doc is not None and doc.id is not None:
-                    await client.delete_document(doc.id)
-                return JobResult(deleted=True)
+                if doc is None or doc.id is None:
+                    return JobResult(deleted=True)
+                owner = doc.metadata.get("source_id")
+                if owner != job.source_id:
+                    logger.warning(
+                        "Not deleting %s (%s) for source %r: it belongs to %s",
+                        doc.id,
+                        doc.uri,
+                        job.source_id,
+                        f"source {owner!r}" if owner else "no source",
+                    )
+                    return JobResult(deleted=False)
+                deleted = await client.delete_document(doc.id, source_id=job.source_id)
+                if not deleted:
+                    logger.warning(
+                        "Not deleting %s (%s) for source %r: it moved to another "
+                        "source or was removed while the job ran",
+                        doc.id,
+                        doc.uri,
+                        job.source_id,
+                    )
+                return JobResult(deleted=deleted)
 
             if manifest_context is not None and job.revision is not None:
                 source = resolve_configured_source(job.uri, job.source_id, sources)

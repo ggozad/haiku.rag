@@ -209,10 +209,17 @@ class SingleDatabaseSession:
         )
 
     async def delete_document(
-        self, document_id: str, *, allow_attachment: bool = False
+        self,
+        document_id: str,
+        *,
+        allow_attachment: bool = False,
+        source_id: str | None = None,
     ) -> bool:
         """Delete a document, cascading to children linked via
         ``metadata.parent_uri``.
+
+        With ``source_id``, deletes only a document that source owns, checked
+        under the write lock.
 
         The whole subtree (root + transitive children) is deleted under a single
         write lock and a single version snapshot, so the cascade is atomic: any
@@ -232,6 +239,10 @@ class SingleDatabaseSession:
             # links a child to its parent's uri; walk transitively, guarding
             # against cycles.
             root = await self.get_document_by_id(document_id)
+            if source_id is not None and (
+                root is None or root.metadata.get("source_id") != source_id
+            ):
+                return False
             ids_to_delete: list[str] = []
             seen: set[str] = set()
             queue = [root]

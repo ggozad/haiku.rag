@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from unittest.mock import AsyncMock
 
 import pytest
@@ -9,11 +10,16 @@ from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
 from haiku.rag.store.models.document import Document
+from tests.conftest import capture_logs
+
+_PIPELINE_LOGGER = logging.getLogger("haiku.rag.ingester.workers.pipeline")
 
 
 @pytest.fixture
 def client():
-    return AsyncMock(spec=HaikuRAG)
+    client = AsyncMock(spec=HaikuRAG)
+    client.delete_document.return_value = True
+    return client
 
 
 def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
@@ -126,7 +132,7 @@ async def test_drain_marks_job_succeeded_and_writes_sync_state(client, jobs, syn
 async def test_drain_delete_op_removes_sync_state(client, jobs, sync):
     await sync.upsert("src", "s3://b/k.md", revision="e1", content_hash="m1")
     client.get_document_by_uri.return_value = Document(
-        id="doc-1", content="", uri="s3://b/k.md"
+        id="doc-1", content="", uri="s3://b/k.md", metadata={"source_id": "src"}
     )
     job = await jobs.enqueue("src", "s3://b/k.md", JobOp.DELETE)
     assert job is not None
@@ -137,10 +143,28 @@ async def test_drain_delete_op_removes_sync_state(client, jobs, sync):
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.SUCCEEDED
-    client.delete_document.assert_awaited_once_with("doc-1")
+    client.delete_document.assert_awaited_once_with("doc-1", source_id="src")
 
     snapshot = await sync.get_revision_snapshot("src")
     assert snapshot == {}
+
+
+async def test_skipped_delete_removes_sync_state(client, jobs, sync):
+    await sync.upsert("src", "s3://b/k.md", revision="e1", content_hash="m1")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-1", content="", uri="s3://b/k.md", metadata={"source_id": "other"}
+    )
+    job = await jobs.enqueue("src", "s3://b/k.md", JobOp.DELETE)
+    assert job is not None
+
+    with capture_logs(_PIPELINE_LOGGER, logging.WARNING):
+        await _pool(client, jobs, sync).drain_once()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.SUCCEEDED
+    client.delete_document.assert_not_awaited()
+    assert await sync.list_known_uris("src") == set()
 
 
 async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, sync):
@@ -157,7 +181,7 @@ async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, syn
 
     # Now run a DELETE for the same URI.
     client.get_document_by_uri.return_value = Document(
-        id="doc-9", content="", uri="file:///gone.md"
+        id="doc-9", content="", uri="file:///gone.md", metadata={"source_id": "src"}
     )
     delete = await jobs.enqueue("src", "file:///gone.md", JobOp.DELETE)
     assert delete is not None

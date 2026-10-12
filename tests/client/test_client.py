@@ -1222,6 +1222,57 @@ async def test_delete_marks_vacuum_dirty(temp_db_path):
         assert client._session._vacuum_dirty is True
 
 
+async def test_delete_document_for_a_source_skips_another_sources_document(
+    temp_db_path,
+):
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://owned",
+        )
+        assert doc.id is not None
+        await client.set_document_source([doc.id], "src")
+
+        assert await client.delete_document(doc.id, source_id="other") is False
+        assert await client.get_document_by_id(doc.id) is not None
+        assert await client.delete_document(doc.id, source_id="src") is True
+        assert await client.get_document_by_id(doc.id) is None
+
+
+async def test_delete_document_for_a_source_cascades_to_unattributed_attachments(
+    temp_db_path,
+):
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent = await client.import_document(
+            _docling_doc("p", "parent"),
+            [Chunk(content="parent", embedding=[0.1] * dim, order=0)],
+            uri="mem://parent.pdf",
+        )
+        child = await client.import_document(
+            _docling_doc("c", "child"),
+            [Chunk(content="child", embedding=[0.1] * dim, order=0)],
+            uri="mem://parent.pdf#attachment",
+        )
+        assert parent.id is not None and child.id is not None
+        await client.set_document_source([parent.id], "src")
+        repository = client._session.document_repository
+        stored_child = await repository.get_by_id(child.id, include_blobs=True)
+        assert stored_child is not None
+        stored_child.metadata = {"parent_uri": "mem://parent.pdf"}
+        await repository.update(stored_child)
+
+        assert await client.delete_document(parent.id, source_id="other") is False
+        assert await client.get_document_by_id(parent.id) is not None
+        assert await client.get_document_by_id(child.id) is not None
+
+        assert await client.delete_document(parent.id, source_id="src") is True
+        assert await client.get_document_by_id(parent.id) is None
+        assert await client.get_document_by_id(child.id) is None
+
+
 async def test_delete_rolls_back_on_partial_failure(temp_db_path, monkeypatch):
     """A multi-table delete is atomic: if a later table delete fails, the write
     lock + version restore bring every table back, leaving no orphaned rows."""

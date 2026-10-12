@@ -813,11 +813,14 @@ class HaikuRAG:
 
         return None
 
-    async def delete_document(self, document_id: str) -> bool:
+    async def delete_document(
+        self, document_id: str, *, source_id: str | None = None
+    ) -> bool:
         """Delete a document by its ID. Cascades to children linked via
-        ``metadata.parent_uri``."""
+        ``metadata.parent_uri``. With ``source_id``, deletes only a document
+        that source owns."""
         return await self._single_session("delete_document").delete_document(
-            document_id
+            document_id, source_id=source_id
         )
 
     async def list_documents(
