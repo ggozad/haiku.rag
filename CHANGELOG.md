@@ -16,6 +16,8 @@
 
 ### Fixed
 
+- An `fs` source whose root is missing, is a file, or has a directory that cannot be listed fails the sweep instead of deleting the documents under it. `add-src DIR` raises on a directory it cannot list.
+- A sweep whose listing returns nothing while the source has URIs it listed before fails with `EmptyListingError` instead of deleting them. A sweep that raises midway enqueues none of its deletes, and `--dry-run` reports no changes for it.
 - SQLite queue migrations run in one transaction, so an interrupted migration leaves the previous schema in place and reruns.
 
 ## [0.96.1] - 2026-10-09

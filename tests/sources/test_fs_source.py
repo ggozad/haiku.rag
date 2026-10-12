@@ -1,4 +1,6 @@
 import hashlib
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -374,3 +376,32 @@ def test_walk_files_drops_links_escaping_the_root(tmp_path):
     found = {path.name for path in walk_files(tree)}
 
     assert found == {"real.txt"}
+
+
+async def test_discover_raises_when_root_is_missing(tmp_path):
+    src = FSSource(root=tmp_path / "unmounted")
+    with pytest.raises(FileNotFoundError):
+        [e async for e in src.discover(known_uris={"file:///x.md"})]
+
+
+async def test_discover_raises_when_root_is_a_file(tmp_path):
+    root = tmp_path / "a.md"
+    root.write_text("alpha")
+    src = FSSource(root=root)
+    with pytest.raises(NotADirectoryError):
+        [e async for e in src.discover()]
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="chmod 000 does not deny access on Windows or to root",
+)
+async def test_discover_raises_on_unreadable_subdirectory(fs_root: Path):
+    sub = fs_root / "sub"
+    sub.chmod(0)
+    try:
+        src = FSSource(root=fs_root, supported_extensions=[".md"])
+        with pytest.raises(PermissionError):
+            [e async for e in src.discover(known_uris={(sub / "c.md").as_uri()})]
+    finally:
+        sub.chmod(0o755)

@@ -29,7 +29,7 @@ ingester:
       delete_orphans: true
 ```
 
-Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing while it still has documents it listed before. The sweep fails instead. To retire a source, remove it from the configuration, and delete its documents by hand if they should go. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
 
 ### Filesystem
 

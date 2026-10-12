@@ -21,8 +21,14 @@ from haiku.rag.sources.filter import (
 from haiku.rag.uri import is_local_uri, uri_to_path
 
 
+def _raise(error: OSError) -> None:
+    raise error
+
+
 def walk_files(root: Path) -> list[Path]:
     """Every file under ``root``, sorted, with symlink escapes dropped.
+
+    A directory that cannot be listed, ``root`` included, raises.
 
     Directory symlinks are never followed. A symlinked file is resolved and kept
     only when its target is inside ``root``, so a link cannot pull in a file from
@@ -31,7 +37,9 @@ def walk_files(root: Path) -> list[Path]:
     """
     resolved_root = root.resolve()
     candidates: list[Path] = []
-    for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
+    for dirpath, _dirnames, filenames in os.walk(
+        root, onerror=_raise, followlinks=False
+    ):
         for filename in filenames:
             path = Path(dirpath) / filename
             if path.is_symlink():

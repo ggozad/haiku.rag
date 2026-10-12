@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.config import SourceConfig
 from haiku.rag.ingester.batch import BatchChange, BatchSourceSummary
+from haiku.rag.ingester.exceptions import EmptyListingError
 from haiku.rag.ingester.queue.models import JobOp, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.sources.base import (
@@ -127,10 +128,21 @@ class BasePoller:
                     SourceEventKind.UNCHANGED: 0,
                 }
                 sync_batch: list[SyncRow] = []
+                deletes: list[SourceEvent] = []
                 async for event in self.source.discover(
                     since=revisions, known_uris=known
                 ):
                     counts[event.kind] += 1
+                    if event.kind is SourceEventKind.DELETE:
+                        deletes.append(event)
+                    else:
+                        await self._handle_event(event, sync_batch)
+                self._check_listing(
+                    listed=counts[SourceEventKind.UPSERT]
+                    + counts[SourceEventKind.UNCHANGED],
+                    deletes=len(deletes),
+                )
+                for event in deletes:
                     await self._handle_event(event, sync_batch)
                 await self._sync.batch_upsert(sync_batch)
                 self._breaker.record_success()
@@ -217,6 +229,10 @@ class BasePoller:
                             )
                         else:
                             summary.ignored_delete_count += 1
+                self._check_listing(
+                    listed=summary.upsert_count + summary.unchanged_count,
+                    deletes=summary.delete_count,
+                )
                 self._breaker.record_success()
                 self._last_polled_at = datetime.now(UTC)
                 self._last_skip_reason = None
@@ -236,7 +252,12 @@ class BasePoller:
                     self._breaker.consecutive_failures,
                     exc,
                 )
-                return False, summary, changes
+                return False, BatchSourceSummary(source_id=self.source_id), []
+
+    def _check_listing(self, *, listed: int, deletes: int) -> None:
+        """Raise for a listing that returned nothing but deletes."""
+        if deletes and not listed and self.config.delete_orphans:
+            raise EmptyListingError(self.source_id, deletes)
 
     async def _handle_event(
         self,
