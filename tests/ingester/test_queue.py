@@ -8,7 +8,7 @@ from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from haiku.rag.config import QueueConfig
-from haiku.rag.ingester.queue import repository
+from haiku.rag.ingester.queue import migrations, repository
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.db import jobs as jobs_table
 from haiku.rag.ingester.queue.migrations import (
@@ -17,7 +17,7 @@ from haiku.rag.ingester.queue.migrations import (
     open_queue,
 )
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
-from haiku.rag.ingester.queue.repository import JobRepo, _insert
+from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo, _insert
 
 # --- migrations / schema ---
 
@@ -57,6 +57,43 @@ CREATE TABLE jobs (
     completed_at TEXT
 )
 """
+
+_V3_SYNC_STATE_DDL = """
+CREATE TABLE sync_state (
+    source_id TEXT NOT NULL,
+    uri TEXT NOT NULL,
+    revision TEXT,
+    content_hash TEXT,
+    last_seen_at TEXT NOT NULL,
+    last_ingested_at TEXT,
+    PRIMARY KEY (source_id, uri)
+)
+"""
+
+_V3_JOBS_INDEX_DDL = [
+    "CREATE UNIQUE INDEX uq_jobs_live ON jobs (source_id, uri) "
+    "WHERE status IN ('queued', 'claimed')",
+    "CREATE UNIQUE INDEX uq_jobs_blocking_op ON jobs "
+    "(source_id, uri, op, coalesce(revision, '')) "
+    "WHERE status IN ('queued', 'claimed') "
+    "OR status = 'dead' AND conversion_stalled IS 1",
+    "CREATE INDEX idx_jobs_claimable ON jobs (scheduled_at) WHERE status = 'queued'",
+    "CREATE INDEX idx_jobs_succeeded_completed ON jobs (completed_at) "
+    "WHERE status = 'succeeded'",
+]
+
+
+async def _downgrade_to_v3(engine) -> None:
+    """Strip a current queue back to schema 3: no `namespace` anywhere."""
+    async with engine.begin() as conn:
+        for index in jobs_table.indexes:
+            await conn.execute(sa.text(f"DROP INDEX {index.name}"))
+        await conn.execute(sa.text("ALTER TABLE jobs DROP COLUMN namespace"))
+        for ddl in _V3_JOBS_INDEX_DDL:
+            await conn.execute(sa.text(ddl))
+        await conn.execute(sa.text("DROP TABLE sync_state"))
+        await conn.execute(sa.text(_V3_SYNC_STATE_DDL))
+        await conn.execute(sa.text("UPDATE schema_version SET version = 3"))
 
 
 async def test_migration_v1_to_v2_adds_and_backfills_heartbeat(tmp_path):
@@ -1157,6 +1194,7 @@ async def test_migration_v2_to_v3_adds_conversion_stalled(tmp_path):
     engine = create_async_engine(URL.create("sqlite+aiosqlite", database=str(db)))
     try:
         await apply_migrations(engine)
+        await _downgrade_to_v3(engine)
         async with engine.begin() as conn:
             await conn.execute(sa.text("UPDATE schema_version SET version = 2"))
             await conn.execute(sa.text("DROP INDEX uq_jobs_blocking_op"))
@@ -1190,6 +1228,143 @@ async def test_migration_v2_to_v3_adds_conversion_stalled(tmp_path):
                 )
             ).scalar_one()
             assert not killed
+    finally:
+        await engine.dispose()
+
+
+async def test_migration_v3_to_v4_adds_namespace(tmp_path):
+    """A v3 queue gains `namespace` on `jobs` and `sync_state`, every existing
+    row under the empty namespace, with the job indexes and the sync_state key
+    rebuilt over it."""
+    db = tmp_path / "v3.db"
+    engine = create_async_engine(URL.create("sqlite+aiosqlite", database=str(db)))
+    try:
+        await apply_migrations(engine)
+        await _downgrade_to_v3(engine)
+        when = "2026-01-01T00:00:00+00:00"
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
+                    "max_attempts, enqueued_at, scheduled_at) "
+                    "VALUES ('old-1', 's', 'u1', 'upsert', 'queued', 0, 5, "
+                    f"'{when}', '{when}')"
+                )
+            )
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO sync_state (source_id, uri, revision, "
+                    "last_seen_at, last_ingested_at) "
+                    f"VALUES ('s', 'u1', 'r1', '{when}', '{when}')"
+                )
+            )
+
+        assert await apply_migrations(engine) == SCHEMA_VERSION
+
+        async with engine.connect() as conn:
+            job_ns = (
+                await conn.execute(
+                    sa.text("SELECT namespace FROM jobs WHERE id = 'old-1'")
+                )
+            ).scalar_one()
+            sync_row = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT namespace, revision, last_ingested_at "
+                        "FROM sync_state WHERE source_id = 's' AND uri = 'u1'"
+                    )
+                )
+            ).one()
+            key_columns = {
+                row[1]
+                for row in (
+                    await conn.execute(sa.text("PRAGMA table_info(sync_state)"))
+                ).fetchall()
+                if row[5]
+            }
+            index_sql = {
+                name: sql
+                for name, sql in (
+                    await conn.execute(
+                        sa.text(
+                            "SELECT name, sql FROM sqlite_master WHERE "
+                            "type = 'index' AND tbl_name = 'jobs' "
+                            "AND sql IS NOT NULL"
+                        )
+                    )
+                ).all()
+            }
+        assert job_ns == ""
+        assert tuple(sync_row) == ("", "r1", when)
+        assert key_columns == {"namespace", "source_id", "uri"}
+        assert set(index_sql) == {index.name for index in jobs_table.indexes}
+        assert all("namespace" in sql for sql in index_sql.values())
+
+        # The migrated queue serves a namespace-scoped repository.
+        repo = JobRepo(engine)
+        old = await repo.get_job("old-1")
+        assert old is not None and old.status is JobStatus.QUEUED
+    finally:
+        await engine.dispose()
+
+
+async def test_interrupted_migration_rolls_back_and_retries(tmp_path, monkeypatch):
+    """A failure after the DDL of the v4 step leaves the v3 schema and its rows
+    as they were, and the next run migrates."""
+    db = tmp_path / "v3.db"
+    engine = create_async_engine(URL.create("sqlite+aiosqlite", database=str(db)))
+    try:
+        await apply_migrations(engine)
+        await _downgrade_to_v3(engine)
+        when = "2026-01-01T00:00:00+00:00"
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO sync_state (source_id, uri, revision, "
+                    f"last_seen_at) VALUES ('s', 'u1', 'r1', '{when}')"
+                )
+            )
+
+        class _Broken:
+            @staticmethod
+            def create(*_, **__):
+                raise RuntimeError("disk full")
+
+        monkeypatch.setattr(migrations, "sync_state", _Broken)
+        with pytest.raises(RuntimeError, match="disk full"):
+            await apply_migrations(engine)
+        monkeypatch.undo()
+
+        async with engine.connect() as conn:
+            version = (
+                await conn.execute(sa.text("SELECT version FROM schema_version"))
+            ).scalar_one()
+            columns = {
+                row[1]
+                for row in (
+                    await conn.execute(sa.text("PRAGMA table_info(jobs)"))
+                ).fetchall()
+            }
+            tables = set(
+                (
+                    await conn.execute(
+                        sa.text("SELECT name FROM sqlite_master WHERE type = 'table'")
+                    )
+                ).scalars()
+            )
+            revision = (
+                await conn.execute(
+                    sa.text("SELECT revision FROM sync_state WHERE uri = 'u1'")
+                )
+            ).scalar_one()
+        assert version == 3
+        assert "namespace" not in columns
+        assert tables == {"jobs", "sync_state", "schema_version"}
+        assert revision == "r1"
+
+        assert await apply_migrations(engine) == SCHEMA_VERSION
+        row = await SyncStateRepo(engine).get_row("s", "u1")
+        assert row is not None and row.revision == "r1"
     finally:
         await engine.dispose()
 
@@ -1353,9 +1528,10 @@ async def test_two_revisionless_stalls_still_collide(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is None
 
 
-async def test_fresh_and_migrated_schemas_agree_on_the_blocking_index(tmp_path):
-    """`create_all` and the v3 migration must produce the same index, or a
-    migrated queue enforces something different from a new one."""
+async def test_fresh_and_migrated_schemas_agree(tmp_path):
+    """`create_all` and the migration ladder from v2 must produce the same job
+    indexes and the same `sync_state` table, or a migrated queue enforces
+    something different from a new one."""
     fresh_db = tmp_path / "fresh.db"
     fresh = await open_queue(
         QueueConfig(dburi=str(URL.create("sqlite+aiosqlite", database=str(fresh_db))))
@@ -1367,6 +1543,7 @@ async def test_fresh_and_migrated_schemas_agree_on_the_blocking_index(tmp_path):
         )
     )
     try:
+        await _downgrade_to_v3(migrated)
         async with migrated.begin() as conn:
             await conn.execute(sa.text("UPDATE schema_version SET version = 2"))
             await conn.execute(sa.text("DROP INDEX uq_jobs_blocking_op"))
@@ -1375,21 +1552,28 @@ async def test_fresh_and_migrated_schemas_agree_on_the_blocking_index(tmp_path):
             )
         await apply_migrations(migrated)
 
-        async def _sql(engine):
-            async with engine.connect() as conn:
-                return (
-                    await conn.execute(
-                        sa.text(
-                            "SELECT sql FROM sqlite_master WHERE type = 'index' "
-                            "AND name = 'uq_jobs_blocking_op'"
-                        )
-                    )
-                ).scalar_one()
-
         def _norm(sql: str) -> str:
             return " ".join(sql.replace('"', "").lower().split())
 
-        assert _norm(await _sql(fresh)) == _norm(await _sql(migrated))
+        async def _ddl(engine) -> dict[str, str]:
+            async with engine.connect() as conn:
+                rows = (
+                    await conn.execute(
+                        sa.text(
+                            "SELECT name, sql FROM sqlite_master WHERE "
+                            "(type = 'index' OR name = 'sync_state') "
+                            "AND sql IS NOT NULL"
+                        )
+                    )
+                ).all()
+            return {name: _norm(sql) for name, sql in rows}
+
+        expected = await _ddl(fresh)
+        assert set(expected) == {
+            *(index.name for index in jobs_table.indexes),
+            "sync_state",
+        }
+        assert await _ddl(migrated) == expected
     finally:
         await fresh.dispose()
         await migrated.dispose()
@@ -1464,3 +1648,240 @@ async def test_sync_state_lists_only_ingested_uris(sync):
 
     assert await sync.list_ingested_uris("s") == {"done"}
     assert await sync.get_revision_snapshot("s") == {"done": "v1", "dead": "v1"}
+
+
+# --- namespaces ---
+#
+# Two repositories over one queue file, under different namespaces, using the
+# same source id and URI. Each test fails when the method it names loses its
+# namespace filter, or writes a row without one.
+
+
+@pytest.fixture
+def own(engine):
+    return JobRepo(engine, namespace="own")
+
+
+@pytest.fixture
+def foreign(engine):
+    return JobRepo(engine, namespace="other")
+
+
+@pytest.fixture
+def own_sync(engine):
+    return SyncStateRepo(engine, namespace="own")
+
+
+@pytest.fixture
+def foreign_sync(engine):
+    return SyncStateRepo(engine, namespace="other")
+
+
+async def _claimed(repo: JobRepo, uri: str = "u"):
+    job = await repo.enqueue("s", uri, JobOp.UPSERT)
+    assert job is not None
+    claimed = await repo.claim_next("w")
+    assert claimed is not None and claimed.id == job.id
+    return claimed
+
+
+async def _dead(repo: JobRepo, uri: str = "u", *, conversion_stalled: bool = False):
+    claimed = await _claimed(repo, uri)
+    assert await repo.mark_dead(
+        claimed.id, "boom", "w", conversion_stalled=conversion_stalled
+    )
+    return claimed
+
+
+async def test_enqueue_writes_the_namespace_and_keeps_live_slots_apart(
+    own, foreign, conn
+):
+    mine = await own.enqueue("s", "u", JobOp.UPSERT)
+    theirs = await foreign.enqueue("s", "u", JobOp.UPSERT)
+    assert mine is not None and theirs is not None
+    cursor = await conn.execute("SELECT id, namespace FROM jobs")
+    rows = {row["id"]: row["namespace"] for row in await cursor.fetchall()}
+    assert rows == {mine.id: "own", theirs.id: "other"}
+
+
+async def test_claim_next_skips_foreign_jobs(own, foreign):
+    theirs = await foreign.enqueue("s", "u", JobOp.UPSERT)
+    assert theirs is not None
+    assert await own.claim_next("w") is None
+    claimed = await foreign.claim_next("w")
+    assert claimed is not None and claimed.id == theirs.id
+
+
+async def test_get_job_hides_foreign_jobs(own, foreign):
+    theirs = await foreign.enqueue("s", "u", JobOp.UPSERT)
+    assert theirs is not None
+    assert await own.get_job(theirs.id) is None
+
+
+async def test_mark_succeeded_ignores_foreign_claims(own, foreign):
+    theirs = await _claimed(foreign)
+    assert not await own.mark_succeeded(theirs.id, "w")
+    refreshed = await foreign.get_job(theirs.id)
+    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
+
+
+async def test_mark_dead_ignores_foreign_claims(own, foreign):
+    theirs = await _claimed(foreign)
+    assert not await own.mark_dead(theirs.id, "boom", "w")
+    refreshed = await foreign.get_job(theirs.id)
+    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
+
+
+async def test_reschedule_ignores_foreign_claims(own, foreign):
+    theirs = await _claimed(foreign)
+    assert not await own.reschedule(theirs.id, 60, "later", "w")
+    refreshed = await foreign.get_job(theirs.id)
+    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
+
+
+async def test_retry_refuses_foreign_jobs(own, foreign):
+    theirs = await _dead(foreign)
+    with pytest.raises(KeyError):
+        await own.retry(theirs.id)
+    refreshed = await foreign.get_job(theirs.id)
+    assert refreshed is not None and refreshed.status is JobStatus.DEAD
+
+
+async def test_live_sibling_is_scoped(own, foreign):
+    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
+    assert await own._live_sibling("s", "u") is None
+
+
+async def test_blocking_tombstone_is_scoped(own, foreign):
+    await _dead(foreign, conversion_stalled=True)
+    mine = await own.enqueue("s", "u", JobOp.UPSERT)
+    assert mine is not None
+    assert await own._blocking_tombstone(mine) is None
+
+
+async def test_cancel_refuses_foreign_jobs(own, foreign):
+    theirs = await foreign.enqueue("s", "u", JobOp.UPSERT)
+    assert theirs is not None
+    assert not await own.cancel(theirs.id)
+    assert await foreign.get_job(theirs.id) is not None
+
+
+async def test_list_jobs_hides_foreign_jobs(own, foreign):
+    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
+    mine = await own.enqueue("s", "u2", JobOp.UPSERT)
+    assert mine is not None
+    assert [job.id for job in await own.list_jobs()] == [mine.id]
+
+
+async def test_has_pending_ignores_foreign_jobs(own, foreign):
+    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
+    assert not await own.has_pending("s")
+
+
+async def test_counts_by_status_ignores_foreign_jobs(own, foreign):
+    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
+    assert await own.counts_by_status() == {}
+
+
+async def test_counts_by_status_since_ignores_foreign_jobs(own, foreign):
+    since = datetime.now(UTC) - timedelta(minutes=1)
+    theirs = await _claimed(foreign)
+    assert await foreign.mark_succeeded(theirs.id, "w")
+    assert await own.counts_by_status_since(since) == {}
+
+
+async def test_batch_progress_counts_since_ignores_foreign_jobs(own, foreign):
+    since = datetime.now(UTC) - timedelta(minutes=1)
+    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
+    assert await own.batch_progress_counts_since(since) == {}
+
+
+async def test_count_succeeded_since_ignores_foreign_jobs(own, foreign):
+    theirs = await _claimed(foreign)
+    assert await foreign.mark_succeeded(theirs.id, "w")
+    assert await own.count_succeeded_since(3600) == 0
+
+
+async def test_oldest_queued_age_ignores_foreign_jobs(own, foreign):
+    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
+    assert await own.oldest_queued_age_seconds() is None
+
+
+async def test_counts_by_source_ignores_foreign_jobs(own, foreign):
+    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
+    assert await own.counts_by_source("queued", "claimed") == {}
+
+
+async def test_release_if_claimed_ignores_foreign_claims(own, foreign):
+    theirs = await _claimed(foreign)
+    assert not await own.release_if_claimed(theirs.id, "w")
+    refreshed = await foreign.get_job(theirs.id)
+    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
+
+
+async def test_prune_dead_ignores_foreign_jobs(own, foreign):
+    theirs = await _dead(foreign)
+    assert await own.prune_dead("s", "u") == 0
+    assert await foreign.get_job(theirs.id) is not None
+
+
+async def test_prune_terminal_ignores_foreign_jobs(own, foreign):
+    theirs = await _claimed(foreign)
+    assert await foreign.mark_succeeded(theirs.id, "w")
+    assert await own.prune_terminal(max_age_seconds=0) == 0
+    assert await foreign.get_job(theirs.id) is not None
+
+
+async def test_reap_stale_ignores_foreign_claims(own, foreign):
+    theirs = await _claimed(foreign)
+    assert await own.reap_stale(lease_ttl_seconds=0) == 0
+    refreshed = await foreign.get_job(theirs.id)
+    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
+
+
+async def test_renew_claims_ignores_foreign_claims(own, foreign):
+    theirs = await _claimed(foreign)
+    assert await own.renew_claims({theirs.id: "w"}) == 0
+
+
+async def test_sync_upsert_keeps_namespaces_apart(own_sync, foreign_sync):
+    await own_sync.upsert("s", "u", revision="mine")
+    await foreign_sync.upsert("s", "u", revision="theirs")
+    mine = await own_sync.get_row("s", "u")
+    theirs = await foreign_sync.get_row("s", "u")
+    assert mine is not None and mine.revision == "mine"
+    assert theirs is not None and theirs.revision == "theirs"
+
+
+async def test_revision_snapshot_ignores_foreign_rows(own_sync, foreign_sync):
+    await foreign_sync.upsert("s", "u", revision="r1")
+    assert await own_sync.get_revision_snapshot("s") == {}
+
+
+async def test_list_known_uris_ignores_foreign_rows(own_sync, foreign_sync):
+    await foreign_sync.upsert("s", "u")
+    assert await own_sync.list_known_uris("s") == set()
+
+
+async def test_batch_upsert_writes_the_namespace(own_sync, foreign_sync):
+    await own_sync.batch_upsert([SyncRow("s", "u", "r1", None, True)])
+    assert await own_sync.get_revision_snapshot("s") == {"u": "r1"}
+    assert await foreign_sync.get_row("s", "u") is None
+
+
+async def test_list_ingested_uris_ignores_foreign_rows(own_sync, foreign_sync):
+    await foreign_sync.upsert("s", "u", ingested=True)
+    assert await own_sync.list_ingested_uris("s") == set()
+
+
+async def test_invalidate_ignores_foreign_rows(own_sync, foreign_sync):
+    await foreign_sync.upsert("s", "u", revision="r1", content_hash="h1")
+    await own_sync.invalidate("s", ["u"])
+    theirs = await foreign_sync.get_row("s", "u")
+    assert theirs is not None and theirs.revision == "r1"
+
+
+async def test_sync_delete_ignores_foreign_rows(own_sync, foreign_sync):
+    await foreign_sync.upsert("s", "u")
+    await own_sync.delete("s", "u")
+    assert await foreign_sync.get_row("s", "u") is not None

@@ -25,9 +25,10 @@ from haiku.rag.config import (
 )
 from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.batch import BatchChange, BatchManifest
+from haiku.rag.ingester.exceptions import QueueError
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
-from haiku.rag.ingester.queue.models import JobOp
+from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
@@ -293,6 +294,119 @@ async def test_run_batch_empty_source_returns_immediately(tmp_path, use_client):
     assert report.succeeded == 0
     assert report.dead == 0
     client._ingest_observed.assert_not_awaited()
+
+
+async def test_run_batch_leaves_foreign_namespace_rows_alone(tmp_path, use_client):
+    """Another ingester's queued and dead jobs for the same source and URIs
+    neither block the batch, nor count in its report, nor change."""
+    (tmp_path / "a.md").write_text("hello")
+    (tmp_path / "b.md").write_text("world")
+    config = _config(tmp_path)
+    config.ingester.queue.namespace = "t1"
+    engine = await open_queue(config.ingester.queue)
+    try:
+        foreign = JobRepo(engine, namespace="other")
+        dead = await foreign.enqueue("local", (tmp_path / "b.md").as_uri())
+        assert dead is not None
+        claimed = await foreign.claim_next("w")
+        assert claimed is not None and claimed.id == dead.id
+        assert await foreign.mark_dead(dead.id, "boom", "w")
+        queued = await foreign.enqueue("local", (tmp_path / "a.md").as_uri())
+        assert queued is not None
+    finally:
+        await engine.dispose()
+    use_client(_mock_client())
+
+    report = await IngesterApp(
+        config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
+    ).run_batch()
+
+    assert (report.succeeded, report.dead) == (2, 0)
+    engine = await open_queue(config.ingester.queue)
+    try:
+        foreign = JobRepo(engine, namespace="other")
+        still_queued = await foreign.get_job(queued.id)
+        still_dead = await foreign.get_job(dead.id)
+        assert still_queued is not None and still_queued.status is JobStatus.QUEUED
+        assert still_dead is not None and still_dead.status is JobStatus.DEAD
+        own = JobRepo(engine, namespace="t1")
+        assert {job.status for job in await own.list_jobs()} == {JobStatus.SUCCEEDED}
+        assert await SyncStateRepo(engine, namespace="t1").list_ingested_uris(
+            "local"
+        ) == {(tmp_path / "a.md").as_uri(), (tmp_path / "b.md").as_uri()}
+    finally:
+        await engine.dispose()
+
+
+async def test_run_batch_dry_run_reads_its_own_revisions(tmp_path):
+    """The dry run compares against the revisions its own namespace recorded."""
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    config.ingester.queue.namespace = "t1"
+    uri = (tmp_path / "a.md").as_uri()
+    revision = str((tmp_path / "a.md").stat().st_mtime_ns)
+    engine = await open_queue(config.ingester.queue)
+    try:
+        await SyncStateRepo(engine, namespace="t1").upsert(
+            "local", uri, revision=revision, ingested=True
+        )
+    finally:
+        await engine.dispose()
+
+    report = await IngesterApp(
+        config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
+    ).run_batch_dry_run()
+
+    assert report.failed_sweeps == []
+    assert report.manifest.changes == []
+
+
+async def test_run_batch_from_manifest_ignores_foreign_pending_work(
+    tmp_path, use_client
+):
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    config.ingester.queue.namespace = "t1"
+    use_client(_mock_client())
+    engine = await open_queue(config.ingester.queue)
+    try:
+        foreign = JobRepo(engine, namespace="other")
+        await foreign.enqueue("local", (tmp_path / "a.md").as_uri(), op=JobOp.UPSERT)
+    finally:
+        await engine.dispose()
+
+    report = await IngesterApp(
+        config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
+    ).run_batch_from_manifest(
+        _manifest(
+            BatchChange(
+                op=JobOp.UPSERT,
+                source_id="local",
+                uri=(tmp_path / "a.md").as_uri(),
+                discovered_at=datetime.now(UTC),
+            )
+        )
+    )
+
+    assert (report.succeeded, report.dead) == (1, 0)
+
+
+@pytest.mark.parametrize("namespace", ["", "   "])
+def test_ingester_app_requires_a_namespace_on_a_server_queue(tmp_path, namespace):
+    config = _config(tmp_path)
+    config.ingester.queue = QueueConfig(
+        dburi="postgresql+asyncpg://u:p@host/db", namespace=namespace
+    )
+    with pytest.raises(QueueError, match="namespace"):
+        IngesterApp(config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb"))
+
+
+def test_ingester_app_accepts_a_sqlite_dburi_without_a_namespace(tmp_path):
+    config = _config(tmp_path)
+    config.ingester.queue = QueueConfig(
+        dburi=f"sqlite+aiosqlite:///{tmp_path / 'queue.db'}"
+    )
+    IngesterApp(config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb"))
 
 
 async def test_run_batch_dry_run_reports_manifest_without_mutating_queue(tmp_path):

@@ -30,6 +30,7 @@ from haiku.rag.config import (  # noqa: E402
     set_config,
 )
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
+from haiku.rag.ingester.exceptions import QueueError  # noqa: E402
 from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
@@ -88,6 +89,7 @@ def cli() -> None:
         ConfigMismatchError,
         ImportError,
         MigrationRequiredError,
+        QueueError,
         ReadOnlyError,
         SourceUnavailableError,
         TagError,

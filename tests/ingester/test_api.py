@@ -9,6 +9,7 @@ from haiku.rag.config import AppConfig
 from haiku.rag.config.models import LanceDBConfig
 from haiku.rag.ingester.api.server import APIState, build_app
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
+from haiku.rag.ingester.queue.repository import JobRepo
 from haiku.rag.sources.base import (
     FetchResult,
     SourceEvent,
@@ -111,6 +112,33 @@ async def test_health_skips_auth(state):
     async with _client(state, auth_token="secret") as client:
         resp = await client.get("/health")
     assert resp.status_code == 200
+
+
+async def test_api_hides_another_namespace(state, engine):
+    """Another ingester's jobs are neither listed nor reachable by id."""
+    foreign = JobRepo(engine, namespace="other")
+    queued = await foreign.enqueue("src", "u1", JobOp.UPSERT)
+    dead = await foreign.enqueue("src", "u2", JobOp.UPSERT)
+    assert queued is not None and dead is not None
+    claimed = await foreign.claim_next("w")
+    assert claimed is not None and claimed.id == queued.id
+    assert await foreign.release_if_claimed(queued.id, "w")
+    claimed = await foreign.claim_next("w")
+    assert claimed is not None and claimed.id == dead.id
+    assert await foreign.mark_dead(dead.id, "boom", "w")
+
+    async with _client(state) as client:
+        assert (await client.get("/jobs")).json() == []
+        assert (await client.get("/dlq")).json() == []
+        assert (await client.get(f"/jobs/{queued.id}")).status_code == 404
+        assert (await client.delete(f"/jobs/{queued.id}")).status_code == 404
+        assert (await client.post(f"/jobs/{dead.id}/retry")).status_code == 404
+        assert (await client.post(f"/dlq/{dead.id}/retry")).status_code == 404
+
+    still_queued = await foreign.get_job(queued.id)
+    still_dead = await foreign.get_job(dead.id)
+    assert still_queued is not None and still_queued.status is JobStatus.QUEUED
+    assert still_dead is not None and still_dead.status is JobStatus.DEAD
 
 
 # --- auth ---

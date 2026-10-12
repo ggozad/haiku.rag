@@ -2,7 +2,7 @@ import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 metadata = sa.MetaData()
 
@@ -10,6 +10,9 @@ jobs = sa.Table(
     "jobs",
     metadata,
     sa.Column("id", sa.Text, primary_key=True),
+    # The ingester that owns the row, and so the LanceDB it writes. Several
+    # ingesters share one server-side queue and never see each other's rows.
+    sa.Column("namespace", sa.Text, nullable=False, server_default=sa.text("''")),
     sa.Column("source_id", sa.Text, nullable=False),
     sa.Column("uri", sa.Text, nullable=False),
     sa.Column("op", sa.Text, nullable=False),
@@ -36,14 +39,15 @@ jobs = sa.Table(
     ),
 )
 
-# A (source_id, uri) pair can only have one live job (queued or claimed) at a
-# time, regardless of op. Live UPSERT and DELETE for the same URI can't both
-# exist — preventing a DELETE worker from removing a document a sibling UPSERT
-# just ingested. Once succeeded or dead, the row no longer satisfies the WHERE
-# clause and a re-enqueue is allowed.
+# A (namespace, source_id, uri) triple can only have one live job (queued or
+# claimed) at a time, regardless of op. Live UPSERT and DELETE for the same
+# URI can't both exist — preventing a DELETE worker from removing a document a
+# sibling UPSERT just ingested. Once succeeded or dead, the row no longer
+# satisfies the WHERE clause and a re-enqueue is allowed.
 _live = jobs.c.status.in_(["queued", "claimed"])
 sa.Index(
     "uq_jobs_live",
+    jobs.c.namespace,
     jobs.c.source_id,
     jobs.c.uri,
     unique=True,
@@ -66,6 +70,7 @@ _blocking = sa.or_(
 )
 sa.Index(
     "uq_jobs_blocking_op",
+    jobs.c.namespace,
     jobs.c.source_id,
     jobs.c.uri,
     jobs.c.op,
@@ -76,6 +81,7 @@ sa.Index(
 )
 sa.Index(
     "idx_jobs_claimable",
+    jobs.c.namespace,
     jobs.c.scheduled_at,
     sqlite_where=_queued,
     postgresql_where=_queued,
@@ -84,6 +90,7 @@ sa.Index(
 _succeeded = jobs.c.status == "succeeded"
 sa.Index(
     "idx_jobs_succeeded_completed",
+    jobs.c.namespace,
     jobs.c.completed_at,
     sqlite_where=_succeeded,
     postgresql_where=_succeeded,
@@ -92,6 +99,7 @@ sa.Index(
 sync_state = sa.Table(
     "sync_state",
     metadata,
+    sa.Column("namespace", sa.Text, primary_key=True, server_default=sa.text("''")),
     sa.Column("source_id", sa.Text, primary_key=True),
     sa.Column("uri", sa.Text, primary_key=True),
     sa.Column("revision", sa.Text),

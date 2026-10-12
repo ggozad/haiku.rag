@@ -21,7 +21,8 @@ from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
-from haiku.rag.ingester.queue.db import metadata
+from haiku.rag.ingester.queue.db import SCHEMA_VERSION, metadata
+from haiku.rag.ingester.queue.migrations import apply_migrations
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 
@@ -205,3 +206,143 @@ async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(postgres
                 jobs.mark_dead(claimed.id, "stalled", "w", conversion_stalled=True),
             )
             assert enqueued is None, f"attempt {attempt}: poison upsert queued"
+
+
+_V3_JOBS_INDEX_DDL = [
+    "CREATE UNIQUE INDEX uq_jobs_live ON jobs (source_id, uri) "
+    "WHERE status IN ('queued', 'claimed')",
+    "CREATE UNIQUE INDEX uq_jobs_blocking_op ON jobs "
+    "(source_id, uri, op, coalesce(revision, '')) "
+    "WHERE status IN ('queued', 'claimed') "
+    "OR status = 'dead' AND conversion_stalled IS TRUE",
+    "CREATE INDEX idx_jobs_claimable ON jobs (scheduled_at) WHERE status = 'queued'",
+    "CREATE INDEX idx_jobs_succeeded_completed ON jobs (completed_at) "
+    "WHERE status = 'succeeded'",
+]
+
+
+async def test_migration_v3_to_v4_keeps_a_populated_queue(postgres_dburi):
+    """The Postgres branch of the v4 step: a populated v3 queue keeps its rows
+    under the empty namespace, with the `sync_state` key and every job index
+    rebuilt over `namespace`."""
+    async with queue_engine(postgres_dburi) as engine:
+        await apply_migrations(engine)
+        when = "2026-01-01T00:00:00+00:00"
+        async with engine.begin() as conn:
+            await conn.execute(text("ALTER TABLE jobs DROP COLUMN namespace"))
+            for ddl in _V3_JOBS_INDEX_DDL:
+                await conn.execute(text(ddl))
+            await conn.execute(
+                text("ALTER TABLE sync_state DROP CONSTRAINT sync_state_pkey")
+            )
+            await conn.execute(text("ALTER TABLE sync_state DROP COLUMN namespace"))
+            await conn.execute(
+                text("ALTER TABLE sync_state ADD PRIMARY KEY (source_id, uri)")
+            )
+            await conn.execute(text("UPDATE schema_version SET version = 3"))
+            await conn.execute(
+                text(
+                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
+                    "max_attempts, enqueued_at, scheduled_at) VALUES "
+                    "('old-1', 's', 'u1', 'upsert', 'queued', 0, 5, :when, :when)"
+                ),
+                {"when": when},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO sync_state (source_id, uri, revision, "
+                    "last_seen_at, last_ingested_at) "
+                    "VALUES ('s', 'u1', 'r1', :when, :when)"
+                ),
+                {"when": when},
+            )
+
+        assert await apply_migrations(engine) == SCHEMA_VERSION
+
+        async with engine.connect() as conn:
+            job_ns = (
+                await conn.execute(
+                    text("SELECT namespace FROM jobs WHERE id = 'old-1'")
+                )
+            ).scalar_one()
+            sync_row = (
+                await conn.execute(
+                    text(
+                        "SELECT namespace, revision FROM sync_state "
+                        "WHERE source_id = 's' AND uri = 'u1'"
+                    )
+                )
+            ).one()
+            key_columns = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT a.attname FROM pg_index i "
+                            "JOIN pg_attribute a ON a.attrelid = i.indrelid "
+                            "AND a.attnum = ANY(i.indkey) "
+                            "WHERE i.indrelid = 'sync_state'::regclass "
+                            "AND i.indisprimary"
+                        )
+                    )
+                ).scalars()
+            )
+            index_defs = (
+                await conn.execute(
+                    text(
+                        "SELECT indexdef FROM pg_indexes WHERE tablename = 'jobs' "
+                        "AND schemaname = current_schema()"
+                    )
+                )
+            ).scalars()
+            namespaced = [d for d in index_defs if "(namespace," in d]
+        assert job_ns == ""
+        assert tuple(sync_row) == ("", "r1")
+        assert key_columns == {"namespace", "source_id", "uri"}
+        assert len(namespaced) == 4
+
+        repo = JobRepo(engine)
+        old = await repo.get_job("old-1")
+        assert old is not None and old.status is JobStatus.QUEUED
+
+
+async def test_namespaces_share_live_slots_and_sync_keys(postgres_dburi):
+    """`uq_jobs_live` and the `sync_state` key include the namespace, and the
+    upsert's ON CONFLICT target infers the new key."""
+    async with queue_engine(postgres_dburi) as engine:
+        mine, theirs = JobRepo(engine, "a"), JobRepo(engine, "b")
+        assert await mine.enqueue("s", "u", JobOp.UPSERT) is not None
+        assert await theirs.enqueue("s", "u", JobOp.UPSERT) is not None
+
+        my_sync, their_sync = SyncStateRepo(engine, "a"), SyncStateRepo(engine, "b")
+        await my_sync.upsert("s", "u", revision="r-a")
+        await their_sync.upsert("s", "u", revision="r-b")
+        await my_sync.upsert("s", "u", revision=None, ingested=True)
+        my_row = await my_sync.get_row("s", "u")
+        their_row = await their_sync.get_row("s", "u")
+        assert my_row is not None and my_row.revision == "r-a"
+        assert my_row.last_ingested_at is not None
+        assert their_row is not None and their_row.revision == "r-b"
+        assert their_row.last_ingested_at is None
+
+
+async def test_concurrent_claims_stay_within_their_namespace(postgres_dburi):
+    """Two ingesters claiming at once over real connections each take exactly
+    their own jobs, for the same source and URIs."""
+    async with queue_engine(postgres_dburi) as engine:
+        mine, theirs = JobRepo(engine, "a"), JobRepo(engine, "b")
+        my_ids, their_ids = set(), set()
+        for i in range(10):
+            my_job = await mine.enqueue("s", f"u{i}", JobOp.UPSERT)
+            their_job = await theirs.enqueue("s", f"u{i}", JobOp.UPSERT)
+            assert my_job is not None and their_job is not None
+            my_ids.add(my_job.id)
+            their_ids.add(their_job.id)
+
+        results = await asyncio.gather(
+            *(mine.claim_next(f"a{i}") for i in range(15)),
+            *(theirs.claim_next(f"b{i}") for i in range(15)),
+        )
+        my_claims = {r.id for r in results[:15] if r is not None}
+        their_claims = {r.id for r in results[15:] if r is not None}
+        assert my_claims == my_ids
+        assert their_claims == their_ids

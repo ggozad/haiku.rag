@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ingester.queue.namespace`: the ingester that owns its rows in a queue shared with other ingesters. `serve`, `run-batch` and `--dry-run` require it when `dburi` names a server.
+
+### Changed
+
+- Queue schema 4 adds `namespace` to `jobs` and `sync_state`, leading every job index and the `sync_state` key. Existing rows migrate under the empty namespace: assign them with `UPDATE jobs SET namespace = '<name>' WHERE namespace = ''` and the same on `sync_state` before starting an ingester under that name.
+
+### Fixed
+
+- SQLite queue migrations run in one transaction, so an interrupted migration leaves the previous schema in place and reruns.
+
 ## [0.96.1] - 2026-10-09
 
 ### Changed

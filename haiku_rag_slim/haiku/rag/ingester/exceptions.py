@@ -44,3 +44,7 @@ class BlockingTombstoneError(IngesterError):
         )
         self.job_id = job_id
         self.blocking_job_id = blocking_job_id
+
+
+class QueueError(IngesterError):
+    """The queue cannot be used as configured."""

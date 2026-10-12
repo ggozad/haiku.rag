@@ -124,6 +124,26 @@ def _write_manifest(path) -> None:
     path.write_text(yaml.safe_dump(_manifest().model_dump(mode="json")))
 
 
+def test_a_server_queue_without_a_namespace_exits_one(tmp_path, monkeypatch, capsys):
+    config_file = tmp_path / "haiku.rag.yaml"
+    config_file.write_text(
+        "ingester:\n  queue:\n    dburi: postgresql+asyncpg://u:p@host/db\n"
+    )
+    import haiku.rag.config as config_module
+
+    monkeypatch.setattr(config_module, "_config", None)
+    monkeypatch.setattr(
+        sys, "argv", ["haiku-ingester", "run-batch", "--db", str(tmp_path / "x")]
+    )
+    monkeypatch.setenv("HAIKU_RAG_CONFIG_PATH", str(config_file))
+
+    with pytest.raises(SystemExit) as exit_info:
+        ingester_cli()
+
+    assert exit_info.value.code == 1
+    assert "Error: ingester.queue.namespace is required" in capsys.readouterr().err
+
+
 def test_run_batch_reports_and_exits_zero(monkeypatch):
     fake = _fake_app(BatchReport(succeeded=3, dead=0), monkeypatch)
 

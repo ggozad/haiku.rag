@@ -7,9 +7,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+from sqlalchemy.engine import make_url
 
 from haiku.rag.config import AppConfig
 from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
+from haiku.rag.ingester.exceptions import QueueError
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
@@ -90,6 +92,17 @@ class IngesterApp:
                 "configuration naming a single one"
             )
         self._scope.refuse_tags("haiku-ingester writes")
+        queue = config.ingester.queue
+        if (
+            queue.dburi
+            and not queue.namespace.strip()
+            and make_url(queue.dburi).get_backend_name() != "sqlite"
+        ):
+            raise QueueError(
+                "ingester.queue.namespace is required when dburi names a server: "
+                "it tells this ingester's rows from other ingesters' in the "
+                "shared queue"
+            )
         self._engine: AsyncEngine | None = None
         self._jobs: JobRepo | None = None
         self._sync: SyncStateRepo | None = None
@@ -108,8 +121,8 @@ class IngesterApp:
         ingester_cfg = self._config.ingester
         self._engine = await open_queue(ingester_cfg.queue)
         try:
-            self._jobs = JobRepo(self._engine)
-            self._sync = SyncStateRepo(self._engine)
+            self._jobs = JobRepo(self._engine, ingester_cfg.queue.namespace)
+            self._sync = SyncStateRepo(self._engine, ingester_cfg.queue.namespace)
 
             supported_extensions = get_converter(self._config).supported_extensions
             retry = RetryPolicy(
@@ -190,8 +203,8 @@ class IngesterApp:
         ingester_cfg = self._config.ingester
         self._engine = await open_queue(ingester_cfg.queue)
         try:
-            self._jobs = JobRepo(self._engine)
-            self._sync = SyncStateRepo(self._engine)
+            self._jobs = JobRepo(self._engine, ingester_cfg.queue.namespace)
+            self._sync = SyncStateRepo(self._engine, ingester_cfg.queue.namespace)
             supported_extensions = get_converter(self._config).supported_extensions
             self._pollers = PollerManager(
                 configs=ingester_cfg.sources,
