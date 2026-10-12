@@ -278,6 +278,41 @@ async def test_run_batch_keeps_recovered_documents_when_the_source_empties(
     )
 
 
+async def test_run_batch_retries_with_the_sources_backoff(tmp_path, use_client):
+    from haiku.rag.ingester.exceptions import TransientError
+
+    (tmp_path / "a.md").write_text("hello")
+    client = _mock_client()
+    ingest = client._ingest_observed.side_effect
+    calls = {"n": 0}
+
+    async def _fails_once(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TransientError("blip")
+        return await ingest(*args, **kwargs)
+
+    client._ingest_observed.side_effect = _fails_once
+    use_client(client)
+    config = _config(tmp_path)
+    config.ingester.workers.retry = RetryPolicyConfig(
+        max_attempts=2, base_delay_s=3600.0, jitter=0.0
+    )
+    config.ingester.sources[0].retry = RetryPolicyConfig(
+        max_attempts=2, base_delay_s=0.0, jitter=0.0
+    )
+
+    report = await asyncio.wait_for(
+        IngesterApp(
+            config=config, scope=DatabaseScope.at(tmp_path / "db.lancedb")
+        ).run_batch(),
+        timeout=10.0,
+    )
+
+    assert report.succeeded == 1
+    assert calls["n"] == 2
+
+
 async def test_run_batch_reports_dead_on_permanent_failure(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
 

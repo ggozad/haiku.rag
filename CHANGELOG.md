@@ -21,6 +21,7 @@
 - A sweep whose listing returns nothing while the source has URIs it listed before fails with `EmptyListingError` instead of deleting them. A sweep that raises midway enqueues none of its deletes, and `--dry-run` reports no changes for it.
 - An ingester DELETE job deletes a document only when the document's `source_id` is the job's source. A document owned by another source, or by none, is left in place with a warning.
 - A URL removed from an `http` source's `urls` is deleted. A configured `HTTPSource` supports only its `urls`.
+- A source's `retry` sets the backoff of its jobs: `base_delay_s`, `max_delay_s` and `jitter` apply, not only `max_attempts`.
 - SQLite queue migrations run in one transaction, so an interrupted migration leaves the previous schema in place and reruns.
 
 ## [0.96.1] - 2026-10-09

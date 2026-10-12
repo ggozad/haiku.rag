@@ -57,6 +57,7 @@ class WorkerPool:
         sync_repo: SyncStateRepo,
         worker_count: int = 4,
         retry_policy: RetryPolicy | None = None,
+        source_retry_policies: "Mapping[str, RetryPolicy] | None" = None,
         poll_idle_interval_s: float = 1.0,
         lease_ttl_s: int = 120,
         heartbeat_interval_s: int = 30,
@@ -70,6 +71,7 @@ class WorkerPool:
         self._sync = sync_repo
         self._worker_count = worker_count
         self._retry = retry_policy or RetryPolicy()
+        self._source_retry: dict[str, RetryPolicy] = dict(source_retry_policies or {})
         self._poll_idle_s = poll_idle_interval_s
         self._lease_ttl_s = lease_ttl_s
         self._heartbeat_interval_s = heartbeat_interval_s
@@ -408,7 +410,9 @@ class WorkerPool:
                     "Job %s dead (max attempts %d): %s", job.id, job.max_attempts, e
                 )
                 return
-            delay = compute_backoff(job.attempts, self._retry)
+            delay = compute_backoff(
+                job.attempts, self._source_retry.get(job.source_id, self._retry)
+            )
             if not await self._jobs.reschedule(  # pragma: no cover - reaper race
                 job.id, delay, str(e), worker_id
             ):

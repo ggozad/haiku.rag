@@ -13,6 +13,7 @@ from haiku.rag.config import AppConfig
 from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
 from haiku.rag.ingester.exceptions import QueueError
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
+from haiku.rag.ingester.pollers.base import max_attempts
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
 from haiku.rag.ingester.queue.models import Job, JobStatus
@@ -125,12 +126,7 @@ class IngesterApp:
             self._sync = SyncStateRepo(self._engine, ingester_cfg.queue.namespace)
 
             supported_extensions = get_converter(self._config).supported_extensions
-            retry = RetryPolicy(
-                max_attempts=ingester_cfg.workers.retry.max_attempts,
-                base_delay_s=ingester_cfg.workers.retry.base_delay_s,
-                max_delay_s=ingester_cfg.workers.retry.max_delay_s,
-                jitter=ingester_cfg.workers.retry.jitter,
-            )
+            retry = RetryPolicy(**ingester_cfg.workers.retry.model_dump())
 
             # The ingester is the sole writer for its LanceDB target; create on
             # first start so docker-compose / fresh deployments don't require a
@@ -160,6 +156,13 @@ class IngesterApp:
                     sync_repo=self._sync,
                     worker_count=ingester_cfg.workers.worker_count,
                     retry_policy=retry,
+                    source_retry_policies={
+                        poller.source_id: RetryPolicy(
+                            **poller.config.retry.model_dump()
+                        )
+                        for poller in self._pollers.pollers
+                        if poller.config.retry is not None
+                    },
                     poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
                     lease_ttl_s=ingester_cfg.workers.lease_ttl_s,
                     heartbeat_interval_s=ingester_cfg.workers.heartbeat_interval_s,
@@ -448,11 +451,7 @@ class IngesterApp:
 
             default_max_attempts = self._config.ingester.workers.retry.max_attempts
             max_attempts_by_source = {
-                poller.source_id: (
-                    poller.config.retry.max_attempts
-                    if poller.config.retry is not None
-                    else default_max_attempts
-                )
+                poller.source_id: max_attempts(poller.config, default_max_attempts)
                 for poller in self._pollers.pollers
             }
             for change in manifest.changes:

@@ -282,6 +282,8 @@ ingester:
         base_delay_s: 10
 ```
 
+The block replaces the worker's policy for that source's jobs. A field it leaves out takes the policy default, not the worker's value.
+
 ## Circuit breaker
 
 After `failure_threshold` consecutive discovery failures, a source's circuit breaker opens and its polling pauses for `cooldown_s`. Other sources keep running.

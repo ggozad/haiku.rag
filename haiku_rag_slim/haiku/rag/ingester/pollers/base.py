@@ -31,7 +31,7 @@ def _enqueue_extra() -> dict | None:
     return {"_otel": dict(carrier)} if carrier else None
 
 
-def _max_attempts(cfg: SourceConfig, default: int) -> int:
+def max_attempts(cfg: SourceConfig, default: int) -> int:
     return cfg.retry.max_attempts if cfg.retry is not None else default
 
 
@@ -270,7 +270,7 @@ class BasePoller:
                 event.uri,
                 op=JobOp.UPSERT,
                 revision=event.revision,
-                max_attempts=_max_attempts(self.config, self._default_max_attempts),
+                max_attempts=max_attempts(self.config, self._default_max_attempts),
                 extra=_enqueue_extra(),
             )
             # Don't write revision to sync_state here — the worker writes it
@@ -289,6 +289,6 @@ class BasePoller:
                 event.source_id,
                 event.uri,
                 op=JobOp.DELETE,
-                max_attempts=_max_attempts(self.config, self._default_max_attempts),
+                max_attempts=max_attempts(self.config, self._default_max_attempts),
                 extra=_enqueue_extra(),
             )
