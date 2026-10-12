@@ -25,6 +25,18 @@ def test_supports_http_and_https():
     assert not src.supports("s3://bucket/a.pdf")
 
 
+def test_configured_source_supports_only_its_urls():
+    src = HTTPSource(source_id="docs", urls=["https://example.com/a.pdf"])
+    assert src.supports("https://example.com/a.pdf")
+    assert not src.supports("https://example.com/b.pdf")
+    assert not src.supports("file:///tmp/a.pdf")
+
+
+def test_configured_source_without_urls_supports_nothing():
+    src = HTTPSource(source_id="docs", urls=[])
+    assert not src.supports("https://example.com/a.pdf")
+
+
 def test_source_id_is_user_provided():
     assert HTTPSource(source_id="arxiv").source_id == "arxiv"
 

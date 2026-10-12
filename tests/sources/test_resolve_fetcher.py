@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.sources import (
     resolve_adhoc_fetcher,
     resolve_configured_source,
@@ -107,6 +108,12 @@ def test_configured_raises_when_matched_source_rejects_uri():
     fs = FSSource(root=Path("/tmp"), source_id="local")
     with pytest.raises(ValueError, match="doesn't support URI"):
         resolve_configured_source("https://example.com/x", "local", [fs])
+
+
+def test_configured_http_source_rejects_a_url_no_longer_configured():
+    docs = HTTPSource(source_id="docs", urls=["https://example.com/kept.md"])
+    with pytest.raises(UnsupportedSourceError):
+        resolve_configured_source("https://example.com/removed.md", "docs", [docs])
 
 
 def test_configured_raises_when_no_source_matches():

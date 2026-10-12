@@ -776,3 +776,25 @@ async def test_delete_keeps_a_document_transferred_while_the_job_ran(temp_db_pat
         kept = await client.get_document_by_id(doc.id)
         assert kept is not None
         assert kept.metadata["source_id"] == "other"
+
+
+@pytest.mark.parametrize("kept", [["https://example.com/kept.md"], []])
+async def test_delete_removes_a_url_taken_out_of_the_http_source(kept):
+    """The server still answers the removed URL with an ETag, which the probe
+    must not read as the resource coming back."""
+    from haiku.rag.sources.http import HTTPSource
+
+    removed = "https://example.com/removed.md"
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, headers={"etag": '"e1"'})
+    )
+    source = HTTPSource(source_id="src", urls=kept, transport=transport)
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri=removed, metadata={"source_id": "src"}
+    )
+
+    result = await run_job(client, _job(op=JobOp.DELETE, uri=removed), sources=[source])
+
+    assert result.deleted is True
+    client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
