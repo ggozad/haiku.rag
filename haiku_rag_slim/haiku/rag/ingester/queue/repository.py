@@ -81,9 +81,13 @@ def _row_to_sync_state(row: Mapping) -> SyncStateRow:
 
 
 class JobRepo:
-    def __init__(self, engine: AsyncEngine):
+    def __init__(self, engine: AsyncEngine, namespace: str = ""):
         self._engine = engine
         self._dialect = engine.dialect.name
+        self._namespace = namespace
+        # Every statement carries it: an ingester sharing the queue never reads
+        # or writes another ingester's rows.
+        self._owned = jobs.c.namespace == namespace
         # Notified after a successful enqueue so workers in this process wake
         # immediately instead of polling on a fixed sleep interval. Workers in
         # other processes (a shared Postgres queue) fall back to polling.
@@ -115,6 +119,7 @@ class JobRepo:
             _insert(jobs, self._dialect)
             .values(
                 id=job_id,
+                namespace=self._namespace,
                 source_id=source_id,
                 uri=uri,
                 op=op.value,
@@ -151,7 +156,11 @@ class JobRepo:
         `exclude_source_ids` skips jobs from those sources (a paused breaker).
         Empty or None adds no clause, leaving the query unchanged."""
         now = _utcnow_iso()
-        conditions = [jobs.c.status == "queued", jobs.c.scheduled_at <= now]
+        conditions = [
+            self._owned,
+            jobs.c.status == "queued",
+            jobs.c.scheduled_at <= now,
+        ]
         if exclude_source_ids:
             conditions.append(jobs.c.source_id.notin_(sorted(exclude_source_ids)))
         candidate = (
@@ -181,7 +190,11 @@ class JobRepo:
     async def get_job(self, job_id: str) -> Job | None:
         async with self._engine.connect() as conn:
             row = (
-                (await conn.execute(sa.select(jobs).where(jobs.c.id == job_id)))
+                (
+                    await conn.execute(
+                        sa.select(jobs).where(self._owned, jobs.c.id == job_id)
+                    )
+                )
                 .mappings()
                 .one_or_none()
             )
@@ -195,6 +208,7 @@ class JobRepo:
         stmt = (
             sa.update(jobs)
             .where(
+                self._owned,
                 jobs.c.id == job_id,
                 jobs.c.status == "claimed",
                 jobs.c.claimed_by == claimed_by,
@@ -219,6 +233,7 @@ class JobRepo:
         stmt = (
             sa.update(jobs)
             .where(
+                self._owned,
                 jobs.c.id == job_id,
                 jobs.c.status == "claimed",
                 jobs.c.claimed_by == claimed_by,
@@ -246,6 +261,7 @@ class JobRepo:
         stmt = (
             sa.update(jobs)
             .where(
+                self._owned,
                 jobs.c.id == job_id,
                 jobs.c.status == "claimed",
                 jobs.c.claimed_by == claimed_by,
@@ -278,7 +294,11 @@ class JobRepo:
         now = _utcnow_iso()
         stmt = (
             sa.update(jobs)
-            .where(jobs.c.id == job_id, jobs.c.status.in_(["dead", "queued"]))
+            .where(
+                self._owned,
+                jobs.c.id == job_id,
+                jobs.c.status.in_(["dead", "queued"]),
+            )
             .values(
                 status="queued",
                 attempts=0,
@@ -317,6 +337,7 @@ class JobRepo:
         query = (
             sa.select(jobs.c.id)
             .where(
+                self._owned,
                 jobs.c.source_id == target.source_id,
                 jobs.c.uri == target.uri,
                 jobs.c.op == target.op.value,
@@ -337,6 +358,7 @@ class JobRepo:
         query = (
             sa.select(jobs)
             .where(
+                self._owned,
                 jobs.c.source_id == source_id,
                 jobs.c.uri == uri,
                 jobs.c.status.in_(["queued", "claimed"]),
@@ -352,7 +374,11 @@ class JobRepo:
         cancellable (succeeded/dead rows are kept for history)."""
         stmt = (
             sa.delete(jobs)
-            .where(jobs.c.id == job_id, jobs.c.status.in_(["queued", "claimed"]))
+            .where(
+                self._owned,
+                jobs.c.id == job_id,
+                jobs.c.status.in_(["queued", "claimed"]),
+            )
             .returning(jobs.c.id)
         )
         async with self._engine.begin() as conn:
@@ -368,7 +394,7 @@ class JobRepo:
         limit: int = 50,
         offset: int = 0,
     ) -> list[Job]:
-        query = sa.select(jobs)
+        query = sa.select(jobs).where(self._owned)
         if status is not None:
             query = query.where(jobs.c.status == status.value)
         if source_id is not None:
@@ -390,6 +416,7 @@ class JobRepo:
         query = (
             sa.select(jobs.c.id)
             .where(
+                self._owned,
                 jobs.c.source_id == source_id,
                 jobs.c.status.in_(["queued", "claimed"]),
             )
@@ -400,8 +427,10 @@ class JobRepo:
         return row is not None
 
     async def counts_by_status(self) -> dict[str, int]:
-        query = sa.select(jobs.c.status, sa.func.count().label("n")).group_by(
-            jobs.c.status
+        query = (
+            sa.select(jobs.c.status, sa.func.count().label("n"))
+            .where(self._owned)
+            .group_by(jobs.c.status)
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(query)).all()
@@ -414,7 +443,7 @@ class JobRepo:
         work it finished, independent of terminal rows from earlier runs."""
         query = (
             sa.select(jobs.c.status, sa.func.count().label("n"))
-            .where(jobs.c.completed_at >= since.isoformat())
+            .where(self._owned, jobs.c.completed_at >= since.isoformat())
             .group_by(jobs.c.status)
         )
         async with self._engine.connect() as conn:
@@ -431,10 +460,11 @@ class JobRepo:
         query = (
             sa.select(jobs.c.status, sa.func.count().label("n"))
             .where(
+                self._owned,
                 sa.or_(
                     jobs.c.status.in_(["queued", "claimed"]),
                     jobs.c.completed_at >= since.isoformat(),
-                )
+                ),
             )
             .group_by(jobs.c.status)
         )
@@ -447,7 +477,9 @@ class JobRepo:
         Drives the dashboard's rolling-throughput chips."""
         threshold = (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
         query = sa.select(sa.func.count()).where(
-            jobs.c.status == "succeeded", jobs.c.completed_at >= threshold
+            self._owned,
+            jobs.c.status == "succeeded",
+            jobs.c.completed_at >= threshold,
         )
         async with self._engine.connect() as conn:
             count = (await conn.execute(query)).scalar()
@@ -459,7 +491,9 @@ class JobRepo:
         Tells operators whether work is backing up."""
         now = datetime.now(UTC)
         query = sa.select(sa.func.min(jobs.c.scheduled_at)).where(
-            jobs.c.status == "queued", jobs.c.scheduled_at <= now.isoformat()
+            self._owned,
+            jobs.c.status == "queued",
+            jobs.c.scheduled_at <= now.isoformat(),
         )
         async with self._engine.connect() as conn:
             oldest = (await conn.execute(query)).scalar()
@@ -474,7 +508,7 @@ class JobRepo:
             return {}
         query = (
             sa.select(jobs.c.source_id, sa.func.count().label("n"))
-            .where(jobs.c.status.in_(statuses))
+            .where(self._owned, jobs.c.status.in_(statuses))
             .group_by(jobs.c.source_id)
         )
         async with self._engine.connect() as conn:
@@ -491,6 +525,7 @@ class JobRepo:
         stmt = (
             sa.update(jobs)
             .where(
+                self._owned,
                 jobs.c.id == job_id,
                 jobs.c.status == "claimed",
                 jobs.c.claimed_by == claimed_by,
@@ -515,6 +550,7 @@ class JobRepo:
         the document is gone, so a "couldn't ingest this" entry is no longer
         actionable. Returns the number of rows removed."""
         stmt = sa.delete(jobs).where(
+            self._owned,
             jobs.c.source_id == source_id,
             jobs.c.uri == uri,
             jobs.c.status == "dead",
@@ -529,6 +565,7 @@ class JobRepo:
         without bound. Returns the number of rows removed."""
         threshold = (datetime.now(UTC) - timedelta(seconds=max_age_seconds)).isoformat()
         stmt = sa.delete(jobs).where(
+            self._owned,
             jobs.c.status.in_(["succeeded", "dead"]),
             jobs.c.completed_at < threshold,
             # A stalled conversion's row is what stops discovery re-enqueuing
@@ -553,7 +590,7 @@ class JobRepo:
         lease = sa.func.coalesce(jobs.c.last_heartbeat_at, jobs.c.claimed_at)
         stmt = (
             sa.update(jobs)
-            .where(jobs.c.status == "claimed", lease < threshold)
+            .where(self._owned, jobs.c.status == "claimed", lease < threshold)
             .values(
                 status="queued",
                 claimed_at=None,
@@ -583,7 +620,7 @@ class JobRepo:
         )
         stmt = (
             sa.update(jobs)
-            .where(jobs.c.status == "claimed", pair_match)
+            .where(self._owned, jobs.c.status == "claimed", pair_match)
             .values(last_heartbeat_at=now)
         )
         async with self._engine.begin() as conn:
@@ -592,9 +629,11 @@ class JobRepo:
 
 
 class SyncStateRepo:
-    def __init__(self, engine: AsyncEngine):
+    def __init__(self, engine: AsyncEngine, namespace: str = ""):
         self._engine = engine
         self._dialect = engine.dialect.name
+        self._namespace = namespace
+        self._owned = sync_state.c.namespace == namespace
 
     async def get_revision_snapshot(self, source_id: str) -> dict[str, str]:
         """uri -> revision map for URIs that have a stored revision. Sources
@@ -606,6 +645,7 @@ class SyncStateRepo:
         have no revision to compare against; the closing-loop DELETE diff uses
         list_known_uris instead."""
         query = sa.select(sync_state.c.uri, sync_state.c.revision).where(
+            self._owned,
             sync_state.c.source_id == source_id,
             sync_state.c.revision.is_not(None),
         )
@@ -617,14 +657,16 @@ class SyncStateRepo:
         """Every URI the source has ever produced. Used by the closing-loop
         diff in discover() so a URI previously seen but no longer visible
         (FS file deleted, HTTP URL removed from config) emits DELETE."""
-        query = sa.select(sync_state.c.uri).where(sync_state.c.source_id == source_id)
+        query = sa.select(sync_state.c.uri).where(
+            self._owned, sync_state.c.source_id == source_id
+        )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(query)).all()
         return {uri for (uri,) in rows}
 
     async def get_row(self, source_id: str, uri: str) -> SyncStateRow | None:
         query = sa.select(sync_state).where(
-            sync_state.c.source_id == source_id, sync_state.c.uri == uri
+            self._owned, sync_state.c.source_id == source_id, sync_state.c.uri == uri
         )
         async with self._engine.connect() as conn:
             row = (await conn.execute(query)).mappings().one_or_none()
@@ -640,6 +682,7 @@ class SyncStateRepo:
         last_ingested_at: str | None,
     ):
         ins = _insert(sync_state, self._dialect).values(
+            namespace=self._namespace,
             source_id=source_id,
             uri=uri,
             revision=revision,
@@ -649,7 +692,11 @@ class SyncStateRepo:
         )
         excluded = ins.excluded
         return ins.on_conflict_do_update(
-            index_elements=[sync_state.c.source_id, sync_state.c.uri],
+            index_elements=[
+                sync_state.c.namespace,
+                sync_state.c.source_id,
+                sync_state.c.uri,
+            ],
             set_={
                 "revision": sa.func.coalesce(excluded.revision, sync_state.c.revision),
                 "content_hash": sa.func.coalesce(
@@ -708,6 +755,7 @@ class SyncStateRepo:
         source produced from one it gave up on.
         """
         query = sa.select(sync_state.c.uri).where(
+            self._owned,
             sync_state.c.source_id == source_id,
             sync_state.c.last_ingested_at.is_not(None),
         )
@@ -729,6 +777,7 @@ class SyncStateRepo:
                 await conn.execute(
                     sa.update(sync_state)
                     .where(
+                        self._owned,
                         sync_state.c.source_id == source_id,
                         sync_state.c.uri.in_(targets[start : start + INVALIDATE_BATCH]),
                     )
@@ -737,7 +786,7 @@ class SyncStateRepo:
 
     async def delete(self, source_id: str, uri: str) -> None:
         stmt = sa.delete(sync_state).where(
-            sync_state.c.source_id == source_id, sync_state.c.uri == uri
+            self._owned, sync_state.c.source_id == source_id, sync_state.c.uri == uri
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

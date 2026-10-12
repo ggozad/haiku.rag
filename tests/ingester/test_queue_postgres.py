@@ -18,10 +18,24 @@ from contextlib import asynccontextmanager
 
 import pytest
 from sqlalchemy import make_url, text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from haiku.rag.ingester.queue.db import metadata
+from haiku.rag.client import HaikuRAG
+from haiku.rag.client.scope import DatabaseScope
+from haiku.rag.config import (
+    APIConfig,
+    AppConfig,
+    FSSourceConfig,
+    IngesterConfig,
+    QueueConfig,
+    RetryPolicyConfig,
+    WorkerConfig,
+)
+from haiku.rag.ingester.app import IngesterApp
+from haiku.rag.ingester.exceptions import QueueError
+from haiku.rag.ingester.queue.db import SCHEMA_VERSION, metadata
+from haiku.rag.ingester.queue.migrations import apply_migrations, open_queue
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 
@@ -205,3 +219,272 @@ async def test_concurrent_mark_dead_cannot_leave_a_poison_upsert_queued(postgres
                 jobs.mark_dead(claimed.id, "stalled", "w", conversion_stalled=True),
             )
             assert enqueued is None, f"attempt {attempt}: poison upsert queued"
+
+
+_V3_JOBS_INDEX_DDL = [
+    "CREATE UNIQUE INDEX uq_jobs_live ON jobs (source_id, uri) "
+    "WHERE status IN ('queued', 'claimed')",
+    "CREATE UNIQUE INDEX uq_jobs_blocking_op ON jobs "
+    "(source_id, uri, op, coalesce(revision, '')) "
+    "WHERE status IN ('queued', 'claimed') "
+    "OR status = 'dead' AND conversion_stalled IS TRUE",
+    "CREATE INDEX idx_jobs_claimable ON jobs (scheduled_at) WHERE status = 'queued'",
+    "CREATE INDEX idx_jobs_succeeded_completed ON jobs (completed_at) "
+    "WHERE status = 'succeeded'",
+]
+
+
+async def _downgrade_to_v3(engine: AsyncEngine) -> None:
+    """Strip a current queue back to schema 3: no `namespace` anywhere."""
+    async with engine.begin() as conn:
+        await conn.execute(text("ALTER TABLE jobs DROP COLUMN namespace"))
+        for ddl in _V3_JOBS_INDEX_DDL:
+            await conn.execute(text(ddl))
+        await conn.execute(
+            text("ALTER TABLE sync_state DROP CONSTRAINT sync_state_pkey")
+        )
+        await conn.execute(text("ALTER TABLE sync_state DROP COLUMN namespace"))
+        await conn.execute(
+            text("ALTER TABLE sync_state ADD PRIMARY KEY (source_id, uri)")
+        )
+        await conn.execute(text("UPDATE schema_version SET version = 3"))
+
+
+@asynccontextmanager
+async def restricted_role(dburi: str):
+    """A throwaway schema and a role allowed into it, as the docs prescribe.
+
+    Yields the superuser's engine on that schema and the role's URL. The role
+    gets table rights from `grant_dml` once the tables exist."""
+    schema = f"q_{uuid.uuid4().hex[:12]}"
+    role = f"rw_{schema}"
+    admin = create_async_engine(
+        make_url(dburi),
+        poolclass=NullPool,
+        connect_args={"server_settings": {"search_path": schema}},
+    )
+    async with admin.begin() as conn:
+        await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        await conn.execute(text(f"CREATE ROLE {role} LOGIN PASSWORD 'pw'"))
+        await conn.execute(text(f"ALTER ROLE {role} SET search_path = {schema}"))
+        await conn.execute(text(f"GRANT USAGE ON SCHEMA {schema} TO {role}"))
+    role_url = make_url(dburi).set(username=role, password="pw")
+    try:
+        yield admin, role_url.render_as_string(hide_password=False)
+    finally:
+        async with admin.begin() as conn:
+            await conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            await conn.execute(text(f"DROP ROLE {role}"))
+        await admin.dispose()
+
+
+async def grant_dml(admin: AsyncEngine, role_url: str) -> None:
+    """The documented grants for the account the ingesters run as."""
+    role = make_url(role_url).username
+    async with admin.begin() as conn:
+        await conn.execute(
+            text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON jobs, sync_state TO {role}")
+        )
+        await conn.execute(text(f"GRANT SELECT ON schema_version TO {role}"))
+
+
+async def test_migration_v3_to_v4_keeps_a_populated_queue(postgres_dburi):
+    """The Postgres branch of the v4 step: a populated v3 queue keeps its rows
+    under the empty namespace, with the `sync_state` key and every job index
+    rebuilt over `namespace`."""
+    async with queue_engine(postgres_dburi) as engine:
+        await apply_migrations(engine)
+        await _downgrade_to_v3(engine)
+        when = "2026-01-01T00:00:00+00:00"
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
+                    "max_attempts, enqueued_at, scheduled_at) VALUES "
+                    "('old-1', 's', 'u1', 'upsert', 'queued', 0, 5, :when, :when)"
+                ),
+                {"when": when},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO sync_state (source_id, uri, revision, "
+                    "last_seen_at, last_ingested_at) "
+                    "VALUES ('s', 'u1', 'r1', :when, :when)"
+                ),
+                {"when": when},
+            )
+
+        assert await apply_migrations(engine) == SCHEMA_VERSION
+
+        async with engine.connect() as conn:
+            job_ns = (
+                await conn.execute(
+                    text("SELECT namespace FROM jobs WHERE id = 'old-1'")
+                )
+            ).scalar_one()
+            sync_row = (
+                await conn.execute(
+                    text(
+                        "SELECT namespace, revision FROM sync_state "
+                        "WHERE source_id = 's' AND uri = 'u1'"
+                    )
+                )
+            ).one()
+            key_columns = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT a.attname FROM pg_index i "
+                            "JOIN pg_attribute a ON a.attrelid = i.indrelid "
+                            "AND a.attnum = ANY(i.indkey) "
+                            "WHERE i.indrelid = 'sync_state'::regclass "
+                            "AND i.indisprimary"
+                        )
+                    )
+                ).scalars()
+            )
+            index_defs = (
+                await conn.execute(
+                    text(
+                        "SELECT indexdef FROM pg_indexes WHERE tablename = 'jobs' "
+                        "AND schemaname = current_schema()"
+                    )
+                )
+            ).scalars()
+            namespaced = [d for d in index_defs if "(namespace," in d]
+        assert job_ns == ""
+        assert tuple(sync_row) == ("", "r1")
+        assert key_columns == {"namespace", "source_id", "uri"}
+        assert len(namespaced) == 4
+
+        repo = JobRepo(engine)
+        old = await repo.get_job("old-1")
+        assert old is not None and old.status is JobStatus.QUEUED
+
+
+async def test_namespaces_share_live_slots_and_sync_keys(postgres_dburi):
+    """`uq_jobs_live` and the `sync_state` key include the namespace, and the
+    upsert's ON CONFLICT target infers the new key."""
+    async with queue_engine(postgres_dburi) as engine:
+        mine, theirs = JobRepo(engine, "a"), JobRepo(engine, "b")
+        assert await mine.enqueue("s", "u", JobOp.UPSERT) is not None
+        assert await theirs.enqueue("s", "u", JobOp.UPSERT) is not None
+
+        my_sync, their_sync = SyncStateRepo(engine, "a"), SyncStateRepo(engine, "b")
+        await my_sync.upsert("s", "u", revision="r-a")
+        await their_sync.upsert("s", "u", revision="r-b")
+        await my_sync.upsert("s", "u", revision=None, ingested=True)
+        my_row = await my_sync.get_row("s", "u")
+        their_row = await their_sync.get_row("s", "u")
+        assert my_row is not None and my_row.revision == "r-a"
+        assert my_row.last_ingested_at is not None
+        assert their_row is not None and their_row.revision == "r-b"
+        assert their_row.last_ingested_at is None
+
+
+async def test_concurrent_claims_stay_within_their_namespace(postgres_dburi):
+    """Two ingesters claiming at once over real connections each take exactly
+    their own jobs, for the same source and URIs."""
+    async with queue_engine(postgres_dburi) as engine:
+        mine, theirs = JobRepo(engine, "a"), JobRepo(engine, "b")
+        my_ids, their_ids = set(), set()
+        for i in range(10):
+            my_job = await mine.enqueue("s", f"u{i}", JobOp.UPSERT)
+            their_job = await theirs.enqueue("s", f"u{i}", JobOp.UPSERT)
+            assert my_job is not None and their_job is not None
+            my_ids.add(my_job.id)
+            their_ids.add(their_job.id)
+
+        results = await asyncio.gather(
+            *(mine.claim_next(f"a{i}") for i in range(15)),
+            *(theirs.claim_next(f"b{i}") for i in range(15)),
+        )
+        my_claims = {r.id for r in results[:15] if r is not None}
+        their_claims = {r.id for r in results[15:] if r is not None}
+        assert my_claims == my_ids
+        assert their_claims == their_ids
+
+
+async def test_open_queue_refuses_an_empty_server_queue(postgres_dburi):
+    async with restricted_role(postgres_dburi) as (_, role_url):
+        with pytest.raises(QueueError, match="no schema.*queue init --dburi"):
+            await open_queue(QueueConfig(dburi=role_url, namespace="t"))
+
+
+async def test_open_queue_refuses_a_server_queue_behind(postgres_dburi):
+    async with restricted_role(postgres_dburi) as (admin, role_url):
+        await apply_migrations(admin)
+        await _downgrade_to_v3(admin)
+        await grant_dml(admin, role_url)
+        with pytest.raises(QueueError, match="schema 3.*queue migrate --dburi"):
+            await open_queue(QueueConfig(dburi=role_url, namespace="t"))
+
+
+@pytest.mark.vcr()
+async def test_run_batch_as_a_dml_only_role(postgres_dburi, tmp_path):
+    """The whole ingester path issues no DDL: startup verification, a sweep,
+    a real document converted, embedded and stored, and the sync state behind
+    it, all as a role granted only the documented DML."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "a.md").write_text("The first document of the corpus.")
+    uri = (corpus / "a.md").as_uri()
+    db_path = tmp_path / "db.lancedb"
+    async with restricted_role(postgres_dburi) as (admin, role_url):
+        await apply_migrations(admin)
+        await grant_dml(admin, role_url)
+        config = AppConfig(
+            ingester=IngesterConfig(
+                queue=QueueConfig(dburi=role_url, namespace="t"),
+                sources=[
+                    FSSourceConfig(
+                        type="fs", id="local", root=corpus, poll_interval_s=3600.0
+                    )
+                ],
+                workers=WorkerConfig(
+                    worker_count=1,
+                    poll_idle_interval_s=0.05,
+                    retry=RetryPolicyConfig(max_attempts=1),
+                ),
+                api=APIConfig(enabled=False),
+            )
+        )
+
+        report = await IngesterApp(
+            config=config, scope=DatabaseScope.at(db_path)
+        ).run_batch()
+
+        assert (report.succeeded, report.dead) == (1, 0)
+        async with HaikuRAG(db_path, config) as rag:
+            document = await rag.get_document_by_uri(uri)
+        assert document is not None
+        assert document.metadata["source_id"] == "local"
+        async with admin.connect() as conn:
+            job_rows = (
+                await conn.execute(text("SELECT namespace, status FROM jobs"))
+            ).all()
+            sync_rows = (
+                await conn.execute(
+                    text(
+                        "SELECT namespace, source_id, uri, "
+                        "last_ingested_at IS NOT NULL FROM sync_state"
+                    )
+                )
+            ).all()
+        assert job_rows == [("t", "succeeded")]
+        assert sync_rows == [("t", "local", uri, True)]
+
+
+async def test_concurrent_migrations_serialize(postgres_dburi):
+    """Two deployment jobs migrating one empty queue at once both return, and
+    one schema results."""
+    async with restricted_role(postgres_dburi) as (admin, _):
+        versions = await asyncio.gather(
+            apply_migrations(admin), apply_migrations(admin)
+        )
+        assert versions == [SCHEMA_VERSION, SCHEMA_VERSION]
+        async with admin.connect() as conn:
+            count = (
+                await conn.execute(text("SELECT count(*) FROM schema_version"))
+            ).scalar_one()
+        assert count == 1

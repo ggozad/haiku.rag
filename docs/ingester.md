@@ -512,17 +512,65 @@ ingester:
 
 #### Postgres
 
-`ingester.queue.dburi` points the queue at Postgres, with a SQLAlchemy async URL:
+`ingester.queue.dburi` points the queue at Postgres, with a SQLAlchemy async URL, and `namespace` names the ingester that owns its rows:
 
 ```yaml
 ingester:
   queue:
-    dburi: postgresql+asyncpg://haiku:${POSTGRES_PASSWORD}@db:5432/haiku_rag
+    dburi: postgresql+asyncpg://ingester_rw:${QUEUE_DB_PASSWORD}@db:5432/haiku_queue
+    namespace: papers
 ```
 
-The `asyncpg` driver comes with the `ingester` extra. `dburi` overrides `path` and the `--queue` flag. `haiku-ingester queue init` creates the schema, as for SQLite.
+The `asyncpg` driver comes with the `ingester` extra. `dburi` overrides `path` and the `--queue` flag.
 
-Several `haiku-ingester serve` processes can share one Postgres queue: workers claim jobs with `FOR UPDATE SKIP LOCKED`, and leases are renewed and reaped correctly across processes. Each still needs a database of its own. Idle workers wake at once for work queued in their own process, and on their next `poll_idle_interval_s` tick for work queued by another.
+Several ingesters share one Postgres queue, each under its own namespace and each writing its own database. An ingester claims, counts, prunes and serves through its API the rows of its namespace and no others, so source ids need to be unique within a namespace, not across the queue. A namespace is stable across restarts and upgrades: an ingester started under a new one does not see the rows recorded under the old. Two processes under one namespace are two writers of one database, and a database has one writer (see [storage](configuration/storage.md)). The database role sees every row: namespaces separate ingesters in the application, not in Postgres.
+
+`serve`, `run-batch` and `--dry-run` refuse a server `dburi` without a namespace, and never create or migrate a server queue: they read its schema version and fail naming the command to run. A SQLite queue is owned by one process, migrates itself at startup and records its rows under the empty namespace.
+
+##### Deployment
+
+An account that owns the queue's tables creates and migrates them, through `haiku-ingester queue init` and `queue migrate`. The ingesters run as an account that can only read and write rows. `--dburi`, or `HAIKU_RAG_QUEUE_DBURI`, gives the two commands the owner's URL, so it never appears in the configuration the ingesters read:
+
+```bash
+haiku-ingester queue init --dburi postgresql+asyncpg://queue_owner:${OWNER_PASSWORD}@db:5432/haiku_queue
+```
+
+The owner grants the ingesters' account its rights once the tables exist, and again after a migration that adds a table:
+
+```sql
+GRANT USAGE ON SCHEMA public TO ingester_rw;
+GRANT SELECT, INSERT, UPDATE, DELETE ON jobs, sync_state TO ingester_rw;
+GRANT SELECT ON schema_version TO ingester_rw;
+```
+
+To keep the queue in a schema of its own, create the schema and point both accounts at it before `queue init`, with the `GRANT USAGE` above on that schema:
+
+```sql
+CREATE SCHEMA haiku_queue;
+ALTER ROLE queue_owner SET search_path = haiku_queue;
+ALTER ROLE ingester_rw SET search_path = haiku_queue;
+```
+
+A release that changes the queue schema rolls out in one order: stop every ingester, run `haiku-ingester queue migrate --dburi ...` as the owner, start the upgraded ingesters. Releases never share a queue: a new one refuses a queue that is behind, and an old one writes a migrated queue with its old statements. The first such release is schema 4, below.
+
+Each ingester process holds at most five connections to the queue: two kept open and three more under load, closed when returned. Size `max_connections` for five per process, plus the owner's migration and any dashboard. A sweep's `sync_state` writes go in one transaction, which holds its connection for the sweep's batch. PgBouncer in transaction mode is untested.
+
+##### Upgrading a queue from schema 3
+
+Queue schema 4 adds the namespace. The migration leaves every existing row under the empty namespace, and the ingester reads only its own, so hand the rows over before it starts:
+
+1. Stop the ingester. One still running claims and prunes rows of every namespace.
+2. `haiku-ingester queue migrate --dburi ...` as the owner.
+3. Assign the namespace to the migrated rows, in one transaction:
+
+    ```sql
+    UPDATE jobs SET namespace = 'papers' WHERE namespace = '';
+    UPDATE sync_state SET namespace = 'papers' WHERE namespace = '';
+    ```
+
+4. Start the ingester with `namespace: papers`.
+
+A queue that several ingesters already wrote to needs a mapping from `source_id` to namespace in step 3. SQLite queues need nothing.
 
 ### Logs and tracing
 

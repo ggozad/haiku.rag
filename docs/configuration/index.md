@@ -34,6 +34,7 @@ Any string value can reference an environment variable, so secrets stay out of t
 ingester:
   queue:
     dburi: postgresql+asyncpg://haiku:${POSTGRES_PASSWORD}@db:5432/haiku_rag
+    namespace: ${SOURCE}
 ```
 
 - `${VAR}` is replaced with the value of `VAR`. If `VAR` is unset or empty, loading fails with an error naming the variable.

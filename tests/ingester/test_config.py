@@ -10,6 +10,7 @@ from haiku.rag.config import (
     FSSourceConfig,
     HTTPSourceConfig,
     IngesterConfig,
+    QueueConfig,
     RetryPolicyConfig,
     S3SourceConfig,
     WorkerConfig,
@@ -26,6 +27,10 @@ def test_default_ingester_config_has_sane_values():
     assert cfg.api.enabled is True
     assert cfg.api.port == 8765
     assert cfg.api.root_path == ""
+
+
+def test_queue_namespace_defaults_to_empty():
+    assert QueueConfig().namespace == ""
 
 
 def test_worker_config_rejects_heartbeat_too_close_to_lease():

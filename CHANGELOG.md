@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ingester.queue.namespace`: the ingester that owns its rows in a queue shared with other ingesters. `serve`, `run-batch` and `--dry-run` require it when `dburi` names a server.
+- `haiku-ingester queue init --dburi URL` and `queue migrate --dburi URL`, or `HAIKU_RAG_QUEUE_DBURI`: migrate the queue at that URL instead of the configured one.
+
+### Changed
+
+- `serve`, `run-batch` and `--dry-run` no longer create or migrate a server queue: they fail naming `haiku-ingester queue init` or `queue migrate`. A SQLite queue still migrates at startup.
+- `haiku-ingester queue migrate` refuses a queue whose schema is newer than the release instead of reporting it up to date.
+- The Postgres queue pool is 2 connections plus 3 overflow per process.
+- Queue schema 4 adds `namespace` to `jobs` and `sync_state`, leading every job index and the `sync_state` key. Existing rows migrate under the empty namespace: assign them with `UPDATE jobs SET namespace = '<name>' WHERE namespace = ''` and the same on `sync_state` before starting an ingester under that name.
+
+### Fixed
+
+- SQLite queue migrations run in one transaction, so an interrupted migration leaves the previous schema in place and reruns.
+
 ## [0.96.1] - 2026-10-09
 
 ### Changed

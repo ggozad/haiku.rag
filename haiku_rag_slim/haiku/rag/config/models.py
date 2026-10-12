@@ -521,6 +521,11 @@ class QueueConfig(ConfigModel):
         description="SQLAlchemy async URL for the queue, e.g. "
         "postgresql+asyncpg://user:pw@host/db. Overrides path when set.",
     )
+    namespace: str = Field(
+        default="",
+        description="Owner of this ingester's rows in a queue shared with other "
+        "ingesters. Required when dburi names a server.",
+    )
     retention_days: int | None = Field(
         default=30,
         ge=0,
