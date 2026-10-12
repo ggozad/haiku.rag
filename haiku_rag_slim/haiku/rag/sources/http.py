@@ -43,11 +43,16 @@ class HTTPSource:
     ) -> None:
         self.source_id = source_id
         self.urls = list(urls or [])
+        self._configured = frozenset(self.urls) if urls is not None else None
         self.headers = dict(headers or {})
         self._http = httpx.AsyncClient(headers=self.headers, transport=transport)
         self._max_file_size = max_file_size
 
     def supports(self, uri: str) -> bool:
+        """A source given ``urls``, empty included, supports only those. One
+        built without them supports any http(s) URI."""
+        if self._configured is not None:
+            return uri in self._configured
         return urlparse(uri).scheme in ("http", "https")
 
     async def aclose(self) -> None:
@@ -109,7 +114,6 @@ class HTTPSource:
         snapshot: dict[str, str] = dict(since) if since else {}
         known = known_uris or set()
         now = datetime.now(UTC)
-        configured = set(self.urls)
 
         for url in self.urls:
             try:
@@ -174,7 +178,7 @@ class HTTPSource:
         # config emits DELETE so delete_orphans can clean up. Without this,
         # removing a URL from config leaves the document and sync_state
         # indefinitely.
-        for url in known - configured:
+        for url in known - set(self.urls):
             yield SourceEvent(
                 source_id=self.source_id,
                 uri=url,
