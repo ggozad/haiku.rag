@@ -6,8 +6,10 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import QueuePool
 
 from haiku.rag.config import QueueConfig
+from haiku.rag.ingester.exceptions import QueueError
 from haiku.rag.ingester.queue import migrations, repository
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.db import jobs as jobs_table
@@ -15,6 +17,7 @@ from haiku.rag.ingester.queue.migrations import (
     apply_migrations,
     make_engine,
     open_queue,
+    verify_schema,
 )
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo, _insert
@@ -162,14 +165,104 @@ async def test_open_queue_creates_file_and_schema(tmp_path):
         await eng.dispose()
 
 
-async def test_make_engine_postgres_is_pre_ping():
-    """The Postgres branch builds a pre-ping engine without connecting."""
+async def test_make_engine_postgres_pool():
+    """The Postgres branch builds a pre-ping engine holding at most five
+    connections, without connecting."""
     engine = make_engine(QueueConfig(dburi="postgresql+asyncpg://u:p@localhost/db"))
     try:
         assert engine.dialect.name == "postgresql"
-        assert engine.pool._pre_ping is True
+        pool = engine.pool
+        assert isinstance(pool, QueuePool)
+        assert pool._pre_ping is True
+        assert pool.size() == 2
+        assert pool._max_overflow == 3
     finally:
         await engine.dispose()
+
+
+async def test_verify_schema_accepts_the_current_version(engine):
+    await verify_schema(engine)
+
+
+async def test_verify_schema_names_migrate_when_behind(engine):
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("UPDATE schema_version SET version = 3"))
+    with pytest.raises(QueueError, match="schema 3.*queue migrate --dburi"):
+        await verify_schema(engine)
+
+
+async def test_verify_schema_names_the_upgrade_when_ahead(engine):
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("UPDATE schema_version SET version = 99"))
+    with pytest.raises(QueueError, match="schema 99.*upgrade haiku.rag"):
+        await verify_schema(engine)
+
+
+async def test_verify_schema_names_init_without_a_schema(tmp_path):
+    engine = create_async_engine(
+        URL.create("sqlite+aiosqlite", database=str(tmp_path / "empty.db"))
+    )
+    try:
+        with pytest.raises(QueueError, match="no schema.*queue init --dburi"):
+            await verify_schema(engine)
+    finally:
+        await engine.dispose()
+
+
+async def test_verify_schema_names_init_on_an_empty_version_table(engine):
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("DELETE FROM schema_version"))
+    with pytest.raises(QueueError, match="no schema.*queue init --dburi"):
+        await verify_schema(engine)
+
+
+async def test_verify_schema_writes_nothing(engine, conn):
+    """A read-only account can run it: the version row is untouched and no
+    table is created."""
+    async with engine.begin() as sql:
+        await sql.execute(sa.text("UPDATE schema_version SET version = 3"))
+        await sql.execute(sa.text("DROP TABLE sync_state"))
+    with pytest.raises(QueueError):
+        await verify_schema(engine)
+    cursor = await conn.execute("SELECT version FROM schema_version")
+    assert (await cursor.fetchone())["version"] == 3
+    cursor = await conn.execute(
+        "SELECT name FROM sqlite_master WHERE name = 'sync_state'"
+    )
+    assert await cursor.fetchone() is None
+
+
+async def test_apply_migrations_refuses_a_newer_schema(engine, conn):
+    async with engine.begin() as sql:
+        await sql.execute(sa.text("UPDATE schema_version SET version = 99"))
+    with pytest.raises(QueueError, match="schema 99.*upgrade haiku.rag"):
+        await apply_migrations(engine)
+    cursor = await conn.execute("SELECT version FROM schema_version")
+    assert (await cursor.fetchone())["version"] == 99
+
+
+async def test_open_queue_disposes_the_engine_it_refuses(tmp_path, monkeypatch):
+    """A refused queue leaves no pool behind to hold the loop open."""
+    config = QueueConfig(path=tmp_path / "queue.db")
+    engine = await open_queue(config)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("UPDATE schema_version SET version = 99"))
+    finally:
+        await engine.dispose()
+
+    built = []
+
+    def _spy(queue):
+        engine = make_engine(queue)
+        built.append((engine, engine.pool))
+        return engine
+
+    monkeypatch.setattr(migrations, "make_engine", _spy)
+    with pytest.raises(QueueError):
+        await open_queue(config)
+    [(engine, pool_before)] = built
+    assert engine.pool is not pool_before
 
 
 async def test_sqlite_engine_serves_concurrent_connections(tmp_path):

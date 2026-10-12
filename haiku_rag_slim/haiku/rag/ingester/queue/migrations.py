@@ -1,9 +1,10 @@
 import sqlalchemy as sa
 from sqlalchemy.engine import URL, make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 from sqlalchemy.schema import CreateIndex, DropIndex
 
 from haiku.rag.config.models import QueueConfig
+from haiku.rag.ingester.exceptions import QueueError
 from haiku.rag.ingester.queue.db import (
     SCHEMA_VERSION,
     install_sqlite_pragmas,
@@ -13,7 +14,16 @@ from haiku.rag.ingester.queue.db import (
     sync_state,
 )
 
-__all__ = ["SCHEMA_VERSION", "apply_migrations", "make_engine", "open_queue"]
+__all__ = [
+    "SCHEMA_VERSION",
+    "apply_migrations",
+    "make_engine",
+    "open_queue",
+    "verify_schema",
+]
+
+# pg_advisory_xact_lock key shared by every haiku.rag queue migration.
+_MIGRATION_LOCK = 0x6861696B7571
 
 
 def make_engine(config: QueueConfig) -> AsyncEngine:
@@ -23,7 +33,8 @@ def make_engine(config: QueueConfig) -> AsyncEngine:
     so reads (API stats/jobs) proceed concurrently with worker writes; the
     claim stays atomic via its single UPDATE statement, not the pool size.
     Postgres uses pool_pre_ping so a long-running ingester survives a DB
-    restart or idle connection drop."""
+    restart or idle connection drop, and holds at most five connections per
+    process."""
     if config.dburi:
         url = make_url(config.dburi)
     else:
@@ -36,26 +47,77 @@ def make_engine(config: QueueConfig) -> AsyncEngine:
     if url.get_backend_name() == "sqlite":
         engine = create_async_engine(url, pool_size=5, max_overflow=5)
     else:
-        engine = create_async_engine(url, pool_pre_ping=True)
+        engine = create_async_engine(
+            url, pool_pre_ping=True, pool_size=2, max_overflow=3
+        )
     install_sqlite_pragmas(engine)
     return engine
+
+
+def _target(engine: AsyncEngine) -> str:
+    return engine.url.render_as_string(hide_password=True)
+
+
+async def _current_version(conn: AsyncConnection) -> int | None:
+    """The recorded schema version, None when the table is missing or empty."""
+    present = await conn.run_sync(
+        lambda sync: sa.inspect(sync).has_table("schema_version")
+    )
+    if not present:
+        return None
+    return (
+        await conn.execute(sa.select(schema_version.c.version).limit(1))
+    ).scalar_one_or_none()
+
+
+def _newer_than_this_release(engine: AsyncEngine, current: int) -> QueueError:
+    return QueueError(
+        f"queue at {_target(engine)} is at schema {current}, newer than this "
+        f"release's {SCHEMA_VERSION}: upgrade haiku.rag"
+    )
+
+
+async def verify_schema(engine: AsyncEngine) -> None:
+    """Refuse a queue whose schema is missing, behind or ahead of this release.
+
+    Writes nothing: an account with SELECT on `schema_version` can run it."""
+    async with engine.connect() as conn:
+        current = await _current_version(conn)
+    if current is None:
+        raise QueueError(
+            f"queue at {_target(engine)} has no schema: run `haiku-ingester "
+            "queue init --dburi URL` as the account that creates its tables"
+        )
+    if current < SCHEMA_VERSION:
+        raise QueueError(
+            f"queue at {_target(engine)} is at schema {current} and this release "
+            f"needs {SCHEMA_VERSION}: run `haiku-ingester queue migrate --dburi "
+            "URL` as the account that owns its tables"
+        )
+    if current > SCHEMA_VERSION:
+        raise _newer_than_this_release(engine, current)
 
 
 async def apply_migrations(engine: AsyncEngine) -> int:
     """Idempotently create tables/indexes and pin schema_version.
 
     Returns the schema version after the call. Safe on a fresh DB or one
-    already at the latest version.
+    already at the latest version. Refuses a newer one before any DDL.
     """
     async with engine.begin() as conn:
         if conn.dialect.name == "sqlite":
             # sqlite3 opens a transaction before DML only. The DDL below rolls
             # back with the block only inside one opened here.
             await conn.exec_driver_sql("BEGIN")
+        else:  # pragma: no cover - Postgres, run by the integration suite
+            await conn.execute(
+                sa.text("SELECT pg_advisory_xact_lock(:key)"),
+                {"key": _MIGRATION_LOCK},
+            )
+        current = await _current_version(conn)
+        if current is not None and current > SCHEMA_VERSION:
+            raise _newer_than_this_release(engine, current)
         await conn.run_sync(metadata.create_all)
-        current = (
-            await conn.execute(sa.select(schema_version.c.version).limit(1))
-        ).scalar_one_or_none()
         if current is None:
             await conn.execute(sa.insert(schema_version).values(version=SCHEMA_VERSION))
         elif current < SCHEMA_VERSION:
@@ -125,7 +187,16 @@ async def apply_migrations(engine: AsyncEngine) -> int:
 
 
 async def open_queue(config: QueueConfig) -> AsyncEngine:
-    """Build the queue engine and ensure its schema is up to date."""
+    """The queue engine with its schema checked: a SQLite file is this
+    process's and migrates here, a server queue is migrated by the `queue`
+    commands as the account that owns it and is only verified."""
     engine = make_engine(config)
-    await apply_migrations(engine)
+    try:
+        if engine.dialect.name == "sqlite":
+            await apply_migrations(engine)
+        else:  # pragma: no cover - Postgres, run by the integration suite
+            await verify_schema(engine)
+    except BaseException:
+        await engine.dispose()
+        raise
     return engine

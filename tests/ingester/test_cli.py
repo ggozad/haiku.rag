@@ -23,6 +23,7 @@ from haiku.rag.ingester.batch import (
 from haiku.rag.ingester.cli import _cli as cli
 from haiku.rag.ingester.cli import _resolve_queue_config
 from haiku.rag.ingester.cli import cli as ingester_cli
+from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.models import JobOp
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
@@ -422,30 +423,87 @@ def test_serve_passes_root_path(monkeypatch):
 # --- queue init / migrate ---
 
 
-def test_queue_init(tmp_path, monkeypatch):
-    fake_conn = AsyncMock()
-    monkeypatch.setattr(
-        "haiku.rag.ingester.cli.open_queue", AsyncMock(return_value=fake_conn)
-    )
+def _schema_version(path) -> int:
+    import sqlite3
 
+    with sqlite3.connect(path) as db:
+        return db.execute("SELECT version FROM schema_version").fetchone()[0]
+
+
+def test_queue_init(tmp_path):
     db_path = tmp_path / "queue.db"
     result = runner.invoke(cli, ["queue", "init", "--queue", str(db_path)])
 
     assert result.exit_code == 0
     assert "initialized" in result.output
+    assert _schema_version(db_path) == SCHEMA_VERSION
 
 
-def test_queue_migrate(tmp_path, monkeypatch):
-    fake_conn = AsyncMock()
-    monkeypatch.setattr(
-        "haiku.rag.ingester.cli.open_queue", AsyncMock(return_value=fake_conn)
-    )
-
+def test_queue_migrate(tmp_path):
     db_path = tmp_path / "queue.db"
     result = runner.invoke(cli, ["queue", "migrate", "--queue", str(db_path)])
 
     assert result.exit_code == 0
     assert "up to date" in result.output
+    assert _schema_version(db_path) == SCHEMA_VERSION
+
+
+def test_queue_init_dburi_migrates_the_named_queue(tmp_path):
+    db_path = tmp_path / "named.db"
+    result = runner.invoke(
+        cli, ["queue", "init", "--dburi", f"sqlite+aiosqlite:///{db_path}"]
+    )
+
+    assert result.exit_code == 0
+    assert f"sqlite+aiosqlite:///{db_path}" in result.output
+    assert _schema_version(db_path) == SCHEMA_VERSION
+
+
+def test_queue_migrate_reads_dburi_from_the_environment(tmp_path, monkeypatch):
+    db_path = tmp_path / "named.db"
+    monkeypatch.setenv("HAIKU_RAG_QUEUE_DBURI", f"sqlite+aiosqlite:///{db_path}")
+    result = runner.invoke(cli, ["queue", "migrate"])
+
+    assert result.exit_code == 0
+    assert _schema_version(db_path) == SCHEMA_VERSION
+
+
+def test_queue_init_refuses_dburi_with_queue(tmp_path):
+    result = runner.invoke(
+        cli,
+        [
+            "queue",
+            "init",
+            "--dburi",
+            f"sqlite+aiosqlite:///{tmp_path / 'a.db'}",
+            "--queue",
+            str(tmp_path / "b.db"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--dburi cannot be combined with --queue" in result.output
+    assert not (tmp_path / "a.db").exists()
+    assert not (tmp_path / "b.db").exists()
+
+
+def test_queue_migrate_refuses_a_newer_schema(tmp_path, monkeypatch, capsys):
+    db_path = tmp_path / "queue.db"
+    assert runner.invoke(cli, ["queue", "init", "--queue", str(db_path)]).exit_code == 0
+    import sqlite3
+
+    with sqlite3.connect(db_path) as db:
+        db.execute("UPDATE schema_version SET version = 99")
+    monkeypatch.setattr(
+        sys, "argv", ["haiku-ingester", "queue", "migrate", "--queue", str(db_path)]
+    )
+
+    with pytest.raises(SystemExit) as exit_info:
+        ingester_cli()
+
+    assert exit_info.value.code == 1
+    assert "Error: queue at" in capsys.readouterr().err
+    assert _schema_version(db_path) == 99
 
 
 def test_queue_target_masks_dburi_password():

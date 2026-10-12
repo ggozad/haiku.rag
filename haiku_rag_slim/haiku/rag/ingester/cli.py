@@ -31,7 +31,10 @@ from haiku.rag.config import (  # noqa: E402
 )
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.exceptions import QueueError  # noqa: E402
-from haiku.rag.ingester.queue.migrations import open_queue  # noqa: E402
+from haiku.rag.ingester.queue.migrations import (  # noqa: E402
+    apply_migrations,
+    make_engine,
+)
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     AmbiguousDatabaseError,
@@ -121,9 +124,18 @@ def _load_config_with_override(config_path: Path | None) -> AppConfig:
     return get_config()
 
 
-def _resolve_queue_config(config: AppConfig, override: Path | None) -> QueueConfig:
+def _resolve_queue_config(
+    config: AppConfig, override: Path | None, dburi: str | None = None
+) -> QueueConfig:
     """The configured queue, with `--queue` applied as a path override. The
-    override is ignored when a dburi is set — the queue lives in a server."""
+    override is ignored when a dburi is set — the queue lives in a server.
+    `--dburi` names a queue outside the configuration, as the account that
+    owns its schema."""
+    if dburi is not None:
+        if override is not None:
+            typer.echo("Error: --dburi cannot be combined with --queue", err=True)
+            raise typer.Exit(2)
+        return QueueConfig(dburi=dburi)
     queue = config.ingester.queue
     if override is not None and queue.dburi is None:
         return queue.model_copy(update={"path": Path(override).expanduser()})
@@ -139,36 +151,44 @@ def _queue_target(queue: QueueConfig) -> str:
 
 
 async def _ensure_schema(queue: QueueConfig) -> None:
-    engine = await open_queue(queue)
-    await engine.dispose()
+    engine = make_engine(queue)
+    try:
+        await apply_migrations(engine)
+    finally:
+        await engine.dispose()
+
+
+_QUEUE_OPTION = typer.Option(
+    None,
+    "--queue",
+    "-q",
+    help="Override the queue DB path (defaults to ingester.queue.path).",
+)
+_DBURI_OPTION = typer.Option(
+    None,
+    "--dburi",
+    envvar="HAIKU_RAG_QUEUE_DBURI",
+    help="The queue to migrate, as the account that owns its schema, "
+    "instead of the configured one.",
+)
 
 
 @queue_cli.command("init")
 def queue_init(
-    queue: Path | None = typer.Option(
-        None,
-        "--queue",
-        "-q",
-        help="Override the queue DB path (defaults to ingester.queue.path).",
-    ),
+    queue: Path | None = _QUEUE_OPTION, dburi: str | None = _DBURI_OPTION
 ) -> None:
     """Create the queue DB and apply the current schema. Idempotent."""
-    queue_config = _resolve_queue_config(get_config(), queue)
+    queue_config = _resolve_queue_config(get_config(), queue, dburi)
     asyncio.run(_ensure_schema(queue_config))
     typer.echo(f"Queue initialized at {_queue_target(queue_config)}")
 
 
 @queue_cli.command("migrate")
 def queue_migrate(
-    queue: Path | None = typer.Option(
-        None,
-        "--queue",
-        "-q",
-        help="Override the queue DB path (defaults to ingester.queue.path).",
-    ),
+    queue: Path | None = _QUEUE_OPTION, dburi: str | None = _DBURI_OPTION
 ) -> None:
     """Apply any pending schema migrations to an existing queue DB. Idempotent."""
-    queue_config = _resolve_queue_config(get_config(), queue)
+    queue_config = _resolve_queue_config(get_config(), queue, dburi)
     asyncio.run(_ensure_schema(queue_config))
     typer.echo(f"Queue at {_queue_target(queue_config)} is up to date")
 
