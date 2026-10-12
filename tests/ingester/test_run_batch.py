@@ -99,7 +99,7 @@ def _mock_client() -> AsyncMock:
             id=f"doc-for-{uri}", content="x", uri=uri, metadata={}
         )
 
-    async def _delete(document_id):
+    async def _delete(document_id, *, source_id=None):
         for uri, document in list(stored.items()):
             if document.id == document_id:
                 del stored[uri]
@@ -587,6 +587,10 @@ async def test_run_batch_from_manifest_delete_uses_manifest_even_if_file_reappea
     path = tmp_path / "gone.md"
     path.write_text("back")
     client = _mock_client()
+    client.get_document_by_uri.side_effect = None
+    client.get_document_by_uri.return_value = Document(
+        id="doc-gone", content="x", uri=path.as_uri(), metadata={"source_id": "local"}
+    )
     use_client(client)
 
     report = await IngesterApp(

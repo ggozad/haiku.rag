@@ -202,6 +202,8 @@ Deleting a document also removes any child Documents linked to it via `metadata.
 
 A PDF attachment cannot be deleted on its own while its parent is stored: `delete_document` raises `AttachmentDeletionError` (from `haiku.rag.client.exceptions`) naming the parent. Delete the parent, or remove the file from the PDF and re-ingest it. An attachment whose parent is gone can be deleted.
 
+`delete_document(doc_id, source_id="fs:handbook")` deletes the document only when that source owns it (`metadata.source_id`), checked under the write lock, and returns `False` otherwise.
+
 ## Searching documents
 
 The search method performs native hybrid search (vector + full-text) using LanceDB with optional reranking for improved relevance:

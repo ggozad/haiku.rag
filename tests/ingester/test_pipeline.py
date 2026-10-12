@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
@@ -18,6 +19,9 @@ from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.sources.base import FetchResult, FileTooLargeError, Source
 from haiku.rag.store.models.document import Document
+from tests.conftest import capture_logs
+
+_PIPELINE_LOGGER = logging.getLogger("haiku.rag.ingester.workers.pipeline")
 
 
 def _job(
@@ -45,7 +49,9 @@ def _job(
 
 
 def _mock_client() -> AsyncMock:
-    return AsyncMock(spec=HaikuRAG)
+    client = AsyncMock(spec=HaikuRAG)
+    client.delete_document.return_value = True
+    return client
 
 
 async def test_upsert_ingests_and_returns_metadata():
@@ -183,7 +189,9 @@ async def test_provider_error_from_client_is_classified_and_blocks_ingest():
 
 async def test_provider_not_called_for_delete():
     client = _mock_client()
-    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "src"}
+    )
     provider = _MetadataProvider(error=AssertionError("must not run on DELETE"))
 
     result = await run_job(
@@ -195,13 +203,46 @@ async def test_provider_not_called_for_delete():
 
 async def test_delete_calls_delete_document_when_present():
     client = _mock_client()
-    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "src"}
+    )
 
     result = await run_job(client, _job(op=JobOp.DELETE))
 
     assert result.deleted is True
     assert result.document_id is None
-    client.delete_document.assert_awaited_once_with("doc-9")
+    client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
+
+
+@pytest.mark.parametrize("manifest", [None, {"_manifest": {"version": 1}}])
+async def test_delete_skips_a_document_owned_by_another_source(manifest):
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "other"}
+    )
+
+    with capture_logs(_PIPELINE_LOGGER, logging.WARNING) as records:
+        result = await run_job(client, _job(op=JobOp.DELETE, extra=manifest))
+
+    assert result.deleted is False
+    client.delete_document.assert_not_awaited()
+    assert [r.getMessage() for r in records] == [
+        "Not deleting doc-9 (u) for source 'src': it belongs to source 'other'"
+    ]
+
+
+async def test_delete_skips_a_document_without_a_source():
+    client = _mock_client()
+    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+
+    with capture_logs(_PIPELINE_LOGGER, logging.WARNING) as records:
+        result = await run_job(client, _job(op=JobOp.DELETE))
+
+    assert result.deleted is False
+    client.delete_document.assert_not_awaited()
+    assert [r.getMessage() for r in records] == [
+        "Not deleting doc-9 (u) for source 'src': it belongs to no source"
+    ]
 
 
 async def test_delete_is_noop_when_document_missing():
@@ -253,7 +294,9 @@ async def test_delete_skipped_when_resource_restored_on_source():
     returns a revision and the delete is skipped — otherwise a live document
     gets blackholed until the next sweep."""
     client = _mock_client()
-    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "src"}
+    )
     sources: list[Source] = [_StubSource("src", "12345")]
 
     result = await run_job(client, _job(op=JobOp.DELETE), sources=sources)
@@ -264,7 +307,9 @@ async def test_delete_skipped_when_resource_restored_on_source():
 
 async def test_manifest_delete_proceeds_when_resource_restored_on_source():
     client = _mock_client()
-    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "src"}
+    )
     sources: list[Source] = [_StubSource("src", "12345")]
 
     result = await run_job(
@@ -274,18 +319,20 @@ async def test_manifest_delete_proceeds_when_resource_restored_on_source():
     )
 
     assert result.deleted is True
-    client.delete_document.assert_awaited_once_with("doc-9")
+    client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
 
 
 async def test_delete_proceeds_when_resource_absent_on_source():
     client = _mock_client()
-    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "src"}
+    )
     sources: list[Source] = [_StubSource("src", None)]
 
     result = await run_job(client, _job(op=JobOp.DELETE), sources=sources)
 
     assert result.deleted is True
-    client.delete_document.assert_awaited_once_with("doc-9")
+    client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
 
 
 async def test_manifest_upsert_rejects_stale_revision_before_fetch():
@@ -326,24 +373,28 @@ async def test_delete_proceeds_when_source_unresolvable():
     """No configured source for the job: the probe can't run, so the delete
     proceeds exactly as before."""
     client = _mock_client()
-    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "src"}
+    )
 
     result = await run_job(client, _job(op=JobOp.DELETE), sources=[])
 
     assert result.deleted is True
-    client.delete_document.assert_awaited_once_with("doc-9")
+    client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
 
 
 async def test_delete_proceeds_when_head_probe_raises():
     """A failing head() probe must not block the delete."""
     client = _mock_client()
-    client.get_document_by_uri.return_value = Document(id="doc-9", content="", uri="u")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-9", content="", uri="u", metadata={"source_id": "src"}
+    )
     sources: list[Source] = [_StubSource("src", None, head_error=OSError("boom"))]
 
     result = await run_job(client, _job(op=JobOp.DELETE), sources=sources)
 
     assert result.deleted is True
-    client.delete_document.assert_awaited_once_with("doc-9")
+    client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
 
 
 async def test_unsupported_extension_classified_permanent():
@@ -682,3 +733,46 @@ async def test_upsert_calls_the_provider_for_pdf_attachments(tmp_path, temp_db_p
     assert child.metadata["team"] == "docs"
     assert child.metadata["source"] == "src"
     assert "source_id" not in child.metadata
+
+
+async def test_delete_keeps_a_document_transferred_while_the_job_ran(temp_db_path):
+    """Ownership moving to another source after the job read the document,
+    and before the delete takes the write lock, keeps the document."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.config import get_config
+    from haiku.rag.store.models.chunk import Chunk
+
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            DoclingDocument(name="d"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://contested",
+        )
+        assert doc.id is not None
+        await client.set_document_source([doc.id], "src")
+        read_by_uri = client.get_document_by_uri
+
+        async def _read_then_transfer(uri):
+            stale = await read_by_uri(uri)
+            repository = client._session.document_repository
+            current = await repository.get_by_id(doc.id, include_blobs=True)
+            assert current is not None
+            current.metadata = {**current.metadata, "source_id": "other"}
+            await repository.update(current)
+            return stale
+
+        client.get_document_by_uri = _read_then_transfer
+
+        with capture_logs(_PIPELINE_LOGGER, logging.WARNING) as records:
+            result = await run_job(client, _job(op=JobOp.DELETE, uri="mem://contested"))
+
+        assert result.deleted is False
+        assert [r.getMessage() for r in records] == [
+            f"Not deleting {doc.id} (mem://contested) for source 'src': it moved "
+            "to another source or was removed while the job ran"
+        ]
+        kept = await client.get_document_by_id(doc.id)
+        assert kept is not None
+        assert kept.metadata["source_id"] == "other"

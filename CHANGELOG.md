@@ -6,6 +6,7 @@
 
 - `ingester.queue.namespace`: the ingester that owns its rows in a queue shared with other ingesters. `serve`, `run-batch` and `--dry-run` require it when `dburi` names a server.
 - `haiku-ingester queue init --dburi URL` and `queue migrate --dburi URL`, or `HAIKU_RAG_QUEUE_DBURI`: migrate the queue at that URL instead of the configured one.
+- `HaikuRAG.delete_document(document_id, source_id=...)` deletes only a document that source owns, checked under the write lock.
 
 ### Changed
 
@@ -18,6 +19,7 @@
 
 - An `fs` source whose root is missing, is a file, or has a directory that cannot be listed fails the sweep instead of deleting the documents under it. `add-src DIR` raises on a directory it cannot list.
 - A sweep whose listing returns nothing while the source has URIs it listed before fails with `EmptyListingError` instead of deleting them. A sweep that raises midway enqueues none of its deletes, and `--dry-run` reports no changes for it.
+- An ingester DELETE job deletes a document only when the document's `source_id` is the job's source. A document owned by another source, or by none, is left in place with a warning.
 - SQLite queue migrations run in one transaction, so an interrupted migration leaves the previous schema in place and reruns.
 
 ## [0.96.1] - 2026-10-09
