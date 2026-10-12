@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
@@ -34,6 +35,7 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
         heartbeat_interval_s=kwargs.pop("heartbeat_interval_s", 30),
         retention_s=kwargs.pop("retention_s", None),
         retry_policy=kwargs.pop("retry_policy", RetryPolicy()),
+        source_retry_policies=kwargs.pop("source_retry_policies", None),
         sources=kwargs.pop("sources", None),
     )
 
@@ -275,6 +277,31 @@ async def test_transient_error_reschedules_below_max_attempts(client, jobs, sync
     assert refreshed.last_error == "blip"
     assert refreshed.attempts == 1
     assert refreshed.scheduled_at > job.scheduled_at
+
+
+async def test_transient_error_reschedules_with_the_sources_policy(client, jobs, sync):
+    client._ingest_observed.side_effect = TransientError("blip")
+    default = await jobs.enqueue("src", "a", JobOp.UPSERT, max_attempts=3)
+    slow = await jobs.enqueue("slow", "b", JobOp.UPSERT, max_attempts=3)
+    assert default is not None and slow is not None
+
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        retry_policy=RetryPolicy(base_delay_s=60.0, jitter=0.0),
+        source_retry_policies={"slow": RetryPolicy(base_delay_s=200.0, jitter=0.0)},
+    )
+    started = datetime.now(UTC)
+    while await pool.drain_once():
+        pass
+
+    default_job = await jobs.get_job(default.id)
+    slow_job = await jobs.get_job(slow.id)
+    assert default_job is not None and slow_job is not None
+    assert default_job.attempts == slow_job.attempts == 1
+    assert 50 < (default_job.scheduled_at - started).total_seconds() < 70
+    assert 190 < (slow_job.scheduled_at - started).total_seconds() < 210
 
 
 async def test_transient_error_at_max_attempts_marks_dead(client, jobs, sync, conn):

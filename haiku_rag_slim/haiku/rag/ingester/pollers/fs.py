@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from watchfiles import Change, awatch
 
-from haiku.rag.ingester.pollers.base import BasePoller, _enqueue_extra
+from haiku.rag.ingester.pollers.base import BasePoller, _enqueue_extra, max_attempts
 from haiku.rag.ingester.queue.models import JobOp
 from haiku.rag.sources.filter import FileFilter
 from haiku.rag.telemetry import logfire
@@ -127,7 +127,7 @@ class FSPoller(BasePoller):
                     self.source_id,
                     uri,
                     op=JobOp.DELETE,
-                    max_attempts=self._max_attempts(),
+                    max_attempts=max_attempts(self.config, self._default_max_attempts),
                     extra=_enqueue_extra(),
                 )
                 return
@@ -144,17 +144,9 @@ class FSPoller(BasePoller):
                     uri,
                     op=JobOp.UPSERT,
                     revision=revision,
-                    max_attempts=self._max_attempts(),
+                    max_attempts=max_attempts(self.config, self._default_max_attempts),
                     extra=_enqueue_extra(),
                 )
                 await self._sync.upsert(
                     self.source_id, uri, revision=None, content_hash=None
                 )
-
-    def _max_attempts(self) -> int:
-        cfg = self._fs_config
-        return (
-            cfg.retry.max_attempts
-            if cfg.retry is not None
-            else self._default_max_attempts
-        )
