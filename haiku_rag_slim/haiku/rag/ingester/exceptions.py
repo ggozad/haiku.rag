@@ -48,3 +48,17 @@ class BlockingTombstoneError(IngesterError):
 
 class QueueError(IngesterError):
     """The queue cannot be used as configured."""
+
+
+class EmptyListingError(IngesterError):
+    """A source listed nothing while URIs it listed before remain known."""
+
+    def __init__(self, source_id: str, known: int):
+        super().__init__(
+            f"Source {source_id!r} listed no documents, and {known} URIs it "
+            f"listed before are still known. Nothing was deleted. If the source "
+            f"was emptied on purpose, remove it from the configuration, and "
+            f"delete its documents by hand if they should go."
+        )
+        self.source_id = source_id
+        self.known = known

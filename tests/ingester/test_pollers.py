@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from haiku.rag.config import (
     S3SourceConfig,
     WebDAVSourceConfig,
 )
+from haiku.rag.ingester.exceptions import EmptyListingError
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
@@ -20,6 +22,9 @@ from haiku.rag.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
+from tests.conftest import capture_logs
+
+_POLLER_LOGGER = logging.getLogger("haiku.rag.ingester.pollers.base")
 
 
 class _StubSource:
@@ -63,6 +68,20 @@ def _event(
         revision=None if kind is SourceEventKind.DELETE else revision,
         discovered_at=datetime.now(UTC),
     )
+
+
+class _FailsMidway(_StubSource):
+    """Lists one file and one delete, then raises."""
+
+    def __init__(self, source_id: str):
+        super().__init__(source_id, [])
+
+    async def discover(self, since=None, *, known_uris=None):
+        yield _event("file:///kept.md", source_id=self.source_id)
+        yield _event(
+            "file:///gone.md", kind=SourceEventKind.DELETE, source_id=self.source_id
+        )
+        raise RuntimeError("listing broke")
 
 
 @pytest.fixture
@@ -149,7 +168,13 @@ async def test_unchanged_event_touches_sync_state_no_job(fs_config, jobs, sync):
 
 async def test_delete_event_enqueues_delete_job(fs_config, jobs, sync):
     source = _StubSource(
-        "src", [[_event("file:///gone.md", kind=SourceEventKind.DELETE)]]
+        "src",
+        [
+            [
+                _event("file:///kept.md", kind=SourceEventKind.UNCHANGED),
+                _event("file:///gone.md", kind=SourceEventKind.DELETE),
+            ]
+        ],
     )
     poller = _periodic(source, fs_config, jobs, sync)
     await poller._sweep_once()
@@ -157,6 +182,52 @@ async def test_delete_event_enqueues_delete_job(fs_config, jobs, sync):
     queued = await jobs.list_jobs(source_id="src")
     assert len(queued) == 1
     assert queued[0].op is JobOp.DELETE
+
+
+async def test_empty_listing_with_deletes_fails_the_sweep(fs_config, jobs, sync):
+    await sync.upsert("src", "file:///gone.md", revision="r1", ingested=True)
+    source = _StubSource(
+        "src", [[_event("file:///gone.md", kind=SourceEventKind.DELETE)]]
+    )
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        assert await poller._sweep_once() is False
+
+    assert await jobs.list_jobs(source_id="src") == []
+    assert await sync.get_revision_snapshot("src") == {"file:///gone.md": "r1"}
+    assert await sync.list_ingested_uris("src") == {"file:///gone.md"}
+    assert poller._breaker.consecutive_failures == 1
+    assert poller.last_polled_at is None
+    assert any(
+        isinstance(r.exc_info[1], EmptyListingError) for r in records if r.exc_info
+    )
+
+
+async def test_empty_listing_with_nothing_known_succeeds(fs_config, jobs, sync):
+    poller = _periodic(_StubSource("src", [[]]), fs_config, jobs, sync)
+    assert await poller._sweep_once() is True
+
+
+async def test_empty_listing_succeeds_when_delete_orphans_false(fs_config, jobs, sync):
+    config = fs_config.model_copy(update={"delete_orphans": False})
+    source = _StubSource(
+        "src", [[_event("file:///gone.md", kind=SourceEventKind.DELETE)]]
+    )
+    poller = _periodic(source, config, jobs, sync)
+
+    assert await poller._sweep_once() is True
+    assert await jobs.list_jobs(source_id="src") == []
+
+
+async def test_deletes_before_a_failed_listing_are_not_enqueued(fs_config, jobs, sync):
+    poller = _periodic(_FailsMidway("src"), fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        assert await poller._sweep_once() is False
+
+    ops = [job.op for job in await jobs.list_jobs(source_id="src")]
+    assert JobOp.DELETE not in ops
 
 
 async def test_delete_event_skipped_when_delete_orphans_false(fs_config, jobs, sync):
@@ -349,6 +420,34 @@ async def test_dry_run_counts_ignored_deletes_when_orphan_delete_disabled(
     assert summary.ignored_delete_count == 1
     assert changes == []
     assert await jobs.list_jobs(source_id="src") == []
+
+
+async def test_dry_run_fails_on_empty_listing_with_deletes(fs_config, jobs, sync):
+    source = _StubSource(
+        "src", [[_event("file:///gone.md", kind=SourceEventKind.DELETE)]]
+    )
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        ok, summary, changes = await poller._dry_run_once()
+
+    assert ok is False
+    assert changes == []
+    assert summary.delete_count == 0
+    assert poller._breaker.consecutive_failures == 1
+
+
+async def test_dry_run_returns_no_changes_when_listing_fails_midway(
+    fs_config, jobs, sync
+):
+    poller = _periodic(_FailsMidway("src"), fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        ok, summary, changes = await poller._dry_run_once()
+
+    assert ok is False
+    assert changes == []
+    assert summary.upsert_count == 0
 
 
 async def test_dry_run_skips_when_queue_has_pending_work(fs_config, jobs, sync):
@@ -726,3 +825,28 @@ async def test_dry_run_manifest_reports_failed_sources(tmp_path, jobs, sync):
 
     assert failed == ["broken"]
     assert {s.source_id for s in manifest.sources} == {"ok", "broken"}
+
+
+async def test_dry_run_manifest_leaves_out_a_failed_sources_partial_changes(
+    tmp_path, jobs, sync
+):
+    (tmp_path / "a.md").write_text("alpha")
+    manager = PollerManager(
+        configs=[FSSourceConfig(type="fs", id="ok", root=tmp_path)],
+        job_repo=jobs,
+        sync_repo=sync,
+    )
+    manager._pollers.append(
+        _periodic(
+            _FailsMidway("broken"),
+            FSSourceConfig(type="fs", id="broken", root=tmp_path, poll_interval_s=60.0),
+            jobs,
+            sync,
+        )
+    )
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        manifest, failed = await manager.dry_run_manifest()
+
+    assert failed == ["broken"]
+    assert {c.source_id for c in manifest.changes} == {"ok"}

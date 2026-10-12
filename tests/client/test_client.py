@@ -1,5 +1,7 @@
 import asyncio
 import json
+import os
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -475,6 +477,27 @@ async def test_directory_ingest_skips_symlinks_escaping_the_tree(temp_db_path):
             uris = sorted(uri for doc in result if (uri := doc.uri))
             assert not any("secret" in uri or "escape" in uri for uri in uris)
             assert any("real.txt" in uri for uri in uris)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="chmod 000 does not deny access on Windows or to root",
+)
+async def test_directory_ingest_raises_on_unreadable_subdirectory(
+    temp_db_path, tmp_path
+):
+    (tmp_path / "a.txt").write_text("Readable.")
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "b.txt").write_text("Unreadable.")
+    sub.chmod(0)
+    try:
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            with pytest.raises(PermissionError):
+                await client.create_document_from_source(tmp_path)
+            assert await client.count_documents() == 0
+    finally:
+        sub.chmod(0o755)
 
 
 @pytest.mark.vcr()

@@ -4,6 +4,7 @@ patched out — the behavior under test is the orchestration and orphan
 pruning, not embedding."""
 
 import asyncio
+import logging
 import sys
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -25,7 +26,7 @@ from haiku.rag.config import (
 )
 from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.batch import BatchChange, BatchManifest
-from haiku.rag.ingester.exceptions import QueueError
+from haiku.rag.ingester.exceptions import EmptyListingError, QueueError
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
@@ -33,9 +34,12 @@ from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
 from haiku.rag.uri import uri_to_path
+from tests.conftest import capture_logs
+
+_POLLER_LOGGER = logging.getLogger("haiku.rag.ingester.pollers.base")
 
 
-def _config(tmp_path, **worker_kwargs) -> AppConfig:
+def _config(tmp_path, root=None, **worker_kwargs) -> AppConfig:
     workers = WorkerConfig(
         worker_count=2,
         poll_idle_interval_s=0.05,
@@ -49,7 +53,7 @@ def _config(tmp_path, **worker_kwargs) -> AppConfig:
                 FSSourceConfig(
                     type="fs",
                     id="local",
-                    root=tmp_path,
+                    root=root or tmp_path,
                     poll_interval_s=3600.0,
                 )
             ],
@@ -209,6 +213,69 @@ async def test_run_batch_prunes_orphans(tmp_path, use_client):
     client.delete_document.assert_awaited_once()
     assert second.succeeded == 1
     assert second.dead == 0
+
+
+async def test_run_batch_keeps_documents_when_the_root_is_gone(tmp_path, use_client):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("hello")
+    (docs / "b.md").write_text("world")
+    client = _mock_client()
+    use_client(client)
+    config = _config(tmp_path, root=docs)
+    db_path = tmp_path / "db.lancedb"
+
+    first = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
+    assert first.succeeded == 2
+
+    docs.rename(tmp_path / "unmounted")
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        second = await IngesterApp(
+            config=config, scope=DatabaseScope.at(db_path)
+        ).run_batch()
+
+    assert second.failed_sweeps == ["local"]
+    client.delete_document.assert_not_awaited()
+    assert any(
+        isinstance(r.exc_info[1], FileNotFoundError) for r in records if r.exc_info
+    )
+
+
+async def test_run_batch_keeps_recovered_documents_when_the_source_empties(
+    tmp_path, use_client
+):
+    """Documents recovered into a lost queue by reconcile still block an empty
+    listing from deleting them."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("hello")
+    (docs / "b.md").write_text("world")
+    client = _mock_client()
+    use_client(client)
+    config = _config(tmp_path, root=docs)
+    db_path = tmp_path / "db.lancedb"
+
+    first = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
+    assert first.succeeded == 2
+
+    for queue_file in tmp_path.glob("queue.db*"):
+        queue_file.unlink()
+    for document in docs.iterdir():
+        document.unlink()
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        second = await IngesterApp(
+            config=config, scope=DatabaseScope.at(db_path)
+        ).run_batch()
+
+    assert second.failed_sweeps == ["local"]
+    client.delete_document.assert_not_awaited()
+    assert any(
+        isinstance(r.exc_info[1], EmptyListingError) for r in records if r.exc_info
+    )
 
 
 async def test_run_batch_reports_dead_on_permanent_failure(tmp_path, use_client):
