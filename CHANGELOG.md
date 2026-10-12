@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.97.0] - 2026-10-12
+
 ### Added
 
 - `ingester.queue.namespace`: the ingester that owns its rows in a queue shared with other ingesters. `serve`, `run-batch` and `--dry-run` require it when `dburi` names a server.
@@ -2963,7 +2965,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.96.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.97.0...HEAD
+[0.97.0]: https://github.com/ggozad/haiku.rag/compare/0.96.1...0.97.0
 [0.96.1]: https://github.com/ggozad/haiku.rag/compare/0.96.0...0.96.1
 [0.96.0]: https://github.com/ggozad/haiku.rag/compare/0.95.0...0.96.0
 [0.95.0]: https://github.com/ggozad/haiku.rag/compare/0.94.0...0.95.0
