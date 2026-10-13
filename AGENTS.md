@@ -264,7 +264,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
   configured order. Fused results carry the ordering score, so context expansion
   preserves fused order. `Chunk.embedding` is populated only when cosine fusion
   will read it (`with_vectors` mirrors `_fuse`'s cosine condition; an image query
-  with a reranker configured still takes cosine). Over-fetch (`limit * 10`) only
+  with a reranker configured still takes cosine). Over-fetch (`limit * search.rerank_pool_factor`) only
   with a reranker. Image queries are vector-only and skip the reranker.
 - **`_fuse` maps a reranked chunk back by `id(chunk)`**, since chunk ids repeat between copies. Every shipped reranker indexes into the list it was given. One that returns copies raises a named `ValueError`.
 - **One reranker per set.** A client covering a database for another borrows the
@@ -294,7 +294,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `SandboxConfig` - code_timeout, max_output_chars: limits of one `execute_code` call, read by the capability and the MCP tool. In-code `search()` does not count against `qa.max_searches`, so code execution outlives a spent search budget
 - `PictureDescriptionConfig` - picture description model settings
 - `ProcessingConfig` - chunk_size, converter, chunker, chunker_type, conversion_options, pictures, split_pages, conversion_timeout, auto_title, title_model
-- `SearchConfig` - limit, max_context_chars, vector_index_metric, vector_refine_factor, vector_nprobes
+- `SearchConfig` - limit, max_context_chars, rerank_pool_factor, vector_index_metric, vector_refine_factor, vector_nprobes
 - `DoctorConfig` - duplicates (DuplicateDetectionConfig: similarity_threshold 0.97, min_chunks 3)
 - `ProvidersConfig` - ollama, docling_serve (OllamaConfig, DoclingServeConfig)
 - `PromptsConfig` - domain_preamble, picture_description

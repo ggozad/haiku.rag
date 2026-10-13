@@ -246,10 +246,6 @@ def _cosine_to(query_vector: list[float], embeddings: list[list[float]]) -> list
 _RRF_K = 60
 
 
-# Candidates per requested result when a reranker will re-order them.
-_RERANK_OVERFETCH = 10
-
-
 def _fetch_limit(
     client: "HaikuRAG",
     query: "str | bytes | PILImage.Image",
@@ -263,7 +259,9 @@ def _fetch_limit(
     """
     if not isinstance(query, str):
         return limit
-    return limit * _RERANK_OVERFETCH if client.reranker else limit
+    if not client.reranker:
+        return limit
+    return limit * client._config.search.rerank_pool_factor
 
 
 def _resolved_search_type(
@@ -333,7 +331,7 @@ async def _attach_picture_data(client: "HaikuRAG", chunks: list[Chunk]) -> None:
     reranker scores the pixels.
 
     One query however many documents the candidates span, which matters here
-    more than anywhere: reranking fetches `limit * 10` candidates.
+    more than anywhere: reranking fetches `limit * search.rerank_pool_factor` candidates.
     """
     by_doc: dict[str, list[tuple[Chunk, str]]] = {}
     for chunk in chunks:
