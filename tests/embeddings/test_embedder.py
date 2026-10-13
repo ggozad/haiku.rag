@@ -764,6 +764,29 @@ async def test_vllm_text_only_when_multimodal_unset():
     assert embedder.supports_images is False
 
 
+@pytest.mark.parametrize("provider", ["ollama", "openai"])
+async def test_aclose_closes_provider_http_client(provider):
+    """aclose closes the HTTP client the pydantic-ai provider created."""
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider=provider,
+                name="x",
+                vector_dim=2,
+                base_url="http://localhost:11434/v1",
+            )
+        )
+    )
+    embedder = get_embedder(config)
+    assert embedder._provider is not None
+    client = embedder._provider.client
+    assert not client.is_closed()
+
+    await embedder.aclose()
+
+    assert client.is_closed()
+
+
 @pytest.mark.parametrize("provider", ["ollama", "openai", "sentence-transformers"])
 async def test_multimodal_unsupported_provider_raises(provider):
     config = AppConfig(

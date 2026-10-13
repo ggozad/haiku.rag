@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic_ai.embeddings import Embedder
 from pydantic_ai.embeddings.openai import OpenAIEmbeddingModel
+from pydantic_ai.providers import Provider
 from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -39,8 +40,10 @@ class EmbedderWrapper:
         supports_images: bool | None = None,
         query_prefix: str = "",
         document_prefix: str = "",
+        provider: Provider | None = None,
     ):
         self._embedder = embedder
+        self._provider = provider
         self._vector_dim = vector_dim
         self._query_prefix = query_prefix
         self._document_prefix = document_prefix
@@ -87,8 +90,11 @@ class EmbedderWrapper:
         )
 
     async def aclose(self) -> None:
-        """Release resources held by the embedder. No-op by default;
-        embedders that own an HTTP client override this."""
+        """Release resources held by the embedder."""
+        if self._provider is not None:
+            # A provider closes the HTTP client it created when its last context exits.
+            async with self._provider:
+                pass
 
 
 def _to_data_uri(image: "bytes | PILImage.Image") -> str:
@@ -250,31 +256,28 @@ def get_embedder(config: AppConfig | None = None) -> EmbedderWrapper:
         base_url = embedding_model.base_url or config.providers.ollama.base_url
         if not base_url.rstrip("/").endswith("/v1"):
             base_url = base_url.rstrip("/") + "/v1"
-        model = OpenAIEmbeddingModel(
-            model_name,
-            provider=OllamaProvider(base_url=base_url, api_key=embedding_model.api_key),
+        ollama_provider = OllamaProvider(
+            base_url=base_url, api_key=embedding_model.api_key
         )
         return EmbedderWrapper(
-            Embedder(model),
+            Embedder(OpenAIEmbeddingModel(model_name, provider=ollama_provider)),
             vector_dim,
             query_prefix=query_prefix,
             document_prefix=document_prefix,
+            provider=ollama_provider,
         )
 
     if provider == "openai":
         if embedding_model.base_url or embedding_model.api_key:
-            model = OpenAIEmbeddingModel(
-                model_name,
-                provider=OpenAIProvider(
-                    base_url=embedding_model.base_url,
-                    api_key=embedding_model.api_key,
-                ),
+            openai_provider = OpenAIProvider(
+                base_url=embedding_model.base_url, api_key=embedding_model.api_key
             )
             return EmbedderWrapper(
-                Embedder(model),
+                Embedder(OpenAIEmbeddingModel(model_name, provider=openai_provider)),
                 vector_dim,
                 query_prefix=query_prefix,
                 document_prefix=document_prefix,
+                provider=openai_provider,
             )
         return EmbedderWrapper(
             Embedder(f"openai:{model_name}"),
