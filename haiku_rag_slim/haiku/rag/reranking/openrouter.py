@@ -1,5 +1,6 @@
 import os
 
+from haiku.rag.reranking.base import scored_text
 from haiku.rag.reranking.vllm import VLLMReranker
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.utils.images import image_data_uri
@@ -32,9 +33,9 @@ class OpenRouterReranker(VLLMReranker):
     def _document(self, chunk: Chunk) -> str | dict:
         data = chunk._picture_data
         if data is None:
-            return chunk.content
+            return scored_text(chunk)
 
         document: dict = {"image": image_data_uri(data)}
         if chunk.content:
-            document["text"] = chunk.content
+            document["text"] = scored_text(chunk)
         return document

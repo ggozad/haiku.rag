@@ -1,6 +1,6 @@
 import httpx
 
-from haiku.rag.reranking.base import RerankerBase
+from haiku.rag.reranking.base import RerankerBase, scored_text
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.utils.http import pooled_client, post_retrying_dropped_connection
 from haiku.rag.utils.images import image_data_uri
@@ -33,13 +33,13 @@ class VLLMReranker(RerankerBase):
         the picture bytes as a data URI when the chunk has them."""
         data = chunk._picture_data
         if data is None:
-            return chunk.content
+            return scored_text(chunk)
 
         parts: list[dict] = [
             {"type": "image_url", "image_url": {"url": image_data_uri(data)}}
         ]
         if chunk.content:
-            parts.append({"type": "text", "text": chunk.content})
+            parts.append({"type": "text", "text": scored_text(chunk)})
         return {"content": parts}
 
     async def _rerank(

@@ -374,6 +374,7 @@ class ProcessingConfig(ConfigModel):
 class SearchConfig(ConfigModel):
     limit: int = Field(default=5, gt=0)
     max_context_chars: int = Field(default=5000, gt=0)
+    rerank_pool_factor: int = Field(default=10, gt=0)
     vector_index_metric: Literal["cosine", "l2"] = "cosine"
     vector_refine_factor: int = Field(default=30, gt=0)
     vector_nprobes: int = Field(default=20, gt=0)

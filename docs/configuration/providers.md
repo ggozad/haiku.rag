@@ -307,6 +307,8 @@ Google, Groq and Mistral follow the same shape, for example `provider: google` w
 
 A reranker re-orders search results with a dedicated model. There is none by default. Configure `reranking.model` to enable one, and remove it or set `model: null` to disable it again. See [Search settings](qa.md#search-settings) for how it changes what search fetches.
 
+Every reranker scores a chunk's text after its document title and section headings, each on its own line. A missing title or heading is left out.
+
 ```yaml
 reranking:
   model:

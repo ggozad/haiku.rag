@@ -5,7 +5,7 @@ try:
 except ModuleNotFoundError as e:  # pragma: no cover
     raise_missing_extra("zeroentropy", "zeroentropy", e)
 
-from haiku.rag.reranking.base import RerankerBase
+from haiku.rag.reranking.base import RerankerBase, scored_text
 from haiku.rag.store.models.chunk import Chunk
 
 
@@ -25,7 +25,7 @@ class ZeroEntropyReranker(RerankerBase):  # pragma: no cover
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        documents = [chunk.content for chunk in chunks]
+        documents = [scored_text(chunk) for chunk in chunks]
 
         model_name = self._model or "zerank-1"
         response = await self._client.models.rerank(
