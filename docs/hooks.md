@@ -12,7 +12,7 @@ Subclass `haiku.rag.hooks.Hook` and override any subset:
 |--------|-------|---------|
 | `before_ingest(client, request)` | A source document was fetched, before conversion. Also each PDF attachment | Rewriting bytes, adding metadata |
 | `after_ingest(client, event)` | Document content was written (create, import, batch import, update) | Deriving state from documents |
-| `after_delete(client, event)` | Documents were deleted | Cleaning up derived state |
+| `after_delete(client, event)` | Documents were deleted, including attachments a re-ingested PDF no longer carries | Cleaning up derived state |
 | `before_search(client, request)` | Before retrieval, text queries only | Query expansion, filter injection |
 | `after_search(client, request, results)` | After retrieval, reranking, and deduplication | Annotating, reordering, or filtering results |
 | `lifespan(client)` | Around the whole client lifetime | Owning connections, clients, background tasks |

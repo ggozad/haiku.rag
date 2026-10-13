@@ -21,6 +21,7 @@ from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
 from haiku.rag.hooks import (
+    DeleteEvent,
     DocumentRejected,
     HookError,
     IngestEvent,
@@ -918,9 +919,17 @@ async def _reconcile_pdf_attachments(
             notify_hooks=notify_hooks,
         )
 
-    for child_uri, child in existing_by_uri.items():
-        if child_uri not in new_attachments and child.id:
-            await session.delete_document(child.id, allow_attachment=True)
+    deleted: list[Document] = []
+    try:
+        for child_uri, child in existing_by_uri.items():
+            if child_uri not in new_attachments and child.id:
+                deleted += await session.delete_document(
+                    child.id, allow_attachment=True
+                )
+    finally:
+        # Each delete commits on its own, so a later failure leaves earlier ones done.
+        if deleted and client is not None and notify_hooks:
+            await notify(client._hooks, "after_delete", client, DeleteEvent(deleted))
 
 
 async def create_document_from_source(

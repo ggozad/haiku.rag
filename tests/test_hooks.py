@@ -1102,3 +1102,117 @@ async def test_full_rebuild_propagates_a_rejection(temp_db_path, tmp_path):
 
     assert stored is not None
     assert stored.content == doc.content
+
+
+async def _reconcile_twice(client, first: bytes, second: bytes, **kwargs):
+    """Reconcile a stored parent's attachments from ``first``, then ``second``."""
+    from haiku.rag.client.documents import _reconcile_pdf_attachments
+    from haiku.rag.store.models.document import Document
+    from tests.conftest import writing
+
+    parent = await client.document_repository.create(
+        Document(
+            content="",
+            uri="file:///fixtures/parent.pdf",
+            metadata={"content_type": "application/pdf"},
+        )
+    )
+    await _reconcile_pdf_attachments(writing(client), client, parent, first, depth=0)
+    await _reconcile_pdf_attachments(
+        writing(client), client, parent, second, depth=0, **kwargs
+    )
+
+
+@pytest.mark.asyncio
+async def test_removed_attachments_fire_one_after_delete(temp_db_path, monkeypatch):
+    from tests.conftest import build_pdf, fake_ingest_fetch_result
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
+    recording = RecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        await _reconcile_twice(
+            client,
+            build_pdf([("a.txt", b"A"), ("b.txt", b"B"), ("c.txt", b"C")]),
+            build_pdf([("a.txt", b"A")]),
+        )
+
+    [(kind, documents)] = recording.events
+    assert kind == "delete"
+    assert sorted(uri for _, uri in documents) == [
+        "file:///fixtures/parent.pdf#attachment=b.txt",
+        "file:///fixtures/parent.pdf#attachment=c.txt",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_removed_attachments_fire_nothing_without_notify_hooks(
+    temp_db_path, monkeypatch
+):
+    from tests.conftest import build_pdf, fake_ingest_fetch_result
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
+    recording = RecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        await _reconcile_twice(
+            client,
+            build_pdf([("a.txt", b"A"), ("b.txt", b"B")]),
+            build_pdf([("a.txt", b"A")]),
+            notify_hooks=False,
+        )
+        remaining = await client.list_documents()
+
+    assert recording.events == []
+    assert len(remaining) == 2
+
+
+@pytest.mark.asyncio
+async def test_attachments_deleted_before_a_failure_still_fire_after_delete(
+    temp_db_path, monkeypatch
+):
+    from haiku.rag.client.documents import _reconcile_pdf_attachments
+    from haiku.rag.client.session import SingleDatabaseSession
+    from tests.conftest import build_pdf, fake_ingest_fetch_result, writing
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
+    real_delete = SingleDatabaseSession.delete_document
+    calls = 0
+
+    async def fail_second_delete(self, document_id, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("disk full")
+        return await real_delete(self, document_id, **kwargs)
+
+    monkeypatch.setattr(SingleDatabaseSession, "delete_document", fail_second_delete)
+    recording = RecordingHook()
+    three = build_pdf([("a.txt", b"A"), ("b.txt", b"B"), ("c.txt", b"C")])
+    one = build_pdf([("a.txt", b"A")])
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        with pytest.raises(OSError, match="disk full"):
+            await _reconcile_twice(client, three, one)
+        [first] = recording.events
+
+        parent = await client.get_document_by_uri("file:///fixtures/parent.pdf")
+        assert parent is not None
+        await _reconcile_pdf_attachments(writing(client), client, parent, one, depth=0)
+
+    [second] = recording.events[1:]
+    assert first[0] == second[0] == "delete"
+    assert len(first[1]) == len(second[1]) == 1
+    assert {first[1][0][1], second[1][0][1]} == {
+        "file:///fixtures/parent.pdf#attachment=b.txt",
+        "file:///fixtures/parent.pdf#attachment=c.txt",
+    }
