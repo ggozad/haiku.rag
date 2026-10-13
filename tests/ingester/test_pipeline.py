@@ -829,3 +829,67 @@ async def test_after_ingest_hook_failure_does_not_fail_job(
         assert result.document_id is not None
         assert result.deleted is False
         assert any("after_ingest" in r.message for r in caplog.records)
+
+
+class _RejectHook(Hook):
+    def __init__(self, suffix: str):
+        self.suffix = suffix
+
+    async def before_ingest(self, client, request):
+        from haiku.rag.hooks import DocumentRejected
+
+        if request.uri.endswith(self.suffix):
+            raise DocumentRejected("draft")
+        return request
+
+
+async def test_a_rejected_document_is_a_permanent_failure(temp_db_path, tmp_path):
+    path = tmp_path / "doc.md"
+    path.write_text("hello")
+    fs = FSSource(root=tmp_path, source_id="src")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [_RejectHook("doc.md")]
+        with pytest.raises(PermanentError) as raised:
+            await run_job(client, _job(uri=path.as_uri()), sources=[fs])
+
+    assert str(raised.value) == f"{path.as_uri()} rejected: draft"
+
+
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_a_rejected_attachment_fails_its_parent_until_retried(
+    tmp_path, temp_db_path
+):
+    """The parent and the earlier sibling stay stored, the parent without the
+    md5 that would short-circuit a retry, and a retry once the hook accepts
+    the attachment completes the set."""
+    from haiku.rag.client.documents import parent_uri_filter
+    from tests.conftest import build_pdf
+
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"alpha notes"), ("b.txt", b"beta")]))
+    fs = FSSource(root=tmp_path, source_id="src")
+    child_b = f"{pdf_path.as_uri()}#attachment=b.txt"
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [_RejectHook("#attachment=b.txt")]
+        with pytest.raises(PermanentError) as raised:
+            await run_job(client, _job(uri=pdf_path.as_uri()), sources=[fs])
+        parent = await client.get_document_by_uri(pdf_path.as_uri())
+        assert parent is not None
+        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
+        assert [c.uri for c in children] == [f"{pdf_path.as_uri()}#attachment=a.txt"]
+        assert "md5" not in parent.metadata
+
+        client._hooks = []
+        result = await run_job(client, _job(uri=pdf_path.as_uri()), sources=[fs])
+        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
+        parent = await client.get_document_by_uri(pdf_path.as_uri())
+
+    assert str(raised.value) == f"{child_b} rejected: draft"
+    assert sorted(c.uri for c in children) == sorted(
+        [f"{pdf_path.as_uri()}#attachment=a.txt", child_b]
+    )
+    assert parent is not None
+    assert result.content_hash == parent.metadata["md5"]

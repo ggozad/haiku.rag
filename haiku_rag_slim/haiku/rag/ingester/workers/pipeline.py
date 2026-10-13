@@ -17,6 +17,7 @@ from haiku.rag.converters.exceptions import (
     ConversionTimeoutError,
     ConverterWedgedError,
 )
+from haiku.rag.hooks import DocumentRejected
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.sources.base import FileTooLargeError
@@ -51,8 +52,9 @@ def _classify(exc: BaseException) -> Exception:
 
     # UnsupportedSourceError is the typed signal from client/* that the
     # source will never ingest successfully on a retry (bad URI scheme,
-    # missing file, unsupported extension, etc.).
-    if isinstance(exc, UnsupportedSourceError | FileTooLargeError):
+    # missing file, unsupported extension, etc.). A hook's DocumentRejected
+    # repeats on every retry until the hook changes.
+    if isinstance(exc, UnsupportedSourceError | FileTooLargeError | DocumentRejected):
         return PermanentError(str(exc))
 
     if isinstance(exc, ConversionTimeoutError):

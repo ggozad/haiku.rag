@@ -26,6 +26,21 @@ class HookError(Exception):
     """A ``before_ingest`` hook raised. The hook's exception is the cause."""
 
 
+class DocumentRejected(Exception):
+    """Raised by a ``before_ingest`` hook to refuse a document. Ingestion sets
+    ``uri`` to the refused document's."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+        self.uri: str | None = None
+
+    def __str__(self) -> str:
+        if self.uri is None:
+            return self.reason
+        return f"{self.uri} rejected: {self.reason}"
+
+
 @dataclass
 class IngestEvent:
     """Documents whose content was written in one operation. Batch imports
@@ -107,8 +122,9 @@ class Hook:
         unchanged-bytes check, so the stored ``md5`` is that of the returned
         body. Added metadata keys win over a metadata provider's, and the keys
         ingestion owns (``content_type``, ``md5``, ``source_revision``,
-        ``source_id``, ``parent_uri``) are dropped. An exception fails the
-        ingest as a ``HookError``."""
+        ``source_id``, ``parent_uri``) are dropped. Raise ``DocumentRejected``
+        to refuse the document. Any other exception fails the ingest as a
+        ``HookError``."""
         return request
 
     async def after_ingest(self, client: "HaikuRAG", event: IngestEvent) -> None:

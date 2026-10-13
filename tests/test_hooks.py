@@ -1027,3 +1027,78 @@ async def test_full_rebuild_runs_before_ingest_but_not_after_ingest(
     assert refreshed.metadata["team"] == "hook"
     assert len(hook.requests) == 1
     assert recording.events == []
+
+
+class RejectHook(Hook):
+    """Rejects every document whose URI ends with ``suffix``."""
+
+    def __init__(self, suffix: str):
+        self.suffix = suffix
+
+    async def before_ingest(self, client, request):
+        from haiku.rag.hooks import DocumentRejected
+
+        if request.uri.endswith(self.suffix):
+            raise DocumentRejected("draft")
+        return request
+
+
+def test_a_rejection_reads_as_its_reason_until_ingestion_names_the_document():
+    from haiku.rag.hooks import DocumentRejected
+
+    assert str(DocumentRejected("draft")) == "draft"
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_document_raises_and_stores_nothing(temp_db_path, tmp_path):
+    from haiku.rag.hooks import DocumentRejected
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [RejectHook("doc.md")]
+        with pytest.raises(DocumentRejected) as raised:
+            await client.create_document_from_source(path)
+        assert await client.list_documents() == []
+
+    assert raised.value.reason == "draft"
+    assert raised.value.uri == path.as_uri()
+    assert str(raised.value) == f"{path.as_uri()} rejected: draft"
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_file_stops_a_directory_ingest(temp_db_path, tmp_path):
+    from haiku.rag.hooks import DocumentRejected
+
+    (tmp_path / "a.md").write_bytes(b"# A\n\nFirst.\n")
+    (tmp_path / "b.md").write_bytes(b"# B\n\nSecond.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [RejectHook("a.md")]
+        with pytest.raises(DocumentRejected):
+            await client.create_document_from_source(tmp_path)
+        assert await client.list_documents() == []
+
+
+@pytest.mark.asyncio
+async def test_full_rebuild_propagates_a_rejection(temp_db_path, tmp_path):
+    from haiku.rag.client import RebuildMode
+    from haiku.rag.hooks import DocumentRejected
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        [doc] = await client.import_documents(
+            [_import("doc", "Body.", uri=path.as_uri())]
+        )
+        client._hooks = [RejectHook("doc.md")]
+        with pytest.raises(DocumentRejected):
+            async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+                pass
+        assert doc.id is not None
+        stored = await client.get_document_by_id(doc.id)
+
+    assert stored is not None
+    assert stored.content == doc.content

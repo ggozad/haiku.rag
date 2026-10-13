@@ -20,7 +20,13 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
-from haiku.rag.hooks import HookError, IngestEvent, IngestRequest, notify
+from haiku.rag.hooks import (
+    DocumentRejected,
+    HookError,
+    IngestEvent,
+    IngestRequest,
+    notify,
+)
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
@@ -588,6 +594,9 @@ async def _before_ingest(
     for hook in client._hooks:
         try:
             request = await hook.before_ingest(client, request)
+        except DocumentRejected as e:
+            e.uri = request.uri
+            raise
         except Exception as e:
             cls = type(hook)
             raise HookError(
