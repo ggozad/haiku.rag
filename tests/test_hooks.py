@@ -787,3 +787,243 @@ async def test_after_search_reports_vector_for_image_queries(temp_db_path):
         await client.search(b"image-bytes", search_type="fts", include_images=False)
 
         assert spy.search_types == ["vector"]
+
+
+def _md5(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.md5(data, usedforsecurity=False).hexdigest()
+
+
+class RewriteHook(Hook):
+    """Rewrites "original" to "rewritten" in non-PDF bodies, tags every
+    document, tries to forge a reserved key, and records each request."""
+
+    def __init__(self):
+        self.requests: list[tuple[str, str | None, str | None, bytes]] = []
+
+    async def before_ingest(self, client, request):
+        self.requests.append(
+            (request.uri, request.source_id, request.content_type, request.body)
+        )
+        if request.content_type != "application/pdf":
+            request.body = request.body.replace(b"original", b"rewritten")
+        request.metadata["team"] = "hook"
+        request.metadata["md5"] = "forged"
+        return request
+
+
+class ProviderStub:
+    def __init__(self):
+        self.bodies: list[bytes] = []
+
+    async def __call__(self, source_id, uri, result):
+        self.bodies.append(result.body)
+        return {"team": "provider", "provided": "yes"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_before_ingest_rewrites_the_stored_document(temp_db_path, tmp_path):
+    from haiku.rag.sources.fs import FSSource
+
+    original = b"# Notes\n\nThe original text.\n"
+    path = tmp_path / "doc.md"
+    path.write_bytes(original)
+    source = FSSource(root=tmp_path, source_id="fs:docs")
+    hook = RewriteHook()
+    provider = ProviderStub()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        doc = await client.create_document_from_source(
+            path,
+            metadata={"caller": "yes"},
+            sources=[source],
+            source_id=source.source_id,
+            metadata_provider=provider,
+        )
+
+    assert not isinstance(doc, list)
+    assert "rewritten text" in doc.content
+    assert "original" not in doc.content
+    assert hook.requests == [
+        (doc.uri, "fs:docs", doc.metadata["content_type"], original)
+    ]
+    assert provider.bodies == [original]
+    assert doc.metadata["md5"] == _md5(original.replace(b"original", b"rewritten"))
+    assert doc.metadata["source_revision"] == str(path.stat().st_mtime_ns)
+    assert doc.metadata["source_id"] == "fs:docs"
+    assert doc.metadata["team"] == "hook"
+    assert doc.metadata["provided"] == "yes"
+    assert doc.metadata["caller"] == "yes"
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_before_ingest_output_short_circuits_unchanged_bytes(
+    temp_db_path, tmp_path
+):
+    import os
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nThe original text.\n")
+    hook = RewriteHook()
+    recording = RecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook, recording]
+        await client.create_document_from_source(path)
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+        await client.create_document_from_source(path)
+
+    assert len(hook.requests) == 2
+    assert [event[0] for event in recording.events] == ["ingest"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_before_ingest_runs_for_each_pdf_attachment(temp_db_path, tmp_path):
+    from haiku.rag.sources.fs import FSSource
+    from tests.conftest import build_pdf
+
+    notes = b"The original notes."
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("notes.txt", notes)]))
+    source = FSSource(root=tmp_path, source_id="fs:attachments")
+    hook = RewriteHook()
+    provider = ProviderStub()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        parent = await client.create_document_from_source(
+            path,
+            sources=[source],
+            source_id=source.source_id,
+            metadata_provider=provider,
+        )
+        assert not isinstance(parent, list)
+        child_uri = f"{parent.uri}#attachment=notes.txt"
+        child = await client.get_document_by_uri(child_uri)
+
+    assert child is not None
+    assert [(uri, source_id) for uri, source_id, _, _ in hook.requests] == [
+        (parent.uri, "fs:attachments"),
+        (child_uri, "fs:attachments"),
+    ]
+    assert hook.requests[1][3] == notes
+    assert provider.bodies[1] == notes
+    assert "rewritten notes" in child.content
+    assert child.metadata["md5"] == _md5(b"The rewritten notes.")
+    assert child.metadata["team"] == "hook"
+    assert child.metadata["provided"] == "yes"
+    assert "source_id" not in child.metadata
+    assert parent.metadata["team"] == "hook"
+
+
+class RaisingIngestHook(Hook):
+    async def before_ingest(self, client, request):
+        raise RuntimeError("hook refused")
+
+
+@pytest.mark.asyncio
+async def test_a_raising_before_ingest_stores_nothing(temp_db_path, tmp_path):
+    from haiku.rag.hooks import HookError
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [RaisingIngestHook()]
+        with pytest.raises(HookError) as raised:
+            await client.create_document_from_source(path)
+        assert await client.list_documents() == []
+
+    assert str(raised.value) == (
+        "tests.test_hooks.RaisingIngestHook.before_ingest failed for "
+        f"{path.as_uri()}: RuntimeError: hook refused"
+    )
+    assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+@pytest.mark.asyncio
+async def test_full_rebuild_propagates_a_before_ingest_failure(temp_db_path, tmp_path):
+    from haiku.rag.client import RebuildMode
+    from haiku.rag.hooks import HookError
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        [doc] = await client.import_documents(
+            [_import("doc", "Body.", uri=path.as_uri())]
+        )
+        client._hooks = [RaisingIngestHook()]
+        with pytest.raises(HookError):
+            async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+                pass
+        assert doc.id is not None
+        stored = await client.get_document_by_id(doc.id)
+
+    assert stored is not None
+    assert stored.content == doc.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_full_rebuild_leaves_other_clients_hooks_firing(temp_db_path, tmp_path):
+    from haiku.rag.client import RebuildMode
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nThe original text.\n")
+    recording = RecordingHook()
+
+    async with HaikuRAG(tmp_path / "other.lancedb", create=True) as other:
+        other._hooks = [recording]
+
+        class _WritesElsewhere(Hook):
+            async def before_ingest(self, client, request):
+                await other.import_documents([_import("side", "Side note.")])
+                return request
+
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            await client.import_documents([_import("doc", "Body.", uri=path.as_uri())])
+            client._hooks = [_WritesElsewhere()]
+            async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+                pass
+
+    assert [event[0] for event in recording.events] == ["ingest"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_full_rebuild_runs_before_ingest_but_not_after_ingest(
+    temp_db_path, tmp_path
+):
+    from haiku.rag.client import RebuildMode
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nThe original text.\n")
+    hook = RewriteHook()
+    recording = RecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(path)
+        assert not isinstance(doc, list)
+        assert "original text" in doc.content
+
+        client._hooks = [hook, recording]
+        rebuilt = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+        ]
+        assert doc.id is not None
+        refreshed = await client.get_document_by_id(doc.id)
+
+    assert rebuilt == [doc.id]
+    assert refreshed is not None
+    assert "rewritten text" in refreshed.content
+    assert refreshed.metadata["team"] == "hook"
+    assert len(hook.requests) == 1
+    assert recording.events == []

@@ -1124,7 +1124,7 @@ class HaikuRAG:
 
         session = self._single_session("rebuild_database")
 
-        async for doc_id in rebuild_database(session, mode):
+        async for doc_id in rebuild_database(session, self, mode):
             yield doc_id
 
     async def vacuum(self, retention_seconds: int | None = None) -> None:

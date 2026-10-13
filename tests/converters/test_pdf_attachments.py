@@ -262,42 +262,11 @@ async def test_malformed_pdf_logs_warning_and_skips(temp_db_path, monkeypatch, c
 
 
 async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
-    """One attachment whose ingest raises UnsupportedSourceError must not
-    prevent siblings from being ingested. The unsupported attachment is
-    skipped with a warning; the others land."""
-    from haiku.rag.client.exceptions import UnsupportedSourceError
-
-    async def picky_fake(
-        session,
-        client,
-        result,
-        *,
-        title,
-        user_metadata,
-        stored_uri,
-        existing_doc,
-        depth=0,
-        filename=None,
-        metadata_provider=None,
-        force=False,
-        written_ids=None,
-    ):
-        if stored_uri.endswith("unsupported.xyz"):
-            raise UnsupportedSourceError("nope")
-        return await fake_ingest_fetch_result(
-            session,
-            client,
-            result,
-            title=title,
-            user_metadata=user_metadata,
-            stored_uri=stored_uri,
-            existing_doc=existing_doc,
-            depth=depth,
-            force=force,
-            written_ids=written_ids,
-        )
-
-    monkeypatch.setattr("haiku.rag.client.documents._ingest_fetch_result", picky_fake)
+    """An attachment with an unsupported extension is skipped with a warning,
+    and its siblings land."""
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/parent.pdf"
         pdf_bytes = build_pdf([("ok.txt", b"keep me"), ("unsupported.xyz", b"data")])

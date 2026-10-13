@@ -17,6 +17,7 @@ from haiku.rag.client.documents import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
+from haiku.rag.hooks import HookError
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import REBUILD_COMMANDS
 from haiku.rag.store.models.chunk import Chunk
@@ -34,7 +35,7 @@ from haiku.rag.store.schema import (
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
-    from haiku.rag.client import RebuildMode
+    from haiku.rag.client import HaikuRAG, RebuildMode
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ class _StagingMarkerRecord(LanceModel):
 
 
 async def rebuild_database(
-    session: SingleDatabaseSession, mode: "RebuildMode"
+    session: SingleDatabaseSession, client: "HaikuRAG", mode: "RebuildMode"
 ) -> AsyncGenerator[str, None]:
     """Rebuild the database with the specified mode.
 
@@ -107,12 +108,12 @@ async def rebuild_database(
             await session.store.rebuild_indexes()
             return
 
-        async for doc_id in _rebuild_locked(session, mode):
+        async for doc_id in _rebuild_locked(session, client, mode):
             yield doc_id
 
 
 async def _rebuild_locked(
-    session: SingleDatabaseSession, mode: "RebuildMode"
+    session: SingleDatabaseSession, client: "HaikuRAG", mode: "RebuildMode"
 ) -> AsyncGenerator[str, None]:
     from haiku.rag.client import RebuildMode
 
@@ -205,7 +206,7 @@ async def _rebuild_locked(
     else:  # FULL
         if not keeps_dimension:
             await _recreate_chunks_table(session, incomplete)
-        async for doc_id in _rebuild_full(session, documents):
+        async for doc_id in _rebuild_full(session, client, documents):
             yield doc_id
 
     if mode != RebuildMode.TITLE_ONLY:
@@ -983,9 +984,11 @@ async def _rebuild_descriptions(
 
 
 async def _rebuild_full(
-    session: SingleDatabaseSession, documents: list[Document]
+    session: SingleDatabaseSession, client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
-    """Full rebuild: re-convert from source, re-chunk, re-embed."""
+    """Full rebuild: re-convert from source, re-chunk, re-embed. A refresh
+    from source runs ``before_ingest`` hooks, whose failure ends the rebuild,
+    and no post-commit hooks."""
     from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
@@ -1032,17 +1035,20 @@ async def _rebuild_full(
             try:
                 await create_document_from_source(
                     session,
-                    None,
+                    client,
                     source=source,
                     metadata=light_doc.metadata or {},
                     force=True,
                     written_ids=refreshed,
+                    notify_hooks=False,
                 )
             except Exception as e:
                 failure = e
             for doc_id in refreshed:
                 yield doc_id
             written_ids |= refreshed
+            if isinstance(failure, HookError):
+                raise failure
 
             if failure is not None and light_doc.id in refreshed:
                 logger.warning(

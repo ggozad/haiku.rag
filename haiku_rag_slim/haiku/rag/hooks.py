@@ -1,10 +1,10 @@
 import logging
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from types import TracebackType
-from typing import TYPE_CHECKING, Literal, Protocol, overload, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, overload, runtime_checkable
 
 from haiku.rag.config.models import HookConfig
 from haiku.rag.store.models.chunk import SearchResult, SearchType
@@ -20,6 +20,10 @@ ENTRY_POINT_GROUP = "haiku.rag.hooks"
 logger = logging.getLogger(__name__)
 
 IngestOperation = Literal["create", "update"]
+
+
+class HookError(Exception):
+    """A ``before_ingest`` hook raised. The hook's exception is the cause."""
 
 
 @dataclass
@@ -51,13 +55,28 @@ class SearchRequest:
     limit: int
 
 
+@dataclass
+class IngestRequest:
+    """A fetched document about to be converted. ``before_ingest`` hooks may
+    replace ``body`` and add keys to ``metadata``, which starts empty. The
+    other fields describe the document. ``source_id`` is the ingesting
+    source, a PDF attachment's parent's included, and ``None`` for an ad-hoc
+    ingest."""
+
+    uri: str
+    source_id: str | None
+    body: bytes
+    content_type: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 class Hook:
     """Base class for client lifecycle hooks. Subclasses override any subset.
 
     A package registers a factory under the ``haiku.rag.hooks`` entry-point
     group; ``config.hooks`` lists the hooks to activate, each with the keyword
-    arguments its factory receives, and they run in the listed order at every hook point. Hooks receive the ``HaikuRAG``
-    client, so they may search, read repositories, or keep their own state in
+    arguments its factory receives, and they run in the listed order at every
+    hook point. Hooks receive the ``HaikuRAG`` client, so they may search, read repositories, or keep their own state in
     the database via ``client.store`` (table names must use the ``hook_``
     prefix to stay clear of core tables and migrations).
     """
@@ -79,6 +98,18 @@ class Hook:
         parked in one hangs shutdown instead of ending it.
         """
         yield
+
+    async def before_ingest(
+        self, client: "HaikuRAG", request: IngestRequest
+    ) -> IngestRequest:
+        """Transform a fetched document before conversion. Runs once per
+        fetched document and once per PDF attachment, before the
+        unchanged-bytes check, so the stored ``md5`` is that of the returned
+        body. Added metadata keys win over a metadata provider's, and the keys
+        ingestion owns (``content_type``, ``md5``, ``source_revision``,
+        ``source_id``, ``parent_uri``) are dropped. An exception fails the
+        ingest as a ``HookError``."""
+        return request
 
     async def after_ingest(self, client: "HaikuRAG", event: IngestEvent) -> None:
         """Content was written for ``event.documents``. ``event.operation``
