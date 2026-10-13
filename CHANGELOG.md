@@ -5,6 +5,7 @@
 ### Fixed
 
 - `execute_code` stops a program still running `_DEADLINE_GRACE_SECONDS` (5 s) past `sandbox.code_timeout` by killing its worker, and fails a program that caught a refused read, with the time-limit message in either case.
+- Closing a client closes the HTTP client of an `ollama` embedder, and of an `openai` embedder with a `base_url` or `api_key`.
 
 ## [0.97.0] - 2026-10-12
 
