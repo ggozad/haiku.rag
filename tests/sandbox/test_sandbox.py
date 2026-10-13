@@ -9,6 +9,7 @@ from docling_core.types.doc.labels import DocItemLabel
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox, SandboxResult
+from haiku.rag.sandbox import sandbox as sandbox_module
 from haiku.rag.sandbox.sandbox import CappedOutput
 from haiku.rag.store.models.chunk import Chunk
 
@@ -1006,6 +1007,17 @@ class TestSandboxHeldConnection:
         await sb.close()
 
 
+async def _import_text(client: HaikuRAG, config: AppConfig, uri: str):
+    docling = DoclingDocument(name="d")
+    docling.add_text(label=DocItemLabel.TEXT, text="Foxes and dogs.")
+    chunk = Chunk(
+        content="Foxes and dogs.",
+        embedding=[0.1] * config.embeddings.model.vector_dim,
+        order=0,
+    )
+    return await client.import_document(docling, [chunk], uri=uri)
+
+
 class TestSandboxReadDeadline:
     """The VFS bridge suspends the worker for the length of a read, and Monty's
     feed limit does not count a read in flight. The sandbox enforces the
@@ -1062,6 +1074,73 @@ class TestSandboxReadDeadline:
 
         assert "static: TimeoutError" in result.stdout
         assert "listed" not in result.stdout
+        assert not result.success
+        assert "time limit exceeded" in result.stderr
+
+    async def test_a_program_swallowing_the_deadline_is_stopped(
+        self, temp_db_path, monkeypatch
+    ):
+        """Reads refused past the deadline cost the worker no compute, so a loop
+        that catches the refusal outlives the feed limit. The sandbox stops it."""
+        monkeypatch.setattr(sandbox_module, "_DEADLINE_GRACE_SECONDS", 0.5)
+        config = AppConfig()
+        config.sandbox.code_timeout = 1.0
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await _import_text(client, config, "test://loop")
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await asyncio.wait_for(
+                sb.execute(
+                    "from pathlib import Path\n"
+                    f"p = Path('/documents/{doc.id}/metadata.json')\n"
+                    "print('start')\n"
+                    "while True:\n"
+                    "    try:\n"
+                    "        p.read_text()\n"
+                    "    except Exception:\n"
+                    "        pass\n"
+                ),
+                timeout=10,
+            )
+            after = await sb.execute("print('fresh')")
+        finally:
+            await sb.close()
+
+        assert not result.success
+        assert "start" in result.stdout
+        assert "time limit exceeded" in result.stderr
+        assert "The interpreter restarted" in result.stderr
+        assert after.success and after.stdout.strip() == "fresh"
+
+    async def test_a_swallowed_refusal_is_reported(self, temp_db_path, monkeypatch):
+        """A program that catches a refused read and ends still reports it."""
+        config = AppConfig()
+        config.sandbox.code_timeout = 1.0
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            doc = await _import_text(client, config, "test://once")
+            repository = type(client.document_repository)
+
+        async def slow_content(self, *args, **kwargs):
+            await asyncio.sleep(1.3)
+            return "body"
+
+        monkeypatch.setattr(repository, "get_content", slow_content)
+        sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
+        try:
+            result = await sb.execute(
+                "from pathlib import Path\n"
+                f"root = Path('/documents/{doc.id}')\n"
+                "(root / 'content.txt').read_text()\n"
+                "try:\n"
+                "    (root / 'metadata.json').read_text()\n"
+                "except Exception:\n"
+                "    pass\n"
+                "print('done')"
+            )
+        finally:
+            await sb.close()
+
+        assert "done" in result.stdout
         assert not result.success
         assert "time limit exceeded" in result.stderr
 
