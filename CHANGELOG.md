@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `execute_code` stops a program still running `_DEADLINE_GRACE_SECONDS` (5 s) past `sandbox.code_timeout` by killing its worker, and fails a program that caught a refused read, with the time-limit message in either case.
+
 ## [0.97.0] - 2026-10-12
 
 ### Added

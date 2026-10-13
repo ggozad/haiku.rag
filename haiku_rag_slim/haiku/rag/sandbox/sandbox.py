@@ -1,6 +1,8 @@
 import asyncio
 import json
 import os
+import signal
+import sys
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -33,6 +35,9 @@ if TYPE_CHECKING:
 
 _MAX_HOST_CALLS = 10_000_000
 _READ_DEADLINE = "time limit exceeded: no further document reads or calls after "
+# A refused read costs the worker no compute, so a program that catches the
+# refusal outlives the feed limit. The worker is killed this long after the deadline.
+_DEADLINE_GRACE_SECONDS = 5.0
 
 
 @dataclass
@@ -130,6 +135,8 @@ class Sandbox:
     _vfs: OSAccess | None
     _loop: asyncio.AbstractEventLoop | None
     _deadline: float | None
+    _refused: bool
+    _stopped: bool
 
     def __init__(
         self,
@@ -197,6 +204,8 @@ class Sandbox:
         self._vfs = None
         self._loop = None
         self._deadline = None
+        self._refused = False
+        self._stopped = False
 
     @asynccontextmanager
     async def _connection(
@@ -316,6 +325,7 @@ class Sandbox:
         )
 
     def _time_limit(self) -> TimeoutError:
+        self._refused = True
         return TimeoutError(_READ_DEADLINE + f"{self._config.sandbox.code_timeout}s")
 
     @staticmethod
@@ -348,6 +358,16 @@ class Sandbox:
             return read(path)
 
         return call
+
+    async def _stop_after_deadline(self, pid: int) -> None:
+        """Kill the worker once the deadline and its grace have passed."""
+        assert self._loop is not None and self._deadline is not None
+        await asyncio.sleep(
+            self._deadline + _DEADLINE_GRACE_SECONDS - self._loop.time()
+        )
+        self._stopped = True
+        with suppress(ProcessLookupError):
+            os.kill(pid, signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL)
 
     async def _discard_session(self) -> None:
         """Drop a session whose worker is gone.
@@ -696,11 +716,18 @@ class Sandbox:
         # Monty's synchronous file callbacks bridge DB reads back to this loop.
         self._loop = asyncio.get_running_loop()
         self._deadline = self._loop.time() + self._config.sandbox.code_timeout
+        self._refused = self._stopped = False
         search_calls_before = self._search_calls
         session, vfs = await self._ensure_initialized()
         external_fns = self._build_external_functions()
 
         out = CappedOutput(self._config.sandbox.max_output_chars)
+        pid = session.worker_pid
+        stopper = (
+            asyncio.create_task(self._stop_after_deadline(pid))
+            if pid is not None
+            else None
+        )
 
         try:
             output = await session.feed_run(
@@ -711,7 +738,12 @@ class Sandbox:
                 os=vfs,
             )
         except (pydantic_monty.MontyError, RuntimeError) as e:
-            stderr = str(e)
+            stderr = (
+                f"{self._time_limit()}. The program ran past the deadline and its "
+                "grace period, so it was stopped."
+                if self._stopped
+                else str(e)
+            )
             # A crash kills the worker, a protocol error leaves it out of step,
             # and Monty's time limit leaves its heap undefined. All three poison
             # the session. Bad user code does not.
@@ -730,8 +762,20 @@ class Sandbox:
                 search_calls=self._search_calls - search_calls_before,
             )
 
+        finally:
+            if stopper is not None:
+                stopper.cancel()
+
         if output is not None:
             out.write("stdout", str(output))
+        if self._refused:
+            return SandboxResult(
+                stdout=out.text(),
+                stderr=f"{self._time_limit()}. The program caught the refused "
+                "read, so its output is incomplete.",
+                success=False,
+                search_calls=self._search_calls - search_calls_before,
+            )
         return SandboxResult(
             stdout=out.text(),
             stderr="",
