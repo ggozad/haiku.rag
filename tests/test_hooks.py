@@ -2,9 +2,11 @@ import logging
 from contextlib import asynccontextmanager
 
 import pytest
+from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
+from haiku.rag.config.models import AppConfig, HookConfig
 from haiku.rag.hooks import ENTRY_POINT_GROUP, Hook, build_hooks
 from haiku.rag.store.models.chunk import Chunk
 from tests.client.test_client import _docling_doc, _import
@@ -85,6 +87,39 @@ def test_build_hooks_loads_lazily_in_configured_order():
     }
     hooks = build_hooks(["append", "recording"], discovered)
     assert [type(h) for h in hooks] == [AppendTokenHook, RecordingHook]
+
+
+def test_config_accepts_a_hook_name_or_a_name_with_options():
+    config = AppConfig.model_validate(
+        {"hooks": ["plain", {"name": "tuned", "options": {"token": "syn"}}]}
+    )
+    assert config.hooks == [
+        "plain",
+        HookConfig(name="tuned", options={"token": "syn"}),
+    ]
+    assert HookConfig(name="bare").options == {}
+
+
+def test_config_rejects_an_unknown_key_in_a_hook_entry():
+    with pytest.raises(ValidationError, match="opts"):
+        AppConfig.model_validate({"hooks": [{"name": "tuned", "opts": {}}]})
+
+
+def test_build_hooks_passes_options_to_the_factory():
+    discovered = {"append": _EntryPointStub(AppendTokenHook)}
+    hooks = build_hooks(
+        ["append", HookConfig(name="append", options={"token": "syn"})], discovered
+    )
+    assert len(hooks) == 2
+    assert [h.token for h in hooks if isinstance(h, AppendTokenHook)] == [
+        "expanded",
+        "syn",
+    ]
+
+
+def test_build_hooks_unknown_name_with_options_raises():
+    with pytest.raises(ValueError, match="missing"):
+        build_hooks([HookConfig(name="missing", options={"x": 1})], {})
 
 
 def test_client_init_unknown_hook_raises(temp_db_path):

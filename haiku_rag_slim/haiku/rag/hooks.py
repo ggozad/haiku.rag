@@ -6,6 +6,7 @@ from importlib.metadata import entry_points
 from types import TracebackType
 from typing import TYPE_CHECKING, Literal, Protocol, overload, runtime_checkable
 
+from haiku.rag.config.models import HookConfig
 from haiku.rag.store.models.chunk import SearchResult, SearchType
 from haiku.rag.store.models.document import Document
 
@@ -53,9 +54,9 @@ class SearchRequest:
 class Hook:
     """Base class for client lifecycle hooks. Subclasses override any subset.
 
-    A package registers a zero-arg factory under the ``haiku.rag.hooks``
-    entry-point group; ``config.hooks`` lists the hooks to activate, and they
-    run in the listed order at every hook point. Hooks receive the ``HaikuRAG``
+    A package registers a factory under the ``haiku.rag.hooks`` entry-point
+    group; ``config.hooks`` lists the hooks to activate, each with the keyword
+    arguments its factory receives, and they run in the listed order at every hook point. Hooks receive the ``HaikuRAG``
     client, so they may search, read repositories, or keep their own state in
     the database via ``client.store`` (table names must use the ``hook_``
     prefix to stay clear of core tables and migrations).
@@ -194,7 +195,7 @@ async def notify(
             )
 
 
-HookFactory = Callable[[], Hook]
+HookFactory = Callable[..., Hook]
 
 
 @runtime_checkable
@@ -214,14 +215,18 @@ def load_hooks() -> dict[str, LoadableEntryPoint]:
 
 
 def build_hooks(
-    names: Sequence[str],
+    configured: Sequence[str | HookConfig],
     discovered: Mapping[str, LoadableEntryPoint],
 ) -> list[Hook]:
-    """Load and instantiate the named hooks in configured order. Raises
-    ValueError for a name with no registered entry point so a misconfigured
-    client fails at construction rather than silently skipping a hook."""
+    """Load and instantiate the configured hooks in order, passing each its
+    options. Raises ValueError for a name with no registered entry point so a
+    misconfigured client fails at construction rather than silently skipping a
+    hook."""
     hooks: list[Hook] = []
-    for name in names:
+    for entry in configured:
+        if isinstance(entry, str):
+            entry = HookConfig(name=entry)
+        name = entry.name
         try:
             entry_point = discovered[name]
         except KeyError:
@@ -230,5 +235,5 @@ def build_hooks(
                 f"registered under {ENTRY_POINT_GROUP!r}."
             ) from None
         factory: HookFactory = entry_point.load()
-        hooks.append(factory())
+        hooks.append(factory(**entry.options))
     return hooks

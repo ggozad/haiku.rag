@@ -750,9 +750,16 @@ class IngesterConfig(ConfigModel):
     api: APIConfig = Field(default_factory=APIConfig)
 
 
+class HookConfig(ConfigModel):
+    """A hook activated by name, with keyword arguments for its factory."""
+
+    name: str
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 class AppConfig(ConfigModel):
     environment: str = "production"
-    hooks: list[str] = Field(default_factory=list)
+    hooks: list[str | HookConfig] = Field(default_factory=list)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     lancedb: LanceDBConfig = Field(default_factory=LanceDBConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)

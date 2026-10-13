@@ -32,8 +32,11 @@ Lifespans follow the same ownership: they enter for a client that owns its sessi
 from haiku.rag.hooks import Hook
 
 class AbbreviationHook(Hook):
+    def __init__(self, min_length: int = 2):
+        self.min_length = min_length
+
     async def before_search(self, client, request):
-        request.query = my_glossary.expand(request.query)
+        request.query = my_glossary.expand(request.query, min_length=self.min_length)
         return request
 
     async def after_search(self, client, request, results):
@@ -45,7 +48,7 @@ class AbbreviationHook(Hook):
         return results
 ```
 
-Register a zero-arg factory in your package's `pyproject.toml`:
+Register a factory in your package's `pyproject.toml`:
 
 ```toml
 [project.entry-points."haiku.rag.hooks"]
@@ -58,6 +61,17 @@ Activate it in `haiku.rag.yaml`:
 hooks:
   - abbreviations
 ```
+
+An entry can carry options, which the factory receives as keyword arguments:
+
+```yaml
+hooks:
+  - name: abbreviations
+    options:
+      min_length: 3
+```
+
+This entry constructs `AbbreviationHook(min_length=3)`, which expands only abbreviations of three or more characters. A plain name calls the factory with no arguments.
 
 An unknown name in `hooks:` raises `ValueError` when the client is constructed, so misconfiguration fails at startup. Entry points load lazily. Only the hooks the config references are imported.
 
