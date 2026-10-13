@@ -1,6 +1,13 @@
 from haiku.rag.store.models.chunk import Chunk
 
 
+def scored_text(chunk: Chunk) -> str:
+    """The chunk's text as a reranker scores it: document title and section
+    headings, where present, each on its own line before the content."""
+    context = [chunk.document_title, *(chunk.get_chunk_metadata().headings or [])]
+    return "\n".join([*(line for line in context if line), chunk.content])
+
+
 class RerankerBase:
     _model: str | None = None
 

@@ -4,7 +4,7 @@ import pytest
 
 from haiku.rag.config.models import AppConfig, ModelConfig, RerankingConfig
 from haiku.rag.reranking import get_reranker
-from haiku.rag.reranking.base import RerankerBase
+from haiku.rag.reranking.base import RerankerBase, scored_text
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.utils.dependencies import raise_missing_extra
 
@@ -586,6 +586,7 @@ async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
 
         def rank(self, query, documents, top_k=10, activation_fn=None):
             self.activation_fn = activation_fn
+            self.documents = documents
             # Reverse order so the mapping back to chunks is observable.
             return [
                 {"corpus_id": i, "score": 1.0 - (i / 10)}
@@ -604,6 +605,10 @@ async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
     stub_logit = 1.0 - last_index / 10
     assert reranked[0][1] == pytest.approx(1.0 / (1.0 + math.exp(-stub_logit)))
     assert isinstance(reranker._reranker.activation_fn, torch.nn.Identity)
+
+    titled = Chunk(content="body", document_title="Title")
+    await reranker.rerank("query", [titled], top_n=1)
+    assert reranker._reranker.documents == ["Title\nbody"]
 
 
 def test_missing_reranker_dependency_raises(monkeypatch):
@@ -725,6 +730,69 @@ class TestOpenRouterRerankerFactory:
 
         reranker = get_reranker(_openrouter_rerank_config(multimodal=True))
         assert isinstance(reranker, OpenRouterReranker)
+
+
+@pytest.mark.parametrize(
+    ("chunk", "expected"),
+    [
+        (
+            Chunk(
+                content="body",
+                document_title="Title",
+                metadata={"headings": ["Part", "Section"]},
+            ),
+            "Title\nPart\nSection\nbody",
+        ),
+        (Chunk(content="body", metadata={"headings": ["Section"]}), "Section\nbody"),
+        (Chunk(content="body", document_title="Title"), "Title\nbody"),
+        (Chunk(content="body", document_title=""), "body"),
+        (Chunk(content="body"), "body"),
+    ],
+)
+def test_scored_text_puts_title_and_headings_before_content(chunk, expected):
+    assert scored_text(chunk) == expected
+
+
+@pytest.mark.parametrize("provider", ["vllm", "openrouter"])
+async def test_http_rerankers_score_title_and_headings(monkeypatch, provider):
+    captured: dict = {}
+    _capturing_rerank_client(monkeypatch, captured, 2)
+    titled = Chunk(
+        content="body", document_title="Title", metadata={"headings": ["Section"]}
+    )
+    untitled = Chunk(content="other body")
+
+    if provider == "vllm":
+        from haiku.rag.reranking.vllm import VLLMReranker
+
+        reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
+    else:
+        reranker = get_reranker(_openrouter_rerank_config())
+    assert reranker is not None
+    await reranker.rerank("q", [titled, untitled])
+
+    assert captured["json"]["documents"] == ["Title\nSection\nbody", "other body"]
+
+
+async def test_picture_text_part_carries_the_title(monkeypatch):
+    from haiku.rag.reranking.vllm import VLLMReranker
+
+    captured: dict = {}
+    _capturing_rerank_client(monkeypatch, captured, 2)
+    described = Chunk(content="a described picture", document_title="Title")
+    described._picture_data = b"\x89PNG\r\n\x1a\n"
+    undescribed = Chunk(content="", document_title="Title")
+    undescribed._picture_data = b"\x89PNG\r\n\x1a\n"
+
+    reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
+    await reranker.rerank("q", [described, undescribed])
+
+    described_doc, undescribed_doc = captured["json"]["documents"]
+    assert described_doc["content"][1] == {
+        "type": "text",
+        "text": "Title\na described picture",
+    }
+    assert [part["type"] for part in undescribed_doc["content"]] == ["image_url"]
 
 
 async def test_openrouter_reranker_builds_documents(monkeypatch):

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Rerankers score a chunk's document title and section headings, where present, before its content (`reranking.base.scored_text`).
+
 ### Fixed
 
 - `execute_code` stops a program still running `_DEADLINE_GRACE_SECONDS` (5 s) past `sandbox.code_timeout` by killing its worker, and fails a program that caught a refused read, with the time-limit message in either case.

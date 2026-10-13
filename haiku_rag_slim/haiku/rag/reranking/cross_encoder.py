@@ -11,7 +11,7 @@ except ModuleNotFoundError as e:  # pragma: no cover
         raise
     raise_missing_extra(e.name, "cross-encoder", e)
 
-from haiku.rag.reranking.base import RerankerBase
+from haiku.rag.reranking.base import RerankerBase, scored_text
 from haiku.rag.store.models.chunk import Chunk
 
 
@@ -30,7 +30,7 @@ class CrossEncoderReranker(RerankerBase):
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10
     ) -> list[tuple[Chunk, float]]:
-        documents = [chunk.content for chunk in chunks]
+        documents = [scored_text(chunk) for chunk in chunks]
         # Ask for logits and squash them here: the model's own sigmoid runs in
         # bf16, where saturated scores round onto identical values and leave the
         # order of the top candidates to the sort.
