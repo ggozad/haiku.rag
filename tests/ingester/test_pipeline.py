@@ -1,4 +1,5 @@
 import logging
+import socket
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
@@ -525,6 +526,96 @@ async def test_unknown_exception_classified_transient():
     client._ingest_observed.side_effect = RuntimeError("???")
     with pytest.raises(TransientError):
         await run_job(client, _job())
+
+
+def _hook_error(cause: BaseException):
+    from haiku.rag.hooks import HookError
+
+    try:
+        raise HookError("pkg.Hook.before_ingest failed for file:///a.md") from cause
+    except HookError as e:
+        return e
+
+
+def _http_status_error(status: int) -> httpx.HTTPStatusError:
+    response = httpx.Response(
+        status, request=httpx.Request("GET", "https://example.com/a")
+    )
+    return httpx.HTTPStatusError("err", request=response.request, response=response)
+
+
+class _ClientConnectError(Exception):
+    """A client library's connect error."""
+
+
+def _raised_from(outer: Exception, inner: BaseException) -> Exception:
+    try:
+        raise outer from inner
+    except Exception as e:
+        return e
+
+
+def _client_connect_error(socket_error: BaseException) -> Exception:
+    """Chained as httpx and httpx2 chain theirs: the transport's error is raised
+    while handling the socket error, and the client's is raised from it."""
+    try:
+        try:
+            try:
+                raise socket_error
+            except BaseException:
+                raise _ClientConnectError("transport")
+        except _ClientConnectError as transport:
+            raise _ClientConnectError("client") from transport
+    except _ClientConnectError as e:
+        return e
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        ValueError("bad header"),
+        RuntimeError("???"),
+        _http_status_error(404),
+        FileNotFoundError("glossary.csv"),
+    ],
+)
+async def test_a_hook_failure_is_permanent(cause):
+    client = _mock_client()
+    client._ingest_observed.side_effect = _hook_error(cause)
+    with pytest.raises(PermanentError) as raised:
+        await run_job(client, _job())
+    assert str(raised.value) == "pkg.Hook.before_ingest failed for file:///a.md"
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        TransientError("busy"),
+        httpx.ConnectError("boom"),
+        TimeoutError("slow"),
+        _http_status_error(408),
+        _http_status_error(429),
+        _http_status_error(503),
+        ConnectionResetError("reset"),
+        ConnectionRefusedError("refused"),
+        socket.gaierror("name resolution"),
+        _client_connect_error(ConnectionRefusedError()),
+        _client_connect_error(
+            _raised_from(
+                OSError("all connection attempts failed"),
+                ExceptionGroup(
+                    "connect", [ConnectionRefusedError(), ConnectionRefusedError()]
+                ),
+            )
+        ),
+    ],
+)
+async def test_a_hook_failure_caused_by_a_transient_error_is_retried(cause):
+    client = _mock_client()
+    client._ingest_observed.side_effect = _hook_error(cause)
+    with pytest.raises(TransientError) as raised:
+        await run_job(client, _job())
+    assert str(raised.value) == "pkg.Hook.before_ingest failed for file:///a.md"
 
 
 async def test_directory_result_classified_permanent():
