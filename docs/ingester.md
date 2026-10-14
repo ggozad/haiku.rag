@@ -527,7 +527,7 @@ The `asyncpg` driver comes with the `ingester` extra. `dburi` overrides `path` a
 
 Several ingesters share one Postgres queue, each under its own namespace and each writing its own database. An ingester claims, counts, prunes and serves through its API the rows of its namespace and no others, so source ids need to be unique within a namespace, not across the queue. A namespace is stable across restarts and upgrades: an ingester started under a new one does not see the rows recorded under the old. Two processes under one namespace are two writers of one database, and a database has one writer (see [storage](configuration/storage.md)). The database role sees every row: namespaces separate ingesters in the application, not in Postgres.
 
-`serve`, `run-batch` and `--dry-run` refuse a server `dburi` without a namespace, and never create or migrate a server queue: they read its schema version and fail naming the command to run. A SQLite queue is owned by one process, migrates itself at startup and records its rows under the empty namespace.
+`serve`, `run-batch` and `--dry-run` refuse a server `dburi` without a namespace, and never create or migrate a server queue: they read its schema version and fail naming the command to run. A SQLite queue is owned by one process, migrates itself at startup and records its rows under `namespace`, empty unless configured.
 
 ##### Deployment
 
@@ -617,3 +617,24 @@ curl -H "Authorization: Bearer $TOKEN" -X POST \
 curl -H "Authorization: Bearer $TOKEN" -X POST \
     http://localhost:8765/jobs/<id>/retry
 ```
+
+### Reading the queue from Python
+
+A deployment that only runs `run-batch` has no HTTP API. The queue's read side is in `haiku.rag.ingester.queue`:
+
+```python
+from haiku.rag.ingester.queue import JobRepo, JobStatus, SyncStateRepo, open_queue
+
+engine = await open_queue(config.ingester.queue)
+try:
+    jobs = JobRepo(engine, namespace=config.ingester.queue.namespace)
+    rejected = await jobs.list_jobs(status=JobStatus.REJECTED, limit=100)
+finally:
+    await engine.dispose()
+```
+
+- `open_queue(queue_config)` returns the engine. It migrates a SQLite file and refuses one newer than the release. A server queue is only checked: one behind or ahead of the release is refused, naming the command to run. `haiku.rag.ingester.queue.migrations.verify_schema(engine)` makes the same check and writes nothing, for an account that can only read.
+- `JobRepo(engine, namespace)` reads with `get_job(job_id)`, `list_jobs(status=, source_id=, uri=, limit=, offset=)` (newest enqueued first), `counts_by_status()`, and `counts_by_status_since(since)`, which counts the jobs completed at or after `since`, as the `run-batch` summary does.
+- `SyncStateRepo(engine, namespace)` reads with `get_row(source_id, uri)`, `list_known_uris(source_id)` and `list_ingested_uris(source_id)`.
+
+Pass the namespace the ingester runs under, `ingester.queue.namespace`, which is `""` unless configured. The methods that change rows belong to the ingester.
