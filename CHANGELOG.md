@@ -5,13 +5,14 @@
 ### Added
 
 - `search.rerank_pool_factor` (default 10): candidates per requested result a reranker scores.
-- Client lifecycle hooks (`before_ingest`, `after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list, whose entries are a name or `{name, options}` with keyword arguments for the hook's factory. Post-commit observer hooks are best-effort; failures are logged and do not change the completed operation's result. A client covering several databases fires hooks once, at the federating level. `before_ingest` receives an `IngestRequest` for each document fetched from a source and each PDF attachment, and may replace its body and add metadata. Raising `DocumentRejected` from it refuses the document: a directory `add-src` and a PDF's attachments skip it, and the ingester records the job dead. Its other exceptions raise `HookError`, which the ingester records dead unless its cause is transient. A FULL rebuild runs `before_ingest`, ends on a `HookError`, keeps a rejected document's stored content, and fires no post-commit hooks.
+- Client lifecycle hooks (`before_ingest`, `after_ingest`, `after_delete`, `before_search`, `after_search`) registered under the `haiku.rag.hooks` entry-point group and activated via the `hooks:` config list, whose entries are a name or `{name, options}` with keyword arguments for the hook's factory. Post-commit observer hooks are best-effort; failures are logged and do not change the completed operation's result. A client covering several databases fires hooks once, at the federating level. `before_ingest` receives an `IngestRequest` for each document fetched from a source and each PDF attachment, and may replace its body and add metadata. Raising `DocumentRejected` from it refuses the document: a directory `add-src` and a PDF's attachments skip it, and the ingester records the job with the new `rejected` status, which `run-batch` reports as a separate count and does not count as a failure. Its other exceptions raise `HookError`, which the ingester records dead unless its cause is transient. A FULL rebuild runs `before_ingest`, ends on a `HookError`, keeps a rejected document's stored content, and fires no post-commit hooks.
 - `SearchResult.annotations` carries notes attached by `after_search` hooks, preserved through context expansion and rendered in agent-facing output.
 - `Hook.lifespan`, an async context manager around the client's lifetime for hooks that own resources. Entered in configured order once the store is open, exited in reverse order while the store, embedder and reranker are still usable.
 
 ### Changed
 
 - Rerankers score a chunk's document title and section headings, where present, before its content (`reranking.base.scored_text`).
+- Ingester queue schema 5. Run `haiku-ingester queue migrate` on a server queue before starting upgraded ingesters.
 
 ### Fixed
 

@@ -903,36 +903,36 @@ async def test_renew_claims_empty_is_noop(jobs):
     assert await jobs.renew_claims({}) == 0
 
 
-# --- prune_dead ---
+# --- prune_unsuccessful ---
 
 
-async def test_prune_dead_removes_matching_dead_rows(jobs):
+async def test_prune_unsuccessful_removes_matching_dead_rows(jobs):
     """A dead UPSERT becomes stale once a sibling DELETE has resolved the URI;
-    prune_dead() removes it so the DLQ stops showing resolved entries."""
+    prune_unsuccessful() removes it so the DLQ stops showing resolved entries."""
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job is not None
     claimed = await jobs.claim_next("w")
     assert claimed is not None
     await jobs.mark_dead(claimed.id, "boom", "w")
 
-    pruned = await jobs.prune_dead("s", "u")
+    pruned = await jobs.prune_unsuccessful("s", "u")
     assert pruned == 1
     assert await jobs.get_job(job.id) is None
 
 
-async def test_prune_dead_leaves_non_dead_rows_alone(jobs):
+async def test_prune_unsuccessful_leaves_non_dead_rows_alone(jobs):
     """Queued/claimed/succeeded rows for the same (source, uri) are not
     touched — only `dead` is purged."""
     queued = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert queued is not None
 
-    pruned = await jobs.prune_dead("s", "u")
+    pruned = await jobs.prune_unsuccessful("s", "u")
     assert pruned == 0
     refreshed = await jobs.get_job(queued.id)
     assert refreshed is not None and refreshed.status is JobStatus.QUEUED
 
 
-async def test_prune_dead_scoped_to_matching_uri(jobs):
+async def test_prune_unsuccessful_scoped_to_matching_uri(jobs):
     """Dead rows for other URIs (and other sources) survive."""
     j1 = await jobs.enqueue("s", "u1", JobOp.UPSERT)
     assert j1 is not None
@@ -942,7 +942,7 @@ async def test_prune_dead_scoped_to_matching_uri(jobs):
     assert j2 is not None
     await jobs.mark_dead((await jobs.claim_next("w")).id, "err", "w")
 
-    pruned = await jobs.prune_dead("s", "u1")
+    pruned = await jobs.prune_unsuccessful("s", "u1")
     assert pruned == 1
     assert await jobs.get_job(j1.id) is None
     assert await jobs.get_job(j2.id) is not None
@@ -1547,7 +1547,7 @@ async def test_a_stalled_document_never_blocks_a_delete(jobs):
     claimed_delete = await jobs.claim_next("w1")
     assert claimed_delete is not None
     assert await jobs.mark_succeeded(claimed_delete.id, "w1")
-    assert await jobs.prune_dead("src", "https://x/y.pdf") == 1
+    assert await jobs.prune_unsuccessful("src", "https://x/y.pdf") == 1
 
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
 
@@ -1912,9 +1912,9 @@ async def test_release_if_claimed_ignores_foreign_claims(own, foreign):
     assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
 
 
-async def test_prune_dead_ignores_foreign_jobs(own, foreign):
+async def test_prune_unsuccessful_ignores_foreign_jobs(own, foreign):
     theirs = await _dead(foreign)
-    assert await own.prune_dead("s", "u") == 0
+    assert await own.prune_unsuccessful("s", "u") == 0
     assert await foreign.get_job(theirs.id) is not None
 
 
@@ -1978,3 +1978,88 @@ async def test_sync_delete_ignores_foreign_rows(own_sync, foreign_sync):
     await foreign_sync.upsert("s", "u")
     await own_sync.delete("s", "u")
     assert await foreign_sync.get_row("s", "u") is not None
+
+
+# --- rejected ---
+
+
+async def _rejected(jobs, uri: str = "u"):
+    job = await jobs.enqueue("s", uri, JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None
+    assert await jobs.mark_rejected(claimed.id, "u rejected: draft", "w")
+    return job
+
+
+async def test_mark_rejected_records_the_reason(jobs):
+    job = await _rejected(jobs)
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.REJECTED
+    assert refreshed.last_error == "u rejected: draft"
+    assert refreshed.completed_at is not None
+
+
+async def test_retry_revives_a_rejected_job(jobs):
+    job = await _rejected(jobs)
+
+    revived = await jobs.retry(job.id)
+
+    assert revived.status is JobStatus.QUEUED
+    assert revived.last_error is None
+
+
+async def test_prune_unsuccessful_removes_rejected_rows(jobs):
+    job = await _rejected(jobs)
+
+    assert await jobs.prune_unsuccessful("s", "u") == 1
+    assert await jobs.get_job(job.id) is None
+
+
+async def test_prune_terminal_deletes_old_rejected_rows(jobs, conn):
+    job = await _rejected(jobs)
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET completed_at = ? WHERE id = ?", (long_ago, job.id)
+    )
+    await conn.commit()
+
+    assert await jobs.prune_terminal(max_age_seconds=60) == 1
+    assert await jobs.get_job(job.id) is None
+
+
+async def test_rejections_are_counted_apart_from_dead(jobs):
+    since = datetime.now(UTC) - timedelta(seconds=1)
+    await _rejected(jobs, "u1")
+    dead = await jobs.enqueue("s", "u2", JobOp.UPSERT)
+    assert dead is not None
+    await jobs.claim_next("w")
+    await jobs.mark_dead(dead.id, "boom", "w")
+
+    expected = {"rejected": 1, "dead": 1}
+    assert await jobs.counts_by_status_since(since) == expected
+    assert await jobs.batch_progress_counts_since(since) == expected
+
+
+async def test_migration_v4_to_v5_keeps_the_jobs(engine):
+    """Schema 5 adds the `rejected` status, which needs no DDL: the version
+    alone keeps an older release from reading a status it cannot parse."""
+    when = "2026-01-01T00:00:00+00:00"
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("UPDATE schema_version SET version = 4"))
+        await conn.execute(
+            sa.text(
+                "INSERT INTO jobs (id, namespace, source_id, uri, op, status, "
+                "attempts, max_attempts, enqueued_at, scheduled_at) "
+                "VALUES ('old-1', '', 's', 'u1', 'upsert', 'queued', 0, 5, "
+                f"'{when}', '{when}')"
+            )
+        )
+
+    assert SCHEMA_VERSION == 5
+    assert await apply_migrations(engine) == 5
+    async with engine.connect() as conn:
+        ids = (await conn.execute(sa.text("SELECT id FROM jobs"))).scalars().all()
+    assert ids == ["old-1"]

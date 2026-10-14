@@ -10,6 +10,8 @@ class PermanentError(IngesterError):
     deadline, so the same bytes stall again and discovery must not rediscover
     them. `fatal_to_process` marks a failure that also left this process unable
     to convert, so the worker terminates once the job is recorded dead.
+    `rejected` marks a document a hook refused, recorded `rejected` instead of
+    dead.
     """
 
     def __init__(
@@ -18,10 +20,12 @@ class PermanentError(IngesterError):
         *,
         conversion_stalled: bool = False,
         fatal_to_process: bool = False,
+        rejected: bool = False,
     ):
         super().__init__(message)
         self.conversion_stalled = conversion_stalled
         self.fatal_to_process = fatal_to_process
+        self.rejected = rejected
 
 
 class TransientError(IngesterError):

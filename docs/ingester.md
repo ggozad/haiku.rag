@@ -344,7 +344,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `POST` | `/sources/{id}/refresh` | Run a sweep now. Skipped (`refreshed: false`) while the source has queued or claimed jobs or its breaker is open |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |
-| `POST` | `/jobs/{id}/retry` | Reset a dead or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI |
+| `POST` | `/jobs/{id}/retry` | Reset a dead, rejected or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI |
 | `DELETE` | `/jobs/{id}` | Cancel a queued or claimed job |
 | `GET` | `/dlq` | Dead jobs, filtered by `source_id`, `limit` (default 50, at most 500), `offset` |
 | `POST` | `/dlq/{id}/retry` | Re-queue a dead job |
@@ -395,7 +395,7 @@ haiku-ingester run-batch
 haiku-ingester run-batch --db rag.lancedb
 ```
 
-It exits non-zero when a job dead-letters or a source's sweep does not complete. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
+It exits non-zero when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 
 `--dry-run` makes the same discovery without queueing anything, and writes the changes it found to a YAML manifest, `manifest-<datestamp>.yaml` unless `--output`/`-o` names one:
 
@@ -503,7 +503,7 @@ haiku-ingester queue migrate          # apply pending schema changes
 haiku-ingester queue init -q /var/lib/haiku-rag/ingester.db   # at another path
 ```
 
-Succeeded and dead jobs are kept for history. The reaper deletes those completed more than `retention_days` ago:
+Succeeded, dead and rejected jobs are kept for history. The reaper deletes those completed more than `retention_days` ago:
 
 ```yaml
 ingester:
@@ -573,6 +573,10 @@ Queue schema 4 adds the namespace. The migration leaves every existing row under
 4. Start the ingester with `namespace: papers`.
 
 A queue that several ingesters already wrote to needs a mapping from `source_id` to namespace in step 3. SQLite queues need nothing.
+
+##### Upgrading a queue from schema 4
+
+Queue schema 5 adds the `rejected` job status. The migration changes no table, but ingesters sharing a server queue still upgrade together, in the order above. SQLite queues migrate themselves.
 
 ### Logs and tracing
 

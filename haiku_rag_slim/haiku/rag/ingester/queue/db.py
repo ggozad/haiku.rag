@@ -2,7 +2,7 @@ import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 metadata = sa.MetaData()
 

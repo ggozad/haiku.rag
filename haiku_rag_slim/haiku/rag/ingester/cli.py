@@ -226,7 +226,8 @@ def _batch_progress(
     def _update(snapshot: "BatchProgress") -> None:
         nonlocal task_id
         task_description = (
-            f"{description} ({snapshot.succeeded} ok, {snapshot.dead} dead)"
+            f"{description} ({snapshot.succeeded} ok, {snapshot.dead} dead, "
+            f"{snapshot.rejected} rejected)"
         )
         if task_id is None:
             task_id = progress.add_task(
@@ -398,7 +399,9 @@ async def _run_batch(
             typer.echo(f"Error: {exc}")
             raise typer.Exit(1) from exc
         typer.echo(
-            f"Manifest batch complete: {report.succeeded} succeeded, {report.dead} dead"
+            "Manifest batch complete: "
+            f"{report.succeeded} succeeded, {report.dead} dead, "
+            f"{report.rejected} rejected"
         )
         if report.dead:
             raise typer.Exit(1)
@@ -409,7 +412,10 @@ async def _run_batch(
             report = await app.run_batch()
         else:
             report = await app.run_batch(progress_callback=progress_callback)
-    typer.echo(f"Batch complete: {report.succeeded} succeeded, {report.dead} dead")
+    typer.echo(
+        f"Batch complete: {report.succeeded} succeeded, {report.dead} dead, "
+        f"{report.rejected} rejected"
+    )
     if report.failed_sweeps:
         typer.echo(
             f"Sources that failed to sweep: {', '.join(report.failed_sweeps)}",

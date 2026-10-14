@@ -328,6 +328,27 @@ async def test_run_batch_reports_dead_on_permanent_failure(tmp_path, use_client)
     assert report.dead == 1
 
 
+async def test_run_batch_reports_rejections_apart_from_dead(tmp_path, use_client):
+    from haiku.rag.hooks import DocumentRejected
+
+    (tmp_path / "a.md").write_text("hello")
+    (tmp_path / "b.md").write_text("world")
+
+    client = _mock_client()
+    client._ingest_observed.side_effect = DocumentRejected("draft")
+    use_client(client)
+    progress = []
+
+    report = await IngesterApp(
+        config=_config(tmp_path), scope=DatabaseScope.at(tmp_path / "db.lancedb")
+    ).run_batch(progress_callback=progress.append)
+
+    assert (report.succeeded, report.dead, report.rejected) == (0, 0, 2)
+    assert progress[-1].total == 2
+    assert progress[-1].completed == 2
+    assert progress[-1].rejected == 2
+
+
 async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_client):
     """A doc that dead-lettered in an earlier run and succeeds in this one
     prunes its dead row. The report counts only this run's terminal jobs, so

@@ -91,10 +91,12 @@ def _classify(exc: BaseException) -> Exception:
 
     # UnsupportedSourceError is the typed signal from client/* that the
     # source will never ingest successfully on a retry (bad URI scheme,
-    # missing file, unsupported extension, etc.). A hook's DocumentRejected
-    # repeats on every retry until the hook changes.
-    if isinstance(exc, UnsupportedSourceError | FileTooLargeError | DocumentRejected):
+    # missing file, unsupported extension, etc.).
+    if isinstance(exc, UnsupportedSourceError | FileTooLargeError):
         return PermanentError(str(exc))
+
+    if isinstance(exc, DocumentRejected):
+        return PermanentError(str(exc), rejected=True)
 
     if isinstance(exc, HookError):
         # A hook's own bug repeats on every retry. Its call to a service that

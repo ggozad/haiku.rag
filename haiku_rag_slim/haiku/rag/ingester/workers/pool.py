@@ -300,21 +300,32 @@ class WorkerPool:
     async def _finish_permanent(
         self, job: Job, error: PermanentError, worker_id: str
     ) -> None:
-        """Record a permanent failure: dead, then the suppression marker."""
-        if not await self._jobs.mark_dead(
-            job.id, str(error), worker_id, conversion_stalled=error.conversion_stalled
-        ):
+        """Record a permanent failure, dead or rejected, then the suppression
+        marker."""
+        if error.rejected:
+            recorded = await self._jobs.mark_rejected(job.id, str(error), worker_id)
+        else:
+            recorded = await self._jobs.mark_dead(
+                job.id,
+                str(error),
+                worker_id,
+                conversion_stalled=error.conversion_stalled,
+            )
+        if not recorded:
             logger.warning(
-                "Job %s lost claim before mark_dead (likely reaper race); "
+                "Job %s lost claim before it was recorded (likely reaper race); "
                 "letting the re-claiming worker drive",
                 job.id,
             )
             return
-        logger.info("Job %s dead (permanent): %s", job.id, error)
+        if error.rejected:
+            logger.info("Job %s rejected: %s", job.id, error)
+        else:
+            logger.info("Job %s dead (permanent): %s", job.id, error)
         # Record the failed revision so discovery treats the unchanged file as
         # accounted-for and stops re-enqueuing it every sweep. sync_state.revision
-        # means "last accounted-for revision" — ingested OR permanently failed.
-        # Revision-less sources (no ETag) can't be suppressed this way.
+        # means "last accounted-for revision": ingested, permanently failed or
+        # rejected. Revision-less sources (no ETag) can't be suppressed this way.
         if job.revision is None:
             return
         try:
@@ -326,11 +337,11 @@ class WorkerPool:
                 ingested=False,
             )
         except Exception:
-            # The job is already dead. A failed marker write only means the
+            # The job is already recorded. A failed marker write only means the
             # next sweep may re-enqueue this URI — not worth crashing the
             # worker and shrinking the pool over.
             logger.exception(
-                "Job %s dead but failure marker write failed for %s; "
+                "Job %s recorded but failure marker write failed for %s; "
                 "next sweep may re-enqueue",
                 job.id,
                 job.uri,
@@ -456,10 +467,10 @@ class WorkerPool:
                 # A successful DELETE resolves any earlier UPSERT failures for
                 # the same (source_id, uri): the document is gone, the original
                 # error is no longer actionable, the DLQ entry is visual noise.
-                pruned = await self._jobs.prune_dead(job.source_id, job.uri)
+                pruned = await self._jobs.prune_unsuccessful(job.source_id, job.uri)
                 if pruned:
                     logger.info(
-                        "Pruned %d dead job(s) for %s after successful DELETE",
+                        "Pruned %d dead or rejected job(s) for %s after successful DELETE",
                         pruned,
                         job.uri,
                     )

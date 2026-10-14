@@ -185,6 +185,15 @@ def test_run_batch_exits_nonzero_when_dead(monkeypatch):
     assert "2 dead" in result.output
 
 
+def test_run_batch_exits_zero_on_rejections_alone(monkeypatch):
+    _fake_app(BatchReport(succeeded=1, dead=0, rejected=2), monkeypatch)
+
+    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+
+    assert result.exit_code == 0
+    assert "Batch complete: 1 succeeded, 0 dead, 2 rejected" in result.output
+
+
 def test_run_batch_exits_nonzero_when_sweep_fails(monkeypatch):
     _fake_app(BatchReport(succeeded=2, dead=0, failed_sweeps=["docs"]), monkeypatch)
 
@@ -248,6 +257,19 @@ def test_run_batch_dry_run_exits_nonzero_when_sweep_fails(monkeypatch, tmp_path)
     assert result.exit_code == 1
     assert "failed to sweep: docs" in result.output
     assert not output.exists()
+
+
+def test_run_batch_manifest_exits_zero_on_rejections_alone(monkeypatch, tmp_path):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    _fake_manifest_app(BatchReport(succeeded=1, dead=0, rejected=1), monkeypatch)
+
+    result = runner.invoke(
+        cli, ["run-batch", "--manifest", str(manifest_path), "--db", "x.lancedb"]
+    )
+
+    assert result.exit_code == 0
+    assert "Manifest batch complete: 1 succeeded, 0 dead, 1 rejected" in result.output
 
 
 def test_run_batch_manifest_replays_manifest(monkeypatch, tmp_path):

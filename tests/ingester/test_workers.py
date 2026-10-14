@@ -238,6 +238,26 @@ async def test_permanent_error_with_revision_records_marker(client, jobs, sync):
     assert row.last_ingested_at is None
 
 
+async def test_a_rejection_is_recorded_rejected_with_its_marker(client, jobs, sync):
+    from haiku.rag.hooks import DocumentRejected
+
+    client._ingest_observed.side_effect = DocumentRejected("draft")
+    job = await jobs.enqueue("src", "file:///x/y.md", JobOp.UPSERT, revision="r0")
+    assert job is not None
+
+    pool = _pool(client, jobs, sync)
+    await pool.drain_once()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.REJECTED
+    assert refreshed.last_error == "draft"
+    row = await sync.get_row("src", "file:///x/y.md")
+    assert row is not None
+    assert row.revision == "r0"
+    assert row.last_ingested_at is None
+
+
 async def test_transient_exhausted_writes_no_marker(client, jobs, sync):
     """A transient failure that exhausts max_attempts goes dead but records no
     suppression marker, so it stays re-attemptable on the next sweep (transient =
