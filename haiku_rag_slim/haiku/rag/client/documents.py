@@ -885,7 +885,11 @@ async def _reconcile_pdf_attachments(
             content_hash=content_hash,
             extra_metadata={"parent_uri": parent_doc.uri},
         )
-        child_fr, hook_metadata = await _before_ingest(client, fetched, source_id)
+        try:
+            child_fr, hook_metadata = await _before_ingest(client, fetched, source_id)
+        except DocumentRejected as e:
+            logger.warning("%s", e)
+            continue
         if (
             existing_child
             and not force
@@ -994,19 +998,23 @@ async def create_document_from_source(
             filter = FileFilter()
             for child in walk_files(local_path):
                 if child.is_file() and filter.include_file(str(child)):
-                    doc = await create_document_from_source(
-                        session,
-                        client,
-                        child,
-                        title=None,
-                        metadata=metadata,
-                        sources=sources,
-                        source_id=source_id,
-                        metadata_provider=metadata_provider,
-                        force=force,
-                        written_ids=written_ids,
-                        notify_hooks=notify_hooks,
-                    )
+                    try:
+                        doc = await create_document_from_source(
+                            session,
+                            client,
+                            child,
+                            title=None,
+                            metadata=metadata,
+                            sources=sources,
+                            source_id=source_id,
+                            metadata_provider=metadata_provider,
+                            force=force,
+                            written_ids=written_ids,
+                            notify_hooks=notify_hooks,
+                        )
+                    except DocumentRejected as e:
+                        logger.warning("%s", e)
+                        continue
                     assert isinstance(doc, Document)
                     documents.append(doc)
             return documents

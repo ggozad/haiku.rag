@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -1068,23 +1069,41 @@ async def test_a_rejected_document_raises_and_stores_nothing(temp_db_path, tmp_p
 
 
 @pytest.mark.asyncio
-async def test_a_rejected_file_stops_a_directory_ingest(temp_db_path, tmp_path):
-    from haiku.rag.hooks import DocumentRejected
+async def test_a_directory_ingest_passes_a_rejected_file(
+    temp_db_path, tmp_path, monkeypatch
+):
+    from tests.conftest import capture_logs, fake_ingest_fetch_result
 
-    (tmp_path / "a.md").write_bytes(b"# A\n\nFirst.\n")
-    (tmp_path / "b.md").write_bytes(b"# B\n\nSecond.\n")
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_bytes(b"# A\n\nFirst.\n")
+    (docs / "b.md").write_bytes(b"# B\n\nSecond.\n")
 
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        client._hooks = [RejectHook("a.md")]
-        with pytest.raises(DocumentRejected):
-            await client.create_document_from_source(tmp_path)
-        assert await client.list_documents() == []
+    with capture_logs(
+        logging.getLogger("haiku.rag.client.documents"), logging.WARNING
+    ) as records:
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            client._hooks = [RejectHook("a.md")]
+            stored = await client.create_document_from_source(docs)
+            listed = await client.list_documents()
+
+    assert isinstance(stored, list)
+    assert [d.uri for d in stored] == [(docs / "b.md").as_uri()]
+    assert [d.uri for d in listed] == [(docs / "b.md").as_uri()]
+    assert [r.getMessage() for r in records] == [
+        f"{(docs / 'a.md').as_uri()} rejected: draft"
+    ]
 
 
 @pytest.mark.asyncio
-async def test_full_rebuild_propagates_a_rejection(temp_db_path, tmp_path):
+@pytest.mark.vcr()
+async def test_full_rebuild_keeps_a_rejected_documents_stored_content(
+    temp_db_path, tmp_path
+):
     from haiku.rag.client import RebuildMode
-    from haiku.rag.hooks import DocumentRejected
 
     path = tmp_path / "doc.md"
     path.write_bytes(b"# Notes\n\nBody.\n")
@@ -1094,12 +1113,13 @@ async def test_full_rebuild_propagates_a_rejection(temp_db_path, tmp_path):
             [_import("doc", "Body.", uri=path.as_uri())]
         )
         client._hooks = [RejectHook("doc.md")]
-        with pytest.raises(DocumentRejected):
-            async for _ in client.rebuild_database(mode=RebuildMode.FULL):
-                pass
+        rebuilt = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+        ]
         assert doc.id is not None
         stored = await client.get_document_by_id(doc.id)
 
+    assert rebuilt == [doc.id]
     assert stored is not None
     assert stored.content == doc.content
 
@@ -1216,3 +1236,65 @@ async def test_attachments_deleted_before_a_failure_still_fire_after_delete(
         "file:///fixtures/parent.pdf#attachment=b.txt",
         "file:///fixtures/parent.pdf#attachment=c.txt",
     }
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_attachment_is_skipped_and_its_stored_copy_kept(
+    temp_db_path, monkeypatch
+):
+    from haiku.rag.client.documents import (
+        _reconcile_pdf_attachments,
+        parent_uri_filter,
+    )
+    from haiku.rag.store.models.document import Document
+    from tests.conftest import (
+        build_pdf,
+        capture_logs,
+        fake_ingest_fetch_result,
+        writing,
+    )
+
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
+    parent_uri = "file:///fixtures/parent.pdf"
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.client.documents"), logging.WARNING
+    ) as records:
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            parent = await client.document_repository.create(
+                Document(
+                    content="",
+                    uri=parent_uri,
+                    metadata={"content_type": "application/pdf"},
+                )
+            )
+            await _reconcile_pdf_attachments(
+                writing(client),
+                client,
+                parent,
+                build_pdf([("a.txt", b"A"), ("b.txt", b"B")]),
+                depth=0,
+            )
+            client._hooks = [RejectHook("#attachment=a.txt")]
+            await _reconcile_pdf_attachments(
+                writing(client),
+                client,
+                parent,
+                build_pdf([("a.txt", b"A2"), ("c.txt", b"C")]),
+                depth=0,
+            )
+            children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    by_uri = {c.uri: c for c in children}
+    assert sorted(by_uri) == [
+        f"{parent_uri}#attachment=a.txt",
+        f"{parent_uri}#attachment=c.txt",
+    ]
+    assert by_uri[f"{parent_uri}#attachment=a.txt"].metadata["md5"] == (
+        hashlib.md5(b"A").hexdigest()
+    )
+    assert [r.getMessage() for r in records] == [
+        f"{parent_uri}#attachment=a.txt rejected: draft"
+    ]

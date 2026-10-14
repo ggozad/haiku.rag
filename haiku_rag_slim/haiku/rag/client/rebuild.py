@@ -17,7 +17,7 @@ from haiku.rag.client.documents import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
-from haiku.rag.hooks import DocumentRejected, HookError
+from haiku.rag.hooks import HookError
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import REBUILD_COMMANDS
 from haiku.rag.store.models.chunk import Chunk
@@ -987,8 +987,8 @@ async def _rebuild_full(
     session: SingleDatabaseSession, client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Full rebuild: re-convert from source, re-chunk, re-embed. A refresh
-    from source runs ``before_ingest`` hooks, whose failure or rejection ends
-    the rebuild, and no post-commit hooks."""
+    from source runs ``before_ingest`` hooks, whose failure ends the rebuild,
+    and no post-commit hooks."""
     from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
@@ -1047,7 +1047,7 @@ async def _rebuild_full(
             for doc_id in refreshed:
                 yield doc_id
             written_ids |= refreshed
-            if isinstance(failure, HookError | DocumentRejected):
+            if isinstance(failure, HookError):
                 raise failure
 
             if failure is not None and light_doc.id in refreshed:

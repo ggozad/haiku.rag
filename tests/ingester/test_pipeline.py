@@ -949,38 +949,24 @@ async def test_a_rejected_document_is_a_permanent_failure(temp_db_path, tmp_path
 
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")
-async def test_a_rejected_attachment_fails_its_parent_until_retried(
+async def test_a_rejected_attachment_leaves_its_parent_job_succeeding(
     tmp_path, temp_db_path
 ):
-    """The parent and the earlier sibling stay stored, the parent without the
-    md5 that would short-circuit a retry, and a retry once the hook accepts
-    the attachment completes the set."""
+    """The other attachment is stored and the parent gets the md5 that
+    short-circuits an unchanged re-ingest."""
     from haiku.rag.client.documents import parent_uri_filter
     from tests.conftest import build_pdf
 
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(build_pdf([("a.txt", b"alpha notes"), ("b.txt", b"beta")]))
     fs = FSSource(root=tmp_path, source_id="src")
-    child_b = f"{pdf_path.as_uri()}#attachment=b.txt"
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         client._hooks = [_RejectHook("#attachment=b.txt")]
-        with pytest.raises(PermanentError) as raised:
-            await run_job(client, _job(uri=pdf_path.as_uri()), sources=[fs])
+        result = await run_job(client, _job(uri=pdf_path.as_uri()), sources=[fs])
         parent = await client.get_document_by_uri(pdf_path.as_uri())
         assert parent is not None
         children = await client.list_documents(filter=parent_uri_filter(parent.uri))
-        assert [c.uri for c in children] == [f"{pdf_path.as_uri()}#attachment=a.txt"]
-        assert "md5" not in parent.metadata
 
-        client._hooks = []
-        result = await run_job(client, _job(uri=pdf_path.as_uri()), sources=[fs])
-        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
-        parent = await client.get_document_by_uri(pdf_path.as_uri())
-
-    assert str(raised.value) == f"{child_b} rejected: draft"
-    assert sorted(c.uri for c in children) == sorted(
-        [f"{pdf_path.as_uri()}#attachment=a.txt", child_b]
-    )
-    assert parent is not None
+    assert [c.uri for c in children] == [f"{pdf_path.as_uri()}#attachment=a.txt"]
     assert result.content_hash == parent.metadata["md5"]
