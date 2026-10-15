@@ -5,7 +5,9 @@ services:
     build:
       context: ..
       dockerfile: app/backend/Dockerfile
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    # The mounted package shadows the installed one: uvicorn puts its working
+    # directory first on the import path.
+    command: ["uvicorn", "--factory", "haiku_rag_app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     working_dir: /app/src
     # No authentication; bound to loopback. The frontend reaches it over the compose network.
     ports:
@@ -19,7 +21,7 @@ services:
     volumes:
       # haiku.rag.yaml places the database at /data.
       - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
-      - ./backend:/app/src:ro
+      - ./backend/haiku_rag_app:/app/src/haiku_rag_app:ro
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

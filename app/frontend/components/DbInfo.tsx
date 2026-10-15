@@ -2,44 +2,37 @@
 
 import { useEffect, useState } from "react";
 
-interface DbInfoData {
-	exists: boolean;
-	path: string;
-	documents: number;
-	chunks: number;
-	documents_bytes: number;
-	chunks_bytes: number;
-	has_vector_index: boolean;
-}
-
-function formatBytes(bytes: number): string {
-	if (bytes === 0) return "0 B";
-	const k = 1024;
-	const sizes = ["B", "KB", "MB", "GB"];
-	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	return `${Number.parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
+interface DatabaseEntry {
+	name: string;
+	available: boolean;
+	error: string | null;
+	documents?: number;
+	chunks?: number;
 }
 
 export default function DbInfo() {
-	const [info, setInfo] = useState<DbInfoData | null>(null);
+	const [databases, setDatabases] = useState<DatabaseEntry[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-		fetch("/api/info")
-			.then((res) => res.json())
-			.then(setInfo)
-			.catch((err) => setError(err.message));
+		fetch("/api/backend/api/databases")
+			.then(async (res) => {
+				const data = await res.json();
+				if (!res.ok) throw new Error(data.error || res.statusText);
+				setDatabases(data.databases ?? []);
+			})
+			.catch((err: Error) => setError(err.message));
 	}, []);
 
 	if (error) {
 		return (
-			<div className="db-info db-info-error">
-				<span>Database unavailable</span>
+			<div className="db-info db-info-error" title={error}>
+				<span>Backend unavailable</span>
 			</div>
 		);
 	}
 
-	if (!info) {
+	if (!databases) {
 		return (
 			<div className="db-info db-info-loading">
 				<span>Loading...</span>
@@ -47,37 +40,28 @@ export default function DbInfo() {
 		);
 	}
 
-	if (!info.exists) {
-		return (
-			<div className="db-info db-info-empty">
-				<span>No database found</span>
-			</div>
-		);
-	}
-
 	return (
 		<div className="db-info">
-			<div className="db-stat">
-				<span className="db-stat-value">{info.documents}</span>
-				<span className="db-stat-label">documents</span>
-			</div>
-			<div className="db-stat">
-				<span className="db-stat-value">{info.chunks}</span>
-				<span className="db-stat-label">chunks</span>
-			</div>
-			<div className="db-stat">
-				<span className="db-stat-value">
-					{formatBytes(info.documents_bytes + info.chunks_bytes)}
-				</span>
-				<span className="db-stat-label">total</span>
-			</div>
-			<div className="db-stat">
-				<span
-					className={`db-index-badge ${info.has_vector_index ? "indexed" : "not-indexed"}`}
-				>
-					{info.has_vector_index ? "indexed" : "no index"}
-				</span>
-			</div>
+			{databases.map((db) =>
+				db.available ? (
+					<div key={db.name} className="db-stat">
+						<span className="db-stat-label">{db.name}</span>
+						<span className="db-stat-value">{db.documents}</span>
+						<span className="db-stat-label">documents</span>
+						<span className="db-stat-value">{db.chunks}</span>
+						<span className="db-stat-label">chunks</span>
+					</div>
+				) : (
+					<div
+						key={db.name}
+						className="db-stat db-info-error"
+						title={db.error ?? undefined}
+					>
+						<span className="db-stat-label">{db.name}</span>
+						<span className="db-index-badge not-indexed">unavailable</span>
+					</div>
+				),
+			)}
 		</div>
 	);
 }

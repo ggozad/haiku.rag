@@ -9,6 +9,7 @@
 - `GET /sources` reports each source's `database`, and `last_error` and `last_error_at` from its last failed discovery, cleared by the next successful sweep. The dashboard marks such a source.
 - Startup fails on two sources sharing an id (`DuplicateSourceError`), and on two `ingester.databases` keys at one location.
 - `haiku-ingester run-batch --db-name NAME` runs one database of `ingester.databases`. `IngesterApp(database_name=)` is the same in Python.
+- `app/` backend `/api/databases`: each configured database with its availability, document and chunk counts, and `supports_image_search`; `/api/pictures?source=&document_id=&ref=`: a stored picture's bytes.
 
 ### Changed
 
@@ -24,6 +25,8 @@
 - `JobRepo.counts_by_status_since` and `batch_progress_counts_since` take `source_ids=`.
 - `JobRepo.claim_next(exclude_source_ids=)` replaced by `source_ids=`, the sources to claim from. `WorkerPool(client=)` replaced by `clients=`, a map from source id to client.
 - `pydantic-monty` bumped to 1.2. The sandbox iterates file objects and supports `match` statements, `os.walk`, `os.path`, `Path.glob`, `json.load` and `csv`.
+- The `app/` backend covers every configured database: `/api/documents` takes `source` and lists every database by default, `/api/visualize` takes `source`, and `/api/info` is replaced by `/api/databases`. It is the `haiku_rag_app` package, served as `uvicorn --factory haiku_rag_app.main:app`.
+- The `app/` frontend proxies the backend at `/api/backend/*` and the ingester at `/api/ingester/*`, adding `INGESTER_TOKEN` as a bearer token.
 
 ### Removed
 

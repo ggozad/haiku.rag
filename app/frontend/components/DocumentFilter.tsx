@@ -7,6 +7,7 @@ interface Document {
 	id: string;
 	title: string | null;
 	uri: string | null;
+	source: string;
 }
 
 interface DocumentFilterProps {
@@ -17,6 +18,8 @@ interface DocumentFilterProps {
 }
 
 const getDisplayName = (doc: Document) => doc.title || doc.uri || doc.id;
+// Ids repeat only between copies of a database; the name keeps them apart.
+const keyOf = (doc: Document) => `${doc.source}:${doc.id}`;
 
 export default function DocumentFilter({
 	isOpen,
@@ -27,25 +30,30 @@ export default function DocumentFilter({
 	const titleId = useId();
 	const [documents, setDocuments] = useState<Document[]>([]);
 	const [loading, setLoading] = useState(true);
+	// Databases that could not be listed, with the reason.
+	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [searchTerm, setSearchTerm] = useState("");
-	// Track selection by document id — two docs can share a title, but ids
-	// are unique. Display names are only used for rendering and for the
-	// filter string returned to the parent.
+	// Selection is tracked by database and id, since two documents can share a
+	// title. Display names are only used for rendering and for the filter
+	// string returned to the parent.
 	const [localSelected, setLocalSelected] = useState<Set<string>>(new Set());
 
 	// Refetch on every open so newly-added or deleted documents show up.
 	useEffect(() => {
 		if (!isOpen) return;
 		setLoading(true);
-		fetch("/api/documents")
-			.then((res) => res.json())
-			.then((data) => {
+		fetch("/api/backend/api/documents")
+			.then(async (res) => {
+				const data = await res.json();
+				if (!res.ok) throw new Error(data.error || res.statusText);
 				setDocuments(data.documents || []);
-				setLoading(false);
+				setErrors(data.errors || {});
 			})
-			.catch(() => {
-				setLoading(false);
-			});
+			.catch((error: Error) => {
+				setDocuments([]);
+				setErrors({ backend: error.message });
+			})
+			.finally(() => setLoading(false));
 	}, [isOpen]);
 
 	// Seed local selection from the parent's display-name list once documents
@@ -57,7 +65,7 @@ export default function DocumentFilter({
 			new Set(
 				documents
 					.filter((d) => selectedNames.has(getDisplayName(d)))
-					.map((d) => d.id),
+					.map(keyOf),
 			),
 		);
 		setSearchTerm("");
@@ -86,7 +94,7 @@ export default function DocumentFilter({
 
 	const handleApply = () => {
 		const names = documents
-			.filter((d) => localSelected.has(d.id))
+			.filter((d) => localSelected.has(keyOf(d)))
 			.map(getDisplayName);
 		// Dedupe: two selected docs sharing a title collapse to one filter term.
 		onApply(Array.from(new Set(names)));
@@ -141,6 +149,11 @@ export default function DocumentFilter({
 					value={searchTerm}
 					onChange={(e) => setSearchTerm(e.target.value)}
 				/>
+				{Object.entries(errors).map(([name, reason]) => (
+					<div key={name} className="filter-empty" title={reason}>
+						{name}: {reason}
+					</div>
+				))}
 				<div className="filter-list">
 					{loading ? (
 						<div className="filter-loading">Loading documents...</div>
@@ -152,11 +165,11 @@ export default function DocumentFilter({
 						filteredDocuments.map((doc) => {
 							const displayName = getDisplayName(doc);
 							return (
-								<label key={doc.id} className="filter-item">
+								<label key={keyOf(doc)} className="filter-item">
 									<input
 										type="checkbox"
-										checked={localSelected.has(doc.id)}
-										onChange={() => toggleDocument(doc.id)}
+										checked={localSelected.has(keyOf(doc))}
+										onChange={() => toggleDocument(keyOf(doc))}
 									/>
 									<span className="filter-item-label">{displayName}</span>
 								</label>

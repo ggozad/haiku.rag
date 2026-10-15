@@ -75,15 +75,17 @@ exclude = [
 only-include = ["/README.md"]
 
 [tool.uv.workspace]
-members = ["haiku_rag_slim", "evaluations"]
+members = ["haiku_rag_slim", "evaluations", "app/backend"]
 
 [tool.uv.sources]
 "haiku.rag-slim" = { workspace = true }
 "haiku.rag-evals" = { workspace = true }
+"haiku-rag-app" = { workspace = true }
 
 [dependency-groups]
 dev = [
     "haiku.rag-evals",
+    "haiku-rag-app",
     "haiku.rag-slim[ingester]",
     "zensical",
     "pre-commit>=4.5.1",
@@ -144,7 +146,7 @@ asyncio_default_fixture_loop_scope = "session"
 asyncio_mode = "auto"
 addopts = "-n auto"
 testpaths = ["tests"]
-norecursedirs = ["examples", "docs", "evaluations", ".git", ".venv"]
+norecursedirs = ["examples", "docs", "evaluations", "app", ".git", ".venv"]
 markers = [
     "integration: marks tests as integration tests (require external services)",
     "slow: marks deterministic end-to-end tests run in a separate CI job",

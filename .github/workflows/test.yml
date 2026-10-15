@@ -44,6 +44,12 @@ jobs:
       - name: Lint and format check
         working-directory: app/frontend
         run: pnpm run check
+      - name: Type check
+        working-directory: app/frontend
+        run: pnpm run typecheck
+      - name: Test
+        working-directory: app/frontend
+        run: pnpm test
 
   test-uri-platforms:
     name: URI paths (${{ matrix.os }}, py${{ matrix.python }})
@@ -186,4 +192,22 @@ jobs:
         run: uv sync --all-extras
       - name: Run evaluation tests
         working-directory: evaluations
+        run: uv run pytest --cov
+
+  test-app:
+    needs: [lint, lint-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: ".python-version"
+      - name: Install dependencies
+        run: uv sync --all-extras
+      - name: Run app backend tests
+        working-directory: app/backend
         run: uv run pytest --cov

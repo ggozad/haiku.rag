@@ -19,6 +19,7 @@ resolution-markers = [
 [manifest]
 members = [
     "haiku-rag",
+    "haiku-rag-app",
     "haiku-rag-evals",
     "haiku-rag-slim",
 ]
@@ -1621,6 +1622,7 @@ tui = [
 [package.dev-dependencies]
 dev = [
     { name = "filelock" },
+    { name = "haiku-rag-app" },
     { name = "haiku-rag-evals" },
     { name = "haiku-rag-slim", extra = ["ingester"] },
     { name = "pre-commit" },
@@ -1648,6 +1650,7 @@ provides-extras = ["tui", "s3", "cross-encoder", "ingester"]
 [package.metadata.requires-dev]
 dev = [
     { name = "filelock", specifier = ">=3.25.2" },
+    { name = "haiku-rag-app", editable = "app/backend" },
     { name = "haiku-rag-evals", editable = "evaluations" },
     { name = "haiku-rag-slim", extras = ["ingester"], editable = "haiku_rag_slim" },
     { name = "pre-commit", specifier = ">=4.5.1" },
@@ -1664,6 +1667,29 @@ dev = [
     { name = "ruff", specifier = ">=0.16.6" },
     { name = "ty", specifier = ">=0.0.78" },
     { name = "zensical" },
+]
+
+[[package]]
+name = "haiku-rag-app"
+version = "0.1.0"
+source = { editable = "app/backend" }
+dependencies = [
+    { name = "haiku-rag-slim" },
+    { name = "logfire" },
+    { name = "pydantic-ai-slim", extra = ["ag-ui", "anthropic", "openai"] },
+    { name = "python-dotenv" },
+    { name = "starlette" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "haiku-rag-slim", editable = "haiku_rag_slim" },
+    { name = "logfire", extras = ["pydantic-ai"], specifier = ">=3.17.0" },
+    { name = "pydantic-ai-slim", extras = ["ag-ui", "anthropic", "openai"], specifier = ">=2.40.0,<3.0.0" },
+    { name = "python-dotenv", specifier = ">=1.2.1" },
+    { name = "starlette", specifier = ">=0.50.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.40.0" },
 ]
 
 [[package]]

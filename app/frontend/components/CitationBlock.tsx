@@ -20,7 +20,7 @@ function CitationItem({
 	onViewInDocument,
 }: {
 	citation: Citation;
-	onViewInDocument: (chunkId: string, refs?: string[]) => void;
+	onViewInDocument: (citation: Citation) => void;
 }) {
 	const [expanded, setExpanded] = useState(false);
 
@@ -55,14 +55,7 @@ function CitationItem({
 					<button
 						type="button"
 						className="citation-view-btn"
-						onClick={() =>
-							onViewInDocument(
-								citation.chunk_ids?.length
-									? citation.chunk_ids.join(",")
-									: citation.chunk_id,
-								citation.doc_item_refs,
-							)
-						}
+						onClick={() => onViewInDocument(citation)}
 					>
 						View in Document
 					</button>
@@ -89,54 +82,56 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 		return () => abortRef.current?.abort();
 	}, []);
 
-	const fetchVisualGrounding = useCallback(
-		async (chunkId: string, refs?: string[]) => {
-			abortRef.current?.abort();
-			const controller = new AbortController();
-			abortRef.current = controller;
+	const fetchVisualGrounding = useCallback(async (citation: Citation) => {
+		const chunkId = citation.chunk_ids?.length
+			? citation.chunk_ids.join(",")
+			: citation.chunk_id;
+		abortRef.current?.abort();
+		const controller = new AbortController();
+		abortRef.current = controller;
 
-			setVisualGrounding({
-				isOpen: true,
-				chunkId,
-				images: [],
-				loading: true,
-				error: null,
-			});
+		setVisualGrounding({
+			isOpen: true,
+			chunkId,
+			images: [],
+			loading: true,
+			error: null,
+		});
 
-			const query = refs?.length
-				? `?refs=${encodeURIComponent(JSON.stringify(refs))}`
-				: "";
-			try {
-				const response = await fetch(
-					`/api/visualize/${encodeURIComponent(chunkId)}${query}`,
-					{
-						signal: controller.signal,
-					},
-				);
-				const data = await response.json();
+		const query = new URLSearchParams();
+		if (citation.source) query.set("source", citation.source);
+		if (citation.doc_item_refs?.length) {
+			query.set("refs", JSON.stringify(citation.doc_item_refs));
+		}
+		try {
+			const response = await fetch(
+				`/api/backend/api/visualize/${encodeURIComponent(chunkId)}?${query}`,
+				{
+					signal: controller.signal,
+				},
+			);
+			const data = await response.json();
 
-				if (controller.signal.aborted) return;
-				if (!response.ok) {
-					throw new Error(data.error || "Failed to fetch visual grounding");
-				}
-
-				setVisualGrounding((prev) => ({
-					...prev,
-					images: data.images || [],
-					loading: false,
-					error: data.images?.length === 0 ? data.message : null,
-				}));
-			} catch (err) {
-				if (controller.signal.aborted) return;
-				setVisualGrounding((prev) => ({
-					...prev,
-					loading: false,
-					error: err instanceof Error ? err.message : "Unknown error",
-				}));
+			if (controller.signal.aborted) return;
+			if (!response.ok) {
+				throw new Error(data.error || "Failed to fetch visual grounding");
 			}
-		},
-		[],
-	);
+
+			setVisualGrounding((prev) => ({
+				...prev,
+				images: data.images || [],
+				loading: false,
+				error: data.images?.length === 0 ? data.message : null,
+			}));
+		} catch (err) {
+			if (controller.signal.aborted) return;
+			setVisualGrounding((prev) => ({
+				...prev,
+				loading: false,
+				error: err instanceof Error ? err.message : "Unknown error",
+			}));
+		}
+	}, []);
 
 	const closeVisualGrounding = useCallback(() => {
 		abortRef.current?.abort();
@@ -162,7 +157,7 @@ export default function CitationBlock({ citations }: CitationBlockProps) {
 				</div>
 				{citations.map((citation) => (
 					<CitationItem
-						key={citation.chunk_id}
+						key={`${citation.source ?? ""}:${citation.chunk_id}`}
 						citation={citation}
 						onViewInDocument={fetchVisualGrounding}
 					/>

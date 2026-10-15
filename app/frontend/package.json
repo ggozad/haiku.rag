@@ -7,8 +7,10 @@
 		"build": "next build",
 		"start": "next start",
 		"lint": "next lint",
-		"check": "biome check app components lib",
-		"format": "biome check --write app components lib"
+		"check": "biome check app components lib vitest.config.ts",
+		"format": "biome check --write app components lib vitest.config.ts",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@ag-ui/client": "^0.0.57",
@@ -25,6 +27,7 @@
 		"@types/node": "^22",
 		"@types/react": "^19",
 		"@types/react-dom": "^19",
-		"typescript": "^5"
+		"typescript": "^5",
+		"vitest": "3.2.4"
 	}
 }

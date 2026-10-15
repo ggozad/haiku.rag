@@ -1,5 +1,6 @@
 allowBuilds:
   '@scarf/scarf': false
+  esbuild: false
   sharp: true
 overrides:
   sharp: '>=0.35.4'
