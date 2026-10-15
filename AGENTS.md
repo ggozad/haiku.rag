@@ -154,7 +154,7 @@ app/                        # Conversational RAG application (see below)
 - `get_reranker(config)` → `RerankerBase | None` (reranking/__init__.py)
 - `get_converter(config)` → `DocumentConverter` (converters/__init__.py)
 - `get_chunker(config)` → `DocumentChunker` (chunkers/__init__.py)
-- `create_capability(db_path?, config?, *, defer_loading=False, rag=None, request_limit=30, sources=None, vision=None)` → `RAGCapability` (capabilities/rag.py). Tools `search(query, limit?, sources?)`, `execute_code`, `cite`, state under `rag`.
+- `create_capability(db_path?, config?, *, defer_loading=False, rag=None, request_limit=30, sources=None, vision=None)` → `RAGCapability` (capabilities/rag.py). Tools `search(question, limit?, sources?)`, `execute_code`, `cite`, state under `rag`.
   - `request_limit` counts model requests per agent run. At the limit the capability's tools are removed except `cite`, which survives `CITATION_GRACE_REQUESTS` (2) further requests that call one of the capability's tools. Requests spent on other tools do not count.
   - A spent search or code budget does not withdraw the tool: it keeps failing. Withdrawing a tool the model still calls costs the agent's unknown-tool retries and aborts the run.
   - `vision` gates image attachment on search results and must reflect the model the hosting agent runs. Default `qa.model.vision`.
@@ -587,7 +587,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
   outside `state.sources`, whatever a lent client covers. `[]` searches nothing. A name outside the
   run is a `ToolFailed` naming the run's collections, raised before anything opens.
   `prepare_tools` strips the parameter from the schema on a one-collection run, so
-  single-database runs keep the `(query, limit)` contract. `evidence_signature`
+  single-database runs keep the `(question, limit)` contract. `evidence_signature`
   renders without the collection label, so evidence dedups across differently
   narrowed siblings. The qualified id keeps copies apart.
 - **Repeated search queries accumulate**: `state.searches[query]` merges through `merge_results` keyed on `chunk_id`. Hand-built `SearchResult`s without a `chunk_id` collapse to the first. `search_corpus` returns `"No results found."`, never an empty string.

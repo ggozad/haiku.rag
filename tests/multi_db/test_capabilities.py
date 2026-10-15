@@ -493,7 +493,7 @@ class TestTheRunsCollections:
 
 class TestTheSearchToolSchema:
     """`sources` is offered only where there is something to select among, so
-    a run over one collection keeps the `(query, limit)` contract."""
+    a run over one collection keeps the `(question, limit)` contract."""
 
     async def _search_tool(self, capability, deps):
         from tests.capabilities.test_capabilities import make_context
@@ -516,7 +516,7 @@ class TestTheSearchToolSchema:
         tool = await self._search_tool(capability, Deps())
 
         properties = tool.parameters_json_schema["properties"]
-        assert set(properties) == {"query", "limit", "sources"}
+        assert set(properties) == {"question", "limit", "sources"}
         assert "collection" in properties["sources"]["description"].lower()
         assert "sources" not in tool.parameters_json_schema.get("required", [])
 
@@ -526,7 +526,7 @@ class TestTheSearchToolSchema:
         capability = create_capability(config=_config(tmp_path, ["alpha"]))
         tool = await self._search_tool(capability, Deps())
 
-        assert set(tool.parameters_json_schema["properties"]) == {"query", "limit"}
+        assert set(tool.parameters_json_schema["properties"]) == {"question", "limit"}
 
     async def test_a_question_narrowed_to_one_collection_hides_sources(self, tmp_path):
         from tests.capabilities.test_capabilities import Deps
@@ -557,7 +557,9 @@ class TestTheModelNarrowingASearch:
             if len(messages) == 1:
                 return ModelResponse(
                     parts=[
-                        ToolCallPart("search", {"query": "cats", "sources": ["beta"]})
+                        ToolCallPart(
+                            "search", {"question": "cats", "sources": ["beta"]}
+                        )
                     ]
                 )
             seen["returned"] = messages[-1].parts[0].content
@@ -571,7 +573,7 @@ class TestTheModelNarrowingASearch:
         result = await agent.run("cats", deps=Deps())
 
         assert result.output == "done"
-        assert seen["properties"] == {"query", "limit", "sources"}
+        assert seen["properties"] == {"question", "limit", "sources"}
         assert "beta document" in seen["returned"]
         assert "alpha document" not in seen["returned"]
         assert "Collection: beta" in seen["returned"]
@@ -595,7 +597,7 @@ class TestTheModelNarrowingASearch:
         )
         await agent.run("cats", deps=Deps())
 
-        assert seen["properties"] == {"query", "limit"}
+        assert seen["properties"] == {"question", "limit"}
 
 
 class TestActionableFailures:

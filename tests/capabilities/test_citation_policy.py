@@ -72,7 +72,7 @@ async def test_an_answer_without_a_citation_is_sent_back_once(temp_db_path):
     result, deps, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("an answer with no citation")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("an answer with no citation")],
@@ -89,7 +89,7 @@ async def test_a_grounded_answer_is_left_alone(temp_db_path):
     _, _, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("a grounded answer")],
         ],
@@ -103,7 +103,7 @@ async def test_an_explicitly_ungrounded_answer_is_left_alone(temp_db_path):
     _, deps, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": []}, "call-2")],
             [TextPart("I cannot find this in the knowledge base")],
         ],
@@ -129,7 +129,7 @@ async def test_a_violation_is_recorded_when_the_cite_tool_is_gone(temp_db_path):
         _, deps, sent = await run_with_policy(
             temp_db_path,
             [
-                [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+                [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
                 [TextPart("an answer with no citation")],
             ],
         )
@@ -143,7 +143,7 @@ async def test_without_the_policy_capability_nothing_is_enforced(temp_db_path):
     _, deps, sent = await run_with_policy(
         temp_db_path,
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("an answer with no citation")],
         ],
         policy=False,
@@ -180,10 +180,10 @@ async def test_a_second_question_can_be_redirected_again(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("first, uncited")],
             [TextPart("first, uncited")],
-            [ToolCallPart("search", {"query": "again"}, "call-2")],
+            [ToolCallPart("search", {"question": "again"}, "call-2")],
             [TextPart("second, uncited")],
             [TextPart("second, uncited")],
         ]
@@ -218,7 +218,7 @@ async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("an answer with no citation")],
         ]
     )
@@ -254,7 +254,7 @@ async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_p
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
             [TextPart("a follow-up answered from what is already here")],
@@ -301,7 +301,7 @@ async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("uncited")],
             [TextPart("uncited again")],
             [TextPart("uncited a third time")],
@@ -349,7 +349,7 @@ async def test_a_user_quoting_the_redirect_does_not_suppress_enforcement(temp_db
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("uncited")],
             [TextPart("uncited again")],
         ]
@@ -388,7 +388,7 @@ async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_pa
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [
                 ToolCallPart(
                     "final_result", {"text": "uncited structured answer"}, "out"
@@ -433,7 +433,7 @@ async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_pa
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("uncited")],
             [TextPart("still uncited after being asked")],
         ]

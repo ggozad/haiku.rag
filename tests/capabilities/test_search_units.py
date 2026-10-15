@@ -39,7 +39,7 @@ def burst_model(bursts: list[list[str]]) -> FunctionModel:
         if responses <= len(bursts):
             return ModelResponse(
                 parts=[
-                    ToolCallPart("search", {"query": query})
+                    ToolCallPart("search", {"question": query})
                     for query in bursts[responses - 1]
                 ]
             )
@@ -137,7 +137,7 @@ async def test_unit_tracking_resets_between_runs(rag_db):
             return ModelResponse(parts=[TextPart("done")])
         return ModelResponse(
             parts=[
-                ToolCallPart("search", {"query": query})
+                ToolCallPart("search", {"question": query})
                 for query in ["ai", "machine learning", "deep learning"]
             ]
         )

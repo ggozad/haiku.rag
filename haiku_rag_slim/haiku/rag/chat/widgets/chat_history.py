@@ -85,8 +85,8 @@ class ToolCallWidget(Static):
 
     def _build_description(self) -> str:
         if self.tool_name == "search":
-            query = self.args.get("query", "...")
-            return f'"{query}"'
+            question = self.args.get("question", "...")
+            return f'"{question}"'
         if self.tool_name == "execute_code":
             return str(self.args.get("code", "..."))[:120]
         if self.args:

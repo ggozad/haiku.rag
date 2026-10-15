@@ -8,6 +8,8 @@
 
 ### Changed
 
+- **Breaking:** the RAG capability's `search` tool takes `question` instead of `query`. Hosts that read the tool call's arguments read `question`.
+- The RAG capability's instructions ask for searches as full natural-language questions, the first being the user's question as asked.
 - Rerankers score a chunk's document title and section headings, where present, before its content (`reranking.base.scored_text`).
 
 ### Fixed

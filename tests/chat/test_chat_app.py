@@ -235,7 +235,7 @@ async def test_chat_history_can_add_tool_calls(temp_db_path: Path):
             chat_history = app.query_one(ChatHistory)
 
             tool_widget = await chat_history.add_tool_call(
-                "tool-1", "search", {"query": "test"}
+                "tool-1", "search", {"question": "test"}
             )
             assert isinstance(tool_widget, ToolCallWidget)
             assert tool_widget._completed is False

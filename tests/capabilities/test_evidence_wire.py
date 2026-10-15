@@ -48,7 +48,7 @@ def answered_question(question: str, *, evidence: str, images: bool = False):
         returned.append(retrieved_image())
     return [
         ModelRequest(parts=[UserPromptPart(question)]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "q"}, "call-1")]),
         ModelRequest(parts=returned),
         ModelResponse(parts=[TextPart("an answer")]),
     ]
@@ -130,7 +130,7 @@ def test_the_current_question_keeps_its_own_evidence():
     messages = [
         *answered_question("first", evidence="OLD EVIDENCE"),
         ModelRequest(parts=[UserPromptPart("second")]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-2")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "q"}, "call-2")]),
         ModelRequest(parts=[ToolReturnPart("search", "LIVE EVIDENCE", "call-2")]),
     ]
 
@@ -231,7 +231,7 @@ def test_a_user_attached_image_is_never_dropped():
     mine = UserPromptPart(content=["look at this", PNG])
     messages = [
         ModelRequest(parts=[mine]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "q"}, "call-1")]),
         ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
@@ -298,7 +298,7 @@ def in_flight_history() -> list[Any]:
     """A question already asked and searched, still awaiting its answer."""
     return [
         ModelRequest(parts=[UserPromptPart("what does the supervisor do?")]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "s"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "s"}, "call-1")]),
         ModelRequest(
             parts=[ToolReturnPart("search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
         ),
@@ -399,7 +399,7 @@ async def test_compaction_never_reaches_the_stored_message_history(temp_db_path)
     rag, compactor = rag_and_compactor(temp_db_path)
     turns = iter(
         [
-            ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+            ModelResponse(parts=[ToolCallPart("search", {"question": "q"}, "call-1")]),
             ModelResponse(parts=[TextPart("first answer")]),
             ModelResponse(parts=[TextPart("second answer")]),
         ]
@@ -450,7 +450,7 @@ async def _cite_a_picture_chunk(temp_db_path, fetched: bytes | None):
     rag, compactor = rag_and_compactor(temp_db_path)
     calls = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
             [TextPart("second answer")],
@@ -531,8 +531,8 @@ async def _fanout_question_then_another(temp_db_path, cite: bool) -> list[list[A
     calls = iter(
         [
             [
-                ToolCallPart("search", {"query": "figure"}, "call-1"),
-                ToolCallPart("search", {"query": "the figure"}, "call-2"),
+                ToolCallPart("search", {"question": "figure"}, "call-1"),
+                ToolCallPart("search", {"question": "the figure"}, "call-2"),
             ],
             *citing,
             [TextPart("first answer")],
@@ -643,7 +643,7 @@ def test_a_user_quoting_our_wording_keeps_their_picture_and_their_text():
     )
     messages = [
         ModelRequest(parts=[quoted]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "q"}, "call-1")]),
         ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
@@ -667,7 +667,7 @@ def test_a_label_of_ours_with_no_picture_after_it_is_kept():
     )
     messages = [
         ModelRequest(parts=[lonely]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "q"}, "call-1")]),
         ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
@@ -689,7 +689,7 @@ async def test_a_picture_whose_fetch_raises_costs_the_picture_not_the_answer(
     rag, compactor = rag_and_compactor(temp_db_path)
     calls = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
             [TextPart("second answer")],
@@ -734,7 +734,7 @@ def test_a_request_is_never_left_with_no_parts():
     )
     messages = [
         ours_alone,
-        ModelResponse(parts=[ToolCallPart("search", {"query": "q"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "q"}, "call-1")]),
         ModelRequest(parts=[ToolReturnPart("search", "OLD", "call-1")]),
         ModelResponse(parts=[TextPart("an answer")]),
         ModelRequest(parts=[UserPromptPart("second")]),
@@ -758,8 +758,8 @@ def test_two_owned_returns_in_one_request_yield_one_capsule():
         ModelRequest(parts=[UserPromptPart("first")]),
         ModelResponse(
             parts=[
-                ToolCallPart("search", {"query": "a"}, "call-1"),
-                ToolCallPart("search", {"query": "b"}, "call-2"),
+                ToolCallPart("search", {"question": "a"}, "call-1"),
+                ToolCallPart("search", {"question": "b"}, "call-2"),
             ]
         ),
         ModelRequest(
@@ -784,8 +784,8 @@ def test_the_capsule_is_attached_beside_the_newest_return_of_that_request():
         ModelRequest(parts=[UserPromptPart("first")]),
         ModelResponse(
             parts=[
-                ToolCallPart("search", {"query": "a"}, "call-1"),
-                ToolCallPart("search", {"query": "b"}, "call-2"),
+                ToolCallPart("search", {"question": "a"}, "call-1"),
+                ToolCallPart("search", {"question": "b"}, "call-2"),
             ]
         ),
         ModelRequest(

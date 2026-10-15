@@ -78,8 +78,8 @@ def test_count_tool_traffic_counts_attempts_not_distinct_queries():
         ModelRequest(parts=[UserPromptPart(content="q")]),
         ModelResponse(
             parts=[
-                ToolCallPart("search", {"query": "same"}),
-                ToolCallPart("search", {"query": "same"}),
+                ToolCallPart("search", {"question": "same"}),
+                ToolCallPart("search", {"question": "same"}),
             ]
         ),
         ModelRequest(

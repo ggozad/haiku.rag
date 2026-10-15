@@ -172,8 +172,8 @@ function ToolCallIndicator({
 	const getDescription = () => {
 		switch (toolName) {
 			case "search": {
-				const query = args.query as string;
-				return <span className="tool-query">{query}</span>;
+				const question = args.question as string;
+				return <span className="tool-query">{question}</span>;
 			}
 			case "execute_code": {
 				const code = (args.code as string) ?? "";

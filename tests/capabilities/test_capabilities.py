@@ -732,7 +732,7 @@ async def test_failed_tool_reaches_the_model_and_the_run_continues(temp_db_path)
         nonlocal calls
         calls += 1
         if calls == 1:
-            return ModelResponse(parts=[ToolCallPart("search", {"query": "x"})])
+            return ModelResponse(parts=[ToolCallPart("search", {"question": "x"})])
         return ModelResponse(parts=[TextPart("answered from what I had")])
 
     agent = Agent(
@@ -867,7 +867,7 @@ async def test_spent_search_budget_is_announced_but_keeps_the_tool(rag_db):
         seen_instructions.append(info.instructions or "")
         if calls == 1:
             return ModelResponse(
-                parts=[ToolCallPart("search", {"query": "machine learning"})]
+                parts=[ToolCallPart("search", {"question": "machine learning"})]
             )
         return ModelResponse(parts=[TextPart("answered")])
 
@@ -976,7 +976,7 @@ async def test_exhausted_run_can_still_register_citations(rag_db):
         seen_tools.append({tool.name for tool in info.function_tools})
         if calls == 1:
             return ModelResponse(
-                parts=[ToolCallPart("search", {"query": "machine learning"})]
+                parts=[ToolCallPart("search", {"question": "machine learning"})]
             )
         if calls == 2:
             return ModelResponse(
@@ -1171,7 +1171,7 @@ def _in_flight_history() -> list[Any]:
     """A question already asked and searched, still awaiting its answer."""
     return [
         ModelRequest(parts=[UserPromptPart("what does the supervisor do?")]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "s"}, "call-1")]),
+        ModelResponse(parts=[ToolCallPart("search", {"question": "s"}, "call-1")]),
         ModelRequest(
             parts=[ToolReturnPart("search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
         ),
@@ -1278,7 +1278,7 @@ async def test_citing_after_searching_grounds_the_question(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("answer")],
         ]
@@ -1306,9 +1306,9 @@ async def test_searching_after_citing_leaves_the_question_uncited(temp_db_path):
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
-            [ToolCallPart("search", {"query": "again"}, "call-3")],
+            [ToolCallPart("search", {"question": "again"}, "call-3")],
             [TextPart("answer")],
         ]
     )
@@ -1337,7 +1337,7 @@ async def test_a_citation_in_the_same_request_as_its_search_is_not_current(
     calls = iter(
         [
             [
-                ToolCallPart("search", {"query": "supervisor"}, "call-1"),
+                ToolCallPart("search", {"question": "supervisor"}, "call-1"),
                 ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2"),
             ],
             [TextPart("answer")],
@@ -1366,10 +1366,10 @@ async def test_evidence_cited_in_two_questions_keeps_both_in_the_record(temp_db_
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
             [TextPart("first answer")],
-            [ToolCallPart("search", {"query": "supervisor again"}, "call-3")],
+            [ToolCallPart("search", {"question": "supervisor again"}, "call-3")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-4")],
             [TextPart("second answer")],
         ]
@@ -1490,7 +1490,7 @@ async def test_a_resumption_keeps_the_evidence_the_question_already_gathered(
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     calls = iter(
         [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("search", {"question": "supervisor"}, "call-1")],
             [TextPart("partial answer")],
             [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-3")],
             [TextPart("answer")],

@@ -819,18 +819,23 @@ class RAGCapability(AbstractCapability[Any]):
     def get_toolset(self) -> FunctionToolset[Any]:
         async def search(
             ctx: RunContext[Any],
-            query: str,
+            question: str,
             limit: int | None = None,
             sources: list[str] | None = None,
         ) -> str | ToolReturn:
-            """Search the knowledge base for evidence to analyze.
+            """Search the knowledge base with a natural-language question.
 
             Args:
+                question: A full question in natural language. The first search
+                    is the user's question exactly as asked, not shortened.
+                    Write "Who has to approve deleting a production database?",
+                    not "production database deletion approval". Keyword lists
+                    retrieve worse than questions here.
                 sources: Collections to search, by name. Omit to search every
                     collection this run covers; an empty list searches none.
             """
             return await self._with_state(
-                self._search(query, limit, ctx.run_step, sources)
+                self._search(question, limit, ctx.run_step, sources)
             )
 
         async def execute_code(ctx: RunContext[Any], code: str) -> str:
