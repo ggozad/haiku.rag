@@ -10,6 +10,7 @@
 - Startup fails on two sources sharing an id (`DuplicateSourceError`), and on two `ingester.databases` keys at one location.
 - `haiku-ingester run-batch --db-name NAME` runs one database of `ingester.databases`. `IngesterApp(database_name=)` is the same in Python.
 - `haiku.rag.client.search.populate_image_data(client, results)`: attaches to search results the pictures and captions a search attaches.
+- `haiku.rag.doctor.scan_vectors(store)`, `duplicate_families(...)` and `duplicates_yaml(families, label)`: the vector scan, the near-duplicate clustering and the YAML export that `doctor` runs.
 - `app/` backend `/api/databases`: each configured database with its availability, document and chunk counts, and `supports_image_search`; `/api/pictures?source=&document_id=&ref=`: a stored picture's bytes.
 
 ### Changed

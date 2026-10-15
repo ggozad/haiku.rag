@@ -31,12 +31,12 @@ from haiku.rag.doctor import (
     _check_duplicate_documents,
     _check_embedding_drift,
     _check_vector_index,
-    _duplicate_families,
     _model_present,
     _probe_endpoint,
     _provider_targets,
     _resolve_endpoint,
     _sample,
+    duplicate_families,
     run_doctor,
     run_provider_checks,
 )
@@ -1174,7 +1174,7 @@ def _centroids(
     spec: dict[str, list[int]], dim: int = 8
 ) -> tuple[list[str], np.ndarray, np.ndarray]:
     """Summed one-hot centroids + chunk counts per document, as
-    ``_duplicate_families`` consumes them.
+    ``duplicate_families`` consumes them.
 
     Orthogonal one-hot chunks make the centroid cosine of two documents equal to
     ``shared / sqrt(len(a) * len(b))``: identical documents score 1.0, fully
@@ -1190,7 +1190,7 @@ def _centroids(
 
 
 def test_duplicate_families_identical_docs_flagged():
-    families = _duplicate_families(
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3]}), DuplicateDetectionConfig()
     )
     assert len(families) == 1
@@ -1201,7 +1201,7 @@ def test_duplicate_families_identical_docs_flagged():
 def test_duplicate_families_append_only_not_flagged():
     # A is fully contained in the larger B, but their centroids diverge
     # (cosine sqrt(3/6) ~= 0.71), so it stays below the similarity cutoff.
-    families = _duplicate_families(
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2], "b": [0, 1, 2, 3, 4, 5]}),
         DuplicateDetectionConfig(),
     )
@@ -1209,14 +1209,14 @@ def test_duplicate_families_append_only_not_flagged():
 
 
 def test_duplicate_families_distinct_docs_none():
-    families = _duplicate_families(
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2], "b": [3, 4, 5]}), DuplicateDetectionConfig()
     )
     assert families == []
 
 
 def test_duplicate_families_three_way_one_family():
-    families = _duplicate_families(
+    families = duplicate_families(
         *_centroids({"a": [0, 1, 2, 3], "b": [0, 1, 2, 3], "c": [0, 1, 2, 3]}),
         DuplicateDetectionConfig(),
     )
@@ -1230,7 +1230,7 @@ def test_duplicate_families_clique_single_family():
     # A self-similar corpus (all identical) is one clique. Union-find collapses
     # it to a single family without materializing every pair.
     spec = {chr(ord("a") + k): [0, 1, 2, 3] for k in range(8)}
-    families = _duplicate_families(*_centroids(spec), DuplicateDetectionConfig())
+    families = duplicate_families(*_centroids(spec), DuplicateDetectionConfig())
     assert len(families) == 1
     assert set(families[0].members) == set(spec)
     assert all(s == pytest.approx(1.0) for s in families[0].similarity.values())
@@ -1238,7 +1238,7 @@ def test_duplicate_families_clique_single_family():
 
 def test_duplicate_families_tiny_docs_ignored():
     # min_chunks = 3 excludes the one-chunk documents.
-    families = _duplicate_families(
+    families = duplicate_families(
         *_centroids({"a": [0], "b": [0]}), DuplicateDetectionConfig()
     )
     assert families == []
@@ -1247,8 +1247,8 @@ def test_duplicate_families_tiny_docs_ignored():
 def test_duplicate_families_threshold_is_configurable():
     # Share 3 of 4 chunks each -> centroid cosine 0.75.
     spec = {"a": [0, 1, 2, 3], "b": [0, 1, 2, 4]}
-    assert _duplicate_families(*_centroids(spec), DuplicateDetectionConfig()) == []
-    flagged = _duplicate_families(
+    assert duplicate_families(*_centroids(spec), DuplicateDetectionConfig()) == []
+    flagged = duplicate_families(
         *_centroids(spec), DuplicateDetectionConfig(similarity_threshold=0.7)
     )
     assert len(flagged) == 1
@@ -1379,6 +1379,58 @@ async def _build_dup_db(path, docs: dict[str, list[int]], *, vector_dim: int = 8
             ]
         )
     return db
+
+
+async def test_scan_vectors_reduces_chunks_to_document_centroids(temp_db_path):
+    from haiku.rag.doctor import scan_vectors
+    from haiku.rag.store.engine import Store
+
+    db = await _build_dup_db(temp_db_path, {"a": [0, 1], "b": [2]})
+    chunk_model = create_chunk_model(8)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.add(
+        [
+            chunk_model(
+                id=f"zero-{n}",
+                document_id="b",
+                content="x",
+                metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
+                vector=[0.0] * 8,
+            )
+            for n in range(7)
+        ]
+    )
+    async with Store(
+        temp_db_path,
+        config=_config(vector_dim=8),
+        skip_validation=True,
+        read_only=True,
+        skip_migration_check=True,
+    ) as store:
+        scan = await scan_vectors(store)
+
+    assert scan.stored_dimension == 8
+    assert scan.dimension == 8
+    by_id = dict(zip(scan.document_ids, range(len(scan.document_ids))))
+    assert sorted(by_id) == ["a", "b"]
+    assert scan.counts[by_id["a"]] == 2
+    assert scan.counts[by_id["b"]] == 1
+    assert scan.centroids[by_id["a"]].tolist() == [1, 1, 0, 0, 0, 0, 0, 0]
+    assert scan.centroids[by_id["b"]].tolist() == [0, 0, 1, 0, 0, 0, 0, 0]
+    assert scan.unembedded_count == 7
+    assert scan.unembedded_sample == [f"zero-{n}" for n in range(5)]
+
+
+def test_duplicates_yaml_is_what_the_export_writes(tmp_path):
+    from haiku.rag.doctor import duplicates_yaml
+
+    spec = {"a": [0, 1, 2, 3], "b": [0, 1, 2, 3]}
+    out = tmp_path / "dups.yaml"
+    _check_duplicate_documents(
+        *_centroids(spec), {}, {}, DuplicateDetectionConfig(), yaml_path=out
+    )
+    families = duplicate_families(*_centroids(spec), DuplicateDetectionConfig())
+    assert duplicates_yaml(families, lambda doc_id: doc_id) == out.read_text()
 
 
 async def test_duplicate_documents_check_warns_end_to_end(temp_db_path):

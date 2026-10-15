@@ -638,7 +638,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **Textual `pilot.pause()`** does not reliably flush a handler awaiting I/O on a slow runner: await the handler directly.
 - **A line that runs once per process** (module-level lazy init) is covered only on some shards. Assert it directly with the module global reset via `monkeypatch`.
 - **Commenting out every child of a non-Optional config block** parses to `null`, which Pydantic rejects. Drop the key or keep one child.
-- **`doctor`** renders details through Rich markup, so avoid literal `[...]`. Near-duplicate detection keeps one summed centroid per document from the single vector scan, and `run_db_checks` keeps the vector matrix a local so `del vectors` bounds memory.
+- **`doctor`** renders details through Rich markup, so avoid literal `[...]`. Near-duplicate detection keeps one summed centroid per document from the single vector scan. `scan_vectors` holds the vector matrix only while it reduces it, and returns the centroids, so a caller never keeps the matrix.
 - **`astral-sh/setup-uv`** has floating major tags only through v7. Pin exact tags (workflows use `@v10.0.1`).
 - **`haiku.rag.sources`** imports without the `[s3]`/`[ingester]` extras because `obstore` is imported inside `S3Source` methods. Keep it there.
 - **One-shot directory ingest** uses `sources.fs.walk_files`, which never follows directory symlinks and keeps a symlinked file only when its target resolves inside the root. No size cap on that path.
