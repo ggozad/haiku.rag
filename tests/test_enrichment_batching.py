@@ -3,7 +3,7 @@ import lancedb.query
 import pytest
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.search import _attach_picture_data, _populate_image_data
+from haiku.rag.client.search import _attach_picture_data, populate_image_data
 from haiku.rag.store.models import Chunk, DocumentItem, SearchResult
 
 
@@ -73,12 +73,12 @@ async def test_enrichment_query_count_does_not_grow_with_documents(
 
         results = [_picture_result("doc-0", "#/pictures/0")]
         item_queries["n"] = 0
-        await _populate_image_data(rag, results)
+        await populate_image_data(rag, results)
         one_document = item_queries["n"]
 
         results = [_picture_result(f"doc-{i}", "#/pictures/0") for i in range(6)]
         item_queries["n"] = 0
-        await _populate_image_data(rag, results)
+        await populate_image_data(rag, results)
         six_documents = item_queries["n"]
 
     assert (one_document, six_documents) == (2, 2), (
@@ -96,7 +96,7 @@ async def test_each_document_gets_its_own_pictures(temp_db_path):
             _picture_result("doc-a", "#/pictures/0"),
             _picture_result("doc-b", "#/pictures/0"),
         ]
-        await _populate_image_data(rag, results)
+        await populate_image_data(rag, results)
 
     import base64
 
@@ -140,7 +140,7 @@ async def test_caption_ranked_results_take_at_most_four_queries(
         for n in (1, 4):
             results = [_picture_result(f"doc-{i}", "#/texts/1") for i in range(n)]
             item_queries["n"] = 0
-            await _populate_image_data(rag, results)
+            await populate_image_data(rag, results)
             counts.append(item_queries["n"])
             assert all(r.image_data for r in results)
 
