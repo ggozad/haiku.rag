@@ -104,6 +104,36 @@ async def test_chunk_repository_pagination(
         assert len(empty_batch) == 0
 
 
+async def test_chunk_pages_follow_document_order_not_insertion_order(temp_db_path):
+    """A page of a document's chunks is a slice of the whole document in order."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        document = await client.import_document(
+            DoclingDocument(name="ordered"), [], uri="test://ordered"
+        )
+        assert document.id is not None
+        await client.chunk_repository.create(
+            [
+                Chunk(
+                    document_id=document.id,
+                    content=f"chunk {order}",
+                    embedding=[0.1] * dim,
+                    order=order,
+                )
+                for order in (3, 1, 2, 0)
+            ]
+        )
+        pages = [
+            await client.chunk_repository.get_by_document_id(
+                document.id, limit=2, offset=offset
+            )
+            for offset in (0, 2)
+        ]
+    assert [[chunk.order for chunk in page] for page in pages] == [[0, 1], [2, 3]]
+
+
 @pytest.mark.vcr()
 async def test_chunking_pipeline(qa_corpus: list[dict[str, str]], temp_db_path):
     """Test document chunking using client primitives."""

@@ -35,6 +35,7 @@
 ### Fixed
 
 - `CitationPolicyCapability` enforces a question whose only evidence came from its first round when the question arrives inside `message_history`, as under `AGUIAdapter`. `RAGCapability` takes a new question's identity at its first model request, as the index of the request that opens it.
+- `ChunkRepository.get_by_document_id` with `limit` or `offset` returns that page of the document's chunks in `order`.
 
 ## [0.98.0] - 2026-10-16
 
