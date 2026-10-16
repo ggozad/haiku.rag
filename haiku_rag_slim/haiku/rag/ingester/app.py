@@ -45,6 +45,7 @@ class BatchReport(BaseModel):
 
     succeeded: int = 0
     dead: int = 0
+    rejected: int = 0
     failed_sweeps: list[str] = []
 
 
@@ -55,6 +56,7 @@ class BatchProgress(BaseModel):
     completed: int = 0
     succeeded: int = 0
     dead: int = 0
+    rejected: int = 0
     queued: int = 0
     claimed: int = 0
 
@@ -262,7 +264,8 @@ class IngesterApp:
             outstanding = queued + claimed
             succeeded = counts.get("succeeded", 0)
             dead = counts.get("dead", 0)
-            completed_count = succeeded + dead
+            rejected = counts.get("rejected", 0)
+            completed_count = succeeded + dead + rejected
             total = max(total, outstanding + completed_count)
             if progress_callback is not None:
                 progress_callback(
@@ -271,6 +274,7 @@ class IngesterApp:
                         completed=min(completed_count, total),
                         succeeded=succeeded,
                         dead=dead,
+                        rejected=rejected,
                         queued=queued,
                         claimed=claimed,
                     )
@@ -290,6 +294,7 @@ class IngesterApp:
         return BatchReport(
             succeeded=completed.get("succeeded", 0),
             dead=completed.get("dead", 0),
+            rejected=completed.get("rejected", 0),
         )
 
     async def serve(self, *, api: bool = True) -> None:

@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import socket
+from collections.abc import Iterator
 from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
@@ -17,6 +19,7 @@ from haiku.rag.converters.exceptions import (
     ConversionTimeoutError,
     ConverterWedgedError,
 )
+from haiku.rag.hooks import DocumentRejected, HookError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.sources.base import FileTooLargeError
@@ -43,6 +46,43 @@ class JobResult(BaseModel):
     deleted: bool = False
 
 
+def _is_transient_status(status: int) -> bool:
+    return status in (408, 429) or status >= 500
+
+
+def _causes(exc: BaseException) -> Iterator[BaseException]:
+    """The exceptions behind `exc`, including every member of a group, such as
+    anyio's group of one failed connection per resolved address."""
+    seen: set[int] = set()
+    pending = [exc.__cause__ or exc.__context__]
+    while pending:
+        cause = pending.pop()
+        if cause is None or id(cause) in seen:
+            continue
+        seen.add(id(cause))
+        yield cause
+        pending.append(cause.__cause__ or cause.__context__)
+        if isinstance(cause, BaseExceptionGroup):
+            pending.extend(cause.exceptions)
+
+
+def _is_transient_cause(cause: BaseException) -> bool:
+    # httpx's and httpx2's connect and timeout errors chain down to these
+    # builtins.
+    if isinstance(
+        cause,
+        TransientError
+        | httpx.TransportError
+        | ConnectionError
+        | TimeoutError
+        | socket.gaierror,
+    ):
+        return True
+    return isinstance(cause, httpx.HTTPStatusError) and _is_transient_status(
+        cause.response.status_code
+    )
+
+
 def _classify(exc: BaseException) -> Exception:
     """Wrap an unclassified exception into Permanent or Transient. Already-
     classified errors pass through unchanged."""
@@ -53,6 +93,16 @@ def _classify(exc: BaseException) -> Exception:
     # source will never ingest successfully on a retry (bad URI scheme,
     # missing file, unsupported extension, etc.).
     if isinstance(exc, UnsupportedSourceError | FileTooLargeError):
+        return PermanentError(str(exc))
+
+    if isinstance(exc, DocumentRejected):
+        return PermanentError(str(exc), rejected=True)
+
+    if isinstance(exc, HookError):
+        # A hook's own bug repeats on every retry. Its call to a service that
+        # failed transiently does not.
+        if any(_is_transient_cause(cause) for cause in _causes(exc)):
+            return TransientError(str(exc))
         return PermanentError(str(exc))
 
     if isinstance(exc, ConversionTimeoutError):
@@ -81,7 +131,7 @@ def _classify(exc: BaseException) -> Exception:
         # 401/403/404/410 are unrecoverable without operator action; 408/429/5xx
         # are transient. Everything else in 4xx is treated as permanent — better
         # to DLQ a misconfigured URL than to retry it forever.
-        if status in (408, 429) or status >= 500:
+        if _is_transient_status(status):
             return TransientError(f"HTTP {status}: {exc}")
         return PermanentError(f"HTTP {status}: {exc}")
 

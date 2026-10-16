@@ -1,5 +1,6 @@
 import logging
 from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
+from contextlib import AsyncExitStack
 from enum import Enum
 from functools import cached_property
 from itertools import zip_longest
@@ -15,6 +16,13 @@ from haiku.rag.client.session import (
 )
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
+from haiku.rag.hooks import (
+    DeleteEvent,
+    build_hooks,
+    enter_lifespans,
+    load_hooks,
+    notify,
+)
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import EmbedderIdentity, Store
 from haiku.rag.store.exceptions import (
@@ -158,6 +166,12 @@ class HaikuRAG:
         self._session: SingleDatabaseSession | FederatedSession | None = None
         self._owns_session = True
         self._closed = False
+        self._stack: AsyncExitStack | None = None
+        self._hooks = (
+            build_hooks(self._configured.hooks, load_hooks())
+            if self._configured.hooks
+            else []
+        )
 
     @property
     def covers_multiple(self) -> bool:
@@ -346,6 +360,7 @@ class HaikuRAG:
                 skip_validation=self._skip_validation,
                 read_only=self._read_only,
             )
+            await self._enter_lifespans()
             return self
 
         [ref] = scope.databases
@@ -356,6 +371,7 @@ class HaikuRAG:
             create=self._create,
             read_only=self._read_only,
         ).open()
+        await self._enter_lifespans()
         return self
 
     async def clients_for(self, names: list[str]) -> list["HaikuRAG"]:
@@ -422,6 +438,9 @@ class HaikuRAG:
         client._session = session
         client._owns_session = False
         client._lender = lender
+        # Hooks belong to the client that owns the session: a facade firing its
+        # own copy would run every hook once per database it was borrowed for.
+        client._hooks = []
         return client
 
     def _require_one_embedder(self, clients: "list[HaikuRAG]") -> None:
@@ -458,6 +477,16 @@ class HaikuRAG:
         """
         if self._session is None or self._closed:
             return False
+        try:
+            if self._owns_session:
+                await self._exit_lifespans(exc_type, exc_val, exc_tb)
+        finally:
+            await self._close()
+        return False
+
+    async def _close(self) -> None:
+        """Close the session this client owns and what it built, or only what
+        it built over a borrowed session."""
         # Branch on what this client covers, not on what it happened to open:
         # a federating client that answered no query has nothing open and no
         # store either.
@@ -475,16 +504,47 @@ class HaikuRAG:
             await self._aclose_cached("embedder")
             await self._aclose_cached("_own_reranker")
             self._closed = True
-            return False
+            return
         if not self._owns_session:
             await self._release_own()
-            return False
+            return
         # The session drains, releases its store's embedder and closes; the
         # cached reference here is only discarded, never closed twice.
         await self._release_own()
+        assert self._session is not None
         await self._session.aclose()
         self._closed = True
-        return False
+
+    async def _enter_lifespans(self) -> None:
+        """Start hook lifespans, in configured order, now that the session
+        exists. An activated hook that cannot start is a startup failure:
+        entry fails, the hooks already started are unwound with the failure,
+        and the client closes as ``__aexit__`` would, since ``__aexit__`` never
+        runs for an ``async with`` that did not enter."""
+        if not self._hooks:
+            return
+        stack = AsyncExitStack()
+        try:
+            await enter_lifespans(stack, self._hooks, self)
+        except BaseException as exc:
+            try:
+                await stack.__aexit__(type(exc), exc, exc.__traceback__)
+            finally:
+                await self._close()
+            raise
+        self._stack = stack
+
+    async def _exit_lifespans(self, exc_type, exc_val, exc_tb) -> None:
+        """Unwind hook lifespans in reverse order, before anything else closes,
+        so a hook's teardown still has the session, embedder and reranker.
+
+        The exception being unwound is forwarded so a hook can tell a clean
+        shutdown from a failing one. Suppressing it is not theirs to decide,
+        so the result is discarded.
+        """
+        stack, self._stack = self._stack, None
+        if stack is not None:
+            await stack.__aexit__(exc_type, exc_val, exc_tb)
 
     async def _release_own(self) -> None:
         """Release what this client built, leaving the database to its owner.
@@ -568,7 +628,9 @@ class HaikuRAG:
 
         session = self._single_session("create_document")
 
-        return await create_document(session, content, uri, title, metadata, format)
+        return await create_document(
+            session, self, content, uri, title, metadata, format
+        )
 
     async def import_document(
         self,
@@ -583,7 +645,7 @@ class HaikuRAG:
         session = self._single_session("import_document")
 
         return await import_document(
-            session, docling_document, chunks, uri, title, metadata
+            session, self, docling_document, chunks, uri, title, metadata
         )
 
     async def import_documents(
@@ -594,7 +656,7 @@ class HaikuRAG:
 
         session = self._single_session("import_documents")
 
-        return await import_documents(session, imports)
+        return await import_documents(session, self, imports)
 
     async def create_document_from_source(
         self,
@@ -613,6 +675,7 @@ class HaikuRAG:
 
         return await create_document_from_source(
             session,
+            self,
             source,
             title,
             metadata,
@@ -644,6 +707,7 @@ class HaikuRAG:
 
         return await create_document_from_source(
             session,
+            self,
             source,
             sources=sources,
             source_id=source_id,
@@ -677,6 +741,7 @@ class HaikuRAG:
 
         return await update_document(
             session,
+            self,
             document_id,
             content,
             metadata,
@@ -819,9 +884,12 @@ class HaikuRAG:
         """Delete a document by its ID. Cascades to children linked via
         ``metadata.parent_uri``. With ``source_id``, deletes only a document
         that source owns."""
-        return await self._single_session("delete_document").delete_document(
+        deleted = await self._single_session("delete_document").delete_document(
             document_id, source_id=source_id
         )
+        if deleted:
+            await notify(self._hooks, "after_delete", self, DeleteEvent(deleted))
+        return bool(deleted)
 
     async def list_documents(
         self,
@@ -947,17 +1015,49 @@ class HaikuRAG:
         include_images: bool = True,
         sources: list[str] | None = None,
     ) -> list[SearchResult]:
-        from haiku.rag.client.search import search, search_sources
+        from haiku.rag.client.search import (
+            _resolved_search_type,
+            search,
+            search_sources,
+        )
+        from haiku.rag.hooks import SearchRequest
+
+        if limit is None:
+            limit = self._config.search.limit
+        request = SearchRequest(
+            query=query,
+            filter=filter,
+            search_type=_resolved_search_type(query, search_type),
+            limit=limit,
+        )
+        if isinstance(query, str):
+            for hook in self._hooks:
+                request = await hook.before_search(self, request)
+            query = request.query
+            assert isinstance(query, str), "before_search must keep text queries text"
+            filter = request.filter
+            limit = request.limit
+            # A hook may have cleared it on the way through. after_search reads
+            # the same request, so it has to end up carrying what retrieval ran
+            # with.
+            request.search_type = request.search_type or "hybrid"
+            search_type = request.search_type
 
         if self.covers_multiple:
-            return await search_sources(
+            results = await search_sources(
                 self, query, limit, search_type, filter, include_images, sources
             )
-        if not await self.clients_covering(sources):
-            return []
-        results = await search(self, query, limit, search_type, filter, include_images)
-        for result in results:
-            result.source = self.source
+        elif not await self.clients_covering(sources):
+            results = []
+        else:
+            results = await search(
+                self, query, limit, search_type, filter, include_images
+            )
+            for result in results:
+                result.source = self.source
+
+        for hook in self._hooks:
+            results = await hook.after_search(self, request, results)
         return results
 
     async def expand_context(
@@ -1028,7 +1128,7 @@ class HaikuRAG:
 
         session = self._single_session("rebuild_database")
 
-        async for doc_id in rebuild_database(session, mode):
+        async for doc_id in rebuild_database(session, self, mode):
             yield doc_id
 
     async def vacuum(self, retention_seconds: int | None = None) -> None:

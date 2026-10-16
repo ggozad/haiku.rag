@@ -236,7 +236,7 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
         before = await rag.document_item_repository.get_all_picture_data(created.id)
@@ -301,7 +301,9 @@ async def test_embed_only_preserves_picture_vectors(temp_db_path, monkeypatch):
         embedded = await embed_chunks(chunks, rag.embedder, rag._config)
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        await _store_document_with_chunks(writing(rag), document, embedded, docling_doc)
+        await _store_document_with_chunks(
+            writing(rag), None, document, embedded, docling_doc
+        )
 
         before = await _picture_chunk_row(rag)
         assert list(before["vector"]) == pytest.approx(IMAGE_VEC)
@@ -731,7 +733,9 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
 
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
-        await _store_document_with_chunks(writing(rag), document, embedded, docling_doc)
+        await _store_document_with_chunks(
+            writing(rag), None, document, embedded, docling_doc
+        )
 
         all_db_chunks = await rag.chunk_repository.store.chunks_table.query().to_list()
         picture_db_chunks = [

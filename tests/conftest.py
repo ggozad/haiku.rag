@@ -379,6 +379,7 @@ def build_pdf(attachments: list[tuple[str, bytes]]) -> bytes:
 
 async def fake_ingest_fetch_result(
     session,
+    client,
     result,
     *,
     title,
@@ -391,6 +392,7 @@ async def fake_ingest_fetch_result(
     metadata_provider=None,
     force=False,
     written_ids=None,
+    notify_hooks=True,
 ):
     """A stand-in for ``_ingest_fetch_result`` that skips docling/embedder
     entirely: it writes the document with content_type/md5/parent_uri set
@@ -407,7 +409,7 @@ async def fake_ingest_fetch_result(
     }
     if result.revision is not None:
         final_metadata["source_revision"] = result.revision
-    if source_id is not None:
+    if source_id is not None and depth == 0:
         final_metadata["source_id"] = source_id
 
     if existing_doc:
@@ -428,7 +430,15 @@ async def fake_ingest_fetch_result(
     if written_ids is not None:
         written_ids.add(doc.id)
     await _reconcile_pdf_attachments(
-        session, doc, result.body, depth=depth, force=force, written_ids=written_ids
+        session,
+        client,
+        doc,
+        result.body,
+        depth=depth,
+        source_id=source_id,
+        force=force,
+        written_ids=written_ids,
+        notify_hooks=notify_hooks,
     )
     return doc
 

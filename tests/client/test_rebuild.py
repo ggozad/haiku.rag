@@ -878,7 +878,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
 
@@ -964,7 +964,7 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
 
@@ -1034,7 +1034,7 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
 
@@ -1079,7 +1079,7 @@ async def test_patch_picture_descriptions_skips_when_all_already_described(
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
 
@@ -1118,7 +1118,7 @@ async def test_rebuild_descriptions_raises_when_blob_is_missing(
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
 
@@ -1325,7 +1325,7 @@ async def test_flush_rebuild_batch_writes_items_in_few_versions(
             document.set_docling(docling_doc)
             created.append(
                 await _store_document_with_chunks(
-                    writing(rag), document, [], docling_doc
+                    writing(rag), None, document, [], docling_doc
                 )
             )
         items_repo = rag.document_item_repository
@@ -1475,7 +1475,7 @@ async def test_patch_picture_descriptions_returns_zero_without_descriptions(
         document = Document(content="x", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
 
         assert await _patch_picture_descriptions(writing(rag), created) == 0
@@ -1646,7 +1646,7 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
         document = Document(content="picture doc", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
-            writing(rag), document, [], docling_doc
+            writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
         pages = b"\x80SENTINEL_PAGE_BYTES"
@@ -1768,7 +1768,7 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
             document = Document(content=f"picture doc {i}", uri=f"test://doc-{i}")
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(
-                writing(rag), document, [], docling_doc
+                writing(rag), None, document, [], docling_doc
             )
             assert created.id is not None
             ids.append(created.id)
@@ -1850,7 +1850,7 @@ async def test_rebuild_embed_only_recovers_picture_bytes(
             embedding=[0.1] * rag.embedder.vector_dim,
         )
         created = await _store_document_with_chunks(
-            writing(rag), document, [picture_chunk, text_chunk], docling_doc
+            writing(rag), None, document, [picture_chunk, text_chunk], docling_doc
         )
         assert created.id is not None
 

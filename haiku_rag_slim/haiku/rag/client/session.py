@@ -214,9 +214,10 @@ class SingleDatabaseSession:
         *,
         allow_attachment: bool = False,
         source_id: str | None = None,
-    ) -> bool:
+    ) -> "list[Document]":
         """Delete a document, cascading to children linked via
-        ``metadata.parent_uri``.
+        ``metadata.parent_uri``. Returns the deleted documents in their
+        last-known state; empty when the id matched nothing.
 
         With ``source_id``, deletes only a document that source owns, checked
         under the write lock.
@@ -242,8 +243,8 @@ class SingleDatabaseSession:
             if source_id is not None and (
                 root is None or root.metadata.get("source_id") != source_id
             ):
-                return False
-            ids_to_delete: list[str] = []
+                return []
+            docs_to_delete: list[Document] = []
             seen: set[str] = set()
             queue = [root]
             while queue:
@@ -251,14 +252,16 @@ class SingleDatabaseSession:
                 if doc is None or doc.id is None or doc.id in seen:
                     continue
                 seen.add(doc.id)
-                ids_to_delete.append(doc.id)
+                docs_to_delete.append(doc)
                 if doc.uri:
                     queue.extend(
-                        await self.list_documents(filter=parent_uri_filter(doc.uri))
+                        await self.list_documents(
+                            filter=parent_uri_filter(doc.uri), include_content=True
+                        )
                     )
 
-            if not ids_to_delete:
-                return False
+            if not docs_to_delete:
+                return []
 
             parent_uri = (root.metadata or {}).get("parent_uri") if root else None
             parent = (
@@ -270,8 +273,9 @@ class SingleDatabaseSession:
             # rollback writes a version of every table.
             owner = parent if parent is not None and parent.id not in seen else None
             if owner is None:
-                for doc_id in ids_to_delete:
-                    await self.document_repository.delete(doc_id)
+                for doc in docs_to_delete:
+                    assert doc.id is not None
+                    await self.document_repository.delete(doc.id)
 
         if owner is not None:
             raise AttachmentDeletionError(
@@ -280,7 +284,7 @@ class SingleDatabaseSession:
             )
         if self.config.storage.auto_vacuum:
             self.schedule_vacuum()
-        return True
+        return docs_to_delete
 
     async def aclose(self) -> None:
         """Drain, release the embedder, and close the connection.

@@ -274,6 +274,22 @@ async def test_retry_revives_dead_job(state, jobs):
     assert body["attempts"] == 0
 
 
+async def test_a_rejected_job_is_listed_and_retried(state, jobs):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    await jobs.claim_next("w")
+    await jobs.mark_rejected(job.id, "u rejected: draft", "w")
+
+    async with _client(state) as client:
+        listed = await client.get("/jobs?status=rejected")
+        dlq = await client.get("/dlq")
+        retried = await client.post(f"/jobs/{job.id}/retry")
+
+    assert [j["id"] for j in listed.json()] == [job.id]
+    assert dlq.json() == []
+    assert retried.json()["status"] == JobStatus.QUEUED.value
+
+
 async def test_retry_404(state):
     async with _client(state) as client:
         resp = await client.post("/jobs/missing/retry")

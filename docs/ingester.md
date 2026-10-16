@@ -344,7 +344,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `POST` | `/sources/{id}/refresh` | Run a sweep now. Skipped (`refreshed: false`) while the source has queued or claimed jobs or its breaker is open |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |
-| `POST` | `/jobs/{id}/retry` | Reset a dead or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI |
+| `POST` | `/jobs/{id}/retry` | Reset a dead, rejected or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI |
 | `DELETE` | `/jobs/{id}` | Cancel a queued or claimed job |
 | `GET` | `/dlq` | Dead jobs, filtered by `source_id`, `limit` (default 50, at most 500), `offset` |
 | `POST` | `/dlq/{id}/retry` | Re-queue a dead job |
@@ -395,7 +395,7 @@ haiku-ingester run-batch
 haiku-ingester run-batch --db rag.lancedb
 ```
 
-It exits non-zero when a job dead-letters or a source's sweep does not complete. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
+It exits non-zero when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 
 `--dry-run` makes the same discovery without queueing anything, and writes the changes it found to a YAML manifest, `manifest-<datestamp>.yaml` unless `--output`/`-o` names one:
 
@@ -503,7 +503,7 @@ haiku-ingester queue migrate          # apply pending schema changes
 haiku-ingester queue init -q /var/lib/haiku-rag/ingester.db   # at another path
 ```
 
-Succeeded and dead jobs are kept for history. The reaper deletes those completed more than `retention_days` ago:
+Succeeded, dead and rejected jobs are kept for history. The reaper deletes those completed more than `retention_days` ago:
 
 ```yaml
 ingester:
@@ -527,7 +527,7 @@ The `asyncpg` driver comes with the `ingester` extra. `dburi` overrides `path` a
 
 Several ingesters share one Postgres queue, each under its own namespace and each writing its own database. An ingester claims, counts, prunes and serves through its API the rows of its namespace and no others, so source ids need to be unique within a namespace, not across the queue. A namespace is stable across restarts and upgrades: an ingester started under a new one does not see the rows recorded under the old. Two processes under one namespace are two writers of one database, and a database has one writer (see [storage](configuration/storage.md)). The database role sees every row: namespaces separate ingesters in the application, not in Postgres.
 
-`serve`, `run-batch` and `--dry-run` refuse a server `dburi` without a namespace, and never create or migrate a server queue: they read its schema version and fail naming the command to run. A SQLite queue is owned by one process, migrates itself at startup and records its rows under the empty namespace.
+`serve`, `run-batch` and `--dry-run` refuse a server `dburi` without a namespace, and never create or migrate a server queue: they read its schema version and fail naming the command to run. A SQLite queue is owned by one process, migrates itself at startup and records its rows under `namespace`, empty unless configured.
 
 ##### Deployment
 
@@ -574,6 +574,10 @@ Queue schema 4 adds the namespace. The migration leaves every existing row under
 
 A queue that several ingesters already wrote to needs a mapping from `source_id` to namespace in step 3. SQLite queues need nothing.
 
+##### Upgrading a queue from schema 4
+
+Queue schema 5 adds the `rejected` job status. The migration changes no table, but ingesters sharing a server queue still upgrade together, in the order above. SQLite queues migrate themselves.
+
 ### Logs and tracing
 
 The service logs to stderr:
@@ -613,3 +617,24 @@ curl -H "Authorization: Bearer $TOKEN" -X POST \
 curl -H "Authorization: Bearer $TOKEN" -X POST \
     http://localhost:8765/jobs/<id>/retry
 ```
+
+### Reading the queue from Python
+
+A deployment that only runs `run-batch` has no HTTP API. The queue's read side is in `haiku.rag.ingester.queue`:
+
+```python
+from haiku.rag.ingester.queue import JobRepo, JobStatus, SyncStateRepo, open_queue
+
+engine = await open_queue(config.ingester.queue)
+try:
+    jobs = JobRepo(engine, namespace=config.ingester.queue.namespace)
+    rejected = await jobs.list_jobs(status=JobStatus.REJECTED, limit=100)
+finally:
+    await engine.dispose()
+```
+
+- `open_queue(queue_config)` returns the engine. It migrates a SQLite file and refuses one newer than the release. A server queue is only checked: one behind or ahead of the release is refused, naming the command to run. `haiku.rag.ingester.queue.migrations.verify_schema(engine)` makes the same check and writes nothing, for an account that can only read.
+- `JobRepo(engine, namespace)` reads with `get_job(job_id)`, `list_jobs(status=, source_id=, uri=, limit=, offset=)` (newest enqueued first), `counts_by_status()`, and `counts_by_status_since(since)`, which counts the jobs completed at or after `since`, as the `run-batch` summary does.
+- `SyncStateRepo(engine, namespace)` reads with `get_row(source_id, uri)`, `list_known_uris(source_id)` and `list_ingested_uris(source_id)`.
+
+Pass the namespace the ingester runs under, `ingester.queue.namespace`, which is `""` unless configured. The methods that change rows belong to the ingester.

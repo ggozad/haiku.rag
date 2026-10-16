@@ -20,6 +20,14 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
+from haiku.rag.hooks import (
+    DeleteEvent,
+    DocumentRejected,
+    HookError,
+    IngestEvent,
+    IngestRequest,
+    notify,
+)
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
@@ -30,6 +38,7 @@ from haiku.rag.utils.sql import escape_like_pattern, escape_sql_string
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
+    from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import BoundMetadataProvider, MetadataProvider
     from haiku.rag.sources.base import FetchResult, Source
 
@@ -169,10 +178,12 @@ async def _extract_items_observed(
 
 async def _store_document_with_chunks(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument",
     observed_uri: str | None = None,
+    notify_hooks: bool = True,
 ) -> Document:
     """Store a document with chunks, embedding any that lack embeddings.
 
@@ -247,15 +258,23 @@ async def _store_document_with_chunks(
         session.schedule_vacuum()
 
     session.name(stored_doc)
+    if client is not None and notify_hooks:
+        event = IngestEvent(
+            documents=[stored_doc],
+            operation="create" if existing is None else "update",
+        )
+        await notify(client._hooks, "after_ingest", client, event)
     return stored_doc
 
 
 async def _update_document_with_chunks(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     document: Document,
     chunks: list[Chunk],
     docling_document: "DoclingDocument | None" = None,
     observed_uri: str | None = None,
+    notify_hooks: bool = True,
 ) -> Document:
     """Update a document and replace its chunks, embedding any that lack embeddings.
 
@@ -314,11 +333,15 @@ async def _update_document_with_chunks(
         session.schedule_vacuum()
 
     session.name(updated_doc)
+    if client is not None and notify_hooks:
+        event = IngestEvent(documents=[updated_doc], operation="update")
+        await notify(client._hooks, "after_ingest", client, event)
     return updated_doc
 
 
 async def create_document(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     content: str,
     uri: str | None = None,
     title: str | None = None,
@@ -342,12 +365,13 @@ async def create_document(
     await _prepare_and_title(session, document, docling_document)
 
     return await _store_document_with_chunks(
-        session, document, chunks, docling_document
+        session, client, document, chunks, docling_document
     )
 
 
 async def import_document(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     docling_document: "DoclingDocument",
     chunks: list[Chunk],
     uri: str | None = None,
@@ -372,12 +396,13 @@ async def import_document(
     await _prepare_and_title(session, document, docling_document)
 
     return await _store_document_with_chunks(
-        session, document, chunks, docling_document
+        session, client, document, chunks, docling_document
     )
 
 
 async def _store_documents_with_chunks(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     prepared: list[tuple[Document, list[Chunk], "DoclingDocument"]],
 ) -> list[Document]:
     """Store many documents with their chunks in a single table version each.
@@ -436,11 +461,16 @@ async def _store_documents_with_chunks(
     if session.config.storage.auto_vacuum:
         session.schedule_vacuum()
 
-    return session.name_all(created)
+    session.name_all(created)
+    if client is not None:
+        event = IngestEvent(documents=created, operation="create")
+        await notify(client._hooks, "after_ingest", client, event)
+    return created
 
 
 async def import_documents(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     imports: list[DocumentImport],
 ) -> list[Document]:
     """Batch-import pre-processed documents with their chunks.
@@ -463,7 +493,7 @@ async def import_documents(
         await _prepare_and_title(session, document, item.docling_document)
         prepared.append((document, item.chunks, item.docling_document))
 
-    return await _store_documents_with_chunks(session, prepared)
+    return await _store_documents_with_chunks(session, client, prepared)
 
 
 async def _refresh_doc_metadata(
@@ -541,15 +571,71 @@ async def _provider_metadata(
     # MD5 short-circuit and source_meta, bypassing the reserved-key filter
     # that only guards the returned dict.
     provider_result = result.model_copy(deep=True)
-    return {
-        k: v
-        for k, v in (await provider(uri, provider_result)).items()
-        if k not in _RESERVED_METADATA_KEYS
-    }
+    return _storable(await provider(uri, provider_result))
+
+
+def _storable(metadata: dict) -> dict:
+    return {k: v for k, v in metadata.items() if k not in _RESERVED_METADATA_KEYS}
+
+
+async def _before_ingest(
+    client: "HaikuRAG | None", result: "FetchResult", source_id: str | None
+) -> "tuple[FetchResult, dict]":
+    """Run the ``before_ingest`` hooks over a fetched document. Returns the
+    result to convert, its ``content_hash`` following a replaced body and its
+    ``extra_metadata`` without the keys the hooks set, and the metadata the
+    hooks added."""
+    if client is None or not client._hooks:
+        return result, {}
+    request = IngestRequest(
+        uri=result.uri,
+        source_id=source_id,
+        body=result.body,
+        content_type=result.content_type,
+    )
+    for hook in client._hooks:
+        try:
+            request = await hook.before_ingest(client, request)
+            if not isinstance(request, IngestRequest):
+                raise TypeError(f"returned {type(request).__name__}")
+            if not isinstance(request.body, bytes):
+                raise TypeError(f"body is {type(request.body).__name__}")
+            # The store serialises metadata after conversion and embedding.
+            json.dumps(_storable(request.metadata))
+        except DocumentRejected as e:
+            e.uri = result.uri
+            raise
+        except Exception as e:
+            cls = type(hook)
+            raise HookError(
+                f"{cls.__module__}.{cls.__qualname__}.before_ingest failed for "
+                f"{result.uri}: {type(e).__name__}: {e}"
+            ) from e
+    if request.body != result.body:
+        result = result.model_copy(
+            update={
+                "body": request.body,
+                "content_hash": hashlib.md5(
+                    request.body, usedforsecurity=False
+                ).hexdigest(),
+                "disk_path": None,
+            }
+        )
+    added = _storable(request.metadata)
+    if added.keys() & result.extra_metadata.keys():
+        result = result.model_copy(
+            update={
+                "extra_metadata": {
+                    k: v for k, v in result.extra_metadata.items() if k not in added
+                }
+            }
+        )
+    return result, added
 
 
 async def _ingest_fetch_result(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     result: "FetchResult",
     *,
     title: str | None,
@@ -562,6 +648,7 @@ async def _ingest_fetch_result(
     metadata_provider: "BoundMetadataProvider | None" = None,
     force: bool = False,
     written_ids: set[str] | None = None,
+    notify_hooks: bool = True,
 ) -> Document:
     """Convert / chunk / embed / store a fetched document. Replaces an
     existing document if one is supplied. ``depth`` tracks position in an
@@ -572,11 +659,13 @@ async def _ingest_fetch_result(
     fallback. Callers pass it when ``result.uri`` cannot yield the right
     extension, e.g. embedded attachments whose name lives in a URI fragment.
 
-    ``metadata_provider`` runs for every attachment beneath this document, and
-    for the document itself when it is one (``depth > 0``).
+    ``metadata_provider`` runs for every attachment beneath this document.
+    ``source_id`` is the ingesting source, stored only on a top-level document
+    (``depth == 0``).
 
     ``force`` re-ingests unchanged attachments too. ``written_ids`` collects the
-    id of every document this call writes, attachments included."""
+    id of every document this call writes, attachments included.
+    ``notify_hooks=False`` fires no post-commit hooks for any of them."""
 
     converter = get_converter(session.config)
     if filename is not None:
@@ -590,12 +679,6 @@ async def _ingest_fetch_result(
             f"Unsupported content type/extension: {result.content_type}/{file_extension}"
         )
 
-    if depth > 0:
-        user_metadata = {
-            **user_metadata,
-            **await _provider_metadata(metadata_provider, result.uri, result),
-        }
-
     source_metadata: dict = {
         "content_type": result.content_type,
         "md5": result.content_hash,
@@ -603,7 +686,7 @@ async def _ingest_fetch_result(
     }
     if result.revision is not None:
         source_metadata["source_revision"] = result.revision
-    if source_id is not None:
+    if source_id is not None and depth == 0:
         source_metadata["source_id"] = source_id
 
     if result.disk_path is not None:
@@ -640,7 +723,13 @@ async def _ingest_fetch_result(
             existing_doc.title = title
         await _prepare_and_title(session, existing_doc, docling_document)
         stored = await _update_document_with_chunks(
-            session, existing_doc, chunks, docling_document, observed_uri=result.uri
+            session,
+            client,
+            existing_doc,
+            chunks,
+            docling_document,
+            observed_uri=result.uri,
+            notify_hooks=notify_hooks,
         )
     else:
         document = Document(
@@ -651,7 +740,13 @@ async def _ingest_fetch_result(
         )
         await _prepare_and_title(session, document, docling_document)
         stored = await _store_document_with_chunks(
-            session, document, chunks, docling_document, observed_uri=result.uri
+            session,
+            client,
+            document,
+            chunks,
+            docling_document,
+            observed_uri=result.uri,
+            notify_hooks=notify_hooks,
         )
 
     if written_ids is not None:
@@ -660,12 +755,15 @@ async def _ingest_fetch_result(
 
     await _reconcile_pdf_attachments(
         session,
+        client,
         stored,
         result.body,
         depth=depth,
+        source_id=source_id,
         metadata_provider=metadata_provider,
         force=force,
         written_ids=written_ids,
+        notify_hooks=notify_hooks,
     )
     return await _refresh_doc_metadata(
         session, stored, title=None, user_metadata={}, source_metadata=freshness
@@ -743,13 +841,16 @@ def _extract_pdf_attachments(
 
 async def _reconcile_pdf_attachments(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     parent_doc: Document,
     parent_body: bytes,
     *,
     depth: int,
+    source_id: str | None = None,
     metadata_provider: "BoundMetadataProvider | None" = None,
     force: bool = False,
     written_ids: set[str] | None = None,
+    notify_hooks: bool = True,
 ) -> None:
     """Diff the parent PDF's ``/EmbeddedFiles`` table against any children
     already linked via ``metadata.parent_uri`` and bring the child set in line:
@@ -775,41 +876,11 @@ async def _reconcile_pdf_attachments(
     existing = await session.list_documents(filter=parent_uri_filter(parent_doc.uri))
     existing_by_uri: dict[str, Document] = {d.uri: d for d in existing if d.uri}
 
+    from haiku.rag.sources.base import FetchResult
+
+    supported_extensions = get_converter(session.config).supported_extensions
     for child_uri, (name, data, content_type, content_hash) in new_attachments.items():
-        existing_child = existing_by_uri.get(child_uri)
-        if (
-            existing_child
-            and not force
-            and (existing_child.metadata or {}).get("md5") == content_hash
-        ):
-            continue
-
-        from haiku.rag.sources.base import FetchResult
-
-        child_fr = FetchResult(
-            uri=child_uri,
-            body=data,
-            content_type=content_type,
-            content_hash=content_hash,
-            extra_metadata={"parent_uri": parent_doc.uri},
-        )
-        try:
-            await _ingest_fetch_result(
-                session,
-                child_fr,
-                title=None,
-                user_metadata=_caller_metadata(existing_child.metadata)
-                if force and existing_child
-                else {},
-                stored_uri=child_uri,
-                existing_doc=existing_child,
-                depth=depth + 1,
-                filename=name,
-                metadata_provider=metadata_provider,
-                force=force,
-                written_ids=written_ids,
-            )
-        except UnsupportedSourceError:
+        if Path(name).suffix.lower() not in supported_extensions:
             logger.warning(
                 "Skipping attachment %r in %s: unsupported extension %r "
                 "(content type %r)",
@@ -818,14 +889,69 @@ async def _reconcile_pdf_attachments(
                 Path(name).suffix.lower(),
                 content_type,
             )
+            continue
+        existing_child = existing_by_uri.get(child_uri)
+        fetched = FetchResult(
+            uri=child_uri,
+            body=data,
+            content_type=content_type,
+            content_hash=content_hash,
+            extra_metadata={"parent_uri": parent_doc.uri},
+        )
+        try:
+            child_fr, hook_metadata = await _before_ingest(client, fetched, source_id)
+        except DocumentRejected as e:
+            logger.warning("%s", e)
+            continue
+        if (
+            existing_child
+            and not force
+            and (existing_child.metadata or {}).get("md5") == child_fr.content_hash
+        ):
+            continue
 
-    for child_uri, child in existing_by_uri.items():
-        if child_uri not in new_attachments and child.id:
-            await session.delete_document(child.id, allow_attachment=True)
+        caller_metadata = (
+            _caller_metadata(existing_child.metadata)
+            if force and existing_child
+            else {}
+        )
+        await _ingest_fetch_result(
+            session,
+            client,
+            child_fr,
+            title=None,
+            user_metadata={
+                **caller_metadata,
+                **await _provider_metadata(metadata_provider, child_uri, fetched),
+                **hook_metadata,
+            },
+            stored_uri=child_uri,
+            existing_doc=existing_child,
+            source_id=source_id,
+            depth=depth + 1,
+            filename=name,
+            metadata_provider=metadata_provider,
+            force=force,
+            written_ids=written_ids,
+            notify_hooks=notify_hooks,
+        )
+
+    deleted: list[Document] = []
+    try:
+        for child_uri, child in existing_by_uri.items():
+            if child_uri not in new_attachments and child.id:
+                deleted += await session.delete_document(
+                    child.id, allow_attachment=True
+                )
+    finally:
+        # Each delete commits on its own, so a later failure leaves earlier ones done.
+        if deleted and client is not None and notify_hooks:
+            await notify(client._hooks, "after_delete", client, DeleteEvent(deleted))
 
 
 async def create_document_from_source(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     source: str | Path,
     title: str | None = None,
     metadata: dict | None = None,
@@ -837,6 +963,7 @@ async def create_document_from_source(
     observed_revision: str | None = None,
     force: bool = False,
     written_ids: set[str] | None = None,
+    notify_hooks: bool = True,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -848,8 +975,9 @@ async def create_document_from_source(
     ``force`` skips both freshness checks, for the document and its PDF
     attachments, so an unchanged source is re-converted, re-chunked and
     re-embedded into the existing document. Internal: rebuild uses it to refresh
-    a document in place instead of deleting and recreating it, and passes
-    ``written_ids`` to collect the id of every document written.
+    a document in place instead of deleting and recreating it, passes
+    ``written_ids`` to collect the id of every document written, and
+    ``notify_hooks=False`` to fire no post-commit hooks.
 
     If ``uri`` is provided, it overrides the URI auto-derived from the source
     (which is normally ``file://`` for local files or the URL for remote
@@ -883,17 +1011,23 @@ async def create_document_from_source(
             filter = FileFilter()
             for child in walk_files(local_path):
                 if child.is_file() and filter.include_file(str(child)):
-                    doc = await create_document_from_source(
-                        session,
-                        child,
-                        title=None,
-                        metadata=metadata,
-                        sources=sources,
-                        source_id=source_id,
-                        metadata_provider=metadata_provider,
-                        force=force,
-                        written_ids=written_ids,
-                    )
+                    try:
+                        doc = await create_document_from_source(
+                            session,
+                            client,
+                            child,
+                            title=None,
+                            metadata=metadata,
+                            sources=sources,
+                            source_id=source_id,
+                            metadata_provider=metadata_provider,
+                            force=force,
+                            written_ids=written_ids,
+                            notify_hooks=notify_hooks,
+                        )
+                    except DocumentRejected as e:
+                        logger.warning("%s", e)
+                        continue
                     assert isinstance(doc, Document)
                     documents.append(doc)
             return documents
@@ -989,7 +1123,8 @@ async def create_document_from_source(
             else None
         )
         provider_metadata = await _provider_metadata(bound_provider, source_str, result)
-        user_metadata = {**metadata, **provider_metadata}
+        result, hook_metadata = await _before_ingest(client, result, owner)
+        user_metadata = {**metadata, **provider_metadata, **hook_metadata}
 
         # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.
         # Refresh the source-derived metadata (revision may have rolled) but skip
@@ -1021,6 +1156,7 @@ async def create_document_from_source(
         return _note_source_change(
             await _ingest_fetch_result(
                 session,
+                client,
                 result,
                 title=title,
                 user_metadata=user_metadata,
@@ -1030,6 +1166,7 @@ async def create_document_from_source(
                 metadata_provider=bound_provider,
                 force=force,
                 written_ids=written_ids,
+                notify_hooks=notify_hooks,
             ),
             previous_owner,
         )
@@ -1079,6 +1216,7 @@ async def set_document_source(
 
 async def update_document(
     session: SingleDatabaseSession,
+    client: "HaikuRAG | None",
     document_id: str,
     content: str | None = None,
     metadata: dict | None = None,
@@ -1136,7 +1274,7 @@ async def update_document(
             existing_doc.content = content
 
         return await _update_document_with_chunks(
-            session, existing_doc, chunks, docling_document
+            session, client, existing_doc, chunks, docling_document
         )
 
     if docling_document is not None:
@@ -1144,7 +1282,7 @@ async def update_document(
 
         new_chunks = await chunk_document(session, docling_document)
         return await _update_document_with_chunks(
-            session, existing_doc, new_chunks, docling_document
+            session, client, existing_doc, new_chunks, docling_document
         )
 
     assert content is not None
@@ -1155,7 +1293,7 @@ async def update_document(
 
     new_chunks = await chunk_document(session, converted_docling)
     return await _update_document_with_chunks(
-        session, existing_doc, new_chunks, converted_docling
+        session, client, existing_doc, new_chunks, converted_docling
     )
 
 

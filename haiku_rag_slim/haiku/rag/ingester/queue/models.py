@@ -10,6 +10,7 @@ class JobStatus(StrEnum):
     CLAIMED = "claimed"
     SUCCEEDED = "succeeded"
     DEAD = "dead"
+    REJECTED = "rejected"
 
 
 class JobOp(StrEnum):

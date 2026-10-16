@@ -200,8 +200,8 @@ class JobRepo:
             )
         return _row_to_job(row) if row else None
 
-    async def mark_succeeded(self, job_id: str, claimed_by: str) -> bool:
-        """Transition a still-claimed job to `succeeded`. Guarded on
+    async def _complete(self, job_id: str, claimed_by: str, **values) -> bool:
+        """Transition a still-claimed job to a terminal status. Guarded on
         `status='claimed' AND claimed_by=?` so a reaper-resurrected job
         picked up by a different worker isn't clobbered by the original
         slow worker. Returns True when the row was updated."""
@@ -213,12 +213,16 @@ class JobRepo:
                 jobs.c.status == "claimed",
                 jobs.c.claimed_by == claimed_by,
             )
-            .values(status="succeeded", completed_at=_utcnow_iso())
+            .values(completed_at=_utcnow_iso(), **values)
             .returning(jobs.c.id)
         )
         async with self._engine.begin() as conn:
             row = (await conn.execute(stmt)).first()
         return row is not None
+
+    async def mark_succeeded(self, job_id: str, claimed_by: str) -> bool:
+        """Transition a still-claimed job to `succeeded`."""
+        return await self._complete(job_id, claimed_by, status="succeeded")
 
     async def mark_dead(
         self,
@@ -228,27 +232,21 @@ class JobRepo:
         *,
         conversion_stalled: bool = False,
     ) -> bool:
-        """Transition a still-claimed job to `dead`. See `mark_succeeded`
-        for the guard semantics."""
-        stmt = (
-            sa.update(jobs)
-            .where(
-                self._owned,
-                jobs.c.id == job_id,
-                jobs.c.status == "claimed",
-                jobs.c.claimed_by == claimed_by,
-            )
-            .values(
-                status="dead",
-                completed_at=_utcnow_iso(),
-                last_error=error,
-                conversion_stalled=conversion_stalled,
-            )
-            .returning(jobs.c.id)
+        """Transition a still-claimed job to `dead`."""
+        return await self._complete(
+            job_id,
+            claimed_by,
+            status="dead",
+            last_error=error,
+            conversion_stalled=conversion_stalled,
         )
-        async with self._engine.begin() as conn:
-            row = (await conn.execute(stmt)).first()
-        return row is not None
+
+    async def mark_rejected(self, job_id: str, error: str, claimed_by: str) -> bool:
+        """Transition a still-claimed job to `rejected`: a hook refused the
+        document."""
+        return await self._complete(
+            job_id, claimed_by, status="rejected", last_error=error
+        )
 
     async def reschedule(
         self, job_id: str, delay_seconds: float, error: str, claimed_by: str
@@ -281,11 +279,11 @@ class JobRepo:
         return row is not None
 
     async def retry(self, job_id: str) -> Job:
-        """Reset a `dead` or `queued` job: status='queued', attempts=0,
-        error cleared, scheduled for immediate re-claim. Refuses `claimed`
-        rows (would race with the worker still processing) and `succeeded`
-        rows (re-ingest via UPSERT instead). Raises KeyError when the row
-        is missing or in a non-retryable state.
+        """Reset a `dead`, `rejected` or `queued` job: status='queued',
+        attempts=0, error cleared, scheduled for immediate re-claim. Refuses
+        `claimed` rows (would race with the worker still processing) and
+        `succeeded` rows (re-ingest via UPSERT instead). Raises KeyError when
+        the row is missing or in a non-retryable state.
 
         Idempotent against a live sibling: if a live (queued/claimed) job
         already exists for the same (source_id, uri), reviving the dead row
@@ -297,7 +295,7 @@ class JobRepo:
             .where(
                 self._owned,
                 jobs.c.id == job_id,
-                jobs.c.status.in_(["dead", "queued"]),
+                jobs.c.status.in_(["dead", "rejected", "queued"]),
             )
             .values(
                 status="queued",
@@ -438,8 +436,8 @@ class JobRepo:
 
     async def counts_by_status_since(self, since: datetime) -> dict[str, int]:
         """status -> count of jobs that reached a terminal state at or after
-        `since` (by completed_at). Only succeeded/dead set completed_at, so
-        those are the only keys returned. Lets a one-shot batch report the
+        `since` (by completed_at). Only succeeded, dead and rejected set
+        completed_at, so those are the only keys returned. Lets a one-shot batch report the
         work it finished, independent of terminal rows from earlier runs."""
         query = (
             sa.select(jobs.c.status, sa.func.count().label("n"))
@@ -544,29 +542,29 @@ class JobRepo:
             row = (await conn.execute(stmt)).first()
         return row is not None
 
-    async def prune_dead(self, source_id: str, uri: str) -> int:
-        """Delete dead jobs for the given (source_id, uri). Called after a
-        successful DELETE to clear stale UPSERT failures for the same URI —
-        the document is gone, so a "couldn't ingest this" entry is no longer
-        actionable. Returns the number of rows removed."""
+    async def prune_unsuccessful(self, source_id: str, uri: str) -> int:
+        """Delete dead and rejected jobs for the given (source_id, uri).
+        Called after a successful DELETE to clear stale UPSERT failures for
+        the same URI — the document is gone, so a "couldn't ingest this" entry
+        is no longer actionable. Returns the number of rows removed."""
         stmt = sa.delete(jobs).where(
             self._owned,
             jobs.c.source_id == source_id,
             jobs.c.uri == uri,
-            jobs.c.status == "dead",
+            jobs.c.status.in_(["dead", "rejected"]),
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
         return result.rowcount or 0
 
     async def prune_terminal(self, max_age_seconds: int) -> int:
-        """Delete terminal jobs (succeeded/dead) whose completed_at is older
-        than max_age_seconds. General housekeeping so the table doesn't grow
-        without bound. Returns the number of rows removed."""
+        """Delete terminal jobs (succeeded/dead/rejected) whose completed_at
+        is older than max_age_seconds. General housekeeping so the table
+        doesn't grow without bound. Returns the number of rows removed."""
         threshold = (datetime.now(UTC) - timedelta(seconds=max_age_seconds)).isoformat()
         stmt = sa.delete(jobs).where(
             self._owned,
-            jobs.c.status.in_(["succeeded", "dead"]),
+            jobs.c.status.in_(["succeeded", "dead", "rejected"]),
             jobs.c.completed_at < threshold,
             # A stalled conversion's row is what stops discovery re-enqueuing
             # the document, and age is not evidence the document changed.

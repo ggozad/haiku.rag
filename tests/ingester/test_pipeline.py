@@ -1,4 +1,5 @@
 import logging
+import socket
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
@@ -14,10 +15,12 @@ from obstore.exceptions import (
 )
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.hooks import Hook
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.sources.base import FetchResult, FileTooLargeError, Source
+from haiku.rag.sources.fs import FSSource
 from haiku.rag.store.models.document import Document
 from tests.conftest import capture_logs
 
@@ -525,6 +528,96 @@ async def test_unknown_exception_classified_transient():
         await run_job(client, _job())
 
 
+def _hook_error(cause: BaseException):
+    from haiku.rag.hooks import HookError
+
+    try:
+        raise HookError("pkg.Hook.before_ingest failed for file:///a.md") from cause
+    except HookError as e:
+        return e
+
+
+def _http_status_error(status: int) -> httpx.HTTPStatusError:
+    response = httpx.Response(
+        status, request=httpx.Request("GET", "https://example.com/a")
+    )
+    return httpx.HTTPStatusError("err", request=response.request, response=response)
+
+
+class _ClientConnectError(Exception):
+    """A client library's connect error."""
+
+
+def _raised_from(outer: Exception, inner: BaseException) -> Exception:
+    try:
+        raise outer from inner
+    except Exception as e:
+        return e
+
+
+def _client_connect_error(socket_error: BaseException) -> Exception:
+    """Chained as httpx and httpx2 chain theirs: the transport's error is raised
+    while handling the socket error, and the client's is raised from it."""
+    try:
+        try:
+            try:
+                raise socket_error
+            except BaseException:
+                raise _ClientConnectError("transport")
+        except _ClientConnectError as transport:
+            raise _ClientConnectError("client") from transport
+    except _ClientConnectError as e:
+        return e
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        ValueError("bad header"),
+        RuntimeError("???"),
+        _http_status_error(404),
+        FileNotFoundError("glossary.csv"),
+    ],
+)
+async def test_a_hook_failure_is_permanent(cause):
+    client = _mock_client()
+    client._ingest_observed.side_effect = _hook_error(cause)
+    with pytest.raises(PermanentError) as raised:
+        await run_job(client, _job())
+    assert str(raised.value) == "pkg.Hook.before_ingest failed for file:///a.md"
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        TransientError("busy"),
+        httpx.ConnectError("boom"),
+        TimeoutError("slow"),
+        _http_status_error(408),
+        _http_status_error(429),
+        _http_status_error(503),
+        ConnectionResetError("reset"),
+        ConnectionRefusedError("refused"),
+        socket.gaierror("name resolution"),
+        _client_connect_error(ConnectionRefusedError()),
+        _client_connect_error(
+            _raised_from(
+                OSError("all connection attempts failed"),
+                ExceptionGroup(
+                    "connect", [ConnectionRefusedError(), ConnectionRefusedError()]
+                ),
+            )
+        ),
+    ],
+)
+async def test_a_hook_failure_caused_by_a_transient_error_is_retried(cause):
+    client = _mock_client()
+    client._ingest_observed.side_effect = _hook_error(cause)
+    with pytest.raises(TransientError) as raised:
+        await run_job(client, _job())
+    assert str(raised.value) == "pkg.Hook.before_ingest failed for file:///a.md"
+
+
 async def test_directory_result_classified_permanent():
     client = _mock_client()
     client._ingest_observed.return_value = [
@@ -798,3 +891,82 @@ async def test_delete_removes_a_url_taken_out_of_the_http_source(kept):
 
     assert result.deleted is True
     client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
+
+
+class _ThrowingIngestHook(Hook):
+    async def after_ingest(self, client, event):
+        raise RuntimeError("ingest hook boom")
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_after_ingest_hook_failure_does_not_fail_job(
+    temp_db_path, tmp_path, caplog
+):
+    """A throwing post-commit hook must not turn a committed ingest into a
+    failed job: run_job returns a successful JobResult instead of raising
+    into _classify."""
+    file_path = tmp_path / "doc.md"
+    file_path.write_text("hello")
+
+    fs = FSSource(root=tmp_path, source_id="src")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [_ThrowingIngestHook()]
+
+        with caplog.at_level(logging.ERROR, logger="haiku.rag.hooks"):
+            result = await run_job(client, _job(uri=str(file_path)), sources=[fs])
+
+        assert result.document_id is not None
+        assert result.deleted is False
+        assert any("after_ingest" in r.message for r in caplog.records)
+
+
+class _RejectHook(Hook):
+    def __init__(self, suffix: str):
+        self.suffix = suffix
+
+    async def before_ingest(self, client, request):
+        from haiku.rag.hooks import DocumentRejected
+
+        if request.uri.endswith(self.suffix):
+            raise DocumentRejected("draft")
+        return request
+
+
+async def test_a_rejected_document_is_a_permanent_failure(temp_db_path, tmp_path):
+    path = tmp_path / "doc.md"
+    path.write_text("hello")
+    fs = FSSource(root=tmp_path, source_id="src")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [_RejectHook("doc.md")]
+        with pytest.raises(PermanentError) as raised:
+            await run_job(client, _job(uri=path.as_uri()), sources=[fs])
+
+    assert str(raised.value) == f"{path.as_uri()} rejected: draft"
+
+
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_a_rejected_attachment_leaves_its_parent_job_succeeding(
+    tmp_path, temp_db_path
+):
+    """The other attachment is stored and the parent gets the md5 that
+    short-circuits an unchanged re-ingest."""
+    from haiku.rag.client.documents import parent_uri_filter
+    from tests.conftest import build_pdf
+
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("a.txt", b"alpha notes"), ("b.txt", b"beta")]))
+    fs = FSSource(root=tmp_path, source_id="src")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [_RejectHook("#attachment=b.txt")]
+        result = await run_job(client, _job(uri=pdf_path.as_uri()), sources=[fs])
+        parent = await client.get_document_by_uri(pdf_path.as_uri())
+        assert parent is not None
+        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
+
+    assert [c.uri for c in children] == [f"{pdf_path.as_uri()}#attachment=a.txt"]
+    assert result.content_hash == parent.metadata["md5"]
