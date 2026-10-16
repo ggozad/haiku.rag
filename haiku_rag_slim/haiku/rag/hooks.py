@@ -120,7 +120,8 @@ class Hook:
         """Transform a fetched document before conversion. Runs once per
         fetched document and once per PDF attachment, before the
         unchanged-bytes check, so the stored ``md5`` is that of the returned
-        body. Added metadata keys win over a metadata provider's, and the keys
+        body. Added metadata keys win over a metadata provider's and a
+        source's, and the keys
         ingestion owns (``content_type``, ``md5``, ``source_revision``,
         ``source_id``, ``parent_uri``) are dropped. Raise ``DocumentRejected``
         to refuse the document. Any other exception fails the ingest as a
@@ -266,9 +267,8 @@ def build_hooks(
     discovered: Mapping[str, LoadableEntryPoint],
 ) -> list[Hook]:
     """Load and instantiate the configured hooks in order, passing each its
-    options. Raises ValueError for a name with no registered entry point so a
-    misconfigured client fails at construction rather than silently skipping a
-    hook."""
+    options. Raises ValueError naming the hook for a name with no registered
+    entry point, a module that fails to import, or a factory that fails."""
     hooks: list[Hook] = []
     for entry in configured:
         if isinstance(entry, str):
@@ -281,6 +281,9 @@ def build_hooks(
                 f"Config references unknown hook {name!r}; no entry point "
                 f"registered under {ENTRY_POINT_GROUP!r}."
             ) from None
-        factory: HookFactory = entry_point.load()
-        hooks.append(factory(**entry.options))
+        try:
+            factory: HookFactory = entry_point.load()
+            hooks.append(factory(**entry.options))
+        except Exception as exc:
+            raise ValueError(f"hook {name!r}: {exc}") from exc
     return hooks

@@ -13,6 +13,9 @@
 
 - Rerankers score a chunk's document title and section headings, where present, before its content (`reranking.base.scored_text`).
 - Ingester queue schema 5. Run `haiku-ingester queue migrate` on a server queue before starting upgraded ingesters.
+- `haiku-ingester run-batch` prints `Batch complete: N succeeded, M dead, K rejected`.
+- `SingleDatabaseSession.delete_document` returns the deleted documents instead of a `bool`.
+- `JobRepo.prune_dead` renamed to `prune_unsuccessful`.
 
 ### Fixed
 

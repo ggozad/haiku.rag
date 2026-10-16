@@ -123,6 +123,22 @@ def test_build_hooks_unknown_name_with_options_raises():
         build_hooks([HookConfig(name="missing", options={"x": 1})], {})
 
 
+def test_build_hooks_names_a_hook_whose_factory_rejects_its_options():
+    discovered = {"append": _EntryPointStub(AppendTokenHook)}
+    with pytest.raises(ValueError, match="hook 'append': .*tokn") as excinfo:
+        build_hooks([HookConfig(name="append", options={"tokn": "x"})], discovered)
+    assert isinstance(excinfo.value.__cause__, TypeError)
+
+
+def test_build_hooks_names_a_hook_whose_module_fails_to_import():
+    class _UnimportableEntryPoint:
+        def load(self):
+            raise ImportError("No module named 'missing_dependency'")
+
+    with pytest.raises(ValueError, match="hook 'broken': .*missing_dependency"):
+        build_hooks(["broken"], {"broken": _UnimportableEntryPoint()})
+
+
 def test_client_init_unknown_hook_raises(temp_db_path):
     config = get_config().model_copy(deep=True)
     config.hooks = ["missing"]
@@ -862,6 +878,42 @@ async def test_before_ingest_rewrites_the_stored_document(temp_db_path, tmp_path
 
 @pytest.mark.asyncio
 @pytest.mark.vcr()
+async def test_before_ingest_metadata_wins_over_source_metadata(temp_db_path, tmp_path):
+    import os
+
+    from haiku.rag.sources.fs import FSSource
+
+    class TaggingSource(FSSource):
+        async def fetch(self, uri):
+            result = await super().fetch(uri)
+            result.extra_metadata["team"] = "source"
+            return result
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nThe original text.\n")
+    source = TaggingSource(root=tmp_path, source_id="fs:docs")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [RewriteHook()]
+        doc = await client.create_document_from_source(
+            path, sources=[source], source_id=source.source_id
+        )
+        stat = path.stat()
+        os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+        refreshed = await client.create_document_from_source(
+            path, sources=[source], source_id=source.source_id
+        )
+
+    for stored in (doc, refreshed):
+        assert not isinstance(stored, list)
+        assert stored.metadata["team"] == "hook"
+        assert stored.metadata["md5"] != "forged"
+    assert not isinstance(refreshed, list)
+    assert refreshed.metadata["source_revision"] == str(path.stat().st_mtime_ns)
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
 async def test_before_ingest_output_short_circuits_unchanged_bytes(
     temp_db_path, tmp_path
 ):
@@ -947,6 +999,54 @@ async def test_a_raising_before_ingest_stores_nothing(temp_db_path, tmp_path):
         f"{path.as_uri()}: RuntimeError: hook refused"
     )
     assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+class DatetimeMetadataHook(Hook):
+    async def before_ingest(self, client, request):
+        from datetime import datetime
+
+        request.metadata["seen_at"] = datetime(2026, 1, 1)
+        return request
+
+
+@pytest.mark.asyncio
+async def test_before_ingest_metadata_that_is_not_json_fails_before_conversion(
+    temp_db_path, tmp_path
+):
+    from haiku.rag.hooks import HookError
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [DatetimeMetadataHook()]
+        with pytest.raises(HookError, match="DatetimeMetadataHook.*TypeError"):
+            await client.create_document_from_source(path)
+        assert await client.list_documents() == []
+
+
+class ReservedDatetimeHook(Hook):
+    async def before_ingest(self, client, request):
+        from datetime import datetime
+
+        request.metadata["source_revision"] = datetime(2026, 1, 1)
+        return request
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_before_ingest_ignores_a_reserved_key_that_is_not_json(
+    temp_db_path, tmp_path
+):
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [ReservedDatetimeHook()]
+        doc = await client.create_document_from_source(path)
+
+    assert not isinstance(doc, list)
+    assert doc.metadata["source_revision"] == str(path.stat().st_mtime_ns)
 
 
 @pytest.mark.asyncio

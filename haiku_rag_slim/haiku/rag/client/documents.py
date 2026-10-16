@@ -571,19 +571,20 @@ async def _provider_metadata(
     # MD5 short-circuit and source_meta, bypassing the reserved-key filter
     # that only guards the returned dict.
     provider_result = result.model_copy(deep=True)
-    return {
-        k: v
-        for k, v in (await provider(uri, provider_result)).items()
-        if k not in _RESERVED_METADATA_KEYS
-    }
+    return _storable(await provider(uri, provider_result))
+
+
+def _storable(metadata: dict) -> dict:
+    return {k: v for k, v in metadata.items() if k not in _RESERVED_METADATA_KEYS}
 
 
 async def _before_ingest(
     client: "HaikuRAG | None", result: "FetchResult", source_id: str | None
 ) -> "tuple[FetchResult, dict]":
     """Run the ``before_ingest`` hooks over a fetched document. Returns the
-    result to convert, its ``content_hash`` following a replaced body, and the
-    metadata the hooks added."""
+    result to convert, its ``content_hash`` following a replaced body and its
+    ``extra_metadata`` without the keys the hooks set, and the metadata the
+    hooks added."""
     if client is None or not client._hooks:
         return result, {}
     request = IngestRequest(
@@ -595,6 +596,8 @@ async def _before_ingest(
     for hook in client._hooks:
         try:
             request = await hook.before_ingest(client, request)
+            # The store serialises metadata after conversion and embedding.
+            json.dumps(_storable(request.metadata))
         except DocumentRejected as e:
             e.uri = request.uri
             raise
@@ -614,9 +617,15 @@ async def _before_ingest(
                 "disk_path": None,
             }
         )
-    added = {
-        k: v for k, v in request.metadata.items() if k not in _RESERVED_METADATA_KEYS
-    }
+    added = _storable(request.metadata)
+    if added.keys() & result.extra_metadata.keys():
+        result = result.model_copy(
+            update={
+                "extra_metadata": {
+                    k: v for k, v in result.extra_metadata.items() if k not in added
+                }
+            }
+        )
     return result, added
 
 
