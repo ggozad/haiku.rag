@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.98.0] - 2026-10-16
+
 ### Added
 
 - `search.rerank_pool_factor` (default 10): candidates per requested result a reranker scores.
@@ -2986,7 +2988,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.97.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.98.0...HEAD
+[0.98.0]: https://github.com/ggozad/haiku.rag/compare/0.97.0...0.98.0
 [0.97.0]: https://github.com/ggozad/haiku.rag/compare/0.96.1...0.97.0
 [0.96.1]: https://github.com/ggozad/haiku.rag/compare/0.96.0...0.96.1
 [0.96.0]: https://github.com/ggozad/haiku.rag/compare/0.95.0...0.96.0
