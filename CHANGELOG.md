@@ -10,6 +10,7 @@
 - Startup fails on two sources sharing an id (`DuplicateSourceError`), and on two `ingester.databases` keys at one location.
 - `haiku-ingester run-batch --db-name NAME` runs one database of `ingester.databases`. `IngesterApp(database_name=)` is the same in Python.
 - `haiku.rag.client.search.populate_image_data(client, results)`: attaches to search results the pictures and captions a search attaches.
+- `haiku.rag.utils.sql.title_or_uri_filter(term)`: the case-insensitive title-or-URI document filter the chat TUI's filter uses.
 - `haiku.rag.doctor.scan_vectors(store)`, `duplicate_families(...)` and `duplicates_yaml(families, label)`: the vector scan, the near-duplicate clustering and the YAML export that `doctor` runs.
 - `app/` backend `/api/databases`: each configured database with its availability, document and chunk counts, and `supports_image_search`; `/api/pictures?source=&document_id=&ref=`: a stored picture's bytes.
 
@@ -34,6 +35,7 @@
 - The `app/` keeps chat sessions on the backend in a SQLite file (`HAIKU_RAG_APP_SESSIONS`, a `sessions` volume in compose) instead of the browser: `/api/sessions` lists, creates, reads, renames, scopes, deletes and exports them as Markdown, and a turn is stored when its run completes, with its citations, program and citation status.
 - The `app/` chat attaches images to a question, picked, pasted or dropped, up to 8, resized to 2048 px on the long edge, when `qa.model.vision` is set, and marks each answer with its citation status.
 - The `app/` compose files run `haiku-ingester serve` as an `ingester` service over `DOCS_VOLUME`, and the app has an Ingestion page: queue, throughput, sources, providers, active, failed and succeeded jobs, every job by status, source and URI, with cancel, retry and source refresh.
+- The `app/` has an Inspector page: a database's documents by title, URI or SQL filter, and a document's items coloured by the chunk holding them, its outline with chunk counts, its chunks in order, and each chunk's content and provenance.
 
 ### Removed
 

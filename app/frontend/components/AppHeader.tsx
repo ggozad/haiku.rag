@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const PAGES = [
 	{ href: "/", label: "Chat" },
 	{ href: "/ingestion", label: "Ingestion" },
+	{ href: "/inspect", label: "Inspector" },
 ];
 
 export default function AppHeader() {

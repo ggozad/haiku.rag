@@ -7,11 +7,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Static
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.utils.sql import (
-    build_document_id_filter,
-    escape_like_pattern,
-    escape_sql_string,
-)
+from haiku.rag.utils.sql import build_document_id_filter, title_or_uri_filter
 
 # Documents listed at once. Mounting a checkbox per document wedges the modal on
 # a large corpus, so the rest is reached through the search box.
@@ -47,23 +43,6 @@ def _labelled(
         if doc.id is not None
     ]
     return sorted(rows, key=lambda row: (row[0], row[1] or "", row[2]))
-
-
-def search_filter(term: str) -> str | None:
-    """A document filter matching `term` in a title or URI, or None for no term.
-
-    The term is text to find, not a pattern: `LIKE` is case-sensitive and reads
-    `%` and `_` as wildcards, so both sides are lowered and the term's own
-    wildcards are escaped.
-    """
-    term = term.strip()
-    if not term:
-        return None
-    escaped = escape_sql_string(f"%{escape_like_pattern(term.lower())}%")
-    return (
-        f"LOWER(title) LIKE '{escaped}' ESCAPE '\\' "
-        f"OR LOWER(uri) LIKE '{escaped}' ESCAPE '\\'"
-    )
 
 
 class DocumentFilterModal(ModalScreen):
@@ -207,7 +186,7 @@ class DocumentFilterModal(ModalScreen):
                 else []
             )
         else:
-            document_filter = search_filter(self._search)
+            document_filter = title_or_uri_filter(self._search)
             docs = list(
                 await self.client.list_documents(
                     limit=DOCUMENT_PAGE,

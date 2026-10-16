@@ -12,7 +12,7 @@ from starlette.routing import Route
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import AppConfig, get_config
-from haiku_rag_app import chat, sessions
+from haiku_rag_app import chat, inspect, sessions
 from haiku_rag_app.sessions import Sessions
 
 logger = logging.getLogger(__name__)
@@ -138,6 +138,7 @@ def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlett
             Route("/api/databases", list_databases, methods=["GET"]),
             *chat.routes,
             *sessions.routes,
+            *inspect.routes,
         ],
         exception_handlers={HTTPException: http_error},
         lifespan=lifespan,
