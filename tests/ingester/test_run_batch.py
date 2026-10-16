@@ -351,8 +351,8 @@ async def test_run_batch_reports_rejections_apart_from_dead(tmp_path, use_client
 
 async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_client):
     """A doc that dead-lettered in an earlier run and succeeds in this one
-    prunes its dead row. The report counts only this run's terminal jobs, so
-    the recovery shows as a success, never a negative or stale dead count."""
+    shows as a success. The report counts only this run's terminal jobs, so
+    the earlier dead row adds no stale dead count."""
     (tmp_path / "a.md").write_text("hello")
     config = _config(tmp_path)
     db_path = tmp_path / "db.lancedb"
@@ -376,6 +376,99 @@ async def test_run_batch_recovered_doc_is_not_counted_as_dead(tmp_path, use_clie
     ).run_batch()
     assert second.dead == 0
     assert second.succeeded == 1
+
+
+async def _jobs_with(config: AppConfig, status: JobStatus) -> set[str]:
+    engine = await open_queue(config.ingester.queue)
+    try:
+        jobs = await JobRepo(engine).list_jobs(status=status)
+    finally:
+        await engine.dispose()
+    return {uri_to_path(job.uri).name for job in jobs}
+
+
+async def test_run_batch_retries_failures_beside_the_sweep(tmp_path, use_client):
+    """One run retries earlier failures, a stalled conversion included,
+    ingests a new file and deletes a removed one, with no sweep skipped."""
+    from haiku.rag.converters.exceptions import ConversionTimeoutError
+
+    for name in ("failed.md", "stalled.md", "removed.md"):
+        (tmp_path / name).write_text(name)
+    config = _config(tmp_path)
+    db_path = tmp_path / "db.lancedb"
+
+    client = _mock_client()
+    ingest = client._ingest_observed.side_effect
+
+    async def _fails(uri, *args, **kwargs):
+        if uri.endswith("failed.md"):
+            raise UnsupportedSourceError("nope")
+        if uri.endswith("stalled.md"):
+            raise ConversionTimeoutError("slow", converter_wedged=False)
+        return await ingest(uri, *args, **kwargs)
+
+    client._ingest_observed.side_effect = _fails
+    use_client(client)
+    first = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
+    assert (first.succeeded, first.dead) == (1, 2)
+
+    client._ingest_observed.side_effect = ingest
+    (tmp_path / "removed.md").unlink()
+    (tmp_path / "new.md").write_text("new")
+    second = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch(retry={JobStatus.DEAD})
+
+    assert second.failed_sweeps == []
+    assert second.retried == 2
+    assert (second.succeeded, second.dead, second.rejected) == (4, 0, 0)
+    client.delete_document.assert_awaited_once()
+    assert await _jobs_with(config, JobStatus.DEAD) == set()
+
+
+async def test_run_batch_leaves_a_recovered_failure_dead(tmp_path, use_client):
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    db_path = tmp_path / "db.lancedb"
+
+    failing = _mock_client()
+    failing._ingest_observed.side_effect = UnsupportedSourceError("nope")
+    use_client(failing)
+    await IngesterApp(config=config, scope=DatabaseScope.at(db_path)).run_batch()
+    healthy = _mock_client()
+    use_client(healthy)
+    (tmp_path / "a.md").write_text("hello again")
+    await IngesterApp(config=config, scope=DatabaseScope.at(db_path)).run_batch()
+
+    third = await IngesterApp(config=config, scope=DatabaseScope.at(db_path)).run_batch(
+        retry={JobStatus.DEAD}
+    )
+
+    assert third.retried == 0
+    assert (third.succeeded, third.dead) == (0, 0)
+    assert await _jobs_with(config, JobStatus.DEAD) == {"a.md"}
+
+
+async def test_run_batch_without_retry_leaves_failures_dead(tmp_path, use_client):
+    (tmp_path / "a.md").write_text("hello")
+    config = _config(tmp_path)
+    db_path = tmp_path / "db.lancedb"
+    client = _mock_client()
+    ingest = client._ingest_observed.side_effect
+    client._ingest_observed.side_effect = UnsupportedSourceError("nope")
+    use_client(client)
+    await IngesterApp(config=config, scope=DatabaseScope.at(db_path)).run_batch()
+
+    client._ingest_observed.side_effect = ingest
+    second = await IngesterApp(
+        config=config, scope=DatabaseScope.at(db_path)
+    ).run_batch()
+
+    assert second.retried == 0
+    assert second.succeeded == 0
+    assert await _jobs_with(config, JobStatus.DEAD) == {"a.md"}
 
 
 async def test_run_batch_reports_failed_sweep(

@@ -1,8 +1,9 @@
 import asyncio
 import sys
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -35,6 +36,7 @@ from haiku.rag.ingester.queue.migrations import (  # noqa: E402
     apply_migrations,
     make_engine,
 )
+from haiku.rag.ingester.queue.models import JobStatus  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     AmbiguousDatabaseError,
@@ -310,6 +312,19 @@ def serve(
     asyncio.run(app.serve(api=not no_api))
 
 
+class RetrySelection(StrEnum):
+    DEAD = "dead"
+    REJECTED = "rejected"
+    ALL = "all"
+
+
+_RETRY_STATUSES = {
+    RetrySelection.DEAD: {JobStatus.DEAD},
+    RetrySelection.REJECTED: {JobStatus.REJECTED},
+    RetrySelection.ALL: {JobStatus.DEAD, JobStatus.REJECTED},
+}
+
+
 @_cli.command("run-batch")
 def run_batch(
     db: Path | None = typer.Option(
@@ -333,6 +348,12 @@ def run_batch(
         "--manifest",
         help="Replay a dry-run manifest instead of running discovery.",
     ),
+    retry: RetrySelection | None = typer.Option(
+        None,
+        "--retry",
+        help="After the sweep, re-queue the latest dead or rejected job of each "
+        "document not ingested since.",
+    ),
 ) -> None:
     """Run one discover sweep across every configured source, drain the queue,
     then exit. New and changed resources are ingested, resources that vanished
@@ -340,6 +361,10 @@ def run_batch(
     source's sweep does not complete."""
     if manifest is not None and dry_run:
         typer.echo("Error: --manifest cannot be combined with --dry-run")
+        raise typer.Exit(2)
+    if retry is not None and (dry_run or manifest is not None):
+        other = "--dry-run" if dry_run else "--manifest"
+        typer.echo(f"Error: --retry cannot be combined with {other}")
         raise typer.Exit(2)
     if output is not None and not dry_run:
         typer.echo("Error: --output is only valid with --dry-run")
@@ -351,6 +376,7 @@ def run_batch(
             dry_run=dry_run,
             output=output,
             manifest_path=manifest,
+            retry=_RETRY_STATUSES[retry] if retry is not None else set(),
         )
     )
 
@@ -362,6 +388,7 @@ async def _run_batch(
     dry_run: bool = False,
     output: Path | None = None,
     manifest_path: Path | None = None,
+    retry: Collection[JobStatus] = frozenset(),
 ) -> None:
     from haiku.rag.ingester.app import IngesterApp
 
@@ -409,9 +436,13 @@ async def _run_batch(
 
     with _batch_progress("Running batch") as progress_callback:
         if progress_callback is None:
-            report = await app.run_batch()
+            report = await app.run_batch(retry=retry)
         else:
-            report = await app.run_batch(progress_callback=progress_callback)
+            report = await app.run_batch(
+                retry=retry, progress_callback=progress_callback
+            )
+    if retry:
+        typer.echo(f"Retried {report.retried} job(s)")
     typer.echo(
         f"Batch complete: {report.succeeded} succeeded, {report.dead} dead, "
         f"{report.rejected} rejected"

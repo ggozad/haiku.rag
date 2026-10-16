@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -46,6 +46,7 @@ class BatchReport(BaseModel):
     succeeded: int = 0
     dead: int = 0
     rejected: int = 0
+    retried: int = 0
     failed_sweeps: list[str] = []
 
 
@@ -351,12 +352,19 @@ class IngesterApp:
                 await self._pollers.close_sources()
 
     async def run_batch(
-        self, *, progress_callback: BatchProgressCallback | None = None
+        self,
+        *,
+        retry: Collection[JobStatus] = (),
+        progress_callback: BatchProgressCallback | None = None,
     ) -> BatchReport:
         """Run one discover() sweep across every configured source, drain the
         queue to completion, then stop. Unlike `serve`, the periodic poller
         loops never start — discovery is driven explicitly, so the run is
-        deterministic and exits as soon as the queue is empty."""
+        deterministic and exits as soon as the queue is empty.
+
+        `retry` re-queues the latest failure of each URI in those statuses
+        after the sweep: before it, the re-queued jobs would make each
+        poller skip its source as one with pending work."""
         async with self._resources():
             assert (
                 self._pollers is not None
@@ -364,16 +372,18 @@ class IngesterApp:
                 and self._jobs is not None
             )
             # A persisted queue carries terminal rows from previous runs, and
-            # a recovered URI's dead row gets pruned mid-run, so the report
+            # a successful DELETE prunes a URI's dead rows mid-run, so the report
             # counts only jobs that completed at or after this start instant.
             started_at = datetime.now(UTC)
             await self._pool.start()
             try:
                 failed_sweeps = await self._pollers.sweep_all()
+                retried = await self._jobs.retry_failed(retry)
                 report = await self._drain_batch(
                     started_at, progress_callback=progress_callback
                 )
                 report.failed_sweeps = failed_sweeps
+                report.retried = retried
                 return report
             finally:
                 await self._stop_pool()

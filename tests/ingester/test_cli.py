@@ -24,7 +24,7 @@ from haiku.rag.ingester.cli import _cli as cli
 from haiku.rag.ingester.cli import _resolve_queue_config
 from haiku.rag.ingester.cli import cli as ingester_cli
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION
-from haiku.rag.ingester.queue.models import JobOp
+from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     ConfigMismatchError,
@@ -155,10 +155,49 @@ def test_run_batch_reports_and_exits_zero(monkeypatch):
     fake.run_batch.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    "selection, statuses",
+    [
+        ("dead", {JobStatus.DEAD}),
+        ("rejected", {JobStatus.REJECTED}),
+        ("all", {JobStatus.DEAD, JobStatus.REJECTED}),
+    ],
+)
+def test_run_batch_retry_names_the_statuses_to_retry(monkeypatch, selection, statuses):
+    fake = _fake_app(BatchReport(succeeded=2, retried=2), monkeypatch)
+
+    result = runner.invoke(cli, ["run-batch", "--retry", selection, "--db", "x"])
+
+    assert result.exit_code == 0
+    assert fake.run_batch.await_args.kwargs["retry"] == statuses
+    assert "Retried 2 job(s)\nBatch complete: 2 succeeded" in result.output
+
+
+def test_run_batch_without_retry_retries_nothing(monkeypatch):
+    fake = _fake_app(BatchReport(succeeded=1), monkeypatch)
+
+    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+
+    assert result.exit_code == 0
+    assert fake.run_batch.await_args.kwargs["retry"] == set()
+    assert "Retried" not in result.output
+
+
+@pytest.mark.parametrize("other", [["--dry-run"], ["--manifest", "m.yaml"]])
+def test_run_batch_retry_refuses_a_dry_run_or_a_manifest(monkeypatch, other):
+    fake = _fake_app(BatchReport(), monkeypatch)
+
+    result = runner.invoke(cli, ["run-batch", "--retry", "dead", *other])
+
+    assert result.exit_code == 2
+    assert f"--retry cannot be combined with {other[0]}" in result.output
+    fake.run_batch.assert_not_awaited()
+
+
 def test_run_batch_passes_progress_callback_when_enabled(monkeypatch):
     fake = AsyncMock()
 
-    async def _run_batch(*, progress_callback):
+    async def _run_batch(*, retry, progress_callback):
         progress_callback(BatchProgress(total=1, completed=1, succeeded=1))
         return BatchReport(succeeded=1, dead=0)
 

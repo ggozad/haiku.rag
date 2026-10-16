@@ -530,7 +530,7 @@ class QueueConfig(ConfigModel):
     retention_days: int | None = Field(
         default=30,
         ge=0,
-        description="Delete succeeded/dead jobs whose completed_at is older "
+        description="Delete succeeded, dead and rejected jobs whose completed_at is older "
         "than this many days. The reaper enforces it on reaper_interval_s. "
         "None disables pruning (keep all terminal rows).",
     )

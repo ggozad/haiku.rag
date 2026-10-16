@@ -459,7 +459,7 @@ class JobRepo:
 
     async def cancel(self, job_id: str) -> bool:
         """True iff a queued/claimed row was removed; terminal jobs aren't
-        cancellable (succeeded/dead rows are kept for history)."""
+        cancellable (succeeded, dead and rejected rows are kept for history)."""
         stmt = (
             sa.delete(jobs)
             .where(
