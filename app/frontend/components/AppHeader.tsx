@@ -9,6 +9,7 @@ const PAGES = [
 	{ href: "/", label: "Chat" },
 	{ href: "/ingestion", label: "Ingestion" },
 	{ href: "/inspect", label: "Inspector" },
+	{ href: "/doctor", label: "Doctor" },
 ];
 
 export default function AppHeader() {

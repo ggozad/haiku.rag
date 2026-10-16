@@ -36,6 +36,7 @@
 - The `app/` chat attaches images to a question, picked, pasted or dropped, up to 8, resized to 2048 px on the long edge, when `qa.model.vision` is set, and marks each answer with its citation status.
 - The `app/` compose files run `haiku-ingester serve` as an `ingester` service over `DOCS_VOLUME`, and the app has an Ingestion page: queue, throughput, sources, providers, active, failed and succeeded jobs, every job by status, source and URI, with cancel, retry and source refresh.
 - The `app/` has an Inspector page: a database's documents by title, URI or SQL filter, and a document's items coloured by the chunk holding them, its outline with chunk counts, its chunks in order, its pages with their chunks drawn, its pictures, and each chunk's content and provenance, the context the agent receives for it, its place on the page and similar chunks; search across databases by text or image with the agent's rendering of the results; and database info with tags and version history.
+- The `app/` has a Doctor page that runs `haiku-rag doctor` on a configured database in the background, one job at a time, with its progress and report.
 
 ### Removed
 
