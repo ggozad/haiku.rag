@@ -2063,3 +2063,179 @@ async def test_migration_v4_to_v5_keeps_the_jobs(engine):
     async with engine.connect() as conn:
         ids = (await conn.execute(sa.text("SELECT id FROM jobs"))).scalars().all()
     assert ids == ["old-1"]
+
+
+# --- retry_failed ---
+
+
+async def _failed(repo: JobRepo, uri: str = "u", op: JobOp = JobOp.UPSERT):
+    job = await repo.enqueue("s", uri, op)
+    assert job is not None
+    claimed = await repo.claim_next("w")
+    assert claimed is not None and claimed.id == job.id
+    assert await repo.mark_dead(claimed.id, "boom", "w")
+    return job
+
+
+async def _succeeded(repo: JobRepo, uri: str = "u", op: JobOp = JobOp.UPSERT):
+    job = await repo.enqueue("s", uri, op)
+    assert job is not None
+    claimed = await repo.claim_next("w")
+    assert claimed is not None and claimed.id == job.id
+    assert await repo.mark_succeeded(claimed.id, "w")
+    return job
+
+
+async def _status(repo: JobRepo, job_id: str) -> JobStatus:
+    job = await repo.get_job(job_id)
+    assert job is not None
+    return job.status
+
+
+async def test_retry_failed_revives_the_chosen_statuses_only(jobs):
+    dead = await _failed(jobs, "a")
+    rejected = await _rejected(jobs, "b")
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 1
+
+    assert await _status(jobs, dead.id) is JobStatus.QUEUED
+    assert await _status(jobs, rejected.id) is JobStatus.REJECTED
+    assert await jobs.retry_failed({JobStatus.REJECTED}) == 1
+    assert await _status(jobs, rejected.id) is JobStatus.QUEUED
+
+
+async def test_retry_failed_refuses_a_live_or_succeeded_status(jobs):
+    with pytest.raises(ValueError, match="queued"):
+        await jobs.retry_failed({JobStatus.DEAD, JobStatus.QUEUED})
+
+
+async def test_retry_failed_makes_a_revived_job_claimable_at_once(jobs):
+    dead = await _dead(jobs, conversion_stalled=True)
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 1
+
+    revived = await jobs.get_job(dead.id)
+    assert revived is not None
+    assert revived.status is JobStatus.QUEUED
+    assert revived.attempts == 0
+    assert revived.last_error is None
+    assert revived.completed_at is None
+    assert revived.conversion_stalled is False
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.id == dead.id
+
+
+@pytest.mark.parametrize(
+    "failed_op, succeeded_op",
+    [(JobOp.UPSERT, JobOp.DELETE), (JobOp.DELETE, JobOp.UPSERT)],
+)
+async def test_retry_failed_leaves_a_failure_a_later_success_resolved(
+    jobs, failed_op, succeeded_op
+):
+    dead = await _failed(jobs, op=failed_op)
+    await _succeeded(jobs, op=succeeded_op)
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 0
+    assert await _status(jobs, dead.id) is JobStatus.DEAD
+
+
+async def test_retry_failed_leaves_a_failure_ingested_after_its_success_row_aged_out(
+    jobs, sync
+):
+    stalled = await _dead(jobs, conversion_stalled=True)
+    await sync.upsert("s", "u", revision="r2", ingested=True)
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 0
+    assert await _status(jobs, stalled.id) is JobStatus.DEAD
+
+
+async def test_retry_failed_revives_a_failure_after_an_earlier_ingest(jobs, sync):
+    await sync.upsert("s", "u", revision="r1", ingested=True)
+    dead = await _failed(jobs)
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 1
+    assert await _status(jobs, dead.id) is JobStatus.QUEUED
+
+
+async def test_retry_failed_revives_only_the_latest_failure_of_a_uri(jobs):
+    older = await _failed(jobs)
+    newer = await _rejected(jobs)
+
+    assert await jobs.retry_failed({JobStatus.DEAD, JobStatus.REJECTED}) == 1
+
+    assert await _status(jobs, older.id) is JobStatus.DEAD
+    assert await _status(jobs, newer.id) is JobStatus.QUEUED
+
+
+async def test_retry_failed_revives_one_of_two_failures_with_equal_completed_at(
+    jobs, conn
+):
+    first = await _failed(jobs)
+    second = await _failed(jobs)
+    await conn.execute(
+        "UPDATE jobs SET completed_at = ? WHERE id IN (?, ?)",
+        ("2026-01-01T00:00:00+00:00", first.id, second.id),
+    )
+    await conn.commit()
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 1
+    statuses = {await _status(jobs, first.id), await _status(jobs, second.id)}
+    assert statuses == {JobStatus.QUEUED, JobStatus.DEAD}
+
+
+async def test_retry_failed_skips_a_failure_with_a_live_sibling(jobs):
+    dead = await _failed(jobs)
+    live = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert live is not None
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 0
+    assert await _status(jobs, dead.id) is JobStatus.DEAD
+    assert await _status(jobs, live.id) is JobStatus.QUEUED
+
+
+async def test_retry_failed_skips_a_failure_superseded_after_selection(
+    jobs, monkeypatch
+):
+    dead = await _failed(jobs)
+    replacement = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert replacement is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.id == replacement.id
+    revive = JobRepo._revive
+
+    async def _complete_then_revive(self, job_id, statuses):
+        assert await jobs.mark_succeeded(replacement.id, "w")
+        return await revive(self, job_id, statuses)
+
+    monkeypatch.setattr(JobRepo, "_revive", _complete_then_revive)
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 0
+    assert await _status(jobs, dead.id) is JobStatus.DEAD
+
+
+async def test_retry_failed_skips_a_failure_pruned_after_selection(jobs, monkeypatch):
+    dead = await _failed(jobs)
+    revive = JobRepo._revive
+
+    async def _prune_then_revive(self, job_id, statuses):
+        assert await jobs.prune_unsuccessful("s", "u") == 1
+        return await revive(self, job_id, statuses)
+
+    monkeypatch.setattr(JobRepo, "_revive", _prune_then_revive)
+
+    assert await jobs.retry_failed({JobStatus.DEAD}) == 0
+    assert await jobs.get_job(dead.id) is None
+
+
+async def test_retry_failed_stays_within_its_namespace(
+    own, foreign, own_sync, foreign_sync
+):
+    mine = await _failed(own)
+    theirs = await _failed(foreign)
+    await _succeeded(foreign)
+    await foreign_sync.upsert("s", "u", revision="r", ingested=True)
+
+    assert await own.retry_failed({JobStatus.DEAD}) == 1
+
+    assert await _status(own, mine.id) is JobStatus.QUEUED
+    assert await _status(foreign, theirs.id) is JobStatus.DEAD

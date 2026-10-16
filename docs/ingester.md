@@ -397,6 +397,14 @@ haiku-ingester run-batch --db rag.lancedb
 
 It exits non-zero when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 
+`--retry dead`, `--retry rejected` or `--retry all` re-queues failed jobs after the sweep, and the batch drains them with the rest. A dead or rejected job records its source revision, so a sweep does not queue the unchanged file again:
+
+```bash
+haiku-ingester run-batch --retry dead
+```
+
+Only the latest failure of each document is re-queued, and only when nothing ingested the document after it. A dead job stays in the queue after a later success until retention removes it. A stalled conversion is re-queued too, and can stall the run again, or end the process when it wedges the converter. `Retried N job(s)` precedes the summary line, and a retried job that fails again counts as dead. `--retry` cannot be combined with `--dry-run` or `--manifest`.
+
 `--dry-run` makes the same discovery without queueing anything, and writes the changes it found to a YAML manifest, `manifest-<datestamp>.yaml` unless `--output`/`-o` names one:
 
 ```bash
