@@ -1,12 +1,13 @@
-# haiku.rag Chat App
+# haiku.rag app
 
-A browser chat over a haiku.rag database: a Starlette backend adapting the RAG capability with Pydantic AI's `AGUIAdapter`, and a Next.js / CopilotKit frontend.
+A browser application over haiku.rag: chat over every configured database, the ingester's queue and jobs, an inspector for documents and chunks, and the doctor with a map of the corpus. A Starlette backend reads LanceDB, `haiku-ingester serve` writes it, and a Next.js frontend proxies both.
 
-> **Note:** An illustrative example meant as a starting point, with no authentication. The compose files bind the frontend and backend to `127.0.0.1`. The frontend proxies every backend route, so don't expose either to an untrusted network.
+> **Note:** The application has no authentication. The compose files bind every service to `127.0.0.1`, and the frontend proxies the backend and the ingester, so don't expose any of them to an untrusted network.
 
 ```bash
-cp .env.example .env                      # API keys and the database path
-cp haiku.rag.yaml.example haiku.rag.yaml  # models; the database is at /data
+cd app
+cp .env.example .env                      # API keys, host paths, the ingester token
+cp haiku.rag.yaml.example haiku.rag.yaml  # models, database at /data, ingester source /docs
 docker compose up -d --build              # or docker-compose.dev.yml for hot reload
 ```
 

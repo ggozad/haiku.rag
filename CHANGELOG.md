@@ -12,7 +12,7 @@
 - `haiku.rag.client.search.populate_image_data(client, results)`: attaches to search results the pictures and captions a search attaches.
 - `haiku.rag.utils.sql.title_or_uri_filter(term)`: the case-insensitive title-or-URI document filter the chat TUI's filter uses.
 - `haiku.rag.doctor.scan_vectors(store)`, `duplicate_families(...)` and `duplicates_yaml(families, label)`: the vector scan, the near-duplicate clustering and the YAML export that `doctor` runs.
-- `app/` backend `/api/databases`: each configured database with its availability, document and chunk counts, and `supports_image_search`; `/api/pictures?source=&document_id=&ref=`: a stored picture's bytes.
+- `app/` backend `/api/databases`, each configured database with its availability, counts and `supports_image_search`, and `/api/pictures?source=&document_id=&ref=`, a stored picture.
 
 ### Changed
 
@@ -28,15 +28,15 @@
 - `JobRepo.counts_by_status_since` and `batch_progress_counts_since` take `source_ids=`.
 - `JobRepo.claim_next(exclude_source_ids=)` replaced by `source_ids=`, the sources to claim from. `WorkerPool(client=)` replaced by `clients=`, a map from source id to client.
 - `pydantic-monty` bumped to 1.2. The sandbox iterates file objects and supports `match` statements, `os.walk`, `os.path`, `Path.glob`, `json.load` and `csv`.
-- The `app/` backend covers every configured database: `/api/documents` takes `source` and lists every database by default, `/api/visualize` takes `source`, and `/api/info` is replaced by `/api/databases`. It is the `haiku_rag_app` package, served as `uvicorn --factory haiku_rag_app.main:app`.
+- The `app/` backend is the `haiku_rag_app` package and covers every configured database, with `source` on `/api/documents` and `/api/visualize` and `/api/databases` in place of `/api/info`.
 - The `app/` frontend proxies the backend at `/api/backend/*` and the ingester at `/api/ingester/*`, adding `INGESTER_TOKEN` as a bearer token.
-- The `app/` chat runs on `@ag-ui/client` without CopilotKit, styled with Tailwind and shadcn/ui: the document filter selects documents per database, and the backend turns the selection into `document_filter` and `sources`; a stopped or failed answer is discarded and the question returned to the input.
+- The `app/` chat runs on `@ag-ui/client` with Tailwind and shadcn/ui instead of CopilotKit, and its document filter selects documents per database.
 - The `app/` chat agent borrows the backend's client instead of opening one per run.
-- The `app/` keeps chat sessions on the backend in a SQLite file (`HAIKU_RAG_APP_SESSIONS`, a `sessions` volume in compose) instead of the browser: `/api/sessions` lists, creates, reads, renames, scopes, deletes and exports them as Markdown, and a turn is stored when its run completes, with its citations, program and citation status.
-- The `app/` chat attaches images to a question, picked, pasted or dropped, up to 8, resized to 2048 px on the long edge, when `qa.model.vision` is set, and marks each answer with its citation status.
-- The `app/` compose files run `haiku-ingester serve` as an `ingester` service over `DOCS_VOLUME`, and the app has an Ingestion page: queue, throughput, sources, providers, active, failed and succeeded jobs, every job by status, source and URI, with cancel, retry and source refresh.
-- The `app/` has an Inspector page: a database's documents by title, URI or SQL filter, and a document's items coloured by the chunk holding them, its outline with chunk counts, its chunks in order, its pages with their chunks drawn, its pictures, and each chunk's content and provenance, the context the agent receives for it, its place on the page and similar chunks; search across databases by text or image with the agent's rendering of the results; and database info with tags and version history.
-- The `app/` has a Doctor page that runs `haiku-rag doctor` on a configured database in the background, one job at a time, with its progress and report, and a corpus map: the documents placed by the principal components of their chunk centroids, coloured by near-duplicate family, source or content type, with each document's nearest neighbours and the families as YAML.
+- The `app/` keeps chat sessions in a SQLite file on the backend at `HAIKU_RAG_APP_SESSIONS`, served at `/api/sessions` and committed one turn per completed run.
+- The `app/` chat attaches up to 8 images to a question when `qa.model.vision` is set, and marks each answer with its citation status.
+- The `app/` compose files run `haiku-ingester serve` as an `ingester` service, and the app has an Ingestion page over its control plane with cancel, retry and source refresh.
+- The `app/` has an Inspector page: a database's documents, items, outline, chunks, pages, pictures and info, and search across databases by text or image.
+- The `app/` has a Doctor page: `haiku-rag doctor` as a background job, and a map of the corpus by chunk centroid with near-duplicate families and nearest neighbours.
 
 ### Removed
 
