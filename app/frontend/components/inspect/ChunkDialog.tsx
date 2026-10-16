@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
 	Dialog,
 	DialogContent,
@@ -7,7 +8,14 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { firstLine } from "@/lib/inspect";
 import { useJson } from "@/lib/useJson";
+
+export interface ChunkRef {
+	source: string;
+	chunkId: string;
+}
 
 interface ChunkRow {
 	id: string;
@@ -15,6 +23,23 @@ interface ChunkRow {
 	order: number;
 	content: string;
 	metadata: Record<string, unknown>;
+}
+
+interface Context {
+	rendering: string;
+	pictures: string[];
+	document_id: string;
+}
+
+interface Similar {
+	results: {
+		source: string;
+		chunk_id: string;
+		document_title: string | null;
+		document_uri: string | null;
+		score: number;
+		content: string;
+	}[];
 }
 
 const PROVENANCE = ["page_numbers", "headings", "labels", "doc_item_refs"];
@@ -36,51 +61,175 @@ function Field({ label, value }: { label: string; value: unknown }) {
 	);
 }
 
+function Loading({ error }: { error: string | null }) {
+	return error ? (
+		<p className="text-sm text-destructive">{error}</p>
+	) : (
+		<p className="text-sm text-muted-foreground">Loading…</p>
+	);
+}
+
 export default function ChunkDialog({
-	source,
-	chunkId,
+	chunk: ref,
+	onOpen,
 	onClose,
 }: {
-	source: string;
-	chunkId: string | null;
+	chunk: ChunkRef | null;
+	onOpen: (chunk: ChunkRef) => void;
 	onClose: () => void;
 }) {
-	const { data: chunk, error } = useJson<ChunkRow>(
-		chunkId
-			? `/api/backend/api/inspect/${encodeURIComponent(source)}/chunks/${encodeURIComponent(chunkId)}`
+	const [tab, setTab] = useState("details");
+	const base = ref
+		? `/api/backend/api/inspect/${encodeURIComponent(ref.source)}/chunks/${encodeURIComponent(ref.chunkId)}`
+		: null;
+	const chunk = useJson<ChunkRow>(base);
+	const context = useJson<Context>(
+		base && tab === "agent" ? `${base}/context` : null,
+	);
+	const grounding = useJson<{ images: string[]; message: string | null }>(
+		ref && tab === "grounding"
+			? `/api/backend/api/visualize/${encodeURIComponent(ref.chunkId)}?source=${encodeURIComponent(ref.source)}`
 			: null,
 	);
-	const extra = chunk
-		? Object.entries(chunk.metadata).filter(
+	const similar = useJson<Similar>(
+		base && tab === "similar" ? `${base}/similar` : null,
+	);
+	const extra = chunk.data
+		? Object.entries(chunk.data.metadata).filter(
 				([key]) => !PROVENANCE.includes(key),
 			)
 		: [];
+	const pictureUrl = (ref_: string) =>
+		ref && context.data
+			? `/api/backend/api/pictures?${new URLSearchParams({ source: ref.source, document_id: context.data.document_id, ref: ref_ })}`
+			: "";
 
 	return (
-		<Dialog open={chunkId !== null} onOpenChange={(open) => !open && onClose()}>
-			<DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+		<Dialog
+			open={ref !== null}
+			onOpenChange={(open) => {
+				if (!open) {
+					setTab("details");
+					onClose();
+				}
+			}}
+		>
+			<DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-4xl">
 				<DialogHeader>
-					<DialogTitle>Chunk {chunk ? chunk.order : ""}</DialogTitle>
+					<DialogTitle>
+						Chunk {chunk.data ? chunk.data.order : ""} · {ref?.source}
+					</DialogTitle>
 					<DialogDescription className="break-all font-mono text-xs">
-						{chunkId}
+						{ref?.chunkId}
 					</DialogDescription>
 				</DialogHeader>
-				{error && <p className="text-sm text-destructive">{error}</p>}
-				{chunk && (
-					<div className="space-y-4">
-						<pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
-							{chunk.content}
-						</pre>
-						<dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
-							{PROVENANCE.map((key) => (
-								<Field key={key} label={key} value={chunk.metadata[key]} />
+				<Tabs value={tab} onValueChange={setTab}>
+					<TabsList>
+						<TabsTrigger value="details">Details</TabsTrigger>
+						<TabsTrigger value="agent">As the agent sees it</TabsTrigger>
+						<TabsTrigger value="grounding">On the page</TabsTrigger>
+						<TabsTrigger value="similar">Similar</TabsTrigger>
+					</TabsList>
+					<TabsContent value="details" className="space-y-4">
+						{!chunk.data && <Loading error={chunk.error} />}
+						{chunk.data && (
+							<>
+								<pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
+									{chunk.data.content}
+								</pre>
+								<dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
+									{PROVENANCE.map((key) => (
+										<Field
+											key={key}
+											label={key}
+											value={chunk.data?.metadata[key]}
+										/>
+									))}
+									{extra.map(([key, value]) => (
+										<Field key={key} label={key} value={value} />
+									))}
+								</dl>
+							</>
+						)}
+					</TabsContent>
+					<TabsContent value="agent" className="space-y-3">
+						{!context.data && <Loading error={context.error} />}
+						{context.data && (
+							<>
+								<pre className="whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
+									{context.data.rendering}
+								</pre>
+								{context.data.pictures.length > 0 && (
+									<div className="space-y-1">
+										<p className="text-xs text-muted-foreground">
+											Pictures a vision model receives with it
+										</p>
+										<div className="flex flex-wrap gap-2">
+											{context.data.pictures.map((picture) => (
+												// biome-ignore lint/performance/noImgElement: pictures come from the backend proxy
+												<img
+													key={picture}
+													src={pictureUrl(picture)}
+													alt={`Figure ${picture} of the document`}
+													className="max-h-48 rounded border"
+												/>
+											))}
+										</div>
+									</div>
+								)}
+							</>
+						)}
+					</TabsContent>
+					<TabsContent value="grounding" className="space-y-3">
+						{!grounding.data && <Loading error={grounding.error} />}
+						{grounding.data?.message && (
+							<p className="text-sm text-muted-foreground">
+								{grounding.data.message}
+							</p>
+						)}
+						{grounding.data?.images.map((image, n) => (
+							// biome-ignore lint/performance/noImgElement: base64 page renders
+							<img
+								// biome-ignore lint/suspicious/noArrayIndexKey: pages have no id
+								key={n}
+								src={`data:image/png;base64,${image}`}
+								alt={`Page ${n + 1} of the chunk`}
+								className="w-full rounded border"
+							/>
+						))}
+					</TabsContent>
+					<TabsContent value="similar">
+						{!similar.data && <Loading error={similar.error} />}
+						<ul className="space-y-1">
+							{similar.data?.results.map((row) => (
+								<li key={`${row.source}:${row.chunk_id}`}>
+									<button
+										type="button"
+										className="w-full rounded px-2 py-1 text-left text-sm hover:bg-muted"
+										onClick={() =>
+											onOpen({ source: row.source, chunkId: row.chunk_id })
+										}
+									>
+										<div className="flex gap-2 text-xs text-muted-foreground">
+											<span className="tabular-nums">
+												{row.score.toFixed(3)}
+											</span>
+											<span className="truncate">
+												{row.document_title || row.document_uri}
+											</span>
+										</div>
+										<div className="truncate">{firstLine(row.content)}</div>
+									</button>
+								</li>
 							))}
-							{extra.map(([key, value]) => (
-								<Field key={key} label={key} value={value} />
-							))}
-						</dl>
-					</div>
-				)}
+						</ul>
+						{similar.data && similar.data.results.length === 0 && (
+							<p className="text-sm text-muted-foreground">
+								Nothing else matched.
+							</p>
+						)}
+					</TabsContent>
+				</Tabs>
 			</DialogContent>
 		</Dialog>
 	);

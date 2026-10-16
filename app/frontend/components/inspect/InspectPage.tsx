@@ -14,8 +14,10 @@ import { useDatabases } from "@/lib/databases";
 import { formatRelativeTime } from "@/lib/format";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
-import ChunkDialog from "./ChunkDialog";
+import ChunkDialog, { type ChunkRef } from "./ChunkDialog";
 import DocumentView from "./DocumentView";
+import InfoDialog from "./InfoDialog";
+import SearchPanel from "./SearchPanel";
 
 interface Listing {
 	total: number;
@@ -42,7 +44,9 @@ export default function InspectPage() {
 	const [filter, setFilter] = useState("");
 	const [offset, setOffset] = useState(0);
 	const [documentId, setDocumentId] = useState<string | null>(null);
-	const [chunkId, setChunkId] = useState<string | null>(null);
+	const [chunk, setChunk] = useState<ChunkRef | null>(null);
+	const [mode, setMode] = useState<"documents" | "search">("documents");
+	const [infoOpen, setInfoOpen] = useState(false);
 
 	useEffect(() => {
 		if (source === null && available.length) setSource(available[0].name);
@@ -54,8 +58,10 @@ export default function InspectPage() {
 	});
 	if (query) params.set("q", query);
 	if (filter) params.set("filter", filter);
+	// A database the app cannot open offers Info only.
+	const selected = info?.databases.find((db) => db.name === source);
 	const listing = useJson<Listing>(
-		source
+		source && selected?.available
 			? `/api/backend/api/inspect/${encodeURIComponent(source)}/documents?${params}`
 			: null,
 	);
@@ -70,19 +76,54 @@ export default function InspectPage() {
 		<div className="grid h-full grid-cols-1 md:grid-cols-[22rem_minmax(0,1fr)]">
 			<aside className="flex min-h-0 flex-col border-r">
 				<div className="space-y-2 border-b p-3">
+					<div className="flex gap-1">
+						<Button
+							size="sm"
+							variant={mode === "documents" ? "secondary" : "ghost"}
+							onClick={() => setMode("documents")}
+						>
+							Documents
+						</Button>
+						<Button
+							size="sm"
+							variant={mode === "search" ? "secondary" : "ghost"}
+							onClick={() => setMode("search")}
+						>
+							Search
+						</Button>
+						<Button
+							size="sm"
+							variant="ghost"
+							className="ml-auto"
+							disabled={!source}
+							onClick={() => setInfoOpen(true)}
+						>
+							Info
+						</Button>
+					</div>
 					<Select value={source ?? ""} onValueChange={choose}>
 						<SelectTrigger className="w-full" aria-label="Database">
 							<SelectValue placeholder="Database" />
 						</SelectTrigger>
 						<SelectContent>
-							{available.map((db) => (
+							{(info?.databases ?? []).map((db) => (
 								<SelectItem key={db.name} value={db.name}>
-									{db.name} · {db.documents} documents
+									{db.available
+										? `${db.name} · ${db.documents} documents`
+										: `${db.name} · unavailable, Info only`}
 								</SelectItem>
 							))}
 						</SelectContent>
 					</Select>
+					{selected && !selected.available && (
+						<p className="text-xs text-muted-foreground">
+							{selected.name} cannot be opened
+							{selected.error ? `: ${selected.error}` : ""}. Info still reads
+							it.
+						</p>
+					)}
 					<form
+						hidden={!selected?.available}
 						onSubmit={(event) => {
 							event.preventDefault();
 							setQuery(text.trim());
@@ -170,12 +211,14 @@ export default function InspectPage() {
 				)}
 			</aside>
 			<section className="min-h-0 min-w-0">
-				{source && documentId ? (
+				{mode === "search" ? (
+					<SearchPanel databases={available} onOpen={setChunk} />
+				) : source && documentId ? (
 					<DocumentView
 						key={`${source}:${documentId}`}
 						source={source}
 						documentId={documentId}
-						onOpenChunk={setChunkId}
+						onOpenChunk={(chunkId) => setChunk({ source, chunkId })}
 					/>
 				) : (
 					<p className="p-6 text-sm text-muted-foreground">
@@ -183,11 +226,16 @@ export default function InspectPage() {
 					</p>
 				)}
 			</section>
+			<ChunkDialog
+				chunk={chunk}
+				onOpen={setChunk}
+				onClose={() => setChunk(null)}
+			/>
 			{source && (
-				<ChunkDialog
+				<InfoDialog
 					source={source}
-					chunkId={chunkId}
-					onClose={() => setChunkId(null)}
+					open={infoOpen}
+					onOpenChange={setInfoOpen}
 				/>
 			)}
 		</div>

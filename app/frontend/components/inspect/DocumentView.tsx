@@ -169,6 +169,20 @@ export default function DocumentView({
 	const chunks = useJson<ChunkPage>(
 		`${base}/chunks?limit=${PAGE}&offset=${offset}`,
 	);
+	const pages = useJson<{ pages: { page: number; chunk_ids: string[] }[] }>(
+		tab === "pages" ? `${base}/pages` : null,
+	);
+	const [page, setPage] = useState<number | null>(null);
+	const pictureList = useJson<{
+		pictures: {
+			self_ref: string;
+			caption: string | null;
+			description: string | null;
+			page_numbers: number[];
+			chunk_id: string | null;
+		}[];
+	}>(tab === "pictures" ? `${base}/pictures` : null);
+	const pictures = pictureList.data?.pictures ?? [];
 	const blocks = useMemo(
 		() => (items.data ? blocksOf(items.data.items) : []),
 		[items.data],
@@ -235,6 +249,8 @@ export default function DocumentView({
 					<TabsTrigger value="content">Content</TabsTrigger>
 					<TabsTrigger value="outline">Outline</TabsTrigger>
 					<TabsTrigger value="chunks">Chunks</TabsTrigger>
+					<TabsTrigger value="pages">Pages</TabsTrigger>
+					<TabsTrigger value="pictures">Pictures</TabsTrigger>
 				</TabsList>
 				<TabsContent
 					value="content"
@@ -340,6 +356,106 @@ export default function DocumentView({
 							</Button>
 						</div>
 					)}
+				</TabsContent>
+				<TabsContent
+					value="pages"
+					className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+				>
+					{pages.error && (
+						<p className="text-sm text-destructive">{pages.error}</p>
+					)}
+					{pages.data && pages.data.pages.length === 0 && (
+						<p className="text-sm text-muted-foreground">
+							No chunk of this document has a place on a page.
+						</p>
+					)}
+					<div className="flex flex-wrap gap-1">
+						{pages.data?.pages.map((entry) => (
+							<Button
+								key={entry.page}
+								size="sm"
+								variant={entry.page === page ? "secondary" : "outline"}
+								onClick={() => setPage(entry.page)}
+							>
+								{entry.page}
+							</Button>
+						))}
+					</div>
+					{page !== null && (
+						<div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_14rem]">
+							{/* biome-ignore lint/performance/noImgElement: page render from the backend */}
+							<img
+								src={`${base}/pages/${page}`}
+								alt={`Page ${page} with its chunks drawn`}
+								className="w-full rounded border"
+							/>
+							<ul className="space-y-1 text-sm">
+								{pages.data?.pages
+									.find((entry) => entry.page === page)
+									?.chunk_ids.map((chunkId) => (
+										<li key={chunkId}>
+											<button
+												type="button"
+												className="w-full truncate rounded px-2 py-1 text-left font-mono text-xs hover:bg-muted"
+												onClick={() => onOpenChunk(chunkId)}
+											>
+												{chunkId}
+											</button>
+										</li>
+									))}
+							</ul>
+						</div>
+					)}
+				</TabsContent>
+				<TabsContent
+					value="pictures"
+					className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+				>
+					{pictureList.error && (
+						<p className="text-sm text-destructive">{pictureList.error}</p>
+					)}
+					{pictureList.data && pictures.length === 0 && (
+						<p className="text-sm text-muted-foreground">
+							This document has no pictures.
+						</p>
+					)}
+					<div className="grid gap-4 sm:grid-cols-2">
+						{pictures.map((picture) => (
+							<figure key={picture.self_ref} className="space-y-1">
+								{/* biome-ignore lint/performance/noImgElement: pictures come from the backend proxy */}
+								<img
+									src={pictureUrl(picture.self_ref)}
+									alt={
+										picture.caption || picture.description || picture.self_ref
+									}
+									className="max-h-72 rounded border"
+								/>
+								<figcaption className="space-y-0.5 text-xs text-muted-foreground">
+									{picture.caption && <p>{picture.caption}</p>}
+									{picture.description && (
+										<p className="italic">{picture.description}</p>
+									)}
+									{!picture.caption && !picture.description && (
+										<p>No caption or description.</p>
+									)}
+									{picture.page_numbers.length > 0 && (
+										<p>p. {picture.page_numbers.join(", ")}</p>
+									)}
+								</figcaption>
+								{picture.chunk_id && (
+									<Button
+										size="sm"
+										variant="outline"
+										onClick={() =>
+											picture.chunk_id && onOpenChunk(picture.chunk_id)
+										}
+									>
+										Open its chunk
+									</Button>
+								)}
+							</figure>
+						))}
+					</div>
 				</TabsContent>
 			</Tabs>
 		</div>

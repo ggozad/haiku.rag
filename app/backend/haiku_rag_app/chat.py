@@ -135,30 +135,39 @@ def _check_images(message: dict[str, Any], vision: bool) -> None:
         source = part.get("source") or {}
         if source.get("type") != "data":
             raise HTTPException(400, "images must be sent inline as data")
-        value = source.get("value", "")
-        if len(value) > (MAX_IMAGE_BYTES + 2) // 3 * 4:
-            raise HTTPException(400, f"an image exceeds {MAX_IMAGE_BYTES} bytes")
-        try:
-            raw = base64.b64decode(value, validate=True)
-        except ValueError as error:
-            raise HTTPException(400, "an image is not valid base64") from error
-        try:
-            with Image.open(BytesIO(raw)) as image:
-                detected = Image.MIME.get(image.format or "")
-                if detected != source.get("mimeType"):
-                    raise HTTPException(
-                        400,
-                        f"an image is {detected or image.format}, "
-                        f"not {source.get('mimeType')}",
-                    )
-                if max(image.size) > MAX_IMAGE_EDGE:
-                    raise HTTPException(
-                        400,
-                        f"an image is larger than {MAX_IMAGE_EDGE} px on its long edge",
-                    )
-                image.load()
-        except (OSError, Image.DecompressionBombError) as error:
-            raise HTTPException(400, "an image is not an image") from error
+        checked_image(source.get("value", ""), source.get("mimeType"))
+
+
+def checked_image(value: Any, declared: str | None = None) -> bytes:
+    """The bytes of a base64 image the page would send, decoded in full.
+
+    Refuses anything else with a 400. `declared`, when given, must be the
+    detected media type. Decoding is CPU work: run it off the request loop.
+    """
+    if not isinstance(value, str):
+        raise HTTPException(400, "an image is not valid base64")
+    if len(value) > (MAX_IMAGE_BYTES + 2) // 3 * 4:
+        raise HTTPException(400, f"an image exceeds {MAX_IMAGE_BYTES} bytes")
+    try:
+        raw = base64.b64decode(value, validate=True)
+    except ValueError as error:
+        raise HTTPException(400, "an image is not valid base64") from error
+    try:
+        with Image.open(BytesIO(raw)) as image:
+            detected = Image.MIME.get(image.format or "")
+            if detected is None or (declared is not None and detected != declared):
+                raise HTTPException(
+                    400, f"an image is {detected or image.format}, not {declared}"
+                )
+            if max(image.size) > MAX_IMAGE_EDGE:
+                raise HTTPException(
+                    400,
+                    f"an image is larger than {MAX_IMAGE_EDGE} px on its long edge",
+                )
+            image.load()
+    except (OSError, ValueError, Image.DecompressionBombError) as error:
+        raise HTTPException(400, "an image is not an image") from error
+    return raw
 
 
 def _dumped(message: Message) -> dict[str, Any]:
