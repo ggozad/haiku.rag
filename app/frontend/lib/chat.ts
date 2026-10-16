@@ -1,4 +1,5 @@
-import type { Message } from "@ag-ui/client";
+import type { InputContent, Message } from "@ag-ui/client";
+import type { Attachment } from "./images";
 
 export interface Citation {
 	index: number;
@@ -30,10 +31,16 @@ export interface DocumentRef {
 	id: string;
 }
 
+export interface RunSummary {
+	citation_status?: "grounded" | "ungrounded" | "missing";
+	violation?: boolean;
+}
+
 export interface Evidence {
 	citations: Citation[];
 	// The last program the model ran successfully for the question, if any.
 	program: string | null;
+	summary?: RunSummary;
 }
 
 interface CodeExecution {
@@ -157,12 +164,12 @@ export type TurnOutcome =
 // are kept or dropped together.
 export async function runTurn(
 	agent: TurnAgent,
-	text: string,
+	content: string | InputContent[],
 	runId: string,
 	forwardedProps: Record<string, unknown>,
 ): Promise<TurnOutcome> {
 	const saved = checkpoint(agent.messages, agent.state);
-	agent.addMessage({ id: crypto.randomUUID(), role: "user", content: text });
+	agent.addMessage({ id: crypto.randomUUID(), role: "user", content });
 	let finished = false;
 	let failure: string | null = null;
 	try {
@@ -205,20 +212,60 @@ export function saveDraft(sessionId: string, text: string): void {
 	}
 }
 
+const DRAFT_IMAGES_KEY = "haiku.rag.draft-images.";
+
+export function loadDraftImages(sessionId: string): Attachment[] {
+	try {
+		const raw = sessionStorage.getItem(DRAFT_IMAGES_KEY + sessionId);
+		return raw ? (JSON.parse(raw) as Attachment[]) : [];
+	} catch {
+		return [];
+	}
+}
+
+// False when the browser refused them: they live in the page only.
+export function saveDraftImages(
+	sessionId: string,
+	images: Attachment[],
+): boolean {
+	try {
+		if (images.length)
+			sessionStorage.setItem(
+				DRAFT_IMAGES_KEY + sessionId,
+				JSON.stringify(images),
+			);
+		else sessionStorage.removeItem(DRAFT_IMAGES_KEY + sessionId);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 const PENDING_KEY = "haiku.rag.pending.";
 
 // The run a page started and has not settled, kept so a reload can still ask
-// the backend whether it was stored.
+// the backend whether it was stored and give the question back.
 export interface PendingRun {
 	runId: string;
 	text: string;
+	images?: Attachment[];
+	// Storage refused the images, so a reload gives back the text alone.
+	imagesDropped?: boolean;
 }
 
 export function savePending(sessionId: string, run: PendingRun): void {
+	const key = PENDING_KEY + sessionId;
 	try {
-		sessionStorage.setItem(PENDING_KEY + sessionId, JSON.stringify(run));
+		sessionStorage.setItem(key, JSON.stringify(run));
 	} catch {
-		// A browser refusing storage settles the run in this page only.
+		try {
+			sessionStorage.setItem(
+				key,
+				JSON.stringify({ ...run, images: [], imagesDropped: true }),
+			);
+		} catch {
+			// A browser refusing storage settles the run in this page only.
+		}
 	}
 }
 
@@ -239,4 +286,37 @@ export function loadPending(sessionId: string): PendingRun | null {
 	} catch {
 		return null;
 	}
+}
+
+export interface Status {
+	kind: "breach" | "grounded" | "ungrounded";
+	label: string;
+	variant: "secondary" | "outline" | "destructive";
+}
+
+// What an answer declared as its grounding, in words. None for an answer that
+// declared nothing without breaching the policy: a greeting, an aside.
+export function statusOf(summary: RunSummary): Status | null {
+	if (summary.violation) {
+		return {
+			kind: "breach",
+			label: "Answered without declaring its sources",
+			variant: "destructive",
+		};
+	}
+	if (summary.citation_status === "grounded") {
+		return {
+			kind: "grounded",
+			label: "Grounded in the sources",
+			variant: "secondary",
+		};
+	}
+	if (summary.citation_status === "ungrounded") {
+		return {
+			kind: "ungrounded",
+			label: "Declared no sources",
+			variant: "outline",
+		};
+	}
+	return null;
 }

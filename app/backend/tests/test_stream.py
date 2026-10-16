@@ -608,3 +608,178 @@ async def test_a_client_resume_never_reaches_the_adapter(app, client, monkeypatc
     )
     assert response.status_code == 200
     assert getattr(seen[0], "resume", None) is None
+
+
+async def test_an_image_reaches_the_model_and_is_stored_with_the_turn(app, client):
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+    from pydantic_ai.messages import BinaryContent, UserPromptPart
+
+    buffer = BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buffer, format="PNG")
+    raw = buffer.getvalue()
+    png = base64.b64encode(raw).decode()
+    seen: list[bytes] = []
+
+    async def looks(messages: list[ModelMessage], _info) -> AsyncIterator[str]:
+        for message in messages:
+            for part in getattr(message, "parts", []):
+                if isinstance(part, UserPromptPart) and isinstance(part.content, list):
+                    seen.extend(
+                        item.data
+                        for item in part.content
+                        if isinstance(item, BinaryContent)
+                    )
+        yield "A red square."
+
+    session_id = await _session(client)
+    message = {
+        "id": "u1",
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is this?"},
+            {
+                "type": "image",
+                "source": {"type": "data", "value": png, "mimeType": "image/png"},
+            },
+        ],
+    }
+    response = await _run(
+        app,
+        client,
+        session_id,
+        "run-1",
+        [message],
+        model=FunctionModel(stream_function=looks),
+    )
+    assert "RUN_ERROR" not in [e["type"] for e in _events(response.text)]
+    assert seen == [raw]
+    session = (await client.get(f"/api/sessions/{session_id}")).json()
+    assert session["messages"][0] == message
+    assert session["title"] == "What is this?"
+
+
+def _png(width: int = 8, height: int = 8) -> str:
+    import base64
+    from io import BytesIO
+
+    from PIL import Image
+
+    buffer = BytesIO()
+    Image.new("RGB", (width, height), "red").save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+def _truncated_png() -> str:
+    import base64
+
+    raw = base64.b64decode(_png(64, 64))
+    return base64.b64encode(raw[: len(raw) // 2]).decode()
+
+
+def _with_images(*sources: dict) -> dict:
+    return {
+        "id": "u1",
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What is this?"},
+            *({"type": "image", "source": source} for source in sources),
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("sources", "reason"),
+    [
+        ([{"type": "data", "value": _png(), "mimeType": "image/png"}] * 9, "at most 8"),
+        ([{"type": "url", "value": "http://example.com/a.png"}], "inline"),
+        ([{"type": "data", "value": "not base64!", "mimeType": "image/png"}], "base64"),
+        (
+            [{"type": "data", "value": "aGVsbG8=", "mimeType": "image/png"}],
+            "not an image",
+        ),
+        (
+            [{"type": "data", "value": _png(), "mimeType": "image/jpeg"}],
+            "image/png",
+        ),
+        (
+            [{"type": "data", "value": _png(2049, 1), "mimeType": "image/png"}],
+            "2048",
+        ),
+        (
+            [{"type": "data", "value": _truncated_png(), "mimeType": "image/png"}],
+            "not an image",
+        ),
+    ],
+)
+async def test_an_unacceptable_image_is_refused_before_the_run(
+    app, client, sources, reason
+):
+    session_id = await _session(client)
+    response = await _run(app, client, session_id, "run-1", [_with_images(*sources)])
+    assert response.status_code == 400
+    assert reason in response.text
+    session = (await client.get(f"/api/sessions/{session_id}")).json()
+    assert session["messages"] == []
+    assert session["in_flight_run_id"] is None
+
+
+async def test_an_image_is_refused_when_the_model_has_no_vision(
+    app, client, monkeypatch
+):
+    monkeypatch.setattr(app.state.config.qa.model, "vision", False)
+    session_id = await _session(client)
+    message = _with_images({"type": "data", "value": _png(), "mimeType": "image/png"})
+    response = await _run(app, client, session_id, "run-1", [message])
+    assert response.status_code == 400
+    assert "vision" in response.text
+
+
+async def test_an_image_over_the_byte_limit_is_refused(app, client, monkeypatch):
+    from haiku_rag_app import chat
+
+    monkeypatch.setattr(chat, "MAX_IMAGE_BYTES", 10)
+    session_id = await _session(client)
+    message = _with_images({"type": "data", "value": _png(), "mimeType": "image/png"})
+    response = await _run(app, client, session_id, "run-1", [message])
+    assert response.status_code == 400
+    assert "exceeds 10 bytes" in response.text
+
+
+async def test_a_decompression_bomb_is_refused(app, client, monkeypatch):
+    from PIL import Image
+
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    session_id = await _session(client)
+    message = _with_images({"type": "data", "value": _png(), "mimeType": "image/png"})
+    response = await _run(app, client, session_id, "run-1", [message])
+    assert response.status_code == 400
+    assert "not an image" in response.text
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        {"type": "binary", "mimeType": "image/png", "data": "aGVsbG8="},
+        {
+            "type": "document",
+            "source": {
+                "type": "data",
+                "value": "aGVsbG8=",
+                "mimeType": "application/pdf",
+            },
+        },
+    ],
+)
+async def test_a_part_other_than_text_or_image_is_refused(app, client, part):
+    session_id = await _session(client)
+    message = {
+        "id": "u1",
+        "role": "user",
+        "content": [{"type": "text", "text": "q"}, part],
+    }
+    response = await _run(app, client, session_id, "run-1", [message])
+    assert response.status_code == 400
+    assert "text and images" in response.text

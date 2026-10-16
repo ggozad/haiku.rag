@@ -1,6 +1,12 @@
 "use client";
 
-import { ChevronRight, FileText } from "lucide-react";
+import {
+	ChevronRight,
+	CircleAlert,
+	CircleCheck,
+	CircleDashed,
+	FileText,
+} from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,8 +15,14 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import type { Citation, Evidence } from "@/lib/chat";
+import { type Citation, type Evidence, statusOf } from "@/lib/chat";
 import VisualGroundingDialog from "./VisualGroundingDialog";
+
+const STATUS_ICONS = {
+	breach: CircleAlert,
+	grounded: CircleCheck,
+	ungrounded: CircleDashed,
+};
 
 export function pictureUrl(citation: Citation, ref: string): string {
 	const query = new URLSearchParams({
@@ -89,10 +101,18 @@ export default function EvidenceBlock({
 	showSource: boolean;
 }) {
 	const [viewing, setViewing] = useState<Citation | null>(null);
-	if (!evidence.citations.length && !evidence.program) return null;
+	const status = evidence.summary ? statusOf(evidence.summary) : null;
+	const StatusIcon = status ? STATUS_ICONS[status.kind] : null;
+	if (!evidence.citations.length && !evidence.program && !status) return null;
 
 	return (
 		<div className="space-y-2">
+			{status && (
+				<Badge variant={status.variant} className="gap-1">
+					{StatusIcon && <StatusIcon />}
+					{status.label}
+				</Badge>
+			)}
 			{evidence.citations.length > 0 && (
 				<>
 					<p className="text-xs font-medium text-muted-foreground">

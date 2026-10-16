@@ -112,6 +112,55 @@ def run_evidence(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+MAX_IMAGES = 8
+MAX_IMAGE_EDGE = 2048
+MAX_IMAGE_BYTES = 16 * 1024**2
+
+
+def _check_images(message: dict[str, Any], vision: bool) -> None:
+    """Refuses content the model cannot take or the page would not send."""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return
+    if any(part.get("type") not in ("text", "image") for part in content):
+        raise HTTPException(400, "a question carries text and images only")
+    parts = [part for part in content if part.get("type") == "image"]
+    if parts and not vision:
+        raise HTTPException(
+            400, "the model has no vision: questions cannot carry images"
+        )
+    if len(parts) > MAX_IMAGES:
+        raise HTTPException(400, f"at most {MAX_IMAGES} images go with one question")
+    for part in parts:
+        source = part.get("source") or {}
+        if source.get("type") != "data":
+            raise HTTPException(400, "images must be sent inline as data")
+        value = source.get("value", "")
+        if len(value) > (MAX_IMAGE_BYTES + 2) // 3 * 4:
+            raise HTTPException(400, f"an image exceeds {MAX_IMAGE_BYTES} bytes")
+        try:
+            raw = base64.b64decode(value, validate=True)
+        except ValueError as error:
+            raise HTTPException(400, "an image is not valid base64") from error
+        try:
+            with Image.open(BytesIO(raw)) as image:
+                detected = Image.MIME.get(image.format or "")
+                if detected != source.get("mimeType"):
+                    raise HTTPException(
+                        400,
+                        f"an image is {detected or image.format}, "
+                        f"not {source.get('mimeType')}",
+                    )
+                if max(image.size) > MAX_IMAGE_EDGE:
+                    raise HTTPException(
+                        400,
+                        f"an image is larger than {MAX_IMAGE_EDGE} px on its long edge",
+                    )
+                image.load()
+        except (OSError, Image.DecompressionBombError) as error:
+            raise HTTPException(400, "an image is not an image") from error
+
+
 def _dumped(message: Message) -> dict[str, Any]:
     return message.model_dump(mode="json", by_alias=True, exclude_none=True)
 
@@ -190,6 +239,9 @@ async def stream_chat(request: Request) -> Response:
         if run_id in session["runs"]:
             raise HTTPException(400, f"run {run_id!r} is already stored")
         user_message = _dumped(new[0])
+        await asyncio.to_thread(
+            _check_images, user_message, request.app.state.config.qa.model.vision
+        )
 
         state = session["state"]
         _scope_to_selection(

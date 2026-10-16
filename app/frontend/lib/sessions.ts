@@ -3,15 +3,6 @@ import type { DocumentRef, Evidence } from "./chat";
 
 const BASE = "/api/backend/api/sessions";
 
-export interface RunSummary {
-	citation_status?: "grounded" | "ungrounded" | "missing";
-	violation?: boolean;
-}
-
-export interface RunEvidence extends Evidence {
-	summary: RunSummary;
-}
-
 export interface SessionSummary {
 	id: string;
 	title: string;
@@ -23,7 +14,7 @@ export interface Session extends SessionSummary {
 	messages: Message[];
 	state: Record<string, unknown>;
 	selection: DocumentRef[];
-	runs: Record<string, RunEvidence>;
+	runs: Record<string, Evidence>;
 	message_runs: Record<string, string>;
 	inserted: string[];
 	in_flight_run_id: string | null;

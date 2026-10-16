@@ -8,14 +8,17 @@ import { Button } from "@/components/ui/button";
 import {
 	type DocumentRef,
 	loadDraft,
+	loadDraftImages,
 	loadPending,
 	type PendingRun,
 	runTurn,
 	saveDraft,
+	saveDraftImages,
 	savePending,
 	settlePending,
 } from "@/lib/chat";
 import { useDatabases } from "@/lib/databases";
+import { type Attachment, userContent } from "@/lib/images";
 import {
 	activeSessionId,
 	createSession,
@@ -59,6 +62,7 @@ function ChatSession({
 	);
 	const [updating, setUpdating] = useState(false);
 	const [draft, setDraft] = useState(() => loadDraft(sessionId));
+	const [images, setImages] = useState(() => loadDraftImages(sessionId));
 	const [notice, setNotice] = useState<string | null>(null);
 	const [filterOpen, setFilterOpen] = useState(false);
 
@@ -89,13 +93,25 @@ function ChatSession({
 		saveDraft(sessionId, text);
 	};
 
+	// The attachments wait in the session's draft, as its text does.
+	useEffect(() => {
+		if (!saveDraftImages(sessionId, images))
+			setNotice(
+				"The images are kept in this page only: a reload or a session switch loses them.",
+			);
+	}, [sessionId, images]);
+
 	const restore = useCallback(
-		(text: string, why: string) => {
+		(text: string, attached: Attachment[], why: string) => {
 			// Saved as well as set: switching sessions unmounts this one and
 			// stops its run, and the question waits in that session's draft.
 			saveDraft(sessionId, text);
+			const kept = saveDraftImages(sessionId, attached);
 			setDraft(text);
-			setNotice(why);
+			setImages(attached);
+			setNotice(
+				kept ? why : `${why} Its images could not be kept: attach them again.`,
+			);
 		},
 		[sessionId],
 	);
@@ -125,11 +141,16 @@ function ChatSession({
 				if (outcome === "stored") {
 					setNotice("The connection dropped, but the answer was saved.");
 				} else {
-					restore(
-						run.text,
+					const why =
 						failure === null
 							? "The answer was stopped. Your question is back in the box."
-							: `The answer failed: ${failure}`,
+							: `The answer failed: ${failure}`;
+					restore(
+						run.text,
+						run.images ?? [],
+						run.imagesDropped
+							? `${why} Its images could not be kept: attach them again.`
+							: why,
 					);
 				}
 			} catch (error) {
@@ -157,13 +178,20 @@ function ChatSession({
 		};
 	}, [sessionId, settle]);
 
-	const send = async (text: string) => {
+	const send = async (text: string, attached: Attachment[]) => {
 		changeDraft("");
+		setImages([]);
 		setNotice(null);
 		setRunning(true);
-		const run = { runId: crypto.randomUUID(), text };
+		const run = { runId: crypto.randomUUID(), text, images: attached };
+		saveDraftImages(sessionId, []);
 		savePending(sessionId, run);
-		const outcome = await runTurn(agent, text, run.runId, {});
+		const outcome = await runTurn(
+			agent,
+			userContent(text, attached),
+			run.runId,
+			{},
+		);
 		if (outcome.finished) {
 			settlePending(sessionId, run.runId);
 			try {
@@ -235,6 +263,9 @@ function ChatSession({
 			<Composer
 				draft={draft}
 				onDraftChange={changeDraft}
+				images={images}
+				onImagesChange={setImages}
+				acceptsImages={info?.vision ?? false}
 				onSend={send}
 				onStop={() => agent.abortRun()}
 				running={running}

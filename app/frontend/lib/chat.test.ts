@@ -6,11 +6,14 @@ import {
 	evidenceOf,
 	latestTurnRuns,
 	loadDraft,
+	loadDraftImages,
 	loadPending,
 	runTurn,
 	saveDraft,
+	saveDraftImages,
 	savePending,
 	settlePending,
+	statusOf,
 	type TurnAgent,
 	textOf,
 	toolResults,
@@ -225,6 +228,35 @@ describe("drafts", () => {
 		saveDraft("s1", "x");
 		vi.unstubAllGlobals();
 	});
+
+	it("keeps a draft's images per session, and says when it cannot", () => {
+		const store = new Map<string, string>();
+		vi.stubGlobal("sessionStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value),
+			removeItem: (key: string) => store.delete(key),
+		});
+		const image = { data: "AAAA", mimeType: "image/png", name: "a.png" };
+		expect(saveDraftImages("s1", [image])).toBe(true);
+		expect(loadDraftImages("s1")).toEqual([image]);
+		expect(loadDraftImages("s2")).toEqual([]);
+		expect(saveDraftImages("s1", [])).toBe(true);
+		expect(loadDraftImages("s1")).toEqual([]);
+		vi.stubGlobal("sessionStorage", {
+			getItem: () => {
+				throw new Error("denied");
+			},
+			setItem: () => {
+				throw new Error("QuotaExceededError");
+			},
+			removeItem: () => {
+				throw new Error("denied");
+			},
+		});
+		expect(saveDraftImages("s1", [image])).toBe(false);
+		expect(loadDraftImages("s1")).toEqual([]);
+		vi.unstubAllGlobals();
+	});
 });
 
 describe("pending runs", () => {
@@ -254,6 +286,35 @@ describe("pending runs", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it("keeps a run's images, or its text alone when storage refuses them", () => {
+		const store = new Map<string, string>();
+		let room = Number.POSITIVE_INFINITY;
+		vi.stubGlobal("sessionStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => {
+				if (value.length > room) throw new Error("QuotaExceededError");
+				store.set(key, value);
+			},
+			removeItem: (key: string) => store.delete(key),
+		});
+		const image = { data: "AAAA", mimeType: "image/png", name: "a.png" };
+		const run = { runId: "run-1", text: "q", images: [image] };
+		savePending("s1", run);
+		expect(loadPending("s1")).toEqual(run);
+		room = 80;
+		savePending("s1", {
+			...run,
+			images: [{ ...image, data: "A".repeat(100) }],
+		});
+		expect(loadPending("s1")).toEqual({
+			runId: "run-1",
+			text: "q",
+			images: [],
+			imagesDropped: true,
+		});
+		vi.unstubAllGlobals();
+	});
+
 	it("leaves a newer run in place when an older one settles", () => {
 		const store = new Map<string, string>();
 		vi.stubGlobal("sessionStorage", {
@@ -265,5 +326,18 @@ describe("pending runs", () => {
 		settlePending("s1", "run-1");
 		expect(loadPending("s1")).toEqual({ runId: "run-2", text: "newer" });
 		vi.unstubAllGlobals();
+	});
+});
+
+describe("statusOf", () => {
+	it("names the grounding, and the breach first", () => {
+		expect(statusOf({ citation_status: "grounded" })?.kind).toBe("grounded");
+		expect(statusOf({ citation_status: "ungrounded" })?.kind).toBe(
+			"ungrounded",
+		);
+		expect(
+			statusOf({ citation_status: "missing", violation: true })?.kind,
+		).toBe("breach");
+		expect(statusOf({ citation_status: "missing" })).toBeNull();
 	});
 });

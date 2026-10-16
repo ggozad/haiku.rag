@@ -14,6 +14,7 @@ import {
 	textOf,
 	toolResults,
 } from "@/lib/chat";
+import { imagesOf } from "@/lib/images";
 import EvidenceBlock from "./EvidenceBlock";
 import Markdown from "./Markdown";
 import ToolCallCard from "./ToolCallCard";
@@ -72,9 +73,27 @@ export default function MessageList({
 					return (
 						<div
 							key={message.id}
-							className="max-w-[85%] self-end whitespace-pre-wrap rounded-2xl bg-muted px-4 py-2 text-sm"
+							className="flex max-w-[85%] flex-col items-end gap-2 self-end"
 						>
-							{textOf(message)}
+							{imagesOf(message.content).length > 0 && (
+								<div className="flex flex-wrap justify-end gap-2">
+									{imagesOf(message.content).map((src, n) => (
+										// biome-ignore lint/performance/noImgElement: data URL from the message
+										<img
+											// biome-ignore lint/suspicious/noArrayIndexKey: images have no id
+											key={n}
+											src={src}
+											alt={`Attachment ${n + 1}`}
+											className="max-h-40 rounded border"
+										/>
+									))}
+								</div>
+							)}
+							{textOf(message) && (
+								<div className="whitespace-pre-wrap rounded-2xl bg-muted px-4 py-2 text-sm">
+									{textOf(message)}
+								</div>
+							)}
 						</div>
 					);
 				}

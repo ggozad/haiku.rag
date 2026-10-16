@@ -32,6 +32,7 @@
 - The `app/` chat runs on `@ag-ui/client` without CopilotKit, styled with Tailwind and shadcn/ui: the document filter selects documents per database, and the backend turns the selection into `document_filter` and `sources`; a stopped or failed answer is discarded and the question returned to the input.
 - The `app/` chat agent borrows the backend's client instead of opening one per run.
 - The `app/` keeps chat sessions on the backend in a SQLite file (`HAIKU_RAG_APP_SESSIONS`, a `sessions` volume in compose) instead of the browser: `/api/sessions` lists, creates, reads, renames, scopes, deletes and exports them as Markdown, and a turn is stored when its run completes, with its citations, program and citation status.
+- The `app/` chat attaches images to a question, picked, pasted or dropped, up to 8, resized to 2048 px on the long edge, when `qa.model.vision` is set, and marks each answer with its citation status.
 
 ### Removed
 
