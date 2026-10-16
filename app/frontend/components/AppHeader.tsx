@@ -5,7 +5,10 @@ import { usePathname } from "next/navigation";
 import DatabaseStatus from "@/components/DatabaseStatus";
 import { cn } from "@/lib/utils";
 
-const PAGES = [{ href: "/", label: "Chat" }];
+const PAGES = [
+	{ href: "/", label: "Chat" },
+	{ href: "/ingestion", label: "Ingestion" },
+];
 
 export default function AppHeader() {
 	const pathname = usePathname();

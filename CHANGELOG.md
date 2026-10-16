@@ -33,6 +33,7 @@
 - The `app/` chat agent borrows the backend's client instead of opening one per run.
 - The `app/` keeps chat sessions on the backend in a SQLite file (`HAIKU_RAG_APP_SESSIONS`, a `sessions` volume in compose) instead of the browser: `/api/sessions` lists, creates, reads, renames, scopes, deletes and exports them as Markdown, and a turn is stored when its run completes, with its citations, program and citation status.
 - The `app/` chat attaches images to a question, picked, pasted or dropped, up to 8, resized to 2048 px on the long edge, when `qa.model.vision` is set, and marks each answer with its citation status.
+- The `app/` compose files run `haiku-ingester serve` as an `ingester` service over `DOCS_VOLUME`, and the app has an Ingestion page: queue, throughput, sources, providers, active, failed and succeeded jobs, every job by status, source and URI, with cancel, retry and source refresh.
 
 ### Removed
 

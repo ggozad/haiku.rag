@@ -162,6 +162,34 @@ describe("routes", () => {
 		);
 	});
 
+	it("forwards only the operator actions to the ingester", async () => {
+		const calls = stubFetch(() => new Response("{}"));
+		const send = (method: "POST" | "DELETE", path: string[]) =>
+			(method === "POST" ? ingesterRoute.POST : ingesterRoute.DELETE)(
+				new Request("http://app/x", { method }),
+				{
+					params: Promise.resolve({ path }),
+				},
+			);
+		for (const [method, path] of [
+			["POST", ["sources", "docs", "refresh"]],
+			["POST", ["jobs", "7", "retry"]],
+			["POST", ["dlq", "7", "retry"]],
+			["DELETE", ["jobs", "7"]],
+		] as const) {
+			expect((await send(method, [...path])).status).toBe(200);
+		}
+		for (const [method, path] of [
+			["POST", ["jobs"]],
+			["POST", ["sources", "docs", "prune"]],
+			["DELETE", ["sources", "docs"]],
+			["DELETE", ["jobs", "7", "retry"]],
+		] as const) {
+			expect((await send(method, [...path])).status).toBe(405);
+		}
+		expect(calls).toHaveLength(4);
+	});
+
 	it("sends no token when none is configured", async () => {
 		vi.stubEnv("INGESTER_TOKEN", "");
 		const calls = stubFetch(() => new Response("{}"));

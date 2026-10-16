@@ -19,6 +19,7 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - HAIKU_RAG_APP_SESSIONS=/sessions/sessions.db
+      - INGESTER_TOKEN=${INGESTER_TOKEN:-}
     volumes:
       # haiku.rag.yaml places the database at /data.
       - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
@@ -27,6 +28,33 @@ services:
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # The one writer of the database: it ingests the documents DOCS_VOLUME
+  # mounts at /docs into the database the backend reads. A configuration
+  # naming several databases selects the one it writes with --db PATH.
+  ingester:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["haiku-ingester", "--config", "/app/haiku.rag.yaml", "serve", "--host", "0.0.0.0"]
+    # No authentication beyond the token; bound to loopback like the backend.
+    ports:
+      - "127.0.0.1:8765:8765"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - INGESTER_TOKEN=${INGESTER_TOKEN:-}
+    volumes:
+      - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
+      - ${DOCS_VOLUME:-./docs}:/docs:ro
+      - ingester_queue:/queue
+      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # The ingester drains its workers for up to 60 s on SIGTERM.
+    stop_grace_period: 180s
 
   frontend:
     build:
@@ -40,6 +68,8 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       - BACKEND_URL=http://backend:8000
+      - INGESTER_URL=http://ingester:8765
+      - INGESTER_TOKEN=${INGESTER_TOKEN:-}
       - HOSTNAME=0.0.0.0
     volumes:
       - ./frontend:/app
@@ -49,4 +79,5 @@ services:
 
 volumes:
   sessions:
+  ingester_queue:
   frontend_node_modules:

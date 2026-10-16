@@ -45,3 +45,16 @@ providers:
   ollama:
     # Use host.docker.internal to reach Ollama running on the host machine
     base_url: http://host.docker.internal:11434
+
+# The ingester service writes the database from the documents DOCS_VOLUME
+# mounts at /docs. INGESTER_TOKEN in .env is the bearer token its API requires,
+# which the frontend adds to every ingester request.
+ingester:
+  queue:
+    path: /queue/ingester.db
+  api:
+    auth_token: ${INGESTER_TOKEN}
+  sources:
+    - type: fs
+      id: docs
+      root: /docs
