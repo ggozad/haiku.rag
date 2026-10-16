@@ -12,6 +12,7 @@ import { useDatabases } from "@/lib/databases";
 import { formatBytes, scanBytes } from "@/lib/doctor";
 import { useJson } from "@/lib/useJson";
 import ChecksPanel from "./ChecksPanel";
+import CorpusMap from "./CorpusMap";
 
 export default function DoctorPage() {
 	const { info } = useDatabases();
@@ -71,6 +72,9 @@ export default function DoctorPage() {
 					Results are kept until the next run or a restart of the backend, and
 					one job runs at a time across databases.
 				</p>
+				{source && (
+					<CorpusMap key={`map-${source}`} source={source} ready={estimated} />
+				)}
 				{source && (
 					<ChecksPanel key={source} source={source} ready={estimated} />
 				)}

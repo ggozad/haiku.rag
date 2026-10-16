@@ -139,3 +139,28 @@ async def test_a_database_read_at_a_tag_is_refused(tmp_path):
         response = await http.post("/api/doctor/pinned/run")
     assert response.status_code == 400
     assert "live state" in response.json()["error"]
+
+
+async def test_the_worker_lets_go_of_a_delivered_result():
+    import gc
+    import weakref
+
+    class Result:
+        pass
+
+    jobs = doctor.Jobs()
+    refs = []
+
+    async def work(progress):
+        result = Result()
+        refs.append(weakref.ref(result))
+        return result
+
+    job = jobs.submit("alpha", "doctor", work, on_done=lambda result: "delivered")
+    for _ in range(500):
+        if job.status == "done":
+            break
+        await asyncio.sleep(0.01)
+    assert job.result == "delivered"
+    gc.collect()
+    assert refs[0]() is None

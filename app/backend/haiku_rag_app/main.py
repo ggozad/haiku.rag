@@ -148,6 +148,7 @@ def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlett
     app.state.databases = databases
     app.state.sessions = session_store
     app.state.jobs = doctor.Jobs()
+    app.state.retained = doctor.Retained()
     app.state.agent = None
     app.state.agent_lock = asyncio.Lock()
     logger.info(

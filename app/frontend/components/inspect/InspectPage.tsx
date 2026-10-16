@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,9 +49,15 @@ export default function InspectPage() {
 	const [mode, setMode] = useState<"documents" | "search">("documents");
 	const [infoOpen, setInfoOpen] = useState(false);
 
+	// The map links here with ?source=…&document=….
+	const linked = useSearchParams();
 	useEffect(() => {
-		if (source === null && available.length) setSource(available[0].name);
-	}, [source, available]);
+		if (source !== null || !available.length) return;
+		const wanted = linked.get("source");
+		const known = available.find((db) => db.name === wanted);
+		setSource(known ? known.name : available[0].name);
+		if (known) setDocumentId(linked.get("document"));
+	}, [source, available, linked]);
 
 	const params = new URLSearchParams({
 		limit: String(PAGE),

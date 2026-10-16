@@ -8,6 +8,8 @@ import { type Job, settled } from "@/lib/doctor";
 export function useJob<T>(
 	statusUrl: string | null,
 	key: "run" | "projection",
+	// After the job settles, read it again at this interval.
+	revalidateMs?: number,
 ): {
 	job: Job<T> | null;
 	error: string | null;
@@ -36,7 +38,11 @@ export function useJob<T>(
 				if (controller.signal.aborted) return;
 				setJob(body[key]);
 				setError(null);
-				if (settled(body[key])) return;
+				if (settled(body[key])) {
+					if (revalidateMs !== undefined)
+						timer = setTimeout(poll, revalidateMs);
+					return;
+				}
 			} catch (err) {
 				if (controller.signal.aborted) return;
 				setError(err instanceof Error ? err.message : String(err));
@@ -48,7 +54,7 @@ export function useJob<T>(
 			controller.abort();
 			clearTimeout(timer);
 		};
-	}, [statusUrl, key, generation]);
+	}, [statusUrl, key, generation, revalidateMs]);
 
 	const start = useCallback(async (url: string) => {
 		const res = await fetch(url, { method: "POST" });
