@@ -596,16 +596,20 @@ async def _before_ingest(
     for hook in client._hooks:
         try:
             request = await hook.before_ingest(client, request)
+            if not isinstance(request, IngestRequest):
+                raise TypeError(f"returned {type(request).__name__}")
+            if not isinstance(request.body, bytes):
+                raise TypeError(f"body is {type(request.body).__name__}")
             # The store serialises metadata after conversion and embedding.
             json.dumps(_storable(request.metadata))
         except DocumentRejected as e:
-            e.uri = request.uri
+            e.uri = result.uri
             raise
         except Exception as e:
             cls = type(hook)
             raise HookError(
                 f"{cls.__module__}.{cls.__qualname__}.before_ingest failed for "
-                f"{request.uri}: {type(e).__name__}: {e}"
+                f"{result.uri}: {type(e).__name__}: {e}"
             ) from e
     if request.body != result.body:
         result = result.model_copy(

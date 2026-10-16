@@ -255,7 +255,9 @@ class SingleDatabaseSession:
                 docs_to_delete.append(doc)
                 if doc.uri:
                     queue.extend(
-                        await self.list_documents(filter=parent_uri_filter(doc.uri))
+                        await self.list_documents(
+                            filter=parent_uri_filter(doc.uri), include_content=True
+                        )
                     )
 
             if not docs_to_delete:

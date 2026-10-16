@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 from contextlib import asynccontextmanager
@@ -334,11 +335,18 @@ async def test_metadata_only_update_does_not_fire_after_ingest(temp_db_path):
 
 @pytest.mark.asyncio
 async def test_after_delete_fires_for_cascade(temp_db_path):
+    class ContentHook(Hook):
+        contents: dict[str, str] = {}
+
+        async def after_delete(self, client, event):
+            self.contents = {d.uri or "": d.content for d in event.documents}
+
     spy = RecordingHook()
+    content_spy = ContentHook()
     dim = get_config().embeddings.model.vector_dim
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        client._hooks = [spy]
+        client._hooks = [spy, content_spy]
         parent = await client.import_document(
             _docling_doc("p", "Parent body"),
             [Chunk(content="Parent body", embedding=[0.1] * dim, order=0)],
@@ -364,6 +372,10 @@ async def test_after_delete_fires_for_cascade(temp_db_path):
         kind, deleted = spy.events[0]
         assert kind == "delete"
         assert set(deleted) == {(parent.id, "mem://parent"), (child.id, "mem://child")}
+        assert content_spy.contents == {
+            "mem://parent": "Parent body",
+            "mem://child": "Child body",
+        }
 
 
 class AnnotateHook(Hook):
@@ -625,6 +637,47 @@ async def test_lifespan_startup_failure_unwinds_started_hooks(temp_db_path):
             pass
 
     assert log == ["enter a", "exit a"]
+    assert not client.store.db.is_open()
+
+
+class CancelledTeardownHook(Hook):
+    @asynccontextmanager
+    async def lifespan(self, client):
+        try:
+            yield
+        finally:
+            raise asyncio.CancelledError
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_lifespan_teardown_still_closes_the_client(temp_db_path):
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [CancelledTeardownHook()]
+
+    with pytest.raises(asyncio.CancelledError):
+        async with client:
+            pass
+
+    assert not client.store.db.is_open()
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_unwind_after_a_startup_failure_still_closes_the_client(
+    temp_db_path,
+):
+    class _FailingStartHook(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            raise RuntimeError("cannot start")
+            yield  # unreachable; asynccontextmanager needs a generator
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [CancelledTeardownHook(), _FailingStartHook()]
+
+    with pytest.raises(asyncio.CancelledError):
+        async with client:
+            pass
+
     assert not client.store.db.is_open()
 
 
@@ -999,6 +1052,42 @@ async def test_a_raising_before_ingest_stores_nothing(temp_db_path, tmp_path):
         f"{path.as_uri()}: RuntimeError: hook refused"
     )
     assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+class NoReturnIngestHook(Hook):
+    async def before_ingest(self, client, request):
+        request.metadata["team"] = "hook"
+
+
+class TextBodyIngestHook(Hook):
+    async def before_ingest(self, client, request):
+        request.body = request.body.decode()
+        return request
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "hook, error",
+    [
+        (NoReturnIngestHook(), "TypeError: returned NoneType"),
+        (TextBodyIngestHook(), "TypeError: body is str"),
+    ],
+)
+async def test_invalid_before_ingest_output_fails_as_a_hook_error(
+    temp_db_path, tmp_path, hook, error
+):
+    from haiku.rag.hooks import HookError
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        with pytest.raises(HookError) as raised:
+            await client.create_document_from_source(path)
+        assert await client.list_documents() == []
+
+    assert f"before_ingest failed for {path.as_uri()}: {error}" in str(raised.value)
 
 
 class DatetimeMetadataHook(Hook):

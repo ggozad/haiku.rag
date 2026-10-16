@@ -477,9 +477,11 @@ class HaikuRAG:
         """
         if self._session is None or self._closed:
             return False
-        if self._owns_session:
-            await self._exit_lifespans(exc_type, exc_val, exc_tb)
-        await self._close()
+        try:
+            if self._owns_session:
+                await self._exit_lifespans(exc_type, exc_val, exc_tb)
+        finally:
+            await self._close()
         return False
 
     async def _close(self) -> None:
@@ -525,8 +527,10 @@ class HaikuRAG:
         try:
             await enter_lifespans(stack, self._hooks, self)
         except BaseException as exc:
-            await stack.__aexit__(type(exc), exc, exc.__traceback__)
-            await self._close()
+            try:
+                await stack.__aexit__(type(exc), exc, exc.__traceback__)
+            finally:
+                await self._close()
             raise
         self._stack = stack
 
