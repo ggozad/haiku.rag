@@ -10,6 +10,7 @@ from PIL import Image
 from pydantic_ai import Agent
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
+from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
@@ -20,6 +21,7 @@ from haiku.rag.capabilities.policy import create_capability as create_citation_p
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.utils.models import get_model
+from haiku.rag.utils.sql import build_document_id_filter
 
 
 @dataclass
@@ -27,18 +29,61 @@ class ChatDeps:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-def build_agent(config: AppConfig) -> Agent[ChatDeps, str]:
-    return Agent(
-        get_model(config.qa.model, config),
-        deps_type=ChatDeps,
-        # Earlier questions are reduced to the evidence they cited, and every
-        # answer declares what grounds it so the UI can show its citations.
-        capabilities=[
-            create_capability(config=config),
-            create_compaction(),
-            create_citation_policy(),
-        ],
+async def agent_for(app: Starlette) -> Agent[ChatDeps, str]:
+    """The chat agent, built on first use over the app's client.
+
+    The capability borrows the client, so searches, citations and the sandbox
+    read through the connections the rest of the app holds.
+    """
+    if app.state.agent is None:
+        async with app.state.agent_lock:
+            if app.state.agent is None:
+                config: AppConfig = app.state.config
+                client = await app.state.databases.covering()
+                app.state.agent = Agent(
+                    get_model(config.qa.model, config),
+                    deps_type=ChatDeps,
+                    # Earlier questions are reduced to the evidence they cited,
+                    # and every answer declares what grounds it so the UI can
+                    # show its citations.
+                    capabilities=[
+                        create_capability(config=config, rag=client),
+                        create_compaction(),
+                        create_citation_policy(),
+                    ],
+                )
+    return app.state.agent
+
+
+def _scope_to_selection(state: dict[str, Any], forwarded: Any, covers_multiple: bool):
+    """Point the run's search at the documents the user selected.
+
+    The selection is `forwardedProps.documents`, a list of `{source, id}`. The
+    filter is one id list applied in every selected database; across a set,
+    `sources` narrows the search to the databases the selection names. An
+    absent or empty selection searches everything.
+    """
+    documents = forwarded.get("documents") if isinstance(forwarded, dict) else None
+    documents = documents or []
+    if not isinstance(documents, list) or not all(
+        isinstance(doc, dict)
+        and isinstance(doc.get("source"), str)
+        and isinstance(doc.get("id"), str)
+        for doc in documents
+    ):
+        raise HTTPException(
+            400, "forwardedProps.documents must be a list of {source, id}"
+        )
+    rag = RAGState.model_validate(state.get("rag") or {})
+    rag.document_filter = build_document_id_filter(
+        sorted({doc["id"] for doc in documents})
     )
+    rag.sources = (
+        sorted({doc["source"] for doc in documents})
+        if covers_multiple and documents
+        else None
+    )
+    state["rag"] = rag.model_dump(mode="json")
 
 
 async def chat_events(
@@ -53,13 +98,16 @@ async def chat_events(
 
 async def stream_chat(request: Request) -> Response:
     """The AG-UI chat stream."""
-    agent: Agent[ChatDeps, str] = request.app.state.agent
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(await request.body())
-    adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
-
     state = run_input.state if isinstance(run_input.state, dict) else {}
-    state.setdefault("rag", RAGState().model_dump(mode="json"))
+    _scope_to_selection(
+        state,
+        run_input.forwarded_props,
+        request.app.state.databases.scope.covers_multiple,
+    )
+    agent = await agent_for(request.app)
+    adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
     return StreamingResponse(
         adapter.encode_stream(chat_events(adapter, ChatDeps(state=state))),
         media_type=accept,

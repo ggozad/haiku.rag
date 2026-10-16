@@ -10,6 +10,7 @@ export interface Citation {
 	headings: string[] | null;
 	content: string;
 	doc_item_refs?: string[];
+	picture_refs?: string[];
 }
 
 // Matches RAGState from the backend capability. The fields named here are the
@@ -27,7 +28,7 @@ export interface RAGState {
 export interface StoredMessage {
 	id: string;
 	role?: string;
-	content?: string;
+	content?: unknown;
 	[key: string]: unknown;
 }
 
@@ -38,6 +39,8 @@ export interface StoredSession {
 	// The whole AG-UI state. The rag namespace is not the only one a capability
 	// writes: the citation policy records violations beside it.
 	agentState: AgentState;
+	// The documents searches are restricted to, empty for all.
+	selection?: { source: string; id: string }[];
 	// Sessions stored before agentState existed.
 	ragState?: RAGState;
 	createdAt: string;
@@ -147,21 +150,36 @@ export function updateSessionMessages(
 	// Derive title from first user message
 	if (session.title === "New Session") {
 		const firstUserMsg = messages.find(
-			(m) =>
-				m.content &&
-				typeof m.role === "string" &&
-				m.role.toLowerCase() === "user",
+			(m) => typeof m.role === "string" && m.role.toLowerCase() === "user",
 		);
-		if (firstUserMsg?.content) {
-			session.title =
-				firstUserMsg.content.length > 60
-					? `${firstUserMsg.content.slice(0, 57)}...`
-					: firstUserMsg.content;
+		const text = firstUserMsg ? contentText(firstUserMsg.content) : "";
+		if (text) {
+			session.title = text.length > 60 ? `${text.slice(0, 57)}...` : text;
 		}
 	}
 
 	sessions[idx] = session;
 	localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+}
+
+export function updateSessionSelection(
+	id: string,
+	selection: { source: string; id: string }[],
+): void {
+	const sessions = getAllSessions();
+	const session = sessions.find((s) => s.id === id);
+	if (!session) return;
+	session.selection = selection;
+	localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+}
+
+// The text of a message's content: a string, or the text parts of a list.
+export function contentText(content: unknown): string {
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content
+		.map((part) => (part?.type === "text" ? String(part.text ?? "") : ""))
+		.join("");
 }
 
 export function deleteSession(id: string): void {
@@ -176,10 +194,11 @@ export function exportSessionToMarkdown(session: StoredSession): void {
 	const lines: string[] = [`# ${session.title}`, ""];
 	for (const msg of session.messages) {
 		const role = typeof msg.role === "string" ? msg.role.toLowerCase() : "";
-		if (role === "user" && msg.content) {
-			lines.push(`**User:** ${msg.content}`, "");
-		} else if (role === "assistant" && msg.content) {
-			lines.push(`**Assistant:** ${msg.content}`, "");
+		const text = contentText(msg.content);
+		if (role === "user" && text) {
+			lines.push(`**User:** ${text}`, "");
+		} else if (role === "assistant" && text) {
+			lines.push(`**Assistant:** ${text}`, "");
 		}
 	}
 	const blob = new Blob([lines.join("\n")], { type: "text/markdown" });

@@ -33,6 +33,13 @@ class Databases:
     def names(self) -> tuple[str, ...]:
         return self.scope.names
 
+    async def covering(self) -> HaikuRAG:
+        """The client covering every configured database."""
+        try:
+            return await self._covering_client()
+        except Exception as error:
+            raise HTTPException(503, str(error)) from error
+
     async def _covering_client(self) -> HaikuRAG:
         if self._client is None:
             async with self._lock:
@@ -132,7 +139,8 @@ def create_app(config: AppConfig) -> Starlette:
     )
     app.state.config = config
     app.state.databases = databases
-    app.state.agent = chat.build_agent(config)
+    app.state.agent = None
+    app.state.agent_lock = asyncio.Lock()
     logger.info(
         "Databases: %s; QA model: %s/%s",
         ", ".join(databases.names),

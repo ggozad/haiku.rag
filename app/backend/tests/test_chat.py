@@ -152,8 +152,8 @@ def _events(body: str) -> list[dict]:
     ]
 
 
-async def test_the_stream_snapshots_the_state_before_the_run_ends(app, client):
-    run_input = {
+def _run_input(**overrides) -> dict:
+    return {
         "threadId": "thread",
         "runId": "run",
         "state": {},
@@ -161,14 +161,122 @@ async def test_the_stream_snapshots_the_state_before_the_run_ends(app, client):
         "tools": [],
         "context": [],
         "forwardedProps": {},
+        **overrides,
     }
-    with app.state.agent.override(model=FunctionModel(stream_function=_answer)):
-        response = await client.post("/v1/chat/stream", json=run_input)
-    types = [event["type"] for event in _events(response.text)]
+
+
+async def _run(app, client, **overrides) -> list[dict]:
+    from haiku_rag_app.chat import agent_for
+
+    agent = await agent_for(app)
+    with agent.override(model=FunctionModel(stream_function=_answer)):
+        response = await client.post("/v1/chat/stream", json=_run_input(**overrides))
+    return _events(response.text)
+
+
+def _snapshot(events: list[dict]) -> dict:
+    [snapshot] = [e for e in events if e["type"] == "STATE_SNAPSHOT"]
+    return snapshot["snapshot"]
+
+
+async def test_the_stream_snapshots_the_state_before_the_run_ends(app, client):
+    events = await _run(app, client)
+    types = [event["type"] for event in events]
     assert types[-2:] == ["STATE_SNAPSHOT", "RUN_FINISHED"]
-    [snapshot] = [e for e in _events(response.text) if e["type"] == "STATE_SNAPSHOT"]
-    assert "rag" in snapshot["snapshot"]
     assert "TEXT_MESSAGE_CONTENT" in types
+    assert _snapshot(events)["rag"]["document_filter"] is None
+
+
+async def test_the_agent_borrows_the_apps_client(app):
+    from haiku.rag.capabilities.rag import RAGCapability
+    from haiku_rag_app.chat import agent_for
+
+    agent = await agent_for(app)
+    assert await agent_for(app) is agent
+    [capability] = [
+        c for c in agent.root_capability.capabilities if isinstance(c, RAGCapability)
+    ]
+    assert capability.borrowed_rag is await app.state.databases.covering()
+
+
+async def test_a_selection_scopes_the_search_to_its_documents_and_databases(
+    app, client
+):
+    events = await _run(
+        app,
+        client,
+        forwardedProps={
+            "documents": [
+                {"source": "beta", "id": "b-2"},
+                {"source": "alpha", "id": "a-1"},
+            ]
+        },
+    )
+    rag = _snapshot(events)["rag"]
+    assert rag["document_filter"] == "id IN ('a-1', 'b-2')"
+    assert rag["sources"] == ["alpha", "beta"]
+
+
+async def test_an_empty_selection_clears_the_scope(app, client):
+    events = await _run(
+        app,
+        client,
+        state={"rag": {"document_filter": "id IN ('x')", "sources": ["alpha"]}},
+        forwardedProps={"documents": []},
+    )
+    rag = _snapshot(events)["rag"]
+    assert rag["document_filter"] is None
+    assert rag["sources"] is None
+
+
+async def test_a_malformed_selection_is_refused(app, client):
+    for documents in ("all", [{"source": "alpha"}], [{"source": 1, "id": "x"}]):
+        response = await client.post(
+            "/v1/chat/stream",
+            json=_run_input(forwardedProps={"documents": documents}),
+        )
+        assert response.status_code == 400
+
+
+async def test_one_database_scopes_by_id_alone(tmp_path, seed_database):
+    import httpx
+
+    from haiku.rag.config.models import AppConfig, LanceDBConfig
+    from haiku_rag_app.main import create_app
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"only": str(tmp_path / "only.lancedb")})
+    )
+    await seed_database(config, "only")
+    app = create_app(config)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as http:
+        events = await _run(
+            app, http, forwardedProps={"documents": [{"source": "only", "id": "x"}]}
+        )
+    await app.state.databases.aclose()
+    rag = _snapshot(events)["rag"]
+    assert rag["document_filter"] == "id IN ('x')"
+    assert rag["sources"] is None
+
+
+async def test_chat_is_unavailable_while_the_database_is(tmp_path):
+    import httpx
+
+    from haiku.rag.config.models import AppConfig, LanceDBConfig
+    from haiku_rag_app.main import create_app
+
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"gone": str(tmp_path / "gone.lancedb")})
+    )
+    app = create_app(config)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as http:
+        response = await http.post("/v1/chat/stream", json=_run_input())
+    assert response.status_code == 503
+    assert "gone" in response.json()["error"]
 
 
 async def test_events_reach_the_client_while_the_model_is_still_answering(app):
@@ -176,7 +284,7 @@ async def test_events_reach_the_client_while_the_model_is_still_answering(app):
 
     from pydantic_ai.ui.ag_ui import AGUIAdapter
 
-    from haiku_rag_app.chat import ChatDeps, chat_events
+    from haiku_rag_app.chat import ChatDeps, agent_for, chat_events
 
     release = asyncio.Event()
 
@@ -200,8 +308,9 @@ async def test_events_reach_the_client_while_the_model_is_still_answering(app):
             }
         ).encode()
     )
-    adapter = AGUIAdapter(agent=app.state.agent, run_input=run_input)
-    with app.state.agent.override(model=FunctionModel(stream_function=held)):
+    agent = await agent_for(app)
+    adapter = AGUIAdapter(agent=agent, run_input=run_input)
+    with agent.override(model=FunctionModel(stream_function=held)):
         stream = adapter.encode_stream(chat_events(adapter, ChatDeps(state={})))
         seen: list[str] = []
         async for chunk in stream:

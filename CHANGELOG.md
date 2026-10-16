@@ -29,6 +29,8 @@
 - `pydantic-monty` bumped to 1.2. The sandbox iterates file objects and supports `match` statements, `os.walk`, `os.path`, `Path.glob`, `json.load` and `csv`.
 - The `app/` backend covers every configured database: `/api/documents` takes `source` and lists every database by default, `/api/visualize` takes `source`, and `/api/info` is replaced by `/api/databases`. It is the `haiku_rag_app` package, served as `uvicorn --factory haiku_rag_app.main:app`.
 - The `app/` frontend proxies the backend at `/api/backend/*` and the ingester at `/api/ingester/*`, adding `INGESTER_TOKEN` as a bearer token.
+- The `app/` chat runs on `@ag-ui/client` without CopilotKit, styled with Tailwind and shadcn/ui: the document filter selects documents per database and sends them as `forwardedProps.documents`, which the backend turns into `document_filter` and `sources`; a stopped or failed answer is discarded and the question returned to the input.
+- The `app/` chat agent borrows the backend's client instead of opening one per run.
 
 ### Removed
 
