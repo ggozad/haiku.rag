@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 
 import sqlalchemy as sa
@@ -38,6 +38,21 @@ def _insert(table: sa.Table, dialect: str):
     if dialect == "postgresql":
         return postgresql.insert(table)
     return sqlite_dialect.insert(table)
+
+
+def _requeued() -> dict:
+    """The values that return a terminal job to the queue, claimable at once."""
+    return {
+        "status": "queued",
+        "attempts": 0,
+        "last_error": None,
+        "claimed_at": None,
+        "claimed_by": None,
+        "last_heartbeat_at": None,
+        "completed_at": None,
+        "scheduled_at": _utcnow_iso(),
+        "conversion_stalled": False,
+    }
 
 
 def _attempts_minus_one() -> sa.ColumnElement[int]:
@@ -111,7 +126,7 @@ class JobRepo:
         Also returns None when a stalled conversion holds the same
         `uq_jobs_blocking_op` slot, which is (source_id, uri, op, revision): the
         same bytes stall again. A new revision, a DELETE, a DLQ retry and a
-        successful DELETE's `prune_dead` each free it."""
+        successful DELETE's `prune_unsuccessful` each free it."""
         job_id = str(uuid.uuid4())
         now = _utcnow_iso()
         extra_json = json.dumps(extra) if extra is not None else None
@@ -289,7 +304,6 @@ class JobRepo:
         already exists for the same (source_id, uri), reviving the dead row
         would violate `uq_jobs_live`; instead the existing live job is returned
         and the dead row is left dead."""
-        now = _utcnow_iso()
         stmt = (
             sa.update(jobs)
             .where(
@@ -297,17 +311,7 @@ class JobRepo:
                 jobs.c.id == job_id,
                 jobs.c.status.in_(["dead", "rejected", "queued"]),
             )
-            .values(
-                status="queued",
-                attempts=0,
-                last_error=None,
-                claimed_at=None,
-                claimed_by=None,
-                last_heartbeat_at=None,
-                completed_at=None,
-                scheduled_at=now,
-                conversion_stalled=False,
-            )
+            .values(**_requeued())
             .returning(*jobs.c)
         )
         collided = False
@@ -329,6 +333,92 @@ class JobRepo:
                 if blocking is not None:
                     raise BlockingTombstoneError(job_id, blocking)
         raise KeyError(f"Job {job_id!r} not found or not retryable")
+
+    async def retry_failed(self, statuses: Collection[JobStatus]) -> int:
+        """Re-queue the latest failed job of each URI whose status is in
+        `statuses`, unless the URI was ingested after it. Returns how many
+        were re-queued.
+
+        Assumes no discovery runs meanwhile: a job enqueued between a revive's
+        lock and its update can complete unseen and leave a superseded failure
+        re-queued."""
+        wanted = {status.value for status in statuses}
+        refused = wanted - {JobStatus.DEAD.value, JobStatus.REJECTED.value}
+        if refused:
+            raise ValueError(
+                "retry_failed re-queues dead and rejected jobs, not "
+                + ", ".join(sorted(refused))
+            )
+        query = (
+            sa.select(jobs.c.id)
+            .where(self._owned, jobs.c.status.in_(wanted))
+            .order_by(jobs.c.completed_at, jobs.c.id)
+        )
+        async with self._engine.connect() as conn:
+            ids = (await conn.execute(query)).scalars().all()
+        revived = 0
+        for job_id in ids:
+            if await self._revive(job_id, wanted):
+                revived += 1
+        return revived
+
+    async def _revive(self, job_id: str, statuses: Collection[str]) -> bool:
+        """Re-queue one failed job if it is still the latest outcome of its
+        URI. Locks the URI's live jobs first, so a completion in flight
+        commits before the update reads the table."""
+        later = jobs.alias("later")
+        superseded = sa.exists().where(
+            later.c.namespace == jobs.c.namespace,
+            later.c.source_id == jobs.c.source_id,
+            later.c.uri == jobs.c.uri,
+            later.c.status.in_(["succeeded", "dead", "rejected"]),
+            sa.or_(
+                later.c.completed_at > jobs.c.completed_at,
+                sa.and_(
+                    later.c.completed_at == jobs.c.completed_at,
+                    later.c.id > jobs.c.id,
+                ),
+            ),
+        )
+        ingested_since = sa.exists().where(
+            sync_state.c.namespace == jobs.c.namespace,
+            sync_state.c.source_id == jobs.c.source_id,
+            sync_state.c.uri == jobs.c.uri,
+            sync_state.c.last_ingested_at >= jobs.c.completed_at,
+        )
+        key = sa.select(jobs.c.source_id, jobs.c.uri).where(
+            self._owned, jobs.c.id == job_id
+        )
+        update = (
+            sa.update(jobs)
+            .where(
+                self._owned,
+                jobs.c.id == job_id,
+                jobs.c.status.in_(statuses),
+                ~superseded,
+                ~ingested_since,
+            )
+            .values(**_requeued())
+            .returning(jobs.c.id)
+        )
+        try:
+            async with self._engine.begin() as conn:
+                row = (await conn.execute(key)).one_or_none()
+                if row is None:
+                    return False
+                await conn.execute(
+                    sa.select(jobs.c.id)
+                    .where(
+                        self._owned,
+                        jobs.c.source_id == row.source_id,
+                        jobs.c.uri == row.uri,
+                        jobs.c.status.in_(["queued", "claimed"]),
+                    )
+                    .with_for_update()
+                )
+                return (await conn.execute(update)).first() is not None
+        except IntegrityError:
+            return False
 
     async def _blocking_tombstone(self, target: Job) -> str | None:
         """The id of the stalled-conversion row holding `target`'s slot."""

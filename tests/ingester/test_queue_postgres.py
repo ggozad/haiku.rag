@@ -488,3 +488,129 @@ async def test_concurrent_migrations_serialize(postgres_dburi):
                 await conn.execute(text("SELECT count(*) FROM schema_version"))
             ).scalar_one()
         assert count == 1
+
+
+async def _dead(jobs: JobRepo, uri: str, *, conversion_stalled: bool = False) -> str:
+    job = await jobs.enqueue("s", uri, JobOp.UPSERT)
+    assert job is not None
+    claimed = await jobs.claim_next("w")
+    assert claimed is not None and claimed.id == job.id
+    assert await jobs.mark_dead(
+        claimed.id, "boom", "w", conversion_stalled=conversion_stalled
+    )
+    return job.id
+
+
+async def test_retry_failed_revives_the_latest_unresolved_failures(postgres_dburi):
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine, namespace="own")
+        sync = SyncStateRepo(engine, namespace="own")
+        foreign = JobRepo(engine, namespace="other")
+        foreign_sync = SyncStateRepo(engine, namespace="other")
+
+        resolved = await _dead(jobs, "resolved")
+        replacement = await jobs.enqueue("s", "resolved", JobOp.DELETE)
+        assert replacement is not None
+        claimed = await jobs.claim_next("w")
+        assert claimed is not None
+        assert await jobs.mark_succeeded(claimed.id, "w")
+
+        aged_out = await _dead(jobs, "aged-out", conversion_stalled=True)
+        await sync.upsert("s", "aged-out", revision="r2", ingested=True)
+
+        await sync.upsert("s", "updated", revision="r1", ingested=True)
+        updated = await _dead(jobs, "updated")
+
+        older = await _dead(jobs, "twice")
+        newer = await _dead(jobs, "twice")
+
+        tied = [await _dead(jobs, "tied"), await _dead(jobs, "tied")]
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE jobs SET completed_at = :at WHERE id IN (:a, :b)"),
+                {"at": "2026-01-01T00:00:00+00:00", "a": tied[0], "b": tied[1]},
+            )
+
+        rejected = await jobs.enqueue("s", "rejected", JobOp.UPSERT)
+        assert rejected is not None
+        claimed = await jobs.claim_next("w")
+        assert claimed is not None
+        assert await jobs.mark_rejected(claimed.id, "rejected: draft", "w")
+
+        await _dead(foreign, "mine")
+        mine = await _dead(jobs, "mine")
+        await _dead(foreign, "mine")
+        await foreign_sync.upsert("s", "mine", revision="r", ingested=True)
+
+        blocked = await _dead(jobs, "blocked")
+        live = await jobs.enqueue("s", "blocked", JobOp.UPSERT)
+        assert live is not None
+
+        async def status(job_id: str) -> JobStatus:
+            job = await jobs.get_job(job_id)
+            assert job is not None
+            return job.status
+
+        assert await jobs.retry_failed({JobStatus.DEAD}) == 4
+        assert await status(rejected.id) is JobStatus.REJECTED
+        assert await jobs.retry_failed({JobStatus.REJECTED}) == 1
+
+        assert await status(resolved) is JobStatus.DEAD
+        assert await status(aged_out) is JobStatus.DEAD
+        assert await status(updated) is JobStatus.QUEUED
+        assert await status(older) is JobStatus.DEAD
+        assert await status(newer) is JobStatus.QUEUED
+        assert {await status(tied[0]), await status(tied[1])} == {
+            JobStatus.QUEUED,
+            JobStatus.DEAD,
+        }
+        assert await status(rejected.id) is JobStatus.QUEUED
+        assert await status(blocked) is JobStatus.DEAD
+        assert await status(mine) is JobStatus.QUEUED
+
+
+async def test_retry_failed_skips_a_failure_pruned_after_selection(
+    postgres_dburi, monkeypatch
+):
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine)
+        dead = await _dead(jobs, "u")
+        revive = JobRepo._revive
+
+        async def _prune_then_revive(self, job_id, statuses):
+            assert await jobs.prune_unsuccessful("s", "u") == 1
+            return await revive(self, job_id, statuses)
+
+        monkeypatch.setattr(JobRepo, "_revive", _prune_then_revive)
+
+        assert await jobs.retry_failed({JobStatus.DEAD}) == 0
+        assert await jobs.get_job(dead) is None
+
+
+async def test_retry_failed_waits_for_a_completion_in_flight(postgres_dburi):
+    """A replacement's success that commits while the revive runs is seen by
+    the revive, under Read Committed."""
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine)
+        dead = await _dead(jobs, "u")
+        replacement = await jobs.enqueue("s", "u", JobOp.UPSERT)
+        assert replacement is not None
+        claimed = await jobs.claim_next("w")
+        assert claimed is not None
+
+        async with engine.connect() as completing:
+            await completing.execute(
+                text(
+                    "UPDATE jobs SET status = 'succeeded', completed_at = :at "
+                    "WHERE id = :id"
+                ),
+                {"at": "9999-01-01T00:00:00+00:00", "id": replacement.id},
+            )
+            revive = asyncio.create_task(jobs.retry_failed({JobStatus.DEAD}))
+            await asyncio.sleep(0.5)
+            assert not revive.done()
+            await completing.commit()
+
+        assert await revive == 0
+        job = await jobs.get_job(dead)
+        assert job is not None and job.status is JobStatus.DEAD
