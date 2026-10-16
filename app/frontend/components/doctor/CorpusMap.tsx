@@ -36,7 +36,6 @@ interface MapResult {
 	points: Point[];
 	families: Family[];
 	left_off: number;
-	explained_variance: number;
 	neighbours: boolean;
 }
 
@@ -286,8 +285,7 @@ export default function CorpusMap({
 				)}
 				{result && (
 					<span className="text-xs text-muted-foreground">
-						{points.length} documents · the two axes explain{" "}
-						{(result.explained_variance * 100).toFixed(1)}% of the variance
+						{points.length} documents
 						{result.left_off > 0 &&
 							` · ${result.left_off} without a usable embedding left off`}
 					</span>

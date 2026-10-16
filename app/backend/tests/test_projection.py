@@ -10,7 +10,7 @@ from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.doctor import VectorScan
 from haiku.rag.store.models import Chunk
 from haiku_rag_app.doctor import Retained
-from haiku_rag_app.projection import nearest, principal_plane, project
+from haiku_rag_app.projection import nearest, place, project
 
 
 def _scan(centroids, counts=None, ids=None) -> VectorScan:
@@ -27,25 +27,46 @@ def _scan(centroids, counts=None, ids=None) -> VectorScan:
     )
 
 
-def test_the_plane_matches_a_full_svd():
-    rng = np.random.default_rng(7)
-    unit = rng.normal(size=(30, 6))
-    coordinates, explained = principal_plane(unit)
-    centred = unit - unit.mean(axis=0)
-    _, singular, vt = np.linalg.svd(centred, full_matrices=False)
-    expected = centred @ vt[:2].T
-    assert np.allclose(np.abs(coordinates), np.abs(expected))
-    assert explained == pytest.approx(
-        float((singular[:2] ** 2).sum() / (singular**2).sum())
-    )
+def _clusters(per=12, dim=8, seed=3) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    rows, labels = [], []
+    for label in range(3):
+        rows.append(np.eye(dim)[label] + rng.normal(scale=0.05, size=(per, dim)))
+        labels += [label] * per
+    unit = np.vstack(rows)
+    return unit / np.linalg.norm(unit, axis=1)[:, None], np.array(labels)
 
 
-@pytest.mark.parametrize("unit", [np.zeros((0, 4)), np.ones((1, 4)), np.ones((5, 4))])
-def test_degenerate_input_lands_on_the_origin(unit):
-    coordinates, explained = principal_plane(unit)
+def test_separated_clusters_stay_separated():
+    unit, labels = _clusters()
+    coordinates = place(unit)
+    assert coordinates.shape == (len(unit), 2)
+    distance = np.linalg.norm(coordinates[:, None] - coordinates[None], axis=2)
+    np.fill_diagonal(distance, np.inf)
+    assert (labels[distance.argmin(axis=1)] == labels).all()
+
+
+def test_placement_is_deterministic():
+    unit, _ = _clusters()
+    assert np.array_equal(place(unit), place(unit))
+
+
+def test_copies_share_a_point():
+    unit, _ = _clusters()
+    coordinates = place(np.vstack([unit, unit[:1]]))
+    assert np.array_equal(coordinates[0], coordinates[-1])
+    assert np.isfinite(coordinates).all()
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [np.zeros((0, 4)), np.eye(4)[:1], np.eye(4)[:2], np.ones((5, 4)) / 2],
+)
+def test_fewer_than_three_distinct_documents_lie_on_a_line(unit):
+    coordinates = place(unit)
     assert coordinates.shape == (unit.shape[0], 2)
-    assert not coordinates.any()
-    assert explained == 0.0
+    assert not coordinates[:, 1].any()
+    assert len(np.unique(coordinates, axis=0)) == len(np.unique(unit, axis=0))
 
 
 def test_a_document_with_no_embedded_chunk_is_left_off():
@@ -70,13 +91,6 @@ def test_documents_without_a_centroid_count_as_left_off():
     assert projection.left_off == 1
 
 
-def test_a_one_dimensional_embedding_lands_on_a_line():
-    coordinates, explained = principal_plane(np.array([[1.0], [-1.0], [0.5]]))
-    assert coordinates.shape == (3, 2)
-    assert not coordinates[:, 1].any()
-    assert explained == pytest.approx(1.0)
-
-
 def test_non_finite_centroids_are_left_off_and_large_ones_kept():
     projection = project(
         _scan([[np.inf, 0, 0, 0], [3e38, 3e38, 0, 0], [0, 1, 0, 0]]),
@@ -93,7 +107,6 @@ def test_non_finite_centroids_are_left_off_and_large_ones_kept():
 def test_an_empty_corpus_gives_an_empty_map():
     projection = project(_scan(np.zeros((0, 4))), {}, DuplicateDetectionConfig())
     assert projection.points == []
-    assert projection.explained_variance == 0.0
 
 
 def test_near_duplicates_form_a_family_and_neighbours_follow_cosine():
@@ -175,7 +188,6 @@ async def test_the_map_places_documents_and_their_families(client, mapped):
     assert by_title["other"]["family"] is None
     assert by_title["copy-a"]["chunks"] == 3
     assert result["families"][0]["label"][mapped["copy-a"]] == "test://alpha/copy-a"
-    assert 0 < result["explained_variance"] <= 1
     assert result["neighbours"] is True
     assert projection["stale"] is False
     assert "Projecting documents" in projection["progress"]

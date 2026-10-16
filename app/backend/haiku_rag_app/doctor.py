@@ -251,7 +251,6 @@ async def start_projection(request: Request) -> JSONResponse:
                 for family in projection.families
             ],
             "left_off": projection.left_off,
-            "explained_variance": projection.explained_variance,
             "versions": projection.versions,
             "neighbours": neighbours,
             "yaml": duplicates_yaml(

@@ -11,6 +11,7 @@ dependencies = [
     "haiku.rag-slim>=0.98.0",
     "logfire[pydantic-ai]>=3.17.0",
     "aiosqlite>=0.20",
+    "scikit-learn>=1.8.0",
 ]
 
 [build-system]

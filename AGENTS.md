@@ -764,7 +764,7 @@ app/
 │   │   ├── sessions.py     # SQLite session store, holds, the turn commit
 │   │   ├── inspect.py      # inspector routes and /api/search
 │   │   ├── doctor.py       # Jobs (one worker thread), doctor and projection routes, Retained
-│   │   └── projection.py   # PCA of document centroids, nearest neighbours
+│   │   └── projection.py   # t-SNE of document centroids, nearest neighbours
 │   └── tests/
 ├── frontend/               # Next.js, Tailwind, shadcn/ui, @ag-ui/client
 │   ├── app/                # pages: / (chat), /ingestion, /inspect, /doctor; api/backend, api/ingester proxies
