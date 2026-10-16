@@ -113,11 +113,12 @@ async def seeded(tmp_path):
 
 
 @pytest.fixture
-async def app(seeded):
+async def app(seeded, tmp_path):
     config, _ = seeded
-    application = create_app(config)
+    application = create_app(config, sessions_path=tmp_path / "sessions.db")
     yield application
     await application.state.databases.aclose()
+    await application.state.sessions.aclose()
 
 
 @pytest.fixture

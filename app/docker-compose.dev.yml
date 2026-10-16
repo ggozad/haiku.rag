@@ -7,7 +7,7 @@ services:
       dockerfile: app/backend/Dockerfile
     # The mounted package shadows the installed one: uvicorn puts its working
     # directory first on the import path.
-    command: ["uvicorn", "--factory", "haiku_rag_app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["uvicorn", "--factory", "haiku_rag_app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload"]
     working_dir: /app/src
     # No authentication; bound to loopback. The frontend reaches it over the compose network.
     ports:
@@ -18,9 +18,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - HAIKU_RAG_APP_SESSIONS=/sessions/sessions.db
     volumes:
       # haiku.rag.yaml places the database at /data.
       - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
+      - sessions:/sessions
       - ./backend/haiku_rag_app:/app/src/haiku_rag_app:ro
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     extra_hosts:
@@ -46,4 +48,5 @@ services:
       - backend
 
 volumes:
+  sessions:
   frontend_node_modules:

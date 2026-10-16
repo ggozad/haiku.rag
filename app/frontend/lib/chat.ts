@@ -1,6 +1,27 @@
 import type { Message } from "@ag-ui/client";
-import type { Citation, RAGState } from "./sessionStorage";
-import { AGUI_STATE_KEY, normalizeRAGState } from "./sessionStorage";
+
+export interface Citation {
+	index: number;
+	document_id: string;
+	source?: string | null;
+	chunk_id: string;
+	chunk_ids?: string[];
+	document_uri: string;
+	document_title: string | null;
+	page_numbers: number[];
+	headings: string[] | null;
+	content: string;
+	doc_item_refs?: string[];
+	picture_refs?: string[];
+}
+
+// The fields of the capability's state this UI reads. The capability owns the
+// rest of its namespace, and the backend keeps the whole state.
+interface RAGState {
+	citation_index: Record<string, Citation>;
+	citations: string[];
+	executions?: unknown[];
+}
 
 // A selected document: ids repeat only between copies of a database, so the
 // database name is part of its identity.
@@ -21,10 +42,14 @@ interface CodeExecution {
 }
 
 export function ragStateOf(state: unknown): RAGState {
-	const namespaced = (state as Record<string, unknown> | undefined)?.[
-		AGUI_STATE_KEY
-	] as Partial<RAGState> | undefined;
-	return normalizeRAGState(namespaced);
+	const rag = (state as Record<string, unknown> | undefined)?.rag as
+		| Partial<RAGState>
+		| undefined;
+	return {
+		citation_index: rag?.citation_index ?? {},
+		citations: rag?.citations ?? [],
+		executions: rag?.executions ?? [],
+	};
 }
 
 // What the last question rests on: the state after a run holds that
@@ -177,5 +202,41 @@ export function saveDraft(sessionId: string, text: string): void {
 		else sessionStorage.removeItem(DRAFT_KEY + sessionId);
 	} catch {
 		// A browser refusing storage keeps the draft in the page only.
+	}
+}
+
+const PENDING_KEY = "haiku.rag.pending.";
+
+// The run a page started and has not settled, kept so a reload can still ask
+// the backend whether it was stored.
+export interface PendingRun {
+	runId: string;
+	text: string;
+}
+
+export function savePending(sessionId: string, run: PendingRun): void {
+	try {
+		sessionStorage.setItem(PENDING_KEY + sessionId, JSON.stringify(run));
+	} catch {
+		// A browser refusing storage settles the run in this page only.
+	}
+}
+
+// Forgets the run only while it is still the session's pending one.
+export function settlePending(sessionId: string, runId: string): void {
+	try {
+		if (loadPending(sessionId)?.runId === runId)
+			sessionStorage.removeItem(PENDING_KEY + sessionId);
+	} catch {
+		// A browser refusing storage settles the run in this page only.
+	}
+}
+
+export function loadPending(sessionId: string): PendingRun | null {
+	try {
+		const raw = sessionStorage.getItem(PENDING_KEY + sessionId);
+		return raw ? (JSON.parse(raw) as PendingRun) : null;
+	} catch {
+		return null;
 	}
 }

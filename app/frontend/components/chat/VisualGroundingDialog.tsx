@@ -8,7 +8,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import type { Citation } from "@/lib/sessionStorage";
+import type { Citation } from "@/lib/chat";
 
 export function visualizeUrl(citation: Citation): string {
 	const chunkIds = citation.chunk_ids?.length

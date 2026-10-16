@@ -10,6 +10,7 @@ dependencies = [
     "python-dotenv>=1.2.1",
     "haiku.rag-slim>=0.98.0",
     "logfire[pydantic-ai]>=3.17.0",
+    "aiosqlite>=0.20",
 ]
 
 [build-system]

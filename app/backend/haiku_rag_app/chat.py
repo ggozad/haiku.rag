@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from collections.abc import AsyncIterator
@@ -5,9 +6,10 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Any
 
-from ag_ui.core import BaseEvent, EventType, StateSnapshotEvent
+from ag_ui.core import BaseEvent, CustomEvent, EventType, Message, StateSnapshotEvent
 from PIL import Image
-from pydantic_ai import Agent
+from pydantic import TypeAdapter
+from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.applications import Starlette
@@ -17,11 +19,15 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.capabilities.compaction import create_capability as create_compaction
+from haiku.rag.capabilities.ledger import citation_status
+from haiku.rag.capabilities.policy import STATE_NAMESPACE as POLICY_NAMESPACE
+from haiku.rag.capabilities.policy import CitationPolicyState
 from haiku.rag.capabilities.policy import create_capability as create_citation_policy
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.utils.models import get_model
 from haiku.rag.utils.sql import build_document_id_filter
+from haiku_rag_app.sessions import Sessions
 
 
 @dataclass
@@ -55,25 +61,15 @@ async def agent_for(app: Starlette) -> Agent[ChatDeps, str]:
     return app.state.agent
 
 
-def _scope_to_selection(state: dict[str, Any], forwarded: Any, covers_multiple: bool):
-    """Point the run's search at the documents the user selected.
+def _scope_to_selection(
+    state: dict[str, Any], documents: list[dict[str, str]], covers_multiple: bool
+) -> None:
+    """Point the run's search at the documents the session selected.
 
-    The selection is `forwardedProps.documents`, a list of `{source, id}`. The
-    filter is one id list applied in every selected database; across a set,
-    `sources` narrows the search to the databases the selection names. An
-    absent or empty selection searches everything.
+    The filter is one id list applied in every selected database; across a
+    set, `sources` narrows the search to the databases the selection names. An
+    empty selection searches everything.
     """
-    documents = forwarded.get("documents") if isinstance(forwarded, dict) else None
-    documents = documents or []
-    if not isinstance(documents, list) or not all(
-        isinstance(doc, dict)
-        and isinstance(doc.get("source"), str)
-        and isinstance(doc.get("id"), str)
-        for doc in documents
-    ):
-        raise HTTPException(
-            400, "forwardedProps.documents must be a list of {source, id}"
-        )
     rag = RAGState.model_validate(state.get("rag") or {})
     rag.document_filter = build_document_id_filter(
         sorted({doc["id"] for doc in documents})
@@ -86,30 +82,147 @@ def _scope_to_selection(state: dict[str, Any], forwarded: Any, covers_multiple: 
     state["rag"] = rag.model_dump(mode="json")
 
 
+def run_summary(state: dict[str, Any]) -> dict[str, Any]:
+    """How the question was grounded, and whether the policy recorded a breach."""
+    record = RAGState.model_validate(state.get("rag") or {}).evidence
+    question = record.question
+    # A completed run has begun its question, so it always has an identity.
+    assert question is not None
+    violations = CitationPolicyState.model_validate(
+        state.get(POLICY_NAMESPACE) or {}
+    ).violations
+    return {
+        "citation_status": citation_status([record], question=question),
+        "violation": question in violations,
+    }
+
+
+def run_evidence(state: dict[str, Any]) -> dict[str, Any]:
+    """The citations and the last successful program of the question just answered."""
+    rag = RAGState.model_validate(state.get("rag") or {})
+    successful = [entry for entry in rag.executions if entry.success]
+    return {
+        "citations": [
+            rag.citation_index[chunk_id].model_dump(mode="json")
+            for chunk_id in rag.citations
+            if chunk_id in rag.citation_index
+        ],
+        "program": successful[-1].code if successful else None,
+        "summary": run_summary(state),
+    }
+
+
+def _dumped(message: Message) -> dict[str, Any]:
+    return message.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
 async def chat_events(
-    adapter: AGUIAdapter[ChatDeps, str], deps: ChatDeps
+    adapter: AGUIAdapter[ChatDeps, str],
+    deps: ChatDeps,
+    sessions: Sessions,
+    session_id: str,
+    run_id: str,
+    user_message: dict[str, Any],
 ) -> AsyncIterator[BaseEvent]:
-    """The run's events, with the whole state as a snapshot before it ends."""
-    async for event in adapter.run_stream(deps=deps):
-        if event.type == EventType.RUN_FINISHED:
-            yield StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=deps.state)
-        yield event
+    """The run's events, with the turn committed once the run completes.
+
+    The commit is the durable boundary: it runs before the summary, the state
+    snapshot and `RUN_FINISHED` go out, and it is shielded, so a client leaving
+    during or after it does not undo a completed turn. A run cancelled before it
+    completes stores nothing. The session is held until the commit lands.
+    """
+    commit: asyncio.Future | None = None
+
+    async def on_complete(result: AgentRunResult[Any]) -> AsyncIterator[BaseEvent]:
+        nonlocal commit
+        evidence = run_evidence(deps.state)
+        commit = sessions.start_commit(
+            session_id,
+            run_id,
+            sessions.commit_turn(
+                session_id,
+                run_id,
+                user_message,
+                [_dumped(m) for m in AGUIAdapter.dump_messages(result.new_messages())],
+                deps.state,
+                evidence,
+            ),
+        )
+        await asyncio.shield(commit)
+        yield CustomEvent(
+            type=EventType.CUSTOM, name="haiku.run_summary", value=evidence["summary"]
+        )
+
+    try:
+        async for event in adapter.run_stream(deps=deps, on_complete=on_complete):
+            if event.type == EventType.RUN_FINISHED:
+                yield StateSnapshotEvent(
+                    type=EventType.STATE_SNAPSHOT, snapshot=deps.state
+                )
+            yield event
+    finally:
+        # A started commit releases the session when it lands.
+        if commit is None:
+            sessions.release(session_id, run_id)
 
 
 async def stream_chat(request: Request) -> Response:
-    """The AG-UI chat stream."""
+    """The AG-UI chat stream over a stored session.
+
+    The client sends the new user message; the history, the state and the
+    selection come from the stored session, whatever else the client sends.
+    """
     accept = request.headers.get("accept", SSE_CONTENT_TYPE)
     run_input = AGUIAdapter.build_run_input(await request.body())
-    state = run_input.state if isinstance(run_input.state, dict) else {}
-    _scope_to_selection(
-        state,
-        run_input.forwarded_props,
-        request.app.state.databases.scope.covers_multiple,
-    )
-    agent = await agent_for(request.app)
-    adapter = AGUIAdapter(agent=agent, run_input=run_input, accept=accept)
+    sessions: Sessions = request.app.state.sessions
+    session_id, run_id = run_input.thread_id, run_input.run_id
+    sessions.admit(session_id, run_id)
+    try:
+        session = await sessions.get(session_id)
+        stored_ids = {message["id"] for message in session["messages"]}
+        new = [m for m in run_input.messages if m.id not in stored_ids]
+        if (
+            len(new) != 1
+            or new[0] is not run_input.messages[-1]
+            or new[0].role != "user"
+        ):
+            raise HTTPException(400, "the input must end in one new user message")
+        if run_id in session["runs"]:
+            raise HTTPException(400, f"run {run_id!r} is already stored")
+        user_message = _dumped(new[0])
+
+        state = session["state"]
+        _scope_to_selection(
+            state,
+            session["selection"],
+            request.app.state.databases.scope.covers_multiple,
+        )
+        authoritative = run_input.model_copy(
+            update={
+                "messages": [
+                    *TypeAdapter(list[Message]).validate_python(session["messages"]),
+                    new[0],
+                ],
+                "state": state,
+                "tools": [],
+                "context": [],
+                "forwarded_props": {},
+                # A newer protocol's interrupt resumption, kept as an extra
+                # field by this one.
+                "resume": None,
+            }
+        )
+        agent = await agent_for(request.app)
+        adapter = AGUIAdapter(agent=agent, run_input=authoritative, accept=accept)
+        events = chat_events(
+            adapter, ChatDeps(state=state), sessions, session_id, run_id, user_message
+        )
+        sessions.tie(session_id, run_id, events)
+    except BaseException:
+        sessions.release(session_id, run_id)
+        raise
     return StreamingResponse(
-        adapter.encode_stream(chat_events(adapter, ChatDeps(state=state))),
+        adapter.encode_stream(events),
         media_type=accept,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

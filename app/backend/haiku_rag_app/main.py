@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
@@ -11,7 +12,8 @@ from starlette.routing import Route
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import AppConfig, get_config
-from haiku_rag_app import chat
+from haiku_rag_app import chat, sessions
+from haiku_rag_app.sessions import Sessions
 
 logger = logging.getLogger(__name__)
 
@@ -118,8 +120,9 @@ async def http_error(_: Request, error: Exception) -> JSONResponse:
     return JSONResponse({"error": error.detail}, status_code=error.status_code)
 
 
-def create_app(config: AppConfig) -> Starlette:
+def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlette:
     databases = Databases(config)
+    session_store = Sessions(sessions_path or sessions.default_path())
 
     @asynccontextmanager
     async def lifespan(_app: Starlette):
@@ -127,18 +130,21 @@ def create_app(config: AppConfig) -> Starlette:
             yield
         finally:
             await databases.aclose()
+            await session_store.aclose()
 
     app = Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
             Route("/api/databases", list_databases, methods=["GET"]),
             *chat.routes,
+            *sessions.routes,
         ],
         exception_handlers={HTTPException: http_error},
         lifespan=lifespan,
     )
     app.state.config = config
     app.state.databases = databases
+    app.state.sessions = session_store
     app.state.agent = None
     app.state.agent_lock = asyncio.Lock()
     logger.info(

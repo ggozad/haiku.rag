@@ -9,8 +9,7 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import type { Evidence } from "@/lib/chat";
-import type { Citation } from "@/lib/sessionStorage";
+import type { Citation, Evidence } from "@/lib/chat";
 import VisualGroundingDialog from "./VisualGroundingDialog";
 
 export function pictureUrl(citation: Citation, ref: string): string {

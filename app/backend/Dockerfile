@@ -28,4 +28,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
-CMD ["uvicorn", "--factory", "haiku_rag_app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# One worker: the session store holds runs in process.
+CMD ["uvicorn", "--factory", "haiku_rag_app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

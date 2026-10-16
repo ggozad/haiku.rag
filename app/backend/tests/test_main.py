@@ -84,7 +84,7 @@ async def test_one_database_is_read_without_a_name(tmp_path, seed_database):
         lancedb=LanceDBConfig(databases={"only": str(tmp_path / "only.lancedb")})
     )
     ids = await seed_database(config, "only")
-    app = create_app(config)
+    app = create_app(config, sessions_path=tmp_path / "sessions.db")
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as http:
@@ -127,6 +127,8 @@ async def test_the_served_app_is_configured_from_the_environment(monkeypatch, tm
         lancedb=LanceDBConfig(databases={"only": str(tmp_path / "only.lancedb")})
     )
     monkeypatch.setattr(main, "get_config", lambda: config)
+    monkeypatch.setenv("HAIKU_RAG_APP_SESSIONS", str(tmp_path / "sessions.db"))
     served = main.app()
     assert configured == ["haiku-rag-app"]
     assert served.state.config is config
+    assert served.state.sessions.path == tmp_path / "sessions.db"

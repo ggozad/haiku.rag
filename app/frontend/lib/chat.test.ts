@@ -6,8 +6,11 @@ import {
 	evidenceOf,
 	latestTurnRuns,
 	loadDraft,
+	loadPending,
 	runTurn,
 	saveDraft,
+	savePending,
+	settlePending,
 	type TurnAgent,
 	textOf,
 	toolResults,
@@ -220,6 +223,47 @@ describe("drafts", () => {
 		});
 		expect(loadDraft("s1")).toBe("");
 		saveDraft("s1", "x");
+		vi.unstubAllGlobals();
+	});
+});
+
+describe("pending runs", () => {
+	it("keeps the unsettled run per session until it settles", () => {
+		const store = new Map<string, string>();
+		vi.stubGlobal("sessionStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value),
+			removeItem: (key: string) => store.delete(key),
+		});
+		savePending("s1", { runId: "run-1", text: "q" });
+		expect(loadPending("s1")).toEqual({ runId: "run-1", text: "q" });
+		expect(loadPending("s2")).toBeNull();
+		settlePending("s1", "run-1");
+		expect(loadPending("s1")).toBeNull();
+		vi.stubGlobal("sessionStorage", {
+			getItem: () => {
+				throw new Error("denied");
+			},
+			setItem: () => {
+				throw new Error("denied");
+			},
+		});
+		expect(loadPending("s1")).toBeNull();
+		savePending("s1", { runId: "run-1", text: "q" });
+		settlePending("s1", "run-1");
+		vi.unstubAllGlobals();
+	});
+
+	it("leaves a newer run in place when an older one settles", () => {
+		const store = new Map<string, string>();
+		vi.stubGlobal("sessionStorage", {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => store.set(key, value),
+			removeItem: (key: string) => store.delete(key),
+		});
+		savePending("s1", { runId: "run-2", text: "newer" });
+		settlePending("s1", "run-1");
+		expect(loadPending("s1")).toEqual({ runId: "run-2", text: "newer" });
 		vi.unstubAllGlobals();
 	});
 });

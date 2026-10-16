@@ -10,16 +10,18 @@ export default function Composer({
 	onSend,
 	onStop,
 	running,
+	blocked,
 }: {
 	draft: string;
 	onDraftChange: (draft: string) => void;
 	onSend: (text: string) => void;
 	onStop: () => void;
 	running: boolean;
+	blocked: boolean;
 }) {
 	const submit = () => {
 		const text = draft.trim();
-		if (text && !running) onSend(text);
+		if (text && !running && !blocked) onSend(text);
 	};
 	return (
 		<form
@@ -58,7 +60,7 @@ export default function Composer({
 				<Button
 					type="submit"
 					size="icon"
-					disabled={!draft.trim()}
+					disabled={!draft.trim() || blocked}
 					aria-label="Send"
 				>
 					<ArrowUp />

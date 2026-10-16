@@ -12,9 +12,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - HAIKU_RAG_APP_SESSIONS=/sessions/sessions.db
     volumes:
       # haiku.rag.yaml places the database at /data.
       - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
+      - sessions:/sessions
       - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -30,3 +32,6 @@ services:
       - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
+
+volumes:
+  sessions:
