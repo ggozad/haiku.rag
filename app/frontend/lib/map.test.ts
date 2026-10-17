@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { categories, fitView, hit, type Point, toScreen, zoomAt } from "./map";
+import {
+	categories,
+	closeness,
+	fitView,
+	hit,
+	nearestOf,
+	type Point,
+	toScreen,
+	zoomAt,
+} from "./map";
 
 const point = (
 	id: string,
@@ -70,5 +79,20 @@ describe("view", () => {
 		const points = [point("a", 10, 10), point("b", 14, 10)];
 		expect(hit(points, view, 13, 10)?.id).toBe("b");
 		expect(hit(points, view, 100, 100)).toBeNull();
+	});
+});
+
+describe("closeness", () => {
+	it("ranks the others by similarity, ties together, the selected at one", () => {
+		const similarity = [0.2, 1, 0.9, 0.5, 0.9, 0.1];
+		expect(closeness(similarity, 1)).toEqual([0.25, 1, 0.75, 0.5, 0.75, 0]);
+		expect(closeness([1], 0)).toEqual([1]);
+		expect(closeness([1, 0.3], 0)).toEqual([1, 1]);
+	});
+
+	it("lists the k nearest others, most similar first", () => {
+		const similarity = [0.2, 1, 0.9, 0.5, 0.95];
+		expect(nearestOf(similarity, 1, 3)).toEqual([4, 2, 3]);
+		expect(nearestOf(similarity, 1, 10)).toHaveLength(4);
 	});
 });

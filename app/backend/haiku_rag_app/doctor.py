@@ -16,7 +16,7 @@ from starlette.routing import Route
 from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.doctor import duplicates_yaml, run_doctor, scan_vectors
 from haiku.rag.store.engine import Store
-from haiku_rag_app.projection import Projection, nearest, project
+from haiku_rag_app.projection import Projection, project, similarity
 
 Progress = Callable[[str], None]
 Work = Callable[[Progress], Awaitable[Any]]
@@ -140,7 +140,7 @@ class Jobs:
 
 
 class Retained:
-    """Unit centroids kept for neighbour lookups, within one memory budget
+    """Unit centroids kept for similarity lookups, within one memory budget
     across databases. A newer projection evicts the oldest others; one that
     does not fit alone is not kept."""
 
@@ -293,23 +293,19 @@ async def _stale(request: Request, name: str, versions: dict) -> bool | None:
     return any(current.get(table) != version for table, version in versions.items())
 
 
-async def neighbours(request: Request) -> JSONResponse:
+async def similarities(request: Request) -> JSONResponse:
     ref = configured_ref(request)
     kept = request.app.state.retained.get(ref.name)
     if kept is None:
         raise HTTPException(
             404,
-            "neighbours are unavailable: compute the map again, within the memory budget",
+            "similarity is unavailable: compute the map again, within the memory budget",
         )
     ids, unit = kept
     doc_id = request.query_params.get("id", "")
     if doc_id not in ids:
         raise HTTPException(404, f"no document {doc_id!r} on the map")
-    try:
-        k = int(request.query_params.get("k", "8"))
-    except ValueError as error:
-        raise HTTPException(400, "k must be a whole number") from error
-    return JSONResponse({"neighbours": nearest(unit, ids, doc_id, max(1, min(k, 50)))})
+    return JSONResponse({"similarity": similarity(unit, ids, doc_id)})
 
 
 async def duplicates_export(request: Request) -> PlainTextResponse:
@@ -330,7 +326,7 @@ routes = [
     Route("/api/doctor/{source}/run", start_run, methods=["POST"]),
     Route("/api/doctor/{source}/projection", start_projection, methods=["POST"]),
     Route("/api/doctor/{source}/projection", get_projection, methods=["GET"]),
-    Route("/api/doctor/{source}/projection/neighbours", neighbours, methods=["GET"]),
+    Route("/api/doctor/{source}/projection/similarity", similarities, methods=["GET"]),
     Route("/api/doctor/{source}/duplicates.yaml", duplicates_export, methods=["GET"]),
     Route("/api/doctor/{source}", get_run, methods=["GET"]),
 ]

@@ -15,8 +15,10 @@ import {
 import {
 	type ColourBy,
 	categories,
+	closeness,
 	fitView,
 	hit,
+	nearestOf,
 	type Point,
 	toScreen,
 	type View,
@@ -97,14 +99,27 @@ export default function CorpusMap({
 				)
 			: null;
 	}, [points, term]);
-	const neighbours = useJson<{
-		neighbours: { id: string; similarity: number }[];
-	}>(
+	const similar = useJson<{ similarity: number[] }>(
 		selected && result?.neighbours
-			? `${base}/projection/neighbours?${new URLSearchParams({ id: selected.id, k: "8" })}`
+			? `${base}/projection/similarity?${new URLSearchParams({ id: selected.id })}`
 			: null,
 	);
 	const byId = useMemo(() => new Map(points.map((p) => [p.id, p])), [points]);
+	// While a document is selected, every other is shaded by its closeness to it.
+	const shade = useMemo(() => {
+		const similarity = similar.data?.similarity;
+		const index = selected ? points.findIndex((p) => p.id === selected.id) : -1;
+		if (!similarity || index === -1 || similarity.length !== points.length)
+			return null;
+		const close = closeness(similarity, index);
+		return {
+			similarity,
+			close,
+			nearest: nearestOf(similarity, index, 8),
+			// Nearest last, so they are drawn on top.
+			order: points.map((_, i) => i).sort((a, b) => close[a] - close[b]),
+		};
+	}, [similar.data, selected, points]);
 
 	// Refit when a new map arrives, not when the same map is read again.
 	const computedAt = result ? job?.finished_at : null;
@@ -132,6 +147,8 @@ export default function CorpusMap({
 		const ring = token("--destructive");
 		const accent = token("--primary");
 		const surface = token("--background");
+		const near = token("--map-near");
+		const far = token("--map-far");
 
 		// Lines from each family member to the one doctor keeps.
 		context.lineWidth = 1.5;
@@ -152,7 +169,8 @@ export default function CorpusMap({
 			}
 		});
 
-		for (const point of points) {
+		for (const index of shade?.order ?? points.keys()) {
+			const point = points[index];
 			const [x, y] = toScreen(point, view);
 			if (
 				x < -RADIUS ||
@@ -162,12 +180,13 @@ export default function CorpusMap({
 			)
 				continue;
 			const slot = slotOf(point);
-			let alpha = slot === null ? 0.6 : 0.9;
+			let alpha = shade ? 1 : slot === null ? 0.6 : 0.9;
 			if (family !== null) alpha = point.family === family ? 1 : 0.12;
 			if (matching && !matching.has(point.id)) alpha = Math.min(alpha, 0.1);
 			context.globalAlpha = alpha;
-			context.fillStyle =
-				colourBy === "family"
+			context.fillStyle = shade
+				? far
+				: colourBy === "family"
 					? point.family === null
 						? other
 						: ring
@@ -179,6 +198,12 @@ export default function CorpusMap({
 			context.beginPath();
 			context.arc(x, y, RADIUS, 0, Math.PI * 2);
 			context.fill();
+			if (shade) {
+				// Cubed, so the colour concentrates on the closest few percent.
+				context.globalAlpha = alpha * shade.close[index] ** 3;
+				context.fillStyle = near;
+				context.fill();
+			}
 			context.globalAlpha = 1;
 			context.strokeStyle = surface;
 			context.lineWidth = 1;
@@ -197,10 +222,8 @@ export default function CorpusMap({
 			context.arc(x, y, size, 0, Math.PI * 2);
 			context.stroke();
 		}
-		for (const near of neighbours.data?.neighbours ?? []) {
-			const point = byId.get(near.id);
-			if (!point) continue;
-			const [x, y] = toScreen(point, view);
+		for (const index of shade?.nearest ?? []) {
+			const [x, y] = toScreen(points[index], view);
 			context.strokeStyle = accent;
 			context.lineWidth = 1.5;
 			context.beginPath();
@@ -216,7 +239,7 @@ export default function CorpusMap({
 		matching,
 		selected,
 		hovered,
-		neighbours.data,
+		shade,
 		result,
 		byId,
 	]);
@@ -326,22 +349,38 @@ export default function CorpusMap({
 							onChange={(event) => setTerm(event.target.value)}
 						/>
 						<div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-							{legend.map((label, slot) => (
-								<span key={label} className="flex items-center gap-1">
+							{shade && (
+								<span className="flex items-center gap-1">
+									least similar
 									<span
-										className="inline-block size-2.5 rounded-full"
+										className="inline-block h-2.5 w-24 rounded-full"
 										style={{
 											background:
-												colourBy === "family"
-													? "var(--destructive)"
-													: slot < SLOTS_SHOWN
-														? `var(${SLOT_TOKENS[slot]})`
-														: "var(--muted-foreground)",
+												// The shading's cube: 12.5% at the median, 51% at the 80th percentile.
+												"linear-gradient(to right, var(--map-far), color-mix(in srgb, var(--map-near) 12.5%, var(--map-far)) 50%, color-mix(in srgb, var(--map-near) 51%, var(--map-far)) 80%, var(--map-near))",
 										}}
 									/>
-									{label}
+									most similar to the selected document · click empty space to
+									clear
 								</span>
-							))}
+							)}
+							{!shade &&
+								legend.map((label, slot) => (
+									<span key={label} className="flex items-center gap-1">
+										<span
+											className="inline-block size-2.5 rounded-full"
+											style={{
+												background:
+													colourBy === "family"
+														? "var(--destructive)"
+														: slot < SLOTS_SHOWN
+															? `var(${SLOT_TOKENS[slot]})`
+															: "var(--muted-foreground)",
+											}}
+										/>
+										{label}
+									</span>
+								))}
 						</div>
 						<a
 							href={`${base}/duplicates.yaml`}
@@ -435,24 +474,22 @@ export default function CorpusMap({
 											memory. Compute the map again.
 										</p>
 									)}
-									{neighbours.error && (
-										<p className="text-destructive">{neighbours.error}</p>
+									{similar.error && (
+										<p className="text-destructive">{similar.error}</p>
 									)}
 									<ul>
-										{neighbours.data?.neighbours.map((near) => {
-											const point = byId.get(near.id);
+										{shade?.nearest.map((index) => {
+											const point = points[index];
 											return (
-												<li key={near.id}>
+												<li key={point.id}>
 													<button
 														type="button"
 														className="flex w-full justify-between gap-2 py-0.5 text-left hover:underline"
-														onClick={() => point && setSelected(point)}
+														onClick={() => setSelected(point)}
 													>
-														<span className="truncate">
-															{point ? nameOf(point) : near.id}
-														</span>
+														<span className="truncate">{nameOf(point)}</span>
 														<span className="shrink-0 font-mono text-xs tabular-nums">
-															{near.similarity.toFixed(3)}
+															{shade.similarity[index].toFixed(3)}
 														</span>
 													</button>
 												</li>

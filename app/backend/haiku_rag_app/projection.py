@@ -14,7 +14,7 @@ class Projection:
     """The documents of one database placed in two dimensions.
 
     `points` and `families` are what the page draws. `unit` keeps the unit
-    centroids, in `ids` order, for nearest-neighbour lookups.
+    centroids, in `ids` order, for similarity lookups.
     """
 
     points: list[dict[str, Any]]
@@ -104,9 +104,6 @@ def project(
     )
 
 
-def nearest(unit: np.ndarray, ids: list[str], doc_id: str, k: int) -> list[dict]:
-    """The `k` documents closest to `doc_id` by centroid cosine."""
-    index = ids.index(doc_id)
-    similarity = unit @ unit[index]
-    order = [i for i in np.argsort(-similarity) if i != index][:k]
-    return [{"id": ids[i], "similarity": float(similarity[i])} for i in order]
+def similarity(unit: np.ndarray, ids: list[str], doc_id: str) -> list[float]:
+    """Centroid cosine of every document to `doc_id`, in `ids` order."""
+    return np.round(unit @ unit[ids.index(doc_id)], 4).tolist()

@@ -105,7 +105,7 @@ Documents are listed by a title-or-URI search and a SQL filter on their attribut
 
 The doctor runs on one configured database in the background, with or without provider probes, and reports every check. A database read at a tag is refused: the doctor reads the live state.
 
-The corpus map places each document by its chunks' centroid through t-SNE, so nearby documents are similar but distances between clusters mean little, colours it by near-duplicate family, source or content type, and lists a document's nearest neighbours by centroid cosine. The families download as the YAML `haiku-rag doctor --duplicates-out` writes.
+The corpus map places each document by its chunks' centroid through t-SNE, so nearby documents are similar but distances between clusters mean little, colours it by near-duplicate family, source or content type, and shades every document by its centroid cosine to a selected one, listing the nearest. The families download as the YAML `haiku-rag doctor --duplicates-out` writes.
 
 A doctor run and a map each read every chunk vector, at least chunks × dimension × 4 bytes of memory, which the page shows before either starts. One job runs at a time across databases, on a thread of its own. Results live in the backend's memory until the next job of the same kind on that database, or a restart.
 
@@ -126,7 +126,7 @@ A doctor run and a map each read every chunk vector, at least chunks × dimensio
 | `/api/doctor/{source}` | GET | The latest doctor run |
 | `/api/doctor/{source}/run` | POST | Start a doctor run |
 | `/api/doctor/{source}/projection` | GET, POST | The latest corpus map, or start one |
-| `/api/doctor/{source}/projection/neighbours` | GET | A document's nearest neighbours on the map |
+| `/api/doctor/{source}/projection/similarity` | GET | Every document's centroid cosine to one, in map order |
 | `/api/doctor/{source}/duplicates.yaml` | GET | The map's near-duplicate families |
 | `/health` | GET | Health, model and databases |
 

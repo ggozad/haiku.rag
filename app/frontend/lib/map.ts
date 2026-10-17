@@ -121,3 +121,35 @@ export function hit(
 	}
 	return best;
 }
+
+// Each document's rank among the others by similarity to `selected`, from 0
+// for the least similar to 1 for the most. Ties share the lower rank.
+export function closeness(similarity: number[], selected: number): number[] {
+	const others = similarity
+		.filter((_, index) => index !== selected)
+		.sort((a, b) => a - b);
+	const span = Math.max(others.length - 1, 1);
+	return similarity.map((value, index) => {
+		if (index === selected || others.length < 2) return 1;
+		let [low, high] = [0, others.length];
+		while (low < high) {
+			const middle = (low + high) >> 1;
+			if (others[middle] < value) low = middle + 1;
+			else high = middle;
+		}
+		return low / span;
+	});
+}
+
+// Indices of the `k` documents most similar to `selected`, most similar first.
+export function nearestOf(
+	similarity: number[],
+	selected: number,
+	k: number,
+): number[] {
+	return similarity
+		.map((_, index) => index)
+		.filter((index) => index !== selected)
+		.sort((a, b) => similarity[b] - similarity[a])
+		.slice(0, k);
+}

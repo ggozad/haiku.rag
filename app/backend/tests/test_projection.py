@@ -10,7 +10,7 @@ from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.doctor import VectorScan
 from haiku.rag.store.models import Chunk
 from haiku_rag_app.doctor import Retained
-from haiku_rag_app.projection import nearest, place, project
+from haiku_rag_app.projection import place, project, similarity
 
 
 def _scan(centroids, counts=None, ids=None) -> VectorScan:
@@ -109,7 +109,7 @@ def test_an_empty_corpus_gives_an_empty_map():
     assert projection.points == []
 
 
-def test_near_duplicates_form_a_family_and_neighbours_follow_cosine():
+def test_near_duplicates_form_a_family_and_similarity_is_cosine():
     projection = project(
         _scan([[1, 0, 0, 0], [0.99, 0.01, 0, 0], [0, 0, 1, 0]]),
         {},
@@ -117,9 +117,9 @@ def test_near_duplicates_form_a_family_and_neighbours_follow_cosine():
     )
     assert [p["family"] for p in projection.points] == [0, 0, None]
     assert projection.families[0].members == ["d0", "d1"]
-    [first, second] = nearest(projection.unit, projection.ids, "d0", 2)
-    assert first["id"] == "d1"
-    assert first["similarity"] > second["similarity"]
+    assert similarity(projection.unit, projection.ids, "d0") == pytest.approx(
+        [1.0, 0.99995, 0.0], abs=1e-4
+    )
 
 
 def test_the_budget_evicts_the_oldest_and_refuses_what_never_fits():
@@ -192,14 +192,15 @@ async def test_the_map_places_documents_and_their_families(client, mapped):
     assert projection["stale"] is False
     assert "Projecting documents" in projection["progress"]
 
-    near = (
+    similar = (
         await client.get(
-            "/api/doctor/alpha/projection/neighbours",
-            params={"id": mapped["copy-a"], "k": 2},
+            "/api/doctor/alpha/projection/similarity", params={"id": mapped["copy-a"]}
         )
-    ).json()["neighbours"]
-    assert near[0]["id"] == mapped["copy-b"]
-    assert near[0]["similarity"] == pytest.approx(1.0)
+    ).json()["similarity"]
+    assert len(similar) == len(result["points"])
+    by_id = {p["id"]: s for p, s in zip(result["points"], similar)}
+    assert by_id[mapped["copy-b"]] == pytest.approx(1.0)
+    assert by_id[mapped["other"]] == pytest.approx(0.0)
 
     exported = await client.get("/api/doctor/alpha/duplicates.yaml")
     assert exported.headers["content-type"].startswith("application/yaml")
@@ -248,8 +249,8 @@ async def test_staleness_is_unknown_when_the_versions_cannot_be_read(
     assert projection["stale"] is None
 
 
-async def test_neighbours_need_a_kept_map_and_a_known_document(app, client, mapped):
-    url = "/api/doctor/alpha/projection/neighbours"
+async def test_similarity_needs_a_kept_map_and_a_known_document(app, client, mapped):
+    url = "/api/doctor/alpha/projection/similarity"
     assert (await client.get(url, params={"id": "x"})).status_code == 404
     app.state.retained = Retained(budget=1)
     await client.post("/api/doctor/alpha/projection")
@@ -260,8 +261,6 @@ async def test_neighbours_need_a_kept_map_and_a_known_document(app, client, mapp
     await client.post("/api/doctor/alpha/projection")
     await _settled(client, "alpha")
     assert (await client.get(url, params={"id": "nope"})).status_code == 404
-    bad = await client.get(url, params={"id": mapped["other"], "k": "many"})
-    assert bad.status_code == 400
     app.state.retained = Retained()
     evicted = (await client.get("/api/doctor/alpha/projection")).json()
     assert evicted["projection"]["result"]["neighbours"] is False
