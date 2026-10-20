@@ -152,25 +152,33 @@ export default function MapCanvas({
 			context.stroke();
 		}
 		context.globalAlpha = 1;
-		for (const [point, size, colour] of [
-			[selected, RADIUS + 4, accent],
-			[hovered, RADIUS + 3, token("--foreground")],
-		] as [Point | null, number, string][]) {
-			if (!point) continue;
+		const circle = (
+			point: Point,
+			size: number,
+			colour: string,
+			width: number,
+		) => {
 			const [x, y] = toScreen(point, view);
 			context.strokeStyle = colour;
-			context.lineWidth = 2;
+			context.lineWidth = width;
 			context.beginPath();
 			context.arc(x, y, size, 0, Math.PI * 2);
 			context.stroke();
-		}
-		for (const index of shade?.nearest ?? []) {
-			const [x, y] = toScreen(points[index], view);
-			context.strokeStyle = accent;
-			context.lineWidth = 1.5;
+		};
+		for (const index of shade?.nearest ?? [])
+			circle(points[index], RADIUS + 3, accent, 1.5);
+		if (hovered) circle(hovered, RADIUS + 6, token("--foreground"), 2.5);
+		// The selected document is drawn last, larger and in its own colour.
+		if (selected) {
+			const [x, y] = toScreen(selected, view);
+			context.fillStyle = token("--map-selected");
+			context.strokeStyle = surface;
+			context.lineWidth = 2;
 			context.beginPath();
 			context.arc(x, y, RADIUS + 3, 0, Math.PI * 2);
+			context.fill();
 			context.stroke();
+			circle(selected, RADIUS + 6, token("--map-selected"), 2);
 		}
 	}, [
 		points,

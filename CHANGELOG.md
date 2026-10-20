@@ -35,8 +35,8 @@
 - The `app/` keeps chat sessions in a SQLite file on the backend at `HAIKU_RAG_APP_SESSIONS`, served at `/api/sessions` and committed one turn per completed run.
 - The `app/` chat attaches up to 8 images to a question when `qa.model.vision` is set, and marks each answer with its citation status.
 - The `app/` compose files run `haiku-ingester serve` as an `ingester` service, and the app has an Ingestion page over its control plane with cancel, retry and source refresh, opened from a header chip showing the ingester's state.
-- The `app/` has an Inspector page: a database's documents, items, outline, chunks, pages, pictures and info, and search across databases by text or image, each view at its own address (`/inspect/{db}/{document}/chunks/{chunk}`, `/search?q=`).
-- The `app/` has a Doctor page: `haiku-rag doctor` as a background job, and a map of the corpus by chunk centroid with near-duplicate families and nearest neighbours.
+- The `app/` has an Inspector page: a database's documents as a list or a map of the corpus by chunk centroid, items, outline, chunks, pages, pictures and info, and search across databases by text or image, each view at its own address (`/inspect/{db}/{document}/chunks/{chunk}`, `/search?q=`).
+- The `app/` has a Doctor page: `haiku-rag doctor` as a background job, and the corpus map's near-duplicate families.
 
 ### Removed
 

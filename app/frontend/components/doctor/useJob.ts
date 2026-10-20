@@ -13,11 +13,14 @@ export function useJob<T>(
 	revalidateMs?: number,
 ): {
 	job: Job<T> | null;
+	// Whether a read has answered, so a null job means there is none.
+	read: boolean;
 	error: string | null;
 	start: (url: string) => Promise<void>;
 } {
 	const [job, setJob] = useState<Job<T> | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [read, setRead] = useState(false);
 	// Bumped by `start`, so polling restarts from the posted job.
 	const [generation, setGeneration] = useState(0);
 
@@ -37,6 +40,7 @@ export function useJob<T>(
 				const body = await decoded<Record<string, Job<T> | null>>(res);
 				if (controller.signal.aborted) return;
 				setJob(body[key]);
+				setRead(true);
 				setError(null);
 				if (settled(body[key])) {
 					if (revalidateMs !== undefined)
@@ -69,5 +73,5 @@ export function useJob<T>(
 		setGeneration((n) => n + 1);
 	}, []);
 
-	return { job, error, start };
+	return { job, read, error, start };
 }

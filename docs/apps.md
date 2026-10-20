@@ -3,8 +3,8 @@
 A browser application over haiku.rag, in the `app/` directory of the repository. It has four pages:
 
 - **Chat**: conversational RAG over every configured database, with citations, pictures, visual grounding, image questions and stored sessions.
-- **Inspector**: a database's documents, their items, outline, chunks, pages and pictures, what the agent receives for a chunk, search, and database info.
-- **Doctor**: `haiku-rag doctor` as a page, and a map of the corpus with its near-duplicate documents.
+- **Inspector**: a database's documents as a list or a map, their items, outline, chunks, pages and pictures, what the agent receives for a chunk, search, and database info.
+- **Doctor**: `haiku-rag doctor` as a page, and the corpus map's near-duplicate documents.
 - **Ingestion**: the ingester's queue, sources, providers and jobs, with cancel, retry and refresh. The header's ingestion chip opens it and shows the ingester's state: unreachable, degraded, dead letters, ingesting, or idle.
 
 Three services run it: a Starlette backend that reads LanceDB, `haiku-ingester serve` as the only writer, and a Next.js frontend. The terminal equivalents are [Chat](chat.md), the [ingester](ingester.md) dashboard, `haiku-rag inspect` and `haiku-rag doctor`.
@@ -101,11 +101,14 @@ The header chip reads the ingester's health every ten seconds while the page is 
 
 Documents are listed by a title-or-URI search and a SQL filter on their attributes. A document shows its items in reading order, coloured by the chunk holding them, its outline with chunk counts, its chunks, its pages with their chunks drawn, and its pictures. A chunk has a page of its own: its content and provenance, the context the agent receives for it, its place on the page, and the chunks similar to it, with links to the previous and next chunk and to the first item it holds in the document. A breadcrumb names the database, document and chunk open, and the document list stays beside them. Search runs across the databases by text, or by image when the embedder is multimodal, and shows the results as the agent sees them. Info reports what `haiku-rag info` does, with the database's tags and version history, and it is the one view of a database the app cannot open.
 
+The map places each document by its chunks' centroid through t-SNE, so nearby documents are similar but distances between clusters mean little, colours it by near-duplicate family, source or content type, and shades every document by its centroid cosine to a selected one, listing the nearest. A document's page links to its place on the map, or says why it has none: the database has no map, the document arrived after the map was computed, or it has no usable embedding.
+
 Every inspector view has an address that reopens it:
 
 | Address | View |
 |---------|------|
 | `/inspect/{db}` | The database's documents |
+| `/inspect/{db}?view=map&doc=` | The database's map, with a document selected |
 | `/inspect/{db}/{document}?tab=&offset=&page=&item=` | A document, its tab, the chunk list's offset, the drawn page and the highlighted item |
 | `/inspect/{db}/{document}/chunks/{chunk}?view=` | A chunk and its view |
 | `/search?q=&db=&type=&limit=&filter=` | A search, one `db` per database searched |
@@ -116,7 +119,7 @@ Every inspector view has an address that reopens it:
 
 The doctor runs on one configured database in the background, with or without provider probes, and reports every check. A database read at a tag is refused: the doctor reads the live state.
 
-The corpus map places each document by its chunks' centroid through t-SNE, so nearby documents are similar but distances between clusters mean little, colours it by near-duplicate family, source or content type, and shades every document by its centroid cosine to a selected one, listing the nearest. The families download as the YAML `haiku-rag doctor --duplicates-out` writes.
+The doctor also computes the corpus map and lists its near-duplicate families, each linking to the map with its kept document selected. The families download as the YAML `haiku-rag doctor --duplicates-out` writes.
 
 A doctor run and a map each read every chunk vector, at least chunks × dimension × 4 bytes of memory, which the page shows before either starts. One job runs at a time across databases, on a thread of its own. Results live in the backend's memory until the next job of the same kind on that database, or a restart.
 

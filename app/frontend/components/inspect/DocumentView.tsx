@@ -40,12 +40,14 @@ export default function DocumentView({
 	state,
 	onState,
 	onOpenChunk,
+	actions,
 }: {
 	source: string;
 	documentId: string;
 	state: DocumentState;
 	onState: (change: Partial<DocumentState>) => void;
 	onOpenChunk: (chunkId: string) => void;
+	actions?: React.ReactNode;
 }) {
 	const { tab, offset, page, item } = state;
 	const base = `/api/backend/api/inspect/${encodeURIComponent(source)}/documents/${encodeURIComponent(documentId)}`;
@@ -81,6 +83,7 @@ export default function DocumentView({
 					</p>
 				)}
 				{doc.error && <p className="text-sm text-destructive">{doc.error}</p>}
+				{doc.data && actions}
 				{doc.data && (
 					<details className="text-xs">
 						<summary className="cursor-pointer text-muted-foreground">

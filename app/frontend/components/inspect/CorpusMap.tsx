@@ -2,8 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import {
+	doctorBase,
+	FamilyList,
+	MapControls,
+	useMapJob,
+} from "@/components/doctor/MapJob";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -12,49 +16,39 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { documentHref } from "@/lib/addresses";
 import { type ColourBy, categories, type Point, shading } from "@/lib/map";
 import { useJson } from "@/lib/useJson";
-import MapCanvas, { type Family, type Paint } from "./MapCanvas";
-import { useJob } from "./useJob";
-
-interface MapResult {
-	points: Point[];
-	families: Family[];
-	left_off: number;
-	generation: string;
-	neighbours: boolean;
-}
+import MapCanvas, { type Paint } from "./MapCanvas";
 
 const SLOT_TOKENS = ["--chart-1", "--chart-2", "--chart-3"];
 const OTHER = "--muted-foreground";
 
 const nameOf = (point: Point) => point.title || point.uri || point.id;
 
+// The map of a database's documents. The selection is its owner's, held by
+// id, so a recomputed map resolves it against its own points.
 export default function CorpusMap({
 	source,
 	ready,
+	selectedId,
+	onSelect,
+	documentHref,
 }: {
 	source: string;
 	// The memory figure is shown, so the operator can decide.
 	ready: boolean;
+	selectedId: string | null;
+	onSelect: (id: string | null) => void;
+	documentHref: (id: string) => string;
 }) {
-	const base = `/api/backend/api/doctor/${encodeURIComponent(source)}`;
-	// A finished map is read again every 30 s, so staleness and eviction show.
-	const { job, error, start } = useJob<MapResult>(
-		`${base}/projection`,
-		"projection",
-		30_000,
-	);
-	const result = job?.status === "done" ? job.result : null;
-	const stale = (job as { stale?: boolean | null } | null)?.stale;
+	const base = doctorBase(source);
+	const map = useMapJob(source);
+	const { result, computedAt } = map;
 	const points = result?.points ?? [];
 
-	// Held by id, so a recomputed map resolves them against its own points.
 	const [hoveredId, setHoveredId] = useState<string | null>(null);
-	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const setHovered = (point: Point | null) => setHoveredId(point?.id ?? null);
-	const setSelected = (point: Point | null) => setSelectedId(point?.id ?? null);
+	const setSelected = (point: Point | null) => onSelect(point?.id ?? null);
 	const [family, setFamily] = useState<number | null>(null);
 	const [colourBy, setColourBy] = useState<ColourBy>("family");
 	const [term, setTerm] = useState("");
@@ -106,55 +100,17 @@ export default function CorpusMap({
 
 	// Drop the family selection and any selection not on the new map when a new
 	// map arrives, not when the same map is read again.
-	const computedAt = result ? job?.finished_at : null;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: a new map has a new finish time
 	useEffect(() => {
 		setFamily(null);
 		if (!result) return;
-		setSelectedId((id) => (id && byId.has(id) ? id : null));
+		if (selectedId && !byId.has(selectedId)) onSelect(null);
 		setHoveredId((id) => (id && byId.has(id) ? id : null));
 	}, [computedAt]);
 
-	const busy = job?.status === "queued" || job?.status === "running";
-
 	return (
 		<section className="space-y-3">
-			<div className="flex flex-wrap items-center gap-3">
-				<h2 className="font-semibold">Corpus map</h2>
-				<Button
-					size="sm"
-					disabled={busy || !ready}
-					onClick={() => start(`${base}/projection`)}
-				>
-					{busy ? "Computing…" : result ? "Compute again" : "Compute the map"}
-				</Button>
-				{stale && (
-					<Badge variant="outline">Out of date: the database changed</Badge>
-				)}
-				{result && stale === null && (
-					<Badge variant="outline">
-						Whether the database changed is unknown: it cannot be opened
-					</Badge>
-				)}
-				{result && (
-					<span className="text-xs text-muted-foreground">
-						{points.length} documents
-						{result.left_off > 0 &&
-							` · ${result.left_off} without a usable embedding left off`}
-					</span>
-				)}
-			</div>
-			{error && <p className="text-sm text-destructive">{error}</p>}
-			{busy && (
-				<p className="text-sm text-muted-foreground">
-					{job.status === "queued"
-						? "Waiting for another job to finish…"
-						: (job.progress.at(-1) ?? "Starting…")}
-				</p>
-			)}
-			{job?.status === "failed" && (
-				<p className="text-sm text-destructive">The map failed: {job.error}</p>
-			)}
+			<MapControls map={map} ready={ready} />
 			{result && (
 				<>
 					<div className="flex flex-wrap items-center gap-3 text-sm">
@@ -212,12 +168,6 @@ export default function CorpusMap({
 									</span>
 								))}
 						</div>
-						<a
-							href={`${base}/duplicates.yaml`}
-							className="ml-auto text-xs underline"
-						>
-							Download the families as YAML
-						</a>
 					</div>
 					<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
 						<MapCanvas
@@ -241,7 +191,12 @@ export default function CorpusMap({
 								</h3>
 								{selected ? (
 									<>
-										<p className="break-words font-medium">
+										<p className="flex items-baseline gap-1.5 break-words font-medium">
+											<span
+												aria-hidden
+												className="inline-block size-2.5 shrink-0 rounded-full"
+												style={{ background: "var(--map-selected)" }}
+											/>
 											{nameOf(selected)}
 										</p>
 										<p className="text-xs text-muted-foreground">
@@ -251,7 +206,7 @@ export default function CorpusMap({
 										</p>
 										<Link
 											className="text-xs underline"
-											href={documentHref(source, selected.id)}
+											href={documentHref(selected.id)}
 										>
 											Open in the inspector
 										</Link>
@@ -283,6 +238,8 @@ export default function CorpusMap({
 														type="button"
 														className="flex w-full justify-between gap-2 py-0.5 text-left hover:underline"
 														onClick={() => setSelected(point)}
+														onMouseEnter={() => setHovered(point)}
+														onMouseLeave={() => setHovered(null)}
 													>
 														<span className="truncate">{nameOf(point)}</span>
 														<span className="shrink-0 font-mono text-xs tabular-nums">
@@ -295,36 +252,16 @@ export default function CorpusMap({
 									</ul>
 								</div>
 							)}
-							<div className="space-y-1">
-								<h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-									Near-duplicate families ({result.families.length})
-								</h3>
-								{result.families.length === 0 && (
-									<p className="text-muted-foreground">None.</p>
-								)}
-								{result.families.map((f, index) => (
-									<button
-										key={f.keep}
-										type="button"
-										aria-pressed={family === index}
-										className="flex w-full justify-between gap-2 py-0.5 text-left hover:underline aria-pressed:font-medium"
-										onClick={() => {
-											setFamily(family === index ? null : index);
-											const keep = byId.get(f.keep);
-											if (keep) setSelected(keep);
-										}}
-									>
-										<span className="truncate">
-											{f.members.length} documents, keep {f.label[f.keep]}
-										</span>
-										<span className="shrink-0 font-mono text-xs tabular-nums">
-											{Object.values(f.similarity)
-												.reduce((a, b) => Math.min(a, b), 1)
-												.toFixed(3)}
-										</span>
-									</button>
-								))}
-							</div>
+							<FamilyList
+								source={source}
+								families={result.families}
+								active={family}
+								onPick={(index) => {
+									setFamily(family === index ? null : index);
+									const keep = byId.get(result.families[index].keep);
+									if (keep) setSelected(keep);
+								}}
+							/>
 						</aside>
 					</div>
 				</>

@@ -8,9 +8,24 @@ import {
 	waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fitView, toScreen } from "@/lib/map";
 import CorpusMap from "./CorpusMap";
+
+// Holds the selection as the page's address does.
+function Mapped({ start = null }: { start?: string | null }) {
+	const [selected, setSelected] = useState<string | null>(start);
+	return (
+		<CorpusMap
+			source="alpha"
+			ready
+			selectedId={selected}
+			onSelect={setSelected}
+			documentHref={(id) => `/inspect/alpha/${id}`}
+		/>
+	);
+}
 
 const point = (id: string, family: number | null) => ({
 	id,
@@ -101,7 +116,7 @@ afterEach(() => {
 describe("CorpusMap", () => {
 	it("keeps a selection through a recompute and shows only the new map's scores", async () => {
 		const user = userEvent.setup();
-		render(<CorpusMap source="alpha" ready />);
+		render(<Mapped />);
 		await user.click(await screen.findByText(/2 documents, keep doc:\/\/a/));
 		await waitFor(() => expect(asked.map((a) => a.generation)).toEqual(["g1"]));
 
@@ -119,7 +134,7 @@ describe("CorpusMap", () => {
 
 	it("drops a selection the new map no longer holds", async () => {
 		const user = userEvent.setup();
-		render(<CorpusMap source="alpha" ready />);
+		render(<Mapped />);
 		await user.click(await screen.findByText(/2 documents, keep doc:\/\/a/));
 		await screen.findByText("Document a");
 
@@ -141,11 +156,34 @@ describe("CorpusMap", () => {
 		expect(screen.getByText("Click a point.")).toBeTruthy();
 	});
 
+	it("opens with the document its address names, and links it to the inspector", async () => {
+		render(<Mapped start="b" />);
+		await waitFor(() => expect(asked).toHaveLength(1));
+		expect(
+			screen
+				.getByRole("link", { name: "Open in the inspector" })
+				.getAttribute("href"),
+		).toBe("/inspect/alpha/b");
+		expect(screen.getAllByText("Document b").length).toBeGreaterThan(0);
+	});
+
+	it("marks a nearest document on the map while its row is hovered", async () => {
+		const user = userEvent.setup();
+		render(<Mapped start="a" />);
+		await waitFor(() => expect(asked).toHaveLength(1));
+		asked[0].answer([1, 0.9, 0.5]);
+		const row = await screen.findByRole("button", { name: /Document b/ });
+		await user.hover(row);
+		await screen.findByText("Document b · 3 chunks");
+		await user.unhover(row);
+		expect(screen.queryByText("Document b · 3 chunks")).toBeNull();
+	});
+
 	it("never draws one map's scores against another map's points", async () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		try {
 			const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-			const { container } = render(<CorpusMap source="alpha" ready />);
+			const { container } = render(<Mapped />);
 			await user.click(await screen.findByText(/2 documents, keep doc:\/\/a/));
 			await waitFor(() => expect(asked).toHaveLength(1));
 			asked[0].answer([1, 0.111, 0.222]);
@@ -275,7 +313,7 @@ describe("CorpusMap", () => {
 					}
 				},
 			);
-			const { unmount } = render(<CorpusMap source="alpha" ready />);
+			const { unmount } = render(<Mapped />);
 			await canvas();
 			const arcs = () => calls.filter((name) => name === "arc").length;
 			await waitFor(() => expect(arcs()).toBeGreaterThanOrEqual(3));
@@ -297,7 +335,7 @@ describe("CorpusMap", () => {
 		it("keeps the pan through a re-read, and refits for a new map", async () => {
 			vi.useFakeTimers({ shouldAdvanceTime: true });
 			try {
-				render(<CorpusMap source="alpha" ready />);
+				render(<Mapped />);
 				const map = await canvas();
 				const [bx, by] = at("b");
 				press(map, [bx, by], 40);
@@ -327,7 +365,7 @@ describe("CorpusMap", () => {
 		});
 
 		it("selects the point clicked, and clears on empty space", async () => {
-			render(<CorpusMap source="alpha" ready />);
+			render(<Mapped />);
 			const map = await canvas();
 			press(map, at("b"));
 			await screen.findByText("Document b");
@@ -336,7 +374,7 @@ describe("CorpusMap", () => {
 		});
 
 		it("pans on a drag without selecting", async () => {
-			render(<CorpusMap source="alpha" ready />);
+			render(<Mapped />);
 			const map = await canvas();
 			press(map, at("b"), 40);
 			expect(screen.getByText("Click a point.")).toBeTruthy();
@@ -346,7 +384,7 @@ describe("CorpusMap", () => {
 		});
 
 		it("names the point under the pointer", async () => {
-			render(<CorpusMap source="alpha" ready />);
+			render(<Mapped />);
 			const map = await canvas();
 			const [x, y] = at("c");
 			fireEvent.pointerMove(map, { clientX: x, clientY: y });
@@ -356,7 +394,7 @@ describe("CorpusMap", () => {
 		});
 
 		it("zooms about the pointer without scrolling the page", async () => {
-			render(<CorpusMap source="alpha" ready />);
+			render(<Mapped />);
 			const map = await canvas();
 			const [ax, ay] = at("a");
 			const wheel = new WheelEvent("wheel", {
