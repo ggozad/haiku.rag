@@ -17,7 +17,7 @@ import type { DatabaseEntry } from "@/lib/databases";
 import { decoded } from "@/lib/http";
 import { type Attachment, readImage } from "@/lib/images";
 import { firstLine, searched } from "@/lib/inspect";
-import type { ChunkRef } from "./ChunkDialog";
+import type { ChunkRef } from "./ChunkView";
 
 interface Result {
 	source: string;
@@ -155,7 +155,7 @@ export default function SearchPanel({
 	};
 
 	return (
-		<div className="flex h-full min-w-0 flex-col">
+		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 			<form
 				className="space-y-2 border-b p-4"
 				onSubmit={(event) => {

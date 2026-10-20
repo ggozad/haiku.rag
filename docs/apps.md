@@ -99,7 +99,7 @@ The header chip reads the ingester's health every ten seconds while the page is 
 
 ## Inspector
 
-Documents are listed by a title-or-URI search and a SQL filter on their attributes. A document shows its items in reading order, coloured by the chunk holding them, its outline with chunk counts, its chunks, its pages with their chunks drawn, and its pictures. A chunk shows its content and provenance, the context the agent receives for it, its place on the page, and the chunks similar to it. Search runs across the databases by text, or by image when the embedder is multimodal, and shows the results as the agent sees them. Info reports what `haiku-rag info` does, with the database's tags and version history, and it is the one view of a database the app cannot open.
+Documents are listed by a title-or-URI search and a SQL filter on their attributes. A document shows its items in reading order, coloured by the chunk holding them, its outline with chunk counts, its chunks, its pages with their chunks drawn, and its pictures. A chunk has a page of its own: its content and provenance, the context the agent receives for it, its place on the page, and the chunks similar to it, with links to the previous and next chunk and to the first item it holds in the document. A breadcrumb names the database, document and chunk open, and the document list stays beside them. Search runs across the databases by text, or by image when the embedder is multimodal, and shows the results as the agent sees them. Info reports what `haiku-rag info` does, with the database's tags and version history, and it is the one view of a database the app cannot open.
 
 Every inspector view has an address that reopens it:
 
@@ -107,7 +107,7 @@ Every inspector view has an address that reopens it:
 |---------|------|
 | `/inspect/{db}` | The database's documents |
 | `/inspect/{db}/{document}?tab=&offset=&page=&item=` | A document, its tab, the chunk list's offset, the drawn page and the highlighted item |
-| `/inspect/{db}/{document}/chunks/{chunk}?view=` | A chunk, over its document |
+| `/inspect/{db}/{document}/chunks/{chunk}?view=` | A chunk and its view |
 | `/search?q=&db=&type=&limit=&filter=` | A search, one `db` per database searched |
 
 `list_q`, `list_filter` and `list_offset` carry the document list's search, filter and page on every address of a database. An image cannot ride in an address: an image search keeps its image and results until the browser reloads. The doctor's address is `/doctor/{db}`.

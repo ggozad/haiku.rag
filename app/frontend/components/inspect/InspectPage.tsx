@@ -32,7 +32,8 @@ import { useDatabases } from "@/lib/databases";
 import { formatRelativeTime } from "@/lib/format";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
-import ChunkDialog, { type ChunkRef } from "./ChunkDialog";
+import Breadcrumb from "./Breadcrumb";
+import ChunkView, { type ChunkRef } from "./ChunkView";
 import DocumentView, { type DocumentState, OPENING } from "./DocumentView";
 import InfoDialog from "./InfoDialog";
 import SearchPanel from "./SearchPanel";
@@ -315,7 +316,14 @@ export default function InspectPage() {
 					</div>
 				)}
 			</aside>
-			<section className="min-h-0 min-w-0">
+			<section className="flex min-h-0 min-w-0 flex-col">
+				{"db" in view && selected && (
+					<Breadcrumb
+						view={view}
+						list={listOf(listQuery)}
+						documentQuery={documentQuery}
+					/>
+				)}
 				{view.kind === "search" ? (
 					<SearchPanel
 						key={here}
@@ -328,6 +336,31 @@ export default function InspectPage() {
 					<p className="p-6 text-sm text-muted-foreground">
 						No database is named {view.db}.
 					</p>
+				) : view.kind === "chunk" ? (
+					<ChunkView
+						key={`${view.db}:${view.chunk}`}
+						chunk={{
+							source: view.db,
+							documentId: view.doc,
+							chunkId: view.chunk,
+						}}
+						view={query.get("view") ?? "details"}
+						onView={(next) => {
+							const kept = new URLSearchParams(query);
+							if (next === "details") kept.delete("view");
+							else kept.set("view", next);
+							router.push(chunkHref(view.db, view.doc, view.chunk, kept));
+						}}
+						onOpen={openChunk}
+						chunkHref={(id) => chunkHref(view.db, view.doc, id, query)}
+						documentHref={(item) =>
+							documentHref(
+								view.db,
+								view.doc,
+								withDocument(documentQuery, { tab: "content", item }),
+							)
+						}
+					/>
 				) : "doc" in view ? (
 					<DocumentView
 						key={`${view.db}:${view.doc}`}
@@ -361,26 +394,6 @@ export default function InspectPage() {
 					</p>
 				)}
 			</section>
-			<ChunkDialog
-				chunk={
-					view.kind === "chunk"
-						? { source: view.db, documentId: view.doc, chunkId: view.chunk }
-						: null
-				}
-				view={query.get("view") ?? "details"}
-				onView={(next) => {
-					if (view.kind !== "chunk") return;
-					const kept = new URLSearchParams(query);
-					if (next === "details") kept.delete("view");
-					else kept.set("view", next);
-					router.push(chunkHref(view.db, view.doc, view.chunk, kept));
-				}}
-				onOpen={openChunk}
-				onClose={() =>
-					view.kind === "chunk" &&
-					router.push(documentHref(view.db, view.doc, documentQuery))
-				}
-			/>
 			{source && (
 				<InfoDialog
 					source={source}

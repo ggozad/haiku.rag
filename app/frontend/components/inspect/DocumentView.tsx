@@ -70,7 +70,7 @@ export default function DocumentView({
 		`/api/backend/api/pictures?${new URLSearchParams({ source, document_id: documentId, ref })}`;
 
 	return (
-		<div className="flex h-full min-w-0 flex-col">
+		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 			<div className="space-y-1 border-b px-4 py-3">
 				<h2 className="font-semibold">
 					{doc.data?.title || doc.data?.uri || documentId}
