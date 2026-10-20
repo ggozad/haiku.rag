@@ -145,7 +145,11 @@ class TestSharedChunkIds:
     async def test_an_unsearched_id_in_one_database_still_resolves(self, tmp_path):
         """The refusal is for a collision, not for looking through several
         databases: an id only one of them holds still resolves."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.test_capabilities import (
+            Deps,
+            make_context,
+            send_first_request,
+        )
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(
@@ -160,7 +164,9 @@ class TestSharedChunkIds:
             assert aardvark.id is not None
 
             capability = create_capability(config=config, rag=rag)
-            run = await capability.for_run(make_context(Deps()))
+            deps = Deps()
+            run = await capability.for_run(make_context(deps))
+            await send_first_request(run, deps)
 
             await run._cite([aardvark.id])
 
@@ -230,12 +236,17 @@ class TestSharedChunkIds:
         answer, so the retrieved one is the citation and its database is not a
         guess. A later question that does retrieve the twin is refused by the
         citation index."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.test_capabilities import (
+            Deps,
+            make_context,
+            send_first_request,
+        )
 
         config = _config(tmp_path, ["alpha", "beta"])
         capability = create_capability(config=config)
         deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
         run = await capability.for_run(make_context(deps))
+        await send_first_request(run, deps)
         assert run.state is not None
         # What a run holds when fusion returned one copy of a shared id and
         # truncated the other: the run never saw the twin.
@@ -311,7 +322,11 @@ class TestCiteFallback:
         """The fallback exists for a real id this run's searches did not return.
         Across databases it looks through the selected ones and records which
         held it."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.test_capabilities import (
+            Deps,
+            make_context,
+            send_first_request,
+        )
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(
@@ -330,6 +345,7 @@ class TestCiteFallback:
                 state={"rag": RAGState(sources=["alpha"]).model_dump(mode="json")}
             )
             run = await capability.for_run(make_context(deps))
+            await send_first_request(run, deps)
             # The search returns the cats chunk, never the aardvark one.
             await run._search("cats", 10, 1)
 

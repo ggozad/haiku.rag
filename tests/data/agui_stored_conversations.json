@@ -1,0 +1,226 @@
+{
+  "completed": {
+    "messages": [
+      {
+        "id": "d4107504-f63c-45eb-b9ea-447dbb027762",
+        "role": "user",
+        "content": "what does the supervisor do?"
+      },
+      {
+        "id": "3f5cc506-14c3-4f60-973c-db37e9a98f2a",
+        "role": "assistant",
+        "toolCalls": [
+          {
+            "id": "call-1",
+            "type": "function",
+            "function": {
+              "name": "search",
+              "arguments": "{\"query\": \"supervisor\"}"
+            }
+          }
+        ]
+      },
+      {
+        "id": "aefca160-d56c-4df9-9b21-6ba9fd356a1c",
+        "role": "tool",
+        "content": "EVIDENCE",
+        "toolCallId": "call-1"
+      },
+      {
+        "id": "e4d2b2d4-fe17-4512-8d25-67a32dfbe45c",
+        "role": "assistant",
+        "toolCalls": [
+          {
+            "id": "call-2",
+            "type": "function",
+            "function": {
+              "name": "cite",
+              "arguments": "{\"chunk_ids\": [\"chunk-1\"]}"
+            }
+          }
+        ]
+      },
+      {
+        "id": "5c946b12-66da-4a66-92a3-c63b8c0c4db4",
+        "role": "tool",
+        "content": "Registered 1 citation(s).",
+        "toolCallId": "call-2"
+      },
+      {
+        "id": "9fc8b8cb-919e-45f9-a3c0-89fa4e34bd08",
+        "role": "assistant",
+        "content": "a grounded answer"
+      }
+    ],
+    "state": {
+      "rag": {
+        "citation_index": {
+          "chunk-1": {
+            "index": 1,
+            "document_id": "",
+            "source": null,
+            "chunk_id": "chunk-1",
+            "chunk_ids": [
+              "chunk-1"
+            ],
+            "chunk_meta": {},
+            "document_uri": "",
+            "document_title": null,
+            "document_meta": {},
+            "page_numbers": [],
+            "headings": null,
+            "content": "evidence",
+            "doc_item_refs": [],
+            "picture_refs": []
+          }
+        },
+        "citations": [
+          "chunk-1"
+        ],
+        "evidence": {
+          "occurrences": {
+            "chunk-1": {
+              "capability": "rag",
+              "chunk_id": "chunk-1",
+              "retrieved_in_questions": [
+                1
+              ],
+              "cited_in_questions": [
+                1
+              ]
+            }
+          },
+          "question": 1,
+          "in_progress": false,
+          "latest_evidence_epoch": 1,
+          "declaration": {
+            "question": 1,
+            "epoch": 3,
+            "refs": [
+              {
+                "capability": "rag",
+                "chunk_id": "chunk-1"
+              }
+            ]
+          }
+        },
+        "document_filter": null,
+        "sources": null,
+        "searches": {
+          "supervisor": [
+            {
+              "content": "evidence",
+              "score": 1.0,
+              "source": null,
+              "chunk_id": "chunk-1",
+              "chunk_ids": [],
+              "chunk_meta": {},
+              "document_id": null,
+              "document_uri": null,
+              "document_title": null,
+              "document_meta": {},
+              "order": 0,
+              "doc_item_refs": [],
+              "page_numbers": [],
+              "headings": null,
+              "labels": [],
+              "image_data": null,
+              "picture_captions": {},
+              "annotations": null
+            }
+          ]
+        },
+        "executions": []
+      },
+      "citation_policy": {
+        "violations": []
+      }
+    }
+  },
+  "interrupted": {
+    "messages": [
+      {
+        "id": "1bdbe6f6-7576-4daf-baa2-ba77f2a5c363",
+        "role": "user",
+        "content": "what does the supervisor do?"
+      },
+      {
+        "id": "413c5450-6cf7-4924-bc3f-0fbf8a50c67b",
+        "role": "assistant",
+        "toolCalls": [
+          {
+            "id": "call-1",
+            "type": "function",
+            "function": {
+              "name": "search",
+              "arguments": "{\"query\": \"supervisor\"}"
+            }
+          }
+        ]
+      },
+      {
+        "id": "265b3734-2d83-4882-a50b-0fbd03534d84",
+        "role": "tool",
+        "content": "EVIDENCE",
+        "toolCallId": "call-1"
+      },
+      {
+        "id": "55523318-7f9b-41e1-9cfb-18e6540ddcf0",
+        "role": "assistant",
+        "toolCalls": [
+          {
+            "id": "call-2",
+            "type": "function",
+            "function": {
+              "name": "confirm",
+              "arguments": "{}"
+            }
+          }
+        ]
+      }
+    ],
+    "state": {
+      "rag": {
+        "citation_index": {},
+        "citations": [],
+        "evidence": {
+          "occurrences": {},
+          "question": 1,
+          "in_progress": true,
+          "latest_evidence_epoch": 1,
+          "declaration": null
+        },
+        "document_filter": null,
+        "sources": null,
+        "searches": {
+          "supervisor": [
+            {
+              "content": "evidence",
+              "score": 1.0,
+              "source": null,
+              "chunk_id": "chunk-1",
+              "chunk_ids": [],
+              "chunk_meta": {},
+              "document_id": null,
+              "document_uri": null,
+              "document_title": null,
+              "document_meta": {},
+              "order": 0,
+              "doc_item_refs": [],
+              "page_numbers": [],
+              "headings": null,
+              "labels": [],
+              "image_data": null,
+              "picture_captions": {},
+              "annotations": null
+            }
+          ]
+        },
+        "executions": []
+      },
+      "citation_policy": {
+        "violations": []
+      }
+    }
+  }
+}
