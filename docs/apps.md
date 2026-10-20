@@ -9,6 +9,8 @@ A browser application over haiku.rag, in the `app/` directory of the repository.
 
 The pages follow the system's light or dark theme.
 
+![Chat: an answer with its tool calls, citation status and sources](img/app-chat.png)
+
 Three services run it: a Starlette backend that reads LanceDB, `haiku-ingester serve` as the only writer, and a Next.js frontend. The terminal equivalents are [Chat](chat.md), the [ingester](ingester.md) dashboard, `haiku-rag inspect` and `haiku-rag doctor`.
 
 !!! warning "No authentication"
@@ -91,7 +93,7 @@ command: ["haiku-ingester", "--config", "/app/haiku.rag.yaml", "serve", "--host"
 
 ## Chat
 
-Answers stream with their tool calls. After each answer come the sources it cited, with their pictures, a view of the cited passage on its pages and a link opening its chunk in the inspector in a new tab, the program it ran, and its citation status. `/?session={id}` opens that session. Questions can carry images, picked, pasted or dropped, when `qa.model.vision` is set.
+Answers stream with their tool calls. After each answer come the sources it cited, with their pictures, a view of the cited passage on its pages and a link opening its chunk in the inspector in a new tab, the program it ran, and its citation status. `/?session={id}` opens that session. Questions can carry images, picked, pasted or dropped, when `qa.model.vision` is set. The chat follows a streaming answer while the view is at the bottom. Scrolled up, it offers "Jump to latest". Deleting a session asks for confirmation.
 
 Sessions live on the backend, in a SQLite file at `HAIKU_RAG_APP_SESSIONS`, which the compose files place on the `sessions` volume. The backend commits a turn when its run completes, and a commit once started finishes even if the browser leaves. A run stopped, failed or interrupted before that stores nothing and returns the question to the input, since the conversation's question identities count its messages. The backend runs as one worker: it holds a session for the run in flight, and refuses a second run, a rename or a deletion of that session meanwhile.
 
@@ -99,11 +101,17 @@ Sessions live on the backend, in a SQLite file at `HAIKU_RAG_APP_SESSIONS`, whic
 
 The header chip reads the ingester's health every ten seconds while the page is visible. The page reads the ingester's control plane through the frontend every three seconds while it is visible: health, queue counts and throughput, sources, docling-serve endpoints, and active, failed and recently succeeded jobs. Every job is browsable by status, source and URI. Cancelling a job removes it from the queue, and a conversion already running finishes and may still write its document.
 
+![Ingestion: the queue, sources and a job in progress](img/app-ingestion.png)
+
 ## Inspector
 
 Documents are listed by a title-or-URI search and a SQL filter on their attributes. A document shows its items in reading order, coloured by the chunk holding them, its outline with chunk counts, its chunks, its pages with their chunks drawn, and its pictures. A chunk has a page of its own: its content and provenance, the context the agent receives for it, its place on the page, and the chunks similar to it, with links to the previous and next chunk and to the first item it holds in the document. A breadcrumb names the database, document and chunk open, and the document list stays beside them. "Ask about this document", on a document or chunk page, opens the chat on a new session whose document filter selects that document. Search runs across the databases by text, or by image when the embedder is multimodal, and shows the results as the agent sees them. Info reports what `haiku-rag info` does, with the database's tags and version history, and it is the one view of a database the app cannot open.
 
+![A chunk on its page: a scanned 1970 report with the chunk's items drawn](img/app-inspector-chunk.png)
+
 The map places each document by its chunks' centroid through t-SNE, so nearby documents are similar but distances between clusters mean little, colours it by near-duplicate family, source or content type, and shades every document by its centroid cosine to a selected one, listing the nearest. A document's page links to its place on the map, or says why it has none: the database has no map, the document arrived after the map was computed, or it has no usable embedding.
+
+![The corpus map with a document selected and its nearest neighbours](img/app-map.png)
 
 Every inspector view has an address that reopens it:
 
@@ -124,6 +132,8 @@ The doctor runs on one configured database in the background, with or without pr
 The doctor also computes the corpus map and lists its near-duplicate families, each linking to the map with its kept document selected. The families download as the YAML `haiku-rag doctor --duplicates-out` writes.
 
 A doctor run and a map each read every chunk vector, at least chunks × dimension × 4 bytes of memory, which the page shows before either starts. One job runs at a time across databases, on a thread of its own. Results live in the backend's memory until the next job of the same kind on that database, or a restart.
+
+![The doctor: the corpus map's near-duplicate families and the checks](img/app-doctor.png)
 
 ## API endpoints
 
