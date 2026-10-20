@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { decoded } from "./http";
 
 // GETs `url` and reports through `on` unless `signal` aborted first, so a
 // request for a replaced selection never lands.
@@ -15,9 +16,8 @@ export async function load<T>(
 ): Promise<void> {
 	try {
 		const res = await fetch(url, { signal });
-		const body = await res.json();
-		if (!res.ok) throw new Error(body.error || res.statusText);
-		if (!signal.aborted) on.data(body as T);
+		const body = await decoded<T>(res);
+		if (!signal.aborted) on.data(body);
 	} catch (err) {
 		if (!signal.aborted)
 			on.error(err instanceof Error ? err.message : String(err));

@@ -738,9 +738,9 @@ async def test_an_image_is_refused_when_the_model_has_no_vision(
 
 
 async def test_an_image_over_the_byte_limit_is_refused(app, client, monkeypatch):
-    from haiku_rag_app import chat
+    from haiku_rag_app import images
 
-    monkeypatch.setattr(chat, "MAX_IMAGE_BYTES", 10)
+    monkeypatch.setattr(images, "MAX_IMAGE_BYTES", 10)
     session_id = await _session(client)
     message = _with_images({"type": "data", "value": _png(), "mimeType": "image/png"})
     response = await _run(app, client, session_id, "run-1", [message])

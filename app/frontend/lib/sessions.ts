@@ -1,5 +1,6 @@
 import type { Message } from "@ag-ui/client";
 import type { DocumentRef, Evidence } from "./chat";
+import { decoded } from "./http";
 
 const BASE = "/api/backend/api/sessions";
 
@@ -20,30 +21,24 @@ export interface Session extends SessionSummary {
 	in_flight_run_id: string | null;
 }
 
-async function json<T>(response: Response): Promise<T> {
-	const data = await response.json();
-	if (!response.ok) throw new Error(data.error || response.statusText);
-	return data as T;
-}
-
 export async function listSessions(): Promise<SessionSummary[]> {
-	return (await json<{ sessions: SessionSummary[] }>(await fetch(BASE)))
+	return (await decoded<{ sessions: SessionSummary[] }>(await fetch(BASE)))
 		.sessions;
 }
 
 export async function createSession(): Promise<SessionSummary> {
-	return json(await fetch(BASE, { method: "POST" }));
+	return decoded(await fetch(BASE, { method: "POST" }));
 }
 
 export async function getSession(id: string): Promise<Session> {
-	return json(await fetch(`${BASE}/${encodeURIComponent(id)}`));
+	return decoded(await fetch(`${BASE}/${encodeURIComponent(id)}`));
 }
 
 export async function updateSession(
 	id: string,
 	change: { title?: string; selection?: DocumentRef[] },
 ): Promise<Session> {
-	return json(
+	return decoded(
 		await fetch(`${BASE}/${encodeURIComponent(id)}`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
@@ -56,7 +51,7 @@ export async function deleteSession(id: string): Promise<void> {
 	const response = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
 		method: "DELETE",
 	});
-	if (!response.ok) await json(response);
+	if (!response.ok) await decoded(response);
 }
 
 export function exportUrl(id: string): string {

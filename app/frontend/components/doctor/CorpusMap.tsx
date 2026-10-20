@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,26 +12,10 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import {
-	type ColourBy,
-	categories,
-	fitView,
-	hit,
-	type Point,
-	shading,
-	toScreen,
-	type View,
-	zoomAt,
-} from "@/lib/map";
+import { type ColourBy, categories, type Point, shading } from "@/lib/map";
 import { useJson } from "@/lib/useJson";
+import MapCanvas, { type Family, type Paint } from "./MapCanvas";
 import { useJob } from "./useJob";
-
-interface Family {
-	members: string[];
-	keep: string;
-	similarity: Record<string, number>;
-	label: Record<string, string>;
-}
 
 interface MapResult {
 	points: Point[];
@@ -42,13 +26,7 @@ interface MapResult {
 }
 
 const SLOT_TOKENS = ["--chart-1", "--chart-2", "--chart-3"];
-const RADIUS = 4;
-
-function token(name: string): string {
-	return getComputedStyle(document.documentElement)
-		.getPropertyValue(name)
-		.trim();
-}
+const OTHER = "--muted-foreground";
 
 const nameOf = (point: Point) => point.title || point.uri || point.id;
 
@@ -71,8 +49,6 @@ export default function CorpusMap({
 	const stale = (job as { stale?: boolean | null } | null)?.stale;
 	const points = result?.points ?? [];
 
-	const canvas = useRef<HTMLCanvasElement>(null);
-	const [view, setView] = useState<View>({ k: 1, tx: 0, ty: 0 });
 	// Held by id, so a recomputed map resolves them against its own points.
 	const [hoveredId, setHoveredId] = useState<string | null>(null);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -81,12 +57,6 @@ export default function CorpusMap({
 	const [family, setFamily] = useState<number | null>(null);
 	const [colourBy, setColourBy] = useState<ColourBy>("family");
 	const [term, setTerm] = useState("");
-	const drag = useRef<{
-		x: number;
-		y: number;
-		view: View;
-		moved: boolean;
-	} | null>(null);
 
 	const { slotOf, legend } = useMemo(
 		() => categories(points, colourBy),
@@ -116,8 +86,25 @@ export default function CorpusMap({
 		[similar.data, result?.generation, points, selectedId],
 	);
 
-	// Refit, drop the family selection and any selection not on the new map, when
-	// a new map arrives, not when the same map is read again.
+	// The colour token a point is filled with, and whether it has no category.
+	const paint = useCallback(
+		(point: Point): Paint => {
+			const slot = slotOf(point);
+			if (colourBy === "family")
+				return {
+					token: point.family === null ? OTHER : "--destructive",
+					muted: slot === null,
+				};
+			return {
+				token: slot !== null && slot < SLOTS_SHOWN ? SLOT_TOKENS[slot] : OTHER,
+				muted: slot === null,
+			};
+		},
+		[slotOf, colourBy],
+	);
+
+	// Drop the family selection and any selection not on the new map when a new
+	// map arrives, not when the same map is read again.
 	const computedAt = result ? job?.finished_at : null;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: a new map has a new finish time
 	useEffect(() => {
@@ -125,165 +112,7 @@ export default function CorpusMap({
 		if (!result) return;
 		setSelectedId((id) => (id && byId.has(id) ? id : null));
 		setHoveredId((id) => (id && byId.has(id) ? id : null));
-		const element = canvas.current;
-		if (!element || !points.length) return;
-		setView(fitView(points, element.clientWidth, element.clientHeight));
 	}, [computedAt]);
-
-	const draw = useCallback(() => {
-		const element = canvas.current;
-		if (!element) return;
-		const ratio = window.devicePixelRatio || 1;
-		const width = element.clientWidth;
-		const height = element.clientHeight;
-		element.width = Math.round(width * ratio);
-		element.height = Math.round(height * ratio);
-		const context = element.getContext("2d");
-		if (!context) return;
-		context.setTransform(ratio, 0, 0, ratio, 0, 0);
-		context.clearRect(0, 0, width, height);
-		const slots = SLOT_TOKENS.map(token);
-		const other = token("--muted-foreground");
-		const ring = token("--destructive");
-		const accent = token("--primary");
-		const surface = token("--background");
-		const near = token("--map-near");
-		const far = token("--map-far");
-
-		// Lines from each family member to the one doctor keeps.
-		context.lineWidth = 1.5;
-		context.strokeStyle = ring;
-		result?.families.forEach((f, index) => {
-			context.globalAlpha = family === null || family === index ? 0.8 : 0.15;
-			const keep = byId.get(f.keep);
-			if (!keep) return;
-			const [kx, ky] = toScreen(keep, view);
-			for (const member of f.members) {
-				const p = byId.get(member);
-				if (!p || member === f.keep) continue;
-				const [mx, my] = toScreen(p, view);
-				context.beginPath();
-				context.moveTo(kx, ky);
-				context.lineTo(mx, my);
-				context.stroke();
-			}
-		});
-
-		for (const index of shade?.order ?? points.keys()) {
-			const point = points[index];
-			const [x, y] = toScreen(point, view);
-			if (
-				x < -RADIUS ||
-				y < -RADIUS ||
-				x > width + RADIUS ||
-				y > height + RADIUS
-			)
-				continue;
-			const slot = slotOf(point);
-			let alpha = shade ? 1 : slot === null ? 0.6 : 0.9;
-			if (family !== null) alpha = point.family === family ? 1 : 0.12;
-			if (matching && !matching.has(point.id)) alpha = Math.min(alpha, 0.1);
-			context.globalAlpha = alpha;
-			context.fillStyle = shade
-				? far
-				: colourBy === "family"
-					? point.family === null
-						? other
-						: ring
-					: slot === null
-						? other
-						: slot < SLOTS_SHOWN
-							? slots[slot]
-							: other;
-			context.beginPath();
-			context.arc(x, y, RADIUS, 0, Math.PI * 2);
-			context.fill();
-			if (shade) {
-				// Cubed, so the colour concentrates on the closest few percent.
-				context.globalAlpha = alpha * shade.close[index] ** 3;
-				context.fillStyle = near;
-				context.fill();
-			}
-			context.globalAlpha = 1;
-			context.strokeStyle = surface;
-			context.lineWidth = 1;
-			context.stroke();
-		}
-		context.globalAlpha = 1;
-		for (const [point, size, colour] of [
-			[selected, RADIUS + 4, accent],
-			[hovered, RADIUS + 3, token("--foreground")],
-		] as [Point | null, number, string][]) {
-			if (!point) continue;
-			const [x, y] = toScreen(point, view);
-			context.strokeStyle = colour;
-			context.lineWidth = 2;
-			context.beginPath();
-			context.arc(x, y, size, 0, Math.PI * 2);
-			context.stroke();
-		}
-		for (const index of shade?.nearest ?? []) {
-			const [x, y] = toScreen(points[index], view);
-			context.strokeStyle = accent;
-			context.lineWidth = 1.5;
-			context.beginPath();
-			context.arc(x, y, RADIUS + 3, 0, Math.PI * 2);
-			context.stroke();
-		}
-	}, [
-		points,
-		view,
-		slotOf,
-		colourBy,
-		family,
-		matching,
-		selected,
-		hovered,
-		shade,
-		result,
-		byId,
-	]);
-
-	useEffect(() => {
-		draw();
-		const element = canvas.current;
-		if (!element) return;
-		const observer = new ResizeObserver(draw);
-		observer.observe(element);
-		const theme = window.matchMedia("(prefers-color-scheme: dark)");
-		theme.addEventListener("change", draw);
-		return () => {
-			observer.disconnect();
-			theme.removeEventListener("change", draw);
-		};
-	}, [draw]);
-
-	// The wheel listener is not passive, so the page does not scroll as it zooms.
-	const drawn = result !== null;
-	// biome-ignore lint/correctness/useExhaustiveDependencies: the canvas mounts with the map
-	useEffect(() => {
-		const element = canvas.current;
-		if (!element) return;
-		const wheel = (event: WheelEvent) => {
-			event.preventDefault();
-			const rect = element.getBoundingClientRect();
-			setView((v) =>
-				zoomAt(
-					v,
-					event.clientX - rect.left,
-					event.clientY - rect.top,
-					Math.exp(-event.deltaY * 0.0015),
-				),
-			);
-		};
-		element.addEventListener("wheel", wheel, { passive: false });
-		return () => element.removeEventListener("wheel", wheel);
-	}, [drawn]);
-
-	const position = (event: React.PointerEvent<HTMLCanvasElement>) => {
-		const rect = event.currentTarget.getBoundingClientRect();
-		return [event.clientX - rect.left, event.clientY - rect.top] as const;
-	};
 
 	const busy = job?.status === "queued" || job?.status === "running";
 
@@ -390,53 +219,20 @@ export default function CorpusMap({
 						</a>
 					</div>
 					<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-						<div className="relative min-w-0">
-							<canvas
-								ref={canvas}
-								role="img"
-								aria-label={`Map of ${points.length} documents by the centroid of their chunks`}
-								className="h-[34rem] w-full cursor-crosshair touch-none rounded-md border bg-card"
-								onPointerDown={(event) => {
-									const [x, y] = position(event);
-									drag.current = { x, y, view, moved: false };
-									event.currentTarget.setPointerCapture(event.pointerId);
-								}}
-								onPointerMove={(event) => {
-									const [x, y] = position(event);
-									if (drag.current) {
-										const d = drag.current;
-										if (Math.abs(x - d.x) + Math.abs(y - d.y) > 3)
-											d.moved = true;
-										setView({
-											...d.view,
-											tx: d.view.tx + x - d.x,
-											ty: d.view.ty + y - d.y,
-										});
-										return;
-									}
-									setHovered(hit(points, view, x, y));
-								}}
-								onPointerUp={(event) => {
-									const [x, y] = position(event);
-									if (drag.current && !drag.current.moved) {
-										setSelected(hit(points, view, x, y));
-									}
-									drag.current = null;
-								}}
-								onPointerLeave={() => setHovered(null)}
-							/>
-							{hovered && (
-								<div
-									className="pointer-events-none absolute max-w-72 truncate rounded bg-foreground px-2 py-1 text-xs text-background"
-									style={{
-										left: toScreen(hovered, view)[0] + 12,
-										top: toScreen(hovered, view)[1] + 12,
-									}}
-								>
-									{nameOf(hovered)} · {hovered.chunks} chunks
-								</div>
-							)}
-						</div>
+						<MapCanvas
+							points={points}
+							families={result.families}
+							family={family}
+							paint={paint}
+							matching={matching}
+							selected={selected}
+							hovered={hovered}
+							shade={shade}
+							fitKey={computedAt}
+							label={(point) => `${nameOf(point)} · ${point.chunks} chunks`}
+							onHover={setHovered}
+							onSelect={setSelected}
+						/>
 						<aside className="min-w-0 space-y-4 text-sm">
 							<div className="space-y-1">
 								<h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

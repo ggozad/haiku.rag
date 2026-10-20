@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
 	Dialog,
 	DialogContent,
@@ -9,6 +8,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import type { Citation } from "@/lib/chat";
+import { useJson } from "@/lib/useJson";
 
 export function visualizeUrl(citation: Citation): string {
 	const chunkIds = citation.chunk_ids?.length
@@ -29,31 +29,12 @@ export default function VisualGroundingDialog({
 	citation: Citation | null;
 	onClose: () => void;
 }) {
-	const [images, setImages] = useState<string[]>([]);
-	const [message, setMessage] = useState<string | null>(null);
-	const [loading, setLoading] = useState(false);
-
-	useEffect(() => {
-		if (!citation) return;
-		const controller = new AbortController();
-		setImages([]);
-		setMessage(null);
-		setLoading(true);
-		fetch(visualizeUrl(citation), { signal: controller.signal })
-			.then(async (res) => {
-				const data = await res.json();
-				if (!res.ok) throw new Error(data.error || res.statusText);
-				setImages(data.images ?? []);
-				setMessage(data.message ?? null);
-			})
-			.catch((error: Error) => {
-				if (!controller.signal.aborted) setMessage(error.message);
-			})
-			.finally(() => {
-				if (!controller.signal.aborted) setLoading(false);
-			});
-		return () => controller.abort();
-	}, [citation]);
+	const grounding = useJson<{ images?: string[]; message?: string | null }>(
+		citation ? visualizeUrl(citation) : null,
+	);
+	const images = grounding.data?.images ?? [];
+	const message = grounding.error ?? grounding.data?.message ?? null;
+	const loading = grounding.loading;
 
 	return (
 		<Dialog

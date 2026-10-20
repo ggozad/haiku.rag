@@ -13,6 +13,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import type { DatabaseEntry } from "@/lib/databases";
+import { decoded } from "@/lib/http";
 import { type Attachment, readImage } from "@/lib/images";
 import { firstLine, searched } from "@/lib/inspect";
 import type { ChunkRef } from "./ChunkDialog";
@@ -78,8 +79,9 @@ export default function SearchPanel({
 					sources,
 				}),
 			});
-			const data = await response.json();
-			if (!response.ok) throw new Error(data.error || response.statusText);
+			const data = await decoded<{ results: Result[]; rendering: string }>(
+				response,
+			);
 			if (current.signal.aborted) return;
 			setResults(data.results);
 			setRendering(data.rendering);

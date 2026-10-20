@@ -12,7 +12,7 @@ from starlette.routing import Route
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import AppConfig, get_config
-from haiku_rag_app import chat, doctor, inspect, sessions
+from haiku_rag_app import chat, doctor, images, inspect, jobs, projection, sessions
 from haiku_rag_app.sessions import Sessions
 
 logger = logging.getLogger(__name__)
@@ -137,6 +137,7 @@ def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlett
             Route("/health", health, methods=["GET"]),
             Route("/api/databases", list_databases, methods=["GET"]),
             *chat.routes,
+            *images.routes,
             *sessions.routes,
             *inspect.routes,
             *doctor.routes,
@@ -147,8 +148,8 @@ def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlett
     app.state.config = config
     app.state.databases = databases
     app.state.sessions = session_store
-    app.state.jobs = doctor.Jobs()
-    app.state.retained = doctor.Retained()
+    app.state.jobs = jobs.Jobs()
+    app.state.retained = projection.Retained()
     app.state.agent = None
     app.state.agent_lock = asyncio.Lock()
     logger.info(

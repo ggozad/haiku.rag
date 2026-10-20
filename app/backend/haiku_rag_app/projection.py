@@ -107,3 +107,39 @@ def project(
 def similarity(unit: np.ndarray, ids: list[str], doc_id: str) -> list[float]:
     """Centroid cosine of every document to `doc_id`, in `ids` order."""
     return np.round(unit @ unit[ids.index(doc_id)], 4).tolist()
+
+
+@dataclass(frozen=True)
+class Centroids:
+    """One map's unit centroids, in `ids` order, and the map they belong to."""
+
+    generation: str
+    ids: list[str]
+    unit: np.ndarray
+
+
+class Retained:
+    """Unit centroids kept for similarity lookups, within one memory budget
+    across databases. A newer projection evicts the oldest others; one that
+    does not fit alone is not kept."""
+
+    def __init__(self, budget: int = 256 * 1024**2) -> None:
+        self.budget = budget
+        self._kept: dict[str, Centroids] = {}
+
+    def keep(
+        self, source: str, generation: str, ids: list[str], unit: np.ndarray
+    ) -> bool:
+        self._kept.pop(source, None)
+        if unit.nbytes > self.budget:
+            return False
+        while self._kept and self._used() + unit.nbytes > self.budget:
+            del self._kept[next(iter(self._kept))]
+        self._kept[source] = Centroids(generation, ids, unit)
+        return True
+
+    def get(self, source: str) -> Centroids | None:
+        return self._kept.get(source)
+
+    def _used(self) -> int:
+        return sum(kept.unit.nbytes for kept in self._kept.values())

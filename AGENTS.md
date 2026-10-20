@@ -760,11 +760,13 @@ app/
 ├── backend/                # haiku_rag_app package, a uv workspace member
 │   ├── haiku_rag_app/
 │   │   ├── main.py         # create_app(config, sessions_path), Databases, /health, /api/databases
-│   │   ├── chat.py         # AG-UI stream over stored sessions, documents, pictures, visualize
+│   │   ├── chat.py         # AG-UI stream over stored sessions, the documents listing
 │   │   ├── sessions.py     # SQLite session store, holds, the turn commit
 │   │   ├── inspect.py      # inspector routes and /api/search
-│   │   ├── doctor.py       # Jobs (one worker thread), doctor and projection routes, Retained
-│   │   └── projection.py   # t-SNE of document centroids, nearest neighbours
+│   │   ├── images.py       # checks on images the page sends, pictures, visualize
+│   │   ├── jobs.py         # Jobs: one worker thread with its own event loop
+│   │   ├── doctor.py       # doctor and projection routes
+│   │   └── projection.py   # t-SNE of document centroids, similarity, Retained
 │   └── tests/
 ├── frontend/               # Next.js, Tailwind, shadcn/ui, @ag-ui/client
 │   ├── app/                # pages: / (chat), /ingestion, /inspect, /doctor; api/backend, api/ingester proxies
@@ -780,4 +782,5 @@ app/
 - **Question identities are message counts**, so a run's messages and the state it advanced are kept or dropped together. Under AG-UI the question arrives inside the history, so a run whose only evidence is its first search round never gets the policy's redirect, because its evidence epoch equals the question's identity.
 - **Doctor and projection jobs** run on one daemon thread with its own event loop, one at a time across databases, each over the `Store` it opens. Progress reaches the request loop through `call_soon_threadsafe`. A projection's unit centroids are kept within one 256 MB budget (`Retained`).
 - **The frontend proxies.** `/api/backend/*` and `/api/ingester/*` stream bodies and forward the browser's abort, and the ingester proxy adds `INGESTER_TOKEN` and forwards only the operator actions as writes (refresh a source, retry a job or a dead letter, cancel a job). The dev server allows the `127.0.0.1` origin.
+- **Frontend tests.** `lib/*.test.ts` run in node. `components/**/*.test.tsx` run in jsdom (`@vitest-environment jsdom` per file) with React Testing Library against mocked `fetch`. jsdom has no `ResizeObserver` or `PointerEvent`, which `vitest.setup.ts` supplies, and no 2D canvas context.
 - Run `biome check` in `app/frontend/` after frontend changes (`pnpm run format` to fix).

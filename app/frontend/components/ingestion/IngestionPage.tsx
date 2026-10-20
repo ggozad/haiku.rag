@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, RefreshCw, RotateCcw, X } from "lucide-react";
+import { ChevronRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -18,18 +18,13 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
-import { formatAge, ingester, Poller, type Snapshot } from "@/lib/ingestion";
+import { ingester, Poller, type Snapshot } from "@/lib/ingestion";
 import JobDialog from "./JobDialog";
 import JobsBrowser from "./JobsBrowser";
+import JobTable from "./JobTable";
+import QueueSummary from "./QueueSummary";
+import SourcesPanel from "./SourcesPanel";
 import type { Health, Job, Providers, Source, Stats } from "./types";
 
 function Section({
@@ -49,24 +44,8 @@ function Section({
 	);
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
-	return (
-		<div className="rounded-md border px-3 py-2">
-			<div className="text-xs text-muted-foreground">{label}</div>
-			<div className="text-lg font-semibold tabular-nums">{value}</div>
-		</div>
-	);
-}
-
 // A refresh answers once its source's discovery sweep ends.
 const REFRESH_TIMEOUT_MS = 300_000;
-
-function duration(job: Job): string {
-	if (!job.claimed_at || !job.completed_at) return "—";
-	const seconds =
-		(Date.parse(job.completed_at) - Date.parse(job.claimed_at)) / 1000;
-	return formatAge(seconds);
-}
 
 function Lazy({
 	title,
@@ -214,106 +193,26 @@ export default function IngestionPage() {
 				)}
 
 				<Section title="Queue" error={snapshot?.stats.error}>
-					{stats && health && (
-						<div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
-							{["queued", "claimed", "succeeded", "dead"].map((status) => (
-								<Stat
-									key={status}
-									label={status}
-									value={health.queue_counts[status] ?? 0}
-								/>
-							))}
-							<Stat
-								label="done in 5m / 1h"
-								value={`${stats.throughput.succeeded_5m} / ${stats.throughput.succeeded_1h}`}
-							/>
-							<Stat
-								label="busy workers"
-								value={`${stats.workers.busy}/${stats.workers.total}`}
-							/>
-							<Stat
-								label="oldest queued"
-								value={formatAge(stats.oldest_queued_age_s)}
-							/>
-						</div>
-					)}
+					{stats && health && <QueueSummary health={health} stats={stats} />}
 				</Section>
 
 				<Section title="Sources" error={snapshot?.sources.error}>
-					<div className="overflow-x-auto rounded-md border">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>Source</TableHead>
-									<TableHead>Type</TableHead>
-									<TableHead>Last polled</TableHead>
-									<TableHead>Queued</TableHead>
-									<TableHead>Dead</TableHead>
-									<TableHead>State</TableHead>
-									<TableHead />
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{sources.map((source) => (
-									<TableRow key={source.source_id}>
-										<TableCell className="font-medium">
-											{source.source_id}
-										</TableCell>
-										<TableCell>{source.type}</TableCell>
-										<TableCell>
-											{source.last_polled_at
-												? formatRelativeTime(source.last_polled_at, true)
-												: "never"}
-										</TableCell>
-										<TableCell className="tabular-nums">
-											{stats?.queue_depth_by_source[source.source_id] ?? 0}
-										</TableCell>
-										<TableCell className="tabular-nums">
-											{stats?.dlq_by_source[source.source_id] ?? 0}
-										</TableCell>
-										<TableCell className="space-x-1">
-											{source.circuit_breaker_open && (
-												<Badge variant="destructive">breaker open</Badge>
-											)}
-											{source.last_skip_reason && (
-												<Badge variant="outline">
-													skipped: {source.last_skip_reason}
-												</Badge>
-											)}
-										</TableCell>
-										<TableCell className="text-right">
-											<Button
-												size="sm"
-												variant="outline"
-												onClick={() =>
-													act(async () => {
-														const result = (await ingester(
-															`sources/${encodeURIComponent(source.source_id)}/refresh`,
-															{ method: "POST" },
-															REFRESH_TIMEOUT_MS,
-														)) as { refreshed: boolean };
-														return result.refreshed
-															? `Refreshed ${source.source_id}.`
-															: `Refresh of ${source.source_id} skipped or failed.`;
-													})
-												}
-											>
-												<RefreshCw />
-												Refresh
-											</Button>
-										</TableCell>
-									</TableRow>
-								))}
-								{sources.length === 0 && (
-									<TableRow>
-										<TableCell colSpan={7} className="text-muted-foreground">
-											No sources are configured.
-										</TableCell>
-									</TableRow>
-								)}
-							</TableBody>
-						</Table>
-					</div>
+					<SourcesPanel
+						sources={sources}
+						stats={stats}
+						onRefresh={(source) =>
+							act(async () => {
+								const result = (await ingester(
+									`sources/${encodeURIComponent(source)}/refresh`,
+									{ method: "POST" },
+									REFRESH_TIMEOUT_MS,
+								)) as { refreshed: boolean };
+								return result.refreshed
+									? `Refreshed ${source}.`
+									: `Refresh of ${source} skipped or failed.`;
+							})
+						}
+					/>
 				</Section>
 
 				<Section title="Providers" error={snapshot?.providers.error}>
@@ -468,118 +367,6 @@ export default function IngestionPage() {
 				</DialogContent>
 			</Dialog>
 			<JobDialog job={viewing} onClose={() => setViewing(null)} />
-		</div>
-	);
-}
-
-type Column =
-	| "op"
-	| "uri"
-	| "source"
-	| "attempts"
-	| "worker"
-	| "claimed"
-	| "error"
-	| "duration"
-	| "finished";
-
-const HEADINGS: Record<Column, string> = {
-	op: "Op",
-	uri: "URI",
-	source: "Source",
-	attempts: "Attempts",
-	worker: "Worker",
-	claimed: "Claimed",
-	error: "Error",
-	duration: "Took",
-	finished: "Finished",
-};
-
-function cell(job: Job, column: Column): React.ReactNode {
-	switch (column) {
-		case "op":
-			return job.op;
-		case "uri":
-			return job.uri;
-		case "source":
-			return job.source_id;
-		case "attempts":
-			return `${job.attempts}/${job.max_attempts}`;
-		case "worker":
-			return job.claimed_by ?? "—";
-		case "claimed":
-			return job.claimed_at ? formatRelativeTime(job.claimed_at, true) : "—";
-		case "error":
-			return job.last_error ?? "—";
-		case "duration":
-			return duration(job);
-		case "finished":
-			return job.completed_at
-				? formatRelativeTime(job.completed_at, true)
-				: "—";
-	}
-}
-
-function JobTable({
-	jobs,
-	columns,
-	onOpen,
-	action,
-	empty,
-}: {
-	jobs: Job[];
-	columns: Column[];
-	onOpen: (job: Job) => void;
-	action?: (job: Job) => React.ReactNode;
-	empty: string;
-}) {
-	return (
-		<div className="overflow-x-auto rounded-md border">
-			<Table>
-				<TableHeader>
-					<TableRow>
-						{columns.map((column) => (
-							<TableHead key={column}>{HEADINGS[column]}</TableHead>
-						))}
-						{action && <TableHead />}
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{jobs.map((job) => (
-						<TableRow key={job.id}>
-							{columns.map((column) => (
-								<TableCell
-									key={column}
-									className={
-										column === "uri" || column === "error"
-											? "max-w-80 cursor-pointer truncate"
-											: "cursor-pointer"
-									}
-									title={
-										column === "error" ? (job.last_error ?? "") : undefined
-									}
-									onClick={() => onOpen(job)}
-								>
-									{cell(job, column)}
-								</TableCell>
-							))}
-							{action && (
-								<TableCell className="text-right">{action(job)}</TableCell>
-							)}
-						</TableRow>
-					))}
-					{jobs.length === 0 && (
-						<TableRow>
-							<TableCell
-								colSpan={columns.length + (action ? 1 : 0)}
-								className="text-muted-foreground"
-							>
-								{empty}
-							</TableCell>
-						</TableRow>
-					)}
-				</TableBody>
-			</Table>
 		</div>
 	);
 }

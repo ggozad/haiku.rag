@@ -9,8 +9,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.doctor import VectorScan
 from haiku.rag.store.models import Chunk
-from haiku_rag_app.doctor import Retained
-from haiku_rag_app.projection import place, project, similarity
+from haiku_rag_app.projection import Retained, place, project, similarity
 
 
 def _scan(centroids, counts=None, ids=None) -> VectorScan:

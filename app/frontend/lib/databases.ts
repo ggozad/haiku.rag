@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { decoded } from "./http";
 
 export interface DatabaseEntry {
 	name: string;
@@ -42,9 +43,7 @@ export function databasesSnapshot(): DatabasesSnapshot {
 export function refreshDatabases(): Promise<void> {
 	pending ??= fetch("/api/backend/api/databases")
 		.then(async (res) => {
-			const data = await res.json();
-			if (!res.ok) throw new Error(data.error || res.statusText);
-			publish({ info: data as DatabasesInfo, error: null });
+			publish({ info: await decoded<DatabasesInfo>(res), error: null });
 		})
 		.catch((error: unknown) => {
 			publish({

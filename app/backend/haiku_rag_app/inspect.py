@@ -12,7 +12,7 @@ from haiku.rag.context import build_toc
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.schema import REQUIRED_TABLES
 from haiku.rag.utils.sql import escape_sql_string, title_or_uri_filter
-from haiku_rag_app.chat import MAX_IMAGE_BYTES, checked_image
+from haiku_rag_app.images import MAX_IMAGE_BYTES, checked_image
 
 
 async def _reader(request: Request) -> HaikuRAG:

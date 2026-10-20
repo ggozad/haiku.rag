@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { type Job, settled } from "@/lib/doctor";
+import { decoded } from "@/lib/http";
 
 // The latest job of one kind on one database, polled every second while it is
 // queued or running. `start` posts and polls until the job settles.
@@ -33,8 +34,7 @@ export function useJob<T>(
 		const poll = async () => {
 			try {
 				const res = await fetch(statusUrl, { signal: controller.signal });
-				const body = await res.json();
-				if (!res.ok) throw new Error(body.error || res.statusText);
+				const body = await decoded<Record<string, Job<T> | null>>(res);
 				if (controller.signal.aborted) return;
 				setJob(body[key]);
 				setError(null);
@@ -57,10 +57,11 @@ export function useJob<T>(
 	}, [statusUrl, key, generation, revalidateMs]);
 
 	const start = useCallback(async (url: string) => {
-		const res = await fetch(url, { method: "POST" });
-		const body = await res.json();
-		if (!res.ok) {
-			setError(body.error || res.statusText);
+		let body: Job<T>;
+		try {
+			body = await decoded<Job<T>>(await fetch(url, { method: "POST" }));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
 			return;
 		}
 		setError(null);

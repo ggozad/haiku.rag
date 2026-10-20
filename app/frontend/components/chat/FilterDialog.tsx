@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { DocumentRef } from "@/lib/chat";
+import { useJson } from "@/lib/useJson";
 
 interface ListedDocument {
 	id: string;
@@ -39,35 +40,24 @@ export default function FilterDialog({
 	selection: DocumentRef[];
 	onApply: (selection: DocumentRef[]) => void;
 }) {
-	const [documents, setDocuments] = useState<ListedDocument[]>([]);
-	const [errors, setErrors] = useState<Record<string, string>>({});
-	const [loading, setLoading] = useState(false);
 	const [term, setTerm] = useState("");
 	const [chosen, setChosen] = useState<Set<string>>(new Set());
 
 	// Listed on every open, so new and deleted documents show.
+	const listing = useJson<{
+		documents?: ListedDocument[];
+		errors?: Record<string, string>;
+	}>(open ? "/api/backend/api/documents" : null);
+	const documents = listing.data?.documents ?? [];
+	const errors = listing.error
+		? { backend: listing.error }
+		: (listing.data?.errors ?? {});
+	const loading = listing.loading;
+
 	useEffect(() => {
 		if (!open) return;
 		setChosen(new Set(selection.map(keyOf)));
 		setTerm("");
-		setLoading(true);
-		const controller = new AbortController();
-		fetch("/api/backend/api/documents", { signal: controller.signal })
-			.then(async (res) => {
-				const data = await res.json();
-				if (!res.ok) throw new Error(data.error || res.statusText);
-				setDocuments(data.documents ?? []);
-				setErrors(data.errors ?? {});
-			})
-			.catch((error: Error) => {
-				if (controller.signal.aborted) return;
-				setDocuments([]);
-				setErrors({ backend: error.message });
-			})
-			.finally(() => {
-				if (!controller.signal.aborted) setLoading(false);
-			});
-		return () => controller.abort();
 	}, [open, selection]);
 
 	const grouped = useMemo(() => {
