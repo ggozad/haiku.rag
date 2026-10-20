@@ -309,7 +309,11 @@ class TestLendingANamedClient:
         """What a citation records is the lent client's database, not the scope
         the capability was constructed with. That chat lends its client is
         `TestLendingTheClient` in `tests/chat/test_chat_app.py`."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.test_capabilities import (
+            Deps,
+            make_context,
+            send_first_request,
+        )
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -324,6 +328,7 @@ class TestLendingANamedClient:
             capability.borrowed_rag = client
             deps = Deps(state={"rag": RAGState().model_dump(mode="json")})
             run = await capability.for_run(make_context(deps))
+            await send_first_request(run, deps)
             assert run.state is not None
 
             # A borrowed client overrides the capability's configured placement.

@@ -56,8 +56,10 @@ class CapabilityEvidenceRecord(BaseModel):
     return is a settled structured answer and a question awaiting its model
     equally, so the shape of the history cannot decide it.
 
-    ``question`` is the number of messages that existed when the question arrived,
-    and ``epoch`` the number when an outcome occurred. Both are derived from the
+    ``question`` is the number of messages before the request that opened the
+    question, which is that request's index in the run's history, and ``epoch``
+    the number of messages when an outcome occurred. A deferred capability takes
+    the index of the first request after it loads. Both are derived from the
     conversation rather than counted locally, so every participant computes the
     same values without sharing a counter. ``question`` is unset until a run
     establishes it, so a record a host merely created is distinguishable from one

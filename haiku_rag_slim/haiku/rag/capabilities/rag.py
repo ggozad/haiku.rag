@@ -234,6 +234,9 @@ class RAGCapability(AbstractCapability[Any]):
     anything across questions refuse when this is False.
     """
 
+    question_open: bool = field(default=False, repr=False)
+    """Whether this run's question has taken its identity."""
+
     state_namespace: ClassVar[str] = STATE_NAMESPACE
     state_type: ClassVar[type[RAGState]] = RAGState
     tool_names: ClassVar[frozenset[str]] = TOOL_NAMES
@@ -266,15 +269,14 @@ class RAGCapability(AbstractCapability[Any]):
     async def for_run(self, ctx: RunContext[Any]) -> "RAGCapability":
         """Start a run's own copy, and settle which question it is answering.
 
-        A new question takes the message count as its identity, which every
-        participant derives identically from the same history. A resumption keeps
-        the identity already recorded: the question is the one in progress, and
-        adopting the current count would relabel it as a new one and judge its
-        declarations against the wrong question. A resumption with no recorded
-        identity is a state this design does not produce, so it is reported rather
-        than guessed at. With no history at all there is nothing in progress: an
-        absent prompt is then an instructions-only first question, which takes an
-        identity like any other.
+        A new question takes its identity at its first model request, and nothing
+        is written here for it. A resumption keeps the identity already recorded:
+        the question is the one in progress, and taking a new identity would relabel
+        it as a new one and judge its declarations against the wrong question. A
+        resumption with no recorded identity is a state this design does not
+        produce, so it is reported rather than guessed at. With no history at all
+        there is nothing in progress: an absent prompt is then an instructions-only
+        first question, which takes an identity like any other.
         """
         outer = getattr(ctx.deps, "state", None)
         outer_state = outer if isinstance(outer, dict) else None
@@ -290,9 +292,6 @@ class RAGCapability(AbstractCapability[Any]):
                 "or migrated while a question is unfinished, and the run's state "
                 "must be carried between its runs."
             )
-        if not continuing:
-            state.begin_invocation()
-            record.begin_question(len(ctx.messages))
         run_capability = replace(
             self,
             state=state,
@@ -312,6 +311,7 @@ class RAGCapability(AbstractCapability[Any]):
             execute_count=0,
             epoch=0,
             state_carried=state_carried,
+            question_open=continuing,
         )
         run_capability._sync_state()
         return run_capability
@@ -349,6 +349,8 @@ class RAGCapability(AbstractCapability[Any]):
         self, ctx: RunContext[Any], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         self.epoch = len(ctx.messages)
+        if not self.question_open:
+            self._open_question(ctx.messages)
         if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
             if isinstance(current_request, ModelRequest):
@@ -570,6 +572,20 @@ class RAGCapability(AbstractCapability[Any]):
             return await operation
         finally:
             self._sync_state()
+
+    def _open_question(self, messages: list[ModelMessage]) -> None:
+        """Start a new question, identified by the index of its opening request.
+
+        pydantic-ai normalizes the history after ``for_run``, so the indices that
+        epochs count exist only from the first model request.
+        """
+        assert self.state is not None
+        self.state.begin_invocation()
+        self.evidence_record().begin_question(
+            max(i for i, m in enumerate(messages) if isinstance(m, ModelRequest))
+        )
+        self.question_open = True
+        self._sync_state()
 
     def evidence_record(self) -> CapabilityEvidenceRecord:
         """What this capability has retrieved and cited, per question."""

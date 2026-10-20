@@ -245,7 +245,7 @@ def compact_history(
 ) -> list[ModelMessage]:
     """Replace earlier questions' evidence with the capsule, on a copy.
 
-    ``boundary`` is how many messages existed when the current question arrived, so
+    ``boundary`` is the index of the request that opened the current question, so
     everything below it belongs to an earlier one. It comes from the recorded
     question identity rather than from message shape: mid-question a user-role part
     is as likely to be page images or an injected notice, and reading either as the

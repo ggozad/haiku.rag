@@ -23,6 +23,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
@@ -56,6 +57,21 @@ def make_context(deps: Deps) -> RunContext[Deps]:
         model=TestModel(),
         usage=RunUsage(),
         run_id="test-run",
+    )
+
+
+async def send_first_request(run: RAGCapability, deps: Deps) -> None:
+    """Open the run's question, as its first model request does."""
+    ctx = make_context(deps)
+    ctx.messages = [ModelRequest(parts=[UserPromptPart("a new question")])]
+    await run.before_model_request(
+        ctx,
+        ModelRequestContext(
+            messages=list(ctx.messages),
+            model=TestModel(),
+            model_request_parameters=ModelRequestParameters(),
+            model_settings=None,
+        ),
     )
 
 
@@ -322,10 +338,15 @@ async def test_capability_isolated_per_run_and_round_trips_state(temp_db_path):
 
     assert run_capability is not capability
     assert run_capability.state is not None
+    assert run_capability.state.citations == ["old"]
+
+    await send_first_request(run_capability, deps)
+
     assert run_capability.state.document_filter == "uri = 'manual.pdf'"
     assert run_capability.state.citations == []
     assert run_capability.state.searches == {}
     assert deps.state["rag"]["document_filter"] == "uri = 'manual.pdf'"
+    assert deps.state["rag"]["citations"] == []
 
 
 async def test_run_error_closes_resources_and_propagates(temp_db_path):
@@ -1600,7 +1621,7 @@ async def test_a_promptless_run_on_a_settled_history_is_a_new_question(temp_db_p
 
     await agent.run(message_history=history, deps=deps)
 
-    assert _record(deps, "rag").question == len(history)
+    assert _record(deps, "rag").question == 0
 
 
 async def test_a_promptless_run_on_an_unfinished_tail_is_still_a_continuation(
