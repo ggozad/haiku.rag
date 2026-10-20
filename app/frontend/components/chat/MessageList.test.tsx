@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import type { Message } from "@ag-ui/client";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Evidence } from "@/lib/chat";
 import MessageList from "./MessageList";
@@ -66,5 +67,22 @@ describe("MessageList", () => {
 		expect(follows(answer, citation)).toBe(true);
 		expect(follows(citation, next)).toBe(true);
 		expect(screen.getAllByText("Field water purification")).toHaveLength(1);
+	});
+
+	it("links a citation to its chunk's page in a new tab", async () => {
+		render(
+			<MessageList
+				messages={stored.messages}
+				running={false}
+				evidenceByRun={stored.runs}
+				messageRuns={stored.message_runs}
+				hidden={new Set()}
+				showSource={false}
+			/>,
+		);
+		await userEvent.setup().click(screen.getByText("Field water purification"));
+		const link = screen.getByRole("link", { name: "Open in the inspector" });
+		expect(link.getAttribute("href")).toBe("/inspect/stanevals/d1/chunks/c1");
+		expect(link.getAttribute("target")).toBe("_blank");
 	});
 });

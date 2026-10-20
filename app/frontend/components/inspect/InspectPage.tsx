@@ -33,6 +33,7 @@ import { useDatabases } from "@/lib/databases";
 import { formatRelativeTime } from "@/lib/format";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
+import AskAbout from "./AskAbout";
 import Breadcrumb from "./Breadcrumb";
 import ChunkView, { type ChunkRef } from "./ChunkView";
 import CorpusMap from "./CorpusMap";
@@ -416,6 +417,7 @@ export default function InspectPage() {
 							router.push(chunkHref(view.db, view.doc, view.chunk, kept));
 						}}
 						onOpen={openChunk}
+						actions={<AskAbout source={view.db} documentId={view.doc} />}
 						chunkHref={(id) => chunkHref(view.db, view.doc, id, query)}
 						documentHref={(item) =>
 							documentHref(
@@ -441,11 +443,14 @@ export default function InspectPage() {
 							)
 						}
 						actions={
-							<ShowOnMap
-								source={view.db}
-								documentId={view.doc}
-								href={mapHref(view.db, listOf(listQuery), view.doc)}
-							/>
+							<div className="flex flex-wrap items-start gap-2 pt-1">
+								<AskAbout source={view.db} documentId={view.doc} />
+								<ShowOnMap
+									source={view.db}
+									documentId={view.doc}
+									href={mapHref(view.db, listOf(listQuery), view.doc)}
+								/>
+							</div>
 						}
 						onOpenChunk={(chunkId) =>
 							openChunk({

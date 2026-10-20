@@ -5,6 +5,7 @@ import {
 	CircleAlert,
 	CircleCheck,
 	CircleDashed,
+	ExternalLink,
 	FileText,
 } from "lucide-react";
 import { useState } from "react";
@@ -15,6 +16,7 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { chunkHref } from "@/lib/addresses";
 import { type Citation, type Evidence, statusOf } from "@/lib/chat";
 import VisualGroundingDialog from "./VisualGroundingDialog";
 
@@ -84,10 +86,28 @@ function CitationItem({
 						))}
 					</div>
 				)}
-				<Button variant="outline" size="sm" onClick={() => onView(citation)}>
-					<FileText />
-					View in document
-				</Button>
+				<div className="flex flex-wrap gap-2">
+					<Button variant="outline" size="sm" onClick={() => onView(citation)}>
+						<FileText />
+						View in document
+					</Button>
+					{citation.source && (
+						<Button asChild variant="outline" size="sm">
+							<a
+								href={chunkHref(
+									citation.source,
+									citation.document_id,
+									citation.chunk_id,
+								)}
+								target="_blank"
+								rel="noopener"
+							>
+								<ExternalLink />
+								Open in the inspector
+							</a>
+						</Button>
+					)}
+				</div>
 			</CollapsibleContent>
 		</Collapsible>
 	);

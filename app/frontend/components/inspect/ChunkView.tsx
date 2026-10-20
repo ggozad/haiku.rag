@@ -96,6 +96,7 @@ export default function ChunkView({
 	onOpen,
 	chunkHref,
 	documentHref,
+	actions,
 }: {
 	chunk: ChunkRef;
 	view: string;
@@ -103,6 +104,7 @@ export default function ChunkView({
 	onOpen: (chunk: ChunkRef) => void;
 	chunkHref: (chunkId: string) => string;
 	documentHref: (item: number | null) => string;
+	actions?: React.ReactNode;
 }) {
 	const tab = VIEWS.includes(view) ? view : "details";
 	const documentBase = `/api/backend/api/inspect/${encodeURIComponent(ref.source)}/documents/${encodeURIComponent(ref.documentId)}`;
@@ -146,6 +148,7 @@ export default function ChunkView({
 						{ref.chunkId}
 					</p>
 				</div>
+				{actions}
 				{first >= 0 && (
 					<Button asChild size="sm" variant="outline">
 						<Link href={documentHref(first)}>Show in the document</Link>

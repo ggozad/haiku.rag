@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	activeSessionId,
+	askAbout,
 	createSession,
 	deleteSession,
 	exportUrl,
 	getSession,
 	listSessions,
+	opening,
 	reconcile,
 	rememberActiveSession,
+	startSession,
 	updateSession,
 } from "./sessions";
 
@@ -142,5 +145,102 @@ describe("active session", () => {
 		});
 		expect(activeSessionId()).toBeNull();
 		rememberActiveSession("s1");
+	});
+});
+
+describe("opening", () => {
+	const summaries = [{ id: "new" }, { id: "old" }] as never[];
+
+	it("opens the session the address names, then the remembered, then the newest", () => {
+		expect(opening(summaries, "old", "new")).toBe("old");
+		expect(opening(summaries, null, "old")).toBe("old");
+		expect(opening(summaries, "gone", "gone")).toBe("new");
+		expect(opening([], "gone", null)).toBeNull();
+	});
+});
+
+describe("askAbout", () => {
+	it("creates a session selecting the document", async () => {
+		const calls: { method: string; url: string; body?: string }[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit = {}) => {
+				calls.push({
+					method: init.method ?? "GET",
+					url,
+					body: init.body as string,
+				});
+				return Response.json(
+					{ id: "s9" },
+					{ status: init.method === "POST" ? 201 : 200 },
+				);
+			}),
+		);
+		expect(await askAbout({ source: "orb", id: "d1" })).toBe("s9");
+		expect(calls.map((call) => [call.method, call.url])).toEqual([
+			["POST", "/api/backend/api/sessions"],
+			["PATCH", "/api/backend/api/sessions/s9"],
+		]);
+		expect(JSON.parse(calls[1].body ?? "")).toEqual({
+			selection: [{ source: "orb", id: "d1" }],
+		});
+	});
+
+	it("deletes the session when the selection fails, and says why", async () => {
+		const methods: string[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (_url: string, init: RequestInit = {}) => {
+				methods.push(init.method ?? "GET");
+				if (init.method === "PATCH")
+					return Response.json({ error: "selection refused" }, { status: 400 });
+				if (init.method === "DELETE")
+					return new Response(null, { status: 204 });
+				return Response.json({ id: "s9" }, { status: 201 });
+			}),
+		);
+		await expect(askAbout({ source: "orb", id: "d1" })).rejects.toThrow(
+			"selection refused",
+		);
+		expect(methods).toEqual(["POST", "PATCH", "DELETE"]);
+	});
+});
+
+describe("startSession", () => {
+	it("loads the session the address names over the remembered one", async () => {
+		vi.stubGlobal("localStorage", {
+			getItem: () => "old",
+			setItem: () => {},
+		});
+		const read: string[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				read.push(url);
+				return url.endsWith("/sessions")
+					? Response.json({ sessions: [{ id: "new" }, { id: "old" }] })
+					: Response.json({ id: url.split("/").pop() });
+			}),
+		);
+		expect((await startSession("new")).id).toBe("new");
+		expect(read).toEqual([
+			"/api/backend/api/sessions",
+			"/api/backend/api/sessions/new",
+		]);
+	});
+
+	it("creates a session when there is none", async () => {
+		vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string, init: RequestInit = {}) =>
+				url.endsWith("/sessions")
+					? init.method === "POST"
+						? Response.json({ id: "made" }, { status: 201 })
+						: Response.json({ sessions: [] })
+					: Response.json({ id: url.split("/").pop() }),
+			),
+		);
+		expect((await startSession(null)).id).toBe("made");
 	});
 });

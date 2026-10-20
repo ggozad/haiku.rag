@@ -101,3 +101,35 @@ export function rememberActiveSession(id: string): void {
 		// A browser refusing storage opens the newest session next time.
 	}
 }
+
+// The session the chat opens: the one its address names, then the one this
+// browser last had open, then the newest. Null when there is none.
+export function opening(
+	sessions: SessionSummary[],
+	named: string | null,
+	remembered: string | null,
+): string | null {
+	const known = (id: string | null) => sessions.some((s) => s.id === id);
+	if (known(named)) return named;
+	if (known(remembered)) return remembered;
+	return sessions[0]?.id ?? null;
+}
+
+// A new session whose selection is `document`. A session left without its
+// selection is deleted, so a failure leaves nothing behind.
+export async function askAbout(document: DocumentRef): Promise<string> {
+	const { id } = await createSession();
+	try {
+		await updateSession(id, { selection: [document] });
+	} catch (error) {
+		await deleteSession(id).catch(() => {});
+		throw error;
+	}
+	return id;
+}
+
+// Loads the session the chat opens with, creating one when there is none.
+export async function startSession(named: string | null): Promise<Session> {
+	const id = opening(await listSessions(), named, activeSessionId());
+	return getSession(id ?? (await createSession()).id);
+}

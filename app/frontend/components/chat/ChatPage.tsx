@@ -2,6 +2,7 @@
 
 import { HttpAgent } from "@ag-ui/client";
 import { Filter } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,13 +21,11 @@ import {
 import { useDatabases } from "@/lib/databases";
 import { type Attachment, userContent } from "@/lib/images";
 import {
-	activeSessionId,
-	createSession,
 	getSession,
-	listSessions,
 	reconcile,
 	rememberActiveSession,
 	type Session,
+	startSession,
 	updateSession,
 } from "@/lib/sessions";
 import Composer from "./Composer";
@@ -282,6 +281,9 @@ function ChatSession({
 }
 
 export default function ChatPage() {
+	// The address is read once: clearing it must not open another session.
+	const [named] = useState(useSearchParams().get("session"));
+	const router = useRouter();
 	const [session, setSession] = useState<Session | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
@@ -295,13 +297,20 @@ export default function ChatPage() {
 	}, []);
 
 	useEffect(() => {
-		(async () => {
-			const sessions = await listSessions();
-			const remembered = activeSessionId();
-			const known = sessions.find((s) => s.id === remembered) ?? sessions[0];
-			open(known ? known.id : (await createSession()).id);
-		})().catch((err: Error) => setError(err.message));
-	}, [open]);
+		let current = true;
+		startSession(named)
+			.then((stored) => {
+				if (!current) return;
+				rememberActiveSession(stored.id);
+				setSession(stored);
+				// The session is remembered, so the address need not keep it.
+				if (named) router.replace("/");
+			})
+			.catch((err: Error) => current && setError(err.message));
+		return () => {
+			current = false;
+		};
+	}, [named, router]);
 
 	if (error) {
 		return (
