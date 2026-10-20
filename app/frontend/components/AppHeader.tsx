@@ -1,9 +1,13 @@
 "use client";
 
+import { Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import DatabaseStatus from "@/components/DatabaseStatus";
 import IngestionChip from "@/components/IngestionChip";
+import { openSearch } from "@/components/SearchOverlay";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const PAGES = [
@@ -23,6 +27,11 @@ const current = (pathname: string, page: { href: string; also?: string }) =>
 
 export default function AppHeader() {
 	const pathname = usePathname();
+	// Known only in the browser, so the server's render shows Ctrl.
+	const [shortcut, setShortcut] = useState("Ctrl K");
+	useEffect(() => {
+		if (/Mac|iPhone|iPad/.test(navigator.userAgent)) setShortcut("⌘K");
+	}, []);
 	return (
 		<header className="flex h-12 shrink-0 items-center gap-6 border-b px-4">
 			<span className="font-semibold tracking-tight">haiku.rag</span>
@@ -41,6 +50,16 @@ export default function AppHeader() {
 				))}
 			</nav>
 			<div className="ml-auto flex items-center gap-3">
+				<Button
+					variant="outline"
+					size="sm"
+					className="text-muted-foreground"
+					onClick={openSearch}
+				>
+					<Search />
+					Search
+					<kbd className="ml-2 font-mono text-xs">{shortcut}</kbd>
+				</Button>
 				<DatabaseStatus />
 				<IngestionChip />
 			</div>

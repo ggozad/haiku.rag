@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Geist, Geist_Mono } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
+import SearchOverlay from "@/components/SearchOverlay";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
 				<TooltipProvider>
 					<AppHeader />
 					<main className="min-h-0 flex-1">{children}</main>
+					<SearchOverlay />
 				</TooltipProvider>
 			</body>
 		</html>

@@ -192,9 +192,12 @@ describe("SearchPanel", () => {
 		const user = userEvent.setup();
 		const { unmount } = render(<Routed databases={[db("alpha", true)]} />);
 		const file = new File(["png"], "cat.png", { type: "image/png" });
-		fireEvent.change(document.getElementById("search-image") as HTMLElement, {
-			target: { files: [file] },
-		});
+		fireEvent.change(
+			document.querySelector("input[type=file]") as HTMLElement,
+			{
+				target: { files: [file] },
+			},
+		);
 		await screen.findByText("cat.png");
 		await user.click(searchButton());
 		await screen.findByText("about the image");
@@ -253,9 +256,14 @@ describe("SearchPanel", () => {
 		const bodies = searching();
 		const user = userEvent.setup();
 		const { unmount } = render(<Routed databases={[db("alpha", true)]} />);
-		fireEvent.change(document.getElementById("search-image") as HTMLElement, {
-			target: { files: [new File(["png"], "dog.png", { type: "image/png" })] },
-		});
+		fireEvent.change(
+			document.querySelector("input[type=file]") as HTMLElement,
+			{
+				target: {
+					files: [new File(["png"], "dog.png", { type: "image/png" })],
+				},
+			},
+		);
 		await screen.findByText("dog.png");
 		await user.click(searchButton());
 		await screen.findByText("about the image");
@@ -286,6 +294,23 @@ describe("SearchPanel", () => {
 		answer(Response.json({ results: [], rendering: "" }));
 		await screen.findByText("Nothing matched.");
 		expect(screen.queryByText("Loading…")).toBeNull();
+	});
+
+	it("ticks its own database when two panels are open", async () => {
+		searching();
+		const user = userEvent.setup();
+		render(
+			<>
+				<Routed databases={[db("alpha"), db("beta")]} />
+				<Routed databases={[db("alpha"), db("beta")]} />
+			</>,
+		);
+		await user.click(screen.getAllByText("beta")[1]);
+		const [inFirst, inSecond] = screen.getAllByRole("checkbox", {
+			name: "beta",
+		});
+		expect(inFirst.getAttribute("aria-checked")).toBe("true");
+		expect(inSecond.getAttribute("aria-checked")).toBe("false");
 	});
 
 	it("cannot search with no database available", async () => {

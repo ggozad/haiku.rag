@@ -8,6 +8,7 @@ import {
 } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Estimate, useEstimate } from "@/components/doctor/MapJob";
+import { openSearch } from "@/components/SearchOverlay";
 import { Empty } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -130,23 +131,17 @@ export default function InspectPage() {
 		pathname === "/search" ? { kind: "search" } : inspectView(path);
 	const [infoOpen, setInfoOpen] = useState(false);
 
-	// The search page keeps showing the list of the database last open, and the
-	// database pages link back to the search last run.
+	// The search page keeps showing the list of the database last open.
 	const [lastList, setLastList] = useState<{
 		db: string;
 		query: string;
 	} | null>(null);
-	const [lastSearch, setLastSearch] = useState("/search");
 	const here = query.toString();
 	const viewDb = "db" in view ? view.db : null;
 	const listHere = listOf(query).toString();
 	useEffect(() => {
 		if (viewDb !== null) setLastList({ db: viewDb, query: listHere });
 	}, [viewDb, listHere]);
-	const searching = view.kind === "search";
-	useEffect(() => {
-		if (searching) setLastSearch(here ? `/search?${here}` : "/search");
-	}, [searching, here]);
 
 	const first = available[0] ?? databases[0];
 	useEffect(() => {
@@ -237,7 +232,7 @@ export default function InspectPage() {
 						<Button
 							size="sm"
 							variant={view.kind === "search" ? "secondary" : "ghost"}
-							onClick={() => router.push(lastSearch)}
+							onClick={openSearch}
 						>
 							Search
 						</Button>

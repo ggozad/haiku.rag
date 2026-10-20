@@ -1,7 +1,7 @@
 "use client";
 
 import { ImagePlus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Empty, Loading } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -93,6 +93,8 @@ export default function SearchPanel({
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 	const picker = useRef<HTMLInputElement>(null);
+	// The overlay and the search page can both be open.
+	const ids = useId();
 	const controller = useRef<AbortController | null>(null);
 	const imageSearch = databases.some((db) => db.supports_image_search);
 
@@ -185,7 +187,7 @@ export default function SearchPanel({
 						</div>
 					) : (
 						<Input
-							id="search-query"
+							id={`${ids}-query`}
 							placeholder="Search the documents"
 							value={query}
 							onChange={(event) => setQuery(event.target.value)}
@@ -195,7 +197,7 @@ export default function SearchPanel({
 						<>
 							<input
 								ref={picker}
-								id="search-image"
+								id={`${ids}-image`}
 								type="file"
 								accept="image/*"
 								hidden
@@ -235,7 +237,7 @@ export default function SearchPanel({
 						</SelectContent>
 					</Select>
 					<Select value={limit} onValueChange={setLimit}>
-						<SelectTrigger className="w-24" aria-label="Results">
+						<SelectTrigger className="w-32" aria-label="Results">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -247,7 +249,7 @@ export default function SearchPanel({
 						</SelectContent>
 					</Select>
 					<Input
-						id="search-filter"
+						id={`${ids}-filter`}
 						className="w-80 font-mono text-xs"
 						placeholder="SQL filter on documents"
 						value={filter}
@@ -257,11 +259,11 @@ export default function SearchPanel({
 						databases.map((db) => (
 							<label
 								key={db.name}
-								htmlFor={`search-db-${db.name}`}
+								htmlFor={`${ids}-db-${db.name}`}
 								className="flex items-center gap-1"
 							>
 								<Checkbox
-									id={`search-db-${db.name}`}
+									id={`${ids}-db-${db.name}`}
 									checked={ticked(db.name)}
 									onCheckedChange={() => toggle(db.name)}
 								/>

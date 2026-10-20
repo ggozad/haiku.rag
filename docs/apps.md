@@ -115,7 +115,7 @@ Every inspector view has an address that reopens it:
 | `/inspect/{db}/{document}/chunks/{chunk}?view=` | A chunk and its view |
 | `/search?q=&db=&type=&limit=&filter=` | A search, one `db` per database searched |
 
-`list_q`, `list_filter` and `list_offset` carry the document list's search, filter and page on every address of a database. An image cannot ride in an address: an image search keeps its image and results until the browser reloads. The doctor's address is `/doctor/{db}`.
+`list_q`, `list_filter` and `list_offset` carry the document list's search, filter and page on every address of a database. Ctrl+K, or Cmd+K on a Mac, opens the same search over any page, with its results in place and a link to its address. An image cannot ride in an address: an image search keeps its image and results until the browser reloads. The doctor's address is `/doctor/{db}`.
 
 ## Doctor
 
