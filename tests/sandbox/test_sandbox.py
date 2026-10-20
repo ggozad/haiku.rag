@@ -736,12 +736,8 @@ class TestSandboxVFS:
         finally:
             await sb.close()
 
-    async def test_open_file_objects_are_not_iterable(self, temp_db_path):
-        """Pins the limitation the instructions warn about: pydantic/monty#490.
-
-        A failure here means Monty gained iteration support and the
-        `for line in f` prohibition in the analysis instructions is now wrong.
-        """
+    async def test_open_file_objects_iterate_by_line(self, temp_db_path):
+        """`for line in open(...)` reads a mounted document line by line."""
         from docling_core.types.doc.document import DoclingDocument
         from docling_core.types.doc.labels import DocItemLabel
 
@@ -764,17 +760,13 @@ class TestSandboxVFS:
 
         sb = Sandbox(db_path=temp_db_path, config=config, context=AnalysisContext())
         try:
+            path = f"/documents/{doc.id}/content.txt"
             result = await sb.execute(
-                f"for line in open('/documents/{doc.id}/content.txt'):\n    print(line)"
-            )
-            assert result.success is False
-            assert "not iterable" in result.stderr
-
-            # The documented alternatives do work.
-            result = await sb.execute(
-                f"print(len(open('/documents/{doc.id}/content.txt').readlines()))"
+                f"lines = [line for line in open('{path}')]\n"
+                f"print(len(lines), lines == open('{path}').readlines())"
             )
             assert result.success, result.stderr
+            assert result.stdout.strip() == "2 True"
         finally:
             await sb.close()
 

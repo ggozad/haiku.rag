@@ -17,7 +17,7 @@ Inside the code, these functions are available (use `await`):
 - `await list_documents()` → list of dicts with keys: id, title, uri, created_at, metadata
 
 Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` do not exist.
-Not supported: class inheritance and metaclasses, generators/yield, match statements, iterating a file object (`for line in f`)
+Not supported: class inheritance and metaclasses, generators/yield
 
 ### search
 Search the knowledge base directly (outside code execution). Each result has a `Type:` (paragraph, table, code, list_item, picture). When the Type is `picture`, the corresponding figure may also be attached to the tool response as an image alongside the text — use it directly to answer questions about figures, diagrams, charts, screenshots.
@@ -49,7 +49,7 @@ All documents are mounted as a virtual filesystem at `/documents/`:
 `{document_id}` is an internal identifier, not the user-facing `uri` (filename, URL, etc.). When you only know a document by its URI or title, use `await list_documents()` to enumerate ids and match against `uri` / `title` — that's a single call to the host. Iterating `/documents/` and reading every `metadata.json` works too but is much slower on portal-scale corpora.
 
 ### Reading files
-Read with `Path.read_text()` or `open()` (including `with` blocks); file objects support `.read()`, `.readline()`, and `.readlines()`. A file object cannot be iterated, so read line-wise with `.readlines()` or `.read().split("\n")` instead of `for line in f`. Files are read-only; writing raises `PermissionError`. There is no network. A call has a time limit, named in the error when it is hit, and output past a size is cut with an `... (output truncated)` marker.
+Read with `Path.read_text()` or `open()`. Files are read-only; writing raises `PermissionError`. There is no network. A call has a time limit, named in the error when it is hit, and output past a size is cut with an `... (output truncated)` marker.
 
 ```python
 from pathlib import Path
@@ -122,6 +122,5 @@ If your first search returns results that clearly don't match the question:
 - Use `print()` to output results — the output is your only feedback
 - When you write code, execute it — don't describe what code would do. But not every question needs code; simple lookups are best answered by `search → cite`.
 - Use `await` for all async functions inside `execute_code` (`search`, `list_documents`)
-- Read files with `Path.read_text()` or `open()`/`with`. For lines use `.readlines()` or `.read().split("\n")`, never `for line in f`.
 - Do NOT include chunk IDs or UUIDs in your answer text — your answer should read naturally. Use the `cite` tool separately to register citations. `cite{...}` markdown-style inline references do nothing; only an actual `cite` tool call registers a citation.
 - **Before you write your final answer, invoke the `cite` tool with the supporting chunk_ids, or with an empty list if there are none.** This is the last tool call before answering, every time.

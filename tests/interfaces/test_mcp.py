@@ -768,16 +768,14 @@ class TestMCPExecuteCode:
             "from pathlib import Path\n"
             "print('before')\n"
             "for d in Path('/documents').iterdir():\n"
-            "    for line in open(d / 'items.jsonl'):\n"
-            "        pass"
+            "    json.loads((d / 'items.jsonl').read_text())"
         )
 
         result = await _call(create_mcp_server(mcp_db), "execute_code", code=code)
 
         assert result.is_error
         text = result.content[0].text
-        assert "not iterable" in text
-        assert ".readlines()" in text
+        assert "NameError" in text
         assert "Output: before" in text
 
     async def test_calls_share_no_state(self, mcp_db):
