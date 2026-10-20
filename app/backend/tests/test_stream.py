@@ -513,12 +513,9 @@ async def test_a_client_leaving_mid_run_cancels_it_and_stores_nothing(app, tmp_p
         await serving
 
 
-def _redirected(chunk_id: str):
-    """Searches twice, answers without citing, and cites when the policy asks.
-
-    One search round is not enough under AG-UI: its evidence epoch equals the
-    question's identity, so the policy sees nothing to declare.
-    """
+def _redirected(chunk_id: str | None, rounds: int = 2):
+    """Searches `rounds` times and answers without citing. When the policy
+    asks, cites `chunk_id`, or answers again without citing when it is None."""
     from pydantic_ai.messages import UserPromptPart
 
     from haiku.rag.capabilities.policy import CITATION_REDIRECT_TAG
@@ -537,6 +534,9 @@ def _redirected(chunk_id: str):
             isinstance(p, UserPromptPart) and CITATION_REDIRECT_TAG in str(p.content)
             for p in last.parts
         ):
+            if chunk_id is None:
+                yield "Still no citation."
+                return
             yield {
                 0: DeltaToolCall(
                     name="cite",
@@ -546,7 +546,7 @@ def _redirected(chunk_id: str):
             }
         elif "cite" in returned:
             yield "Cited."
-        elif searches >= 2:
+        elif searches >= rounds:
             yield "The alpha document says so."
         else:
             yield {
@@ -584,6 +584,28 @@ async def test_the_policy_asks_once_for_an_undeclared_answer(
     [redirect] = [m for m in session["messages"] if m["id"] in session["inserted"]]
     assert CITATION_REDIRECT_TAG in json.dumps(redirect["content"])
     assert session["message_runs"][redirect["id"]] == "run-1"
+
+
+async def test_one_search_and_an_uncited_answer_is_a_violation(
+    app, client, seeded, query_embedding
+):
+    _, ids = seeded
+    session_id = await _session(client)
+    await client.patch(
+        f"/api/sessions/{session_id}",
+        json={
+            "selection": [
+                {"source": name, "id": ids[name]["document_id"]}
+                for name in ("alpha", "beta")
+            ]
+        },
+    )
+    model = FunctionModel(stream_function=_redirected(None, rounds=1))
+    response = await _run(app, client, session_id, "run-1", [_user("u1")], model=model)
+    summary = next(e for e in _events(response.text) if e["type"] == "CUSTOM")
+    assert summary["value"] == {"citation_status": "missing", "violation": True}
+    session = (await client.get(f"/api/sessions/{session_id}")).json()
+    assert len(session["inserted"]) == 1
 
 
 async def test_a_client_resume_never_reaches_the_adapter(app, client, monkeypatch):
