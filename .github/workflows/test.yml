@@ -50,6 +50,9 @@ jobs:
       - name: Test
         working-directory: app/frontend
         run: pnpm test
+      - name: Production build
+        working-directory: app/frontend
+        run: pnpm run build
 
   test-uri-platforms:
     name: URI paths (${{ matrix.os }}, py${{ matrix.python }})
