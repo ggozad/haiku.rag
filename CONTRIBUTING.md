@@ -52,6 +52,10 @@ Using AI tools to write code, issues or pull requests is fine. What matters is t
 - Keep issues and pull request descriptions short and concrete. Say what is wrong, how you fixed it and how you verified it.
 - Say that AI was used. It is not held against the contribution.
 
+## Automated contributions
+
+haiku.rag is a tool for people who use it. Issues and pull requests opened by automated agents, by contribution or promotion services, or by accounts that open them across many projects without using them will be closed, and the account may be blocked.
+
 ## License
 
 By contributing you agree that your contributions are licensed under the MIT License.
