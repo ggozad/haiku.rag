@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { Loading } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { firstLine, type Item } from "@/lib/inspect";
@@ -58,11 +59,11 @@ function Field({ label, value }: { label: string; value: unknown }) {
 	);
 }
 
-function Loading({ error }: { error: string | null }) {
+function Pending({ error }: { error: string | null }) {
 	return error ? (
 		<p className="text-sm text-destructive">{error}</p>
 	) : (
-		<p className="text-sm text-muted-foreground">Loading…</p>
+		<Loading />
 	);
 }
 
@@ -142,7 +143,7 @@ export default function ChunkView({
 			<div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
 				<div className="min-w-0 flex-1">
 					<h2 className="font-semibold">
-						Chunk {chunk.data ? chunk.data.order : ""}
+						Chunk {chunk.data ? chunk.data.order + 1 : ""}
 					</h2>
 					<p className="break-all font-mono text-xs text-muted-foreground">
 						{ref.chunkId}
@@ -199,7 +200,7 @@ export default function ChunkView({
 					value="details"
 					className="space-y-4 min-h-0 flex-1 overflow-y-auto px-4 py-3"
 				>
-					{!chunk.data && <Loading error={chunk.error} />}
+					{!chunk.data && <Pending error={chunk.error} />}
 					{chunk.data && (
 						<>
 							<pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
@@ -224,7 +225,7 @@ export default function ChunkView({
 					value="agent"
 					className="space-y-3 min-h-0 flex-1 overflow-y-auto px-4 py-3"
 				>
-					{!context.data && <Loading error={context.error} />}
+					{!context.data && <Pending error={context.error} />}
 					{context.data && (
 						<>
 							<pre className="whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
@@ -255,7 +256,7 @@ export default function ChunkView({
 					value="grounding"
 					className="space-y-3 min-h-0 flex-1 overflow-y-auto px-4 py-3"
 				>
-					{!grounding.data && <Loading error={grounding.error} />}
+					{!grounding.data && <Pending error={grounding.error} />}
 					{grounding.data?.message && (
 						<p className="text-sm text-muted-foreground">
 							{grounding.data.message}
@@ -276,7 +277,7 @@ export default function ChunkView({
 					value="similar"
 					className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
 				>
-					{!similar.data && <Loading error={similar.error} />}
+					{!similar.data && <Pending error={similar.error} />}
 					<ul className="space-y-1">
 						{similar.data?.results.map((row) => (
 							<li key={`${row.source}:${row.chunk_id}`}>

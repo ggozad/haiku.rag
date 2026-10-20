@@ -270,6 +270,24 @@ describe("SearchPanel", () => {
 		expect(bodies.length).toBe(2);
 	});
 
+	it("says it is searching, and when nothing matched", async () => {
+		let answer: (response: Response) => void = () => {};
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				() =>
+					new Promise<Response>((resolve) => {
+						answer = resolve;
+					}),
+			),
+		);
+		render(<Routed databases={[db("alpha")]} start="/search?q=nothing" />);
+		await screen.findByText("Loading…");
+		answer(Response.json({ results: [], rendering: "" }));
+		await screen.findByText("Nothing matched.");
+		expect(screen.queryByText("Loading…")).toBeNull();
+	});
+
 	it("cannot search with no database available", async () => {
 		searching();
 		const user = userEvent.setup();

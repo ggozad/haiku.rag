@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { Loading } from "@/components/Status";
 import type { Block, Item } from "@/lib/inspect";
 import { cn } from "@/lib/utils";
 
@@ -128,7 +129,7 @@ export default function ContentTab({
 
 	return (
 		<>
-			{loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+			{loading && <Loading />}
 			{error && <p className="text-sm text-destructive">{error}</p>}
 			<div className="space-y-1">
 				{items?.map((item, index) => (

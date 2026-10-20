@@ -8,6 +8,7 @@ import {
 } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Estimate, useEstimate } from "@/components/doctor/MapJob";
+import { Empty } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -324,7 +325,7 @@ export default function InspectPage() {
 								<div className="truncate font-medium">
 									{doc.title || doc.uri || doc.id}
 								</div>
-								{doc.title && doc.uri && (
+								{doc.title && doc.uri && doc.uri !== doc.title && (
 									<div className="truncate text-xs text-muted-foreground">
 										{doc.uri}
 									</div>
@@ -386,9 +387,7 @@ export default function InspectPage() {
 						onOpen={openChunk}
 					/>
 				) : "db" in view && info && !selected ? (
-					<p className="p-6 text-sm text-muted-foreground">
-						No database is named {view.db}.
-					</p>
+					<Empty>No database is named {view.db}.</Empty>
 				) : mapOpen && selected ? (
 					<MapView
 						source={view.db}
@@ -461,13 +460,12 @@ export default function InspectPage() {
 						}
 					/>
 				) : view.kind === "unknown" ? (
-					<p className="p-6 text-sm text-muted-foreground">
-						The inspector has no page at this address.
-					</p>
+					<Empty>The inspector has no page at this address.</Empty>
 				) : (
-					<p className="p-6 text-sm text-muted-foreground">
-						Pick a document to see its content, outline and chunks.
-					</p>
+					<Empty>
+						Pick a document to see its content, outline and chunks, or open the
+						map.
+					</Empty>
 				)}
 			</section>
 			{source && (

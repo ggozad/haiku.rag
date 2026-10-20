@@ -7,6 +7,7 @@ import {
 	TriangleAlert,
 } from "lucide-react";
 import { useState } from "react";
+import { SectionHeading } from "@/components/Page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -90,7 +91,7 @@ export default function ChecksPanel({
 	return (
 		<section className="space-y-3">
 			<div className="flex flex-wrap items-center gap-3">
-				<h2 className="font-semibold">Checks</h2>
+				<SectionHeading>Checks</SectionHeading>
 				<label
 					htmlFor="doctor-providers"
 					className="flex items-center gap-2 text-sm"

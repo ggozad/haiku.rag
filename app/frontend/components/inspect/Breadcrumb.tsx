@@ -50,7 +50,7 @@ export default function Breadcrumb({
 		});
 	if (view.kind === "chunk")
 		crumbs.push({
-			label: chunk.data ? `Chunk ${chunk.data.order}` : "Chunk",
+			label: chunk.data ? `Chunk ${chunk.data.order + 1}` : "Chunk",
 		});
 
 	return (

@@ -90,6 +90,7 @@ describe("ChunkView", () => {
 			screen.getByRole("link", { name: "Next chunk" }).getAttribute("href"),
 		).toBe("/chunk/c2");
 		expect(screen.getByText("2 of 3")).toBeTruthy();
+		expect(screen.getByRole("heading", { name: "Chunk 2" })).toBeTruthy();
 	});
 
 	it("has no neighbour past either end", async () => {

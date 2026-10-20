@@ -40,7 +40,7 @@ export default function ChunksTab({
 							onClick={() => onOpenChunk(chunk.id)}
 						>
 							<span className="w-10 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-								{chunk.order}
+								{chunk.order + 1}
 							</span>
 							<span className="min-w-0 flex-1 truncate">
 								{firstLine(chunk.content)}

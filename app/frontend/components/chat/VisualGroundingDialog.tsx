@@ -1,5 +1,6 @@
 "use client";
 
+import { Loading } from "@/components/Status";
 import {
 	Dialog,
 	DialogContent,
@@ -50,7 +51,7 @@ export default function VisualGroundingDialog({
 						The cited passage highlighted on its pages.
 					</DialogDescription>
 				</DialogHeader>
-				{loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+				{loading && <Loading />}
 				{message && <p className="text-sm text-muted-foreground">{message}</p>}
 				<div className="space-y-4">
 					{images.map((image, n) => (

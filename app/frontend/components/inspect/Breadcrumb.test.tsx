@@ -57,7 +57,7 @@ describe("Breadcrumb", () => {
 				documentQuery={new URLSearchParams("list_q=tea&tab=chunks")}
 			/>,
 		);
-		await screen.findByText("Chunk 7");
+		await screen.findByText("Chunk 8");
 		expect(
 			screen.getByRole("link", { name: "A report" }).getAttribute("href"),
 		).toBe("/inspect/orb/d1?list_q=tea&tab=chunks");

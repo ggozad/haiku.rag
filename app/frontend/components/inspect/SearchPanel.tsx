@@ -2,6 +2,7 @@
 
 import { ImagePlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Empty, Loading } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -85,10 +86,9 @@ export default function SearchPanel({
 		if (picked) setPicked(flip(picked));
 		else setUnticked(flip);
 	};
-	const [answer, setAnswer] = useState<Answer>(
-		entry?.answer ?? { results: [], rendering: "" },
-	);
-	const { results, rendering } = answer;
+	// Null until a search has answered.
+	const [answer, setAnswer] = useState<Answer | null>(entry?.answer ?? null);
+	const { results, rendering } = answer ?? { results: [], rendering: "" };
 	const [asAgent, setAsAgent] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -124,7 +124,7 @@ export default function SearchPanel({
 		} catch (err) {
 			if (!current.signal.aborted) {
 				setError(err instanceof Error ? err.message : String(err));
-				setAnswer({ results: [], rendering: "" });
+				setAnswer(null);
 			}
 		} finally {
 			if (!current.signal.aborted) setBusy(false);
@@ -272,6 +272,10 @@ export default function SearchPanel({
 				{error && <p className="text-sm text-destructive">{error}</p>}
 			</form>
 			<div className="min-h-0 flex-1 overflow-y-auto p-4">
+				{busy && <Loading />}
+				{!busy && answer && results.length === 0 && (
+					<Empty>Nothing matched.</Empty>
+				)}
 				{results.length > 0 && (
 					<div className="mb-3 flex gap-2">
 						<Button

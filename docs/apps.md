@@ -7,6 +7,8 @@ A browser application over haiku.rag, in the `app/` directory of the repository.
 - **Doctor**: `haiku-rag doctor` as a page, and the corpus map's near-duplicate documents.
 - **Ingestion**: the ingester's queue, sources, providers and jobs, with cancel, retry and refresh. The header's ingestion chip opens it and shows the ingester's state: unreachable, degraded, dead letters, ingesting, or idle.
 
+The pages follow the system's light or dark theme.
+
 Three services run it: a Starlette backend that reads LanceDB, `haiku-ingester serve` as the only writer, and a Next.js frontend. The terminal equivalents are [Chat](chat.md), the [ingester](ingester.md) dashboard, `haiku-rag inspect` and `haiku-rag doctor`.
 
 !!! warning "No authentication"

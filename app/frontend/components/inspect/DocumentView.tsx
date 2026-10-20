@@ -77,7 +77,7 @@ export default function DocumentView({
 				<h2 className="font-semibold">
 					{doc.data?.title || doc.data?.uri || documentId}
 				</h2>
-				{doc.data?.uri && (
+				{doc.data?.uri && doc.data.uri !== doc.data.title && (
 					<p className="break-all text-xs text-muted-foreground">
 						{doc.data.uri}
 					</p>

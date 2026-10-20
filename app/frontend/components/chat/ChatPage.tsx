@@ -4,6 +4,7 @@ import { HttpAgent } from "@ag-ui/client";
 import { Filter } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useReducer, useState } from "react";
+import { Loading } from "@/components/Status";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -323,7 +324,12 @@ export default function ChatPage() {
 			</div>
 		);
 	}
-	if (!session) return null;
+	if (!session)
+		return (
+			<div className="p-6">
+				<Loading />
+			</div>
+		);
 	return (
 		<ChatSession key={session.id} initial={session} onSessionChange={open} />
 	);

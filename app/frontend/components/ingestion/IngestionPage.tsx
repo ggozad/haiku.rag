@@ -2,6 +2,8 @@
 
 import { ChevronRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Page, PageHeader, SectionHeading } from "@/components/Page";
+import { Loading } from "@/components/Status";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,7 +40,7 @@ function Section({
 }) {
 	return (
 		<section className="min-w-0 space-y-2">
-			<h2 className="text-sm font-semibold">{title}</h2>
+			<SectionHeading>{title}</SectionHeading>
 			{error ? <p className="text-sm text-destructive">{error}</p> : children}
 		</section>
 	);
@@ -82,7 +84,7 @@ function Lazy({
 				{error ? (
 					<p className="text-sm text-destructive">{error}</p>
 				) : data === null ? (
-					<p className="text-sm text-muted-foreground">Loading…</p>
+					<Loading />
 				) : (
 					render(data)
 				)}
@@ -141,193 +143,188 @@ export default function IngestionPage() {
 	const unreachable = snapshot?.health.error;
 
 	return (
-		<div className="h-full overflow-y-auto">
-			<div className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-				<header className="flex flex-wrap items-center gap-3">
-					<h1 className="text-lg font-semibold">Ingestion</h1>
-					{unreachable ? (
-						<Badge variant="destructive" title={unreachable}>
-							Unreachable
-						</Badge>
-					) : health ? (
-						<Badge
-							variant={health.status === "ok" ? "secondary" : "destructive"}
-						>
-							{health.status}
-						</Badge>
-					) : null}
-					{health && (
-						<span className="text-sm text-muted-foreground">
-							{health.workers_alive}/{health.worker_count} workers ·{" "}
-							{health.pollers_alive}/{health.poller_count} pollers
-						</span>
-					)}
-					{health?.worker_breaker_open && (
-						<Badge variant="destructive">
-							Worker breaker open after{" "}
-							{health.worker_breaker_consecutive_failures} failures
-						</Badge>
-					)}
-					{database && (
-						<span className="text-sm text-muted-foreground">
-							Writes {database}
-						</span>
-					)}
-					<span className="ml-auto text-xs text-muted-foreground">
+		<Page>
+			<PageHeader
+				title="Ingestion"
+				aside={
+					<span className="text-xs text-muted-foreground">
 						{!snapshot
 							? "Loading…"
 							: snapshot.healthyAt === null
 								? "Not reached yet"
 								: `Updated ${formatRelativeTime(new Date(snapshot.healthyAt).toISOString())}`}
 					</span>
-				</header>
-				{unreachable && (
-					<Alert variant="destructive">
-						<AlertDescription>{unreachable}</AlertDescription>
-					</Alert>
+				}
+			>
+				{unreachable ? (
+					<Badge variant="destructive" title={unreachable}>
+						Unreachable
+					</Badge>
+				) : health ? (
+					<Badge variant={health.status === "ok" ? "secondary" : "destructive"}>
+						{health.status}
+					</Badge>
+				) : null}
+				{health && (
+					<span className="text-sm text-muted-foreground">
+						{health.workers_alive}/{health.worker_count} workers ·{" "}
+						{health.pollers_alive}/{health.poller_count} pollers
+					</span>
 				)}
-				{notice && (
-					<Alert>
-						<AlertDescription>{notice}</AlertDescription>
-					</Alert>
+				{health?.worker_breaker_open && (
+					<Badge variant="destructive">
+						Worker breaker open after{" "}
+						{health.worker_breaker_consecutive_failures} failures
+					</Badge>
 				)}
+				{database && (
+					<span className="text-sm text-muted-foreground">
+						Writes {database}
+					</span>
+				)}
+			</PageHeader>
+			{unreachable && (
+				<Alert variant="destructive">
+					<AlertDescription>{unreachable}</AlertDescription>
+				</Alert>
+			)}
+			{notice && (
+				<Alert>
+					<AlertDescription>{notice}</AlertDescription>
+				</Alert>
+			)}
 
-				<Section title="Queue" error={snapshot?.stats.error}>
-					{stats && health && <QueueSummary health={health} stats={stats} />}
-				</Section>
+			<Section title="Queue" error={snapshot?.stats.error}>
+				{stats && health && <QueueSummary health={health} stats={stats} />}
+			</Section>
 
-				<Section title="Sources" error={snapshot?.sources.error}>
-					<SourcesPanel
-						sources={sources}
-						stats={stats}
-						onRefresh={(source) =>
-							act(async () => {
-								const result = (await ingester(
-									`sources/${encodeURIComponent(source)}/refresh`,
-									{ method: "POST" },
-									REFRESH_TIMEOUT_MS,
-								)) as { refreshed: boolean };
-								return result.refreshed
-									? `Refreshed ${source}.`
-									: `Refresh of ${source} skipped or failed.`;
-							})
-						}
-					/>
-				</Section>
-
-				<Section title="Providers" error={snapshot?.providers.error}>
-					<ul className="space-y-1 text-sm">
-						{providers?.docling_serve.map((endpoint) => (
-							<li key={endpoint.base_url} className="flex items-center gap-2">
-								<Badge
-									variant={endpoint.reachable ? "secondary" : "destructive"}
-								>
-									{endpoint.reachable ? "reachable" : "unreachable"}
-								</Badge>
-								<span className="font-mono text-xs">{endpoint.base_url}</span>
-								{endpoint.status_code !== null && (
-									<span className="text-muted-foreground">
-										HTTP {endpoint.status_code}
-									</span>
-								)}
-								{endpoint.error && (
-									<span className="text-muted-foreground">
-										{endpoint.error}
-									</span>
-								)}
-							</li>
-						))}
-						{providers && providers.docling_serve.length === 0 && (
-							<li className="text-muted-foreground">
-								No docling-serve endpoints are configured.
-							</li>
-						)}
-					</ul>
-				</Section>
-
-				<Section title="Active jobs" error={snapshot?.active.error}>
-					<JobTable
-						jobs={active}
-						columns={["op", "uri", "source", "attempts", "worker", "claimed"]}
-						onOpen={setViewing}
-						action={(job) => (
-							<Button
-								size="sm"
-								variant="outline"
-								onClick={() => setConfirming(job)}
-							>
-								<X />
-								Cancel
-							</Button>
-						)}
-						empty="Nothing is being ingested."
-					/>
-				</Section>
-
-				<Section title="Dead letter" error={snapshot?.dead.error}>
-					<JobTable
-						jobs={dead}
-						columns={["op", "uri", "source", "attempts", "error"]}
-						onOpen={setViewing}
-						action={(job) => (
-							<Button
-								size="sm"
-								variant="outline"
-								onClick={() =>
-									act(async () => {
-										await ingester(`jobs/${encodeURIComponent(job.id)}/retry`, {
-											method: "POST",
-										});
-										return `Queued ${job.uri} again.`;
-									})
-								}
-							>
-								<RotateCcw />
-								Retry
-							</Button>
-						)}
-						empty="No job has failed for good."
-					/>
-				</Section>
-
-				<Section
-					title="Latest succeeded, by enqueue time"
-					error={snapshot?.succeeded.error}
-				>
-					<JobTable
-						jobs={succeeded}
-						columns={["op", "uri", "source", "duration", "finished"]}
-						onOpen={setViewing}
-						empty="No job has succeeded yet."
-					/>
-				</Section>
-
-				<JobsBrowser
-					sources={sources.map((s) => s.source_id)}
-					revision={revision}
+			<Section title="Sources" error={snapshot?.sources.error}>
+				<SourcesPanel
+					sources={sources}
+					stats={stats}
+					onRefresh={(source) =>
+						act(async () => {
+							const result = (await ingester(
+								`sources/${encodeURIComponent(source)}/refresh`,
+								{ method: "POST" },
+								REFRESH_TIMEOUT_MS,
+							)) as { refreshed: boolean };
+							return result.refreshed
+								? `Refreshed ${source}.`
+								: `Refresh of ${source} skipped or failed.`;
+						})
+					}
 				/>
+			</Section>
 
-				<div className="space-y-2">
-					<Lazy
-						title="Database"
-						path="database"
-						onLoad={(info) => setDatabase((info as { path: string }).path)}
-						render={(data) => (
-							<pre className="overflow-x-auto font-mono text-xs">
-								{JSON.stringify(data, null, 2)}
-							</pre>
-						)}
-					/>
-					<Lazy
-						title="Configuration"
-						path="config"
-						render={(data) => (
-							<pre className="overflow-x-auto font-mono text-xs">
-								{(data as { yaml: string }).yaml}
-							</pre>
-						)}
-					/>
-				</div>
+			<Section title="Providers" error={snapshot?.providers.error}>
+				<ul className="space-y-1 text-sm">
+					{providers?.docling_serve.map((endpoint) => (
+						<li key={endpoint.base_url} className="flex items-center gap-2">
+							<Badge variant={endpoint.reachable ? "secondary" : "destructive"}>
+								{endpoint.reachable ? "reachable" : "unreachable"}
+							</Badge>
+							<span className="font-mono text-xs">{endpoint.base_url}</span>
+							{endpoint.status_code !== null && (
+								<span className="text-muted-foreground">
+									HTTP {endpoint.status_code}
+								</span>
+							)}
+							{endpoint.error && (
+								<span className="text-muted-foreground">{endpoint.error}</span>
+							)}
+						</li>
+					))}
+					{providers && providers.docling_serve.length === 0 && (
+						<li className="text-muted-foreground">
+							No docling-serve endpoints are configured.
+						</li>
+					)}
+				</ul>
+			</Section>
+
+			<Section title="Active jobs" error={snapshot?.active.error}>
+				<JobTable
+					jobs={active}
+					columns={["op", "uri", "source", "attempts", "worker", "claimed"]}
+					onOpen={setViewing}
+					action={(job) => (
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={() => setConfirming(job)}
+						>
+							<X />
+							Cancel
+						</Button>
+					)}
+					empty="Nothing is being ingested."
+				/>
+			</Section>
+
+			<Section title="Dead letter" error={snapshot?.dead.error}>
+				<JobTable
+					jobs={dead}
+					columns={["op", "uri", "source", "attempts", "error"]}
+					onOpen={setViewing}
+					action={(job) => (
+						<Button
+							size="sm"
+							variant="outline"
+							onClick={() =>
+								act(async () => {
+									await ingester(`jobs/${encodeURIComponent(job.id)}/retry`, {
+										method: "POST",
+									});
+									return `Queued ${job.uri} again.`;
+								})
+							}
+						>
+							<RotateCcw />
+							Retry
+						</Button>
+					)}
+					empty="No job has failed for good."
+				/>
+			</Section>
+
+			<Section
+				title="Latest succeeded, by enqueue time"
+				error={snapshot?.succeeded.error}
+			>
+				<JobTable
+					jobs={succeeded}
+					columns={["op", "uri", "source", "duration", "finished"]}
+					onOpen={setViewing}
+					empty="No job has succeeded yet."
+				/>
+			</Section>
+
+			<JobsBrowser
+				sources={sources.map((s) => s.source_id)}
+				revision={revision}
+			/>
+
+			<div className="space-y-2">
+				<Lazy
+					title="Database"
+					path="database"
+					onLoad={(info) => setDatabase((info as { path: string }).path)}
+					render={(data) => (
+						<pre className="overflow-x-auto font-mono text-xs">
+							{JSON.stringify(data, null, 2)}
+						</pre>
+					)}
+				/>
+				<Lazy
+					title="Configuration"
+					path="config"
+					render={(data) => (
+						<pre className="overflow-x-auto font-mono text-xs">
+							{(data as { yaml: string }).yaml}
+						</pre>
+					)}
+				/>
 			</div>
 
 			<Dialog
@@ -367,6 +364,6 @@ export default function IngestionPage() {
 				</DialogContent>
 			</Dialog>
 			<JobDialog job={viewing} onClose={() => setViewing(null)} />
-		</div>
+		</Page>
 	);
 }

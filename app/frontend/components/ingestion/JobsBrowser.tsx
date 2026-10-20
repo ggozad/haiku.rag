@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SectionHeading } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -77,7 +78,7 @@ export default function JobsBrowser({
 
 	return (
 		<section className="space-y-3">
-			<h2 className="text-sm font-semibold">All jobs</h2>
+			<SectionHeading>All jobs</SectionHeading>
 			<div className="flex flex-wrap items-center gap-2">
 				<Select
 					value={status}

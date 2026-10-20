@@ -251,6 +251,27 @@ describe("DocumentView", () => {
 		).toBe(true);
 	});
 
+	it("names a document once when its title is its URI", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) =>
+				url.endsWith("/documents/d1")
+					? Response.json({
+							id: "d1",
+							title: "report.pdf",
+							uri: "report.pdf",
+							metadata: {},
+							created_at: "t",
+							updated_at: "t",
+						})
+					: serve("d1")(url),
+			),
+		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
+		await screen.findByRole("heading", { name: "report.pdf" });
+		expect(screen.getAllByText("report.pdf")).toHaveLength(1);
+	});
+
 	it("says when a document has no pictures, or the listing fails", async () => {
 		const user = userEvent.setup();
 		const pictures = (respond: () => Response) =>

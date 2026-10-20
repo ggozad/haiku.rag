@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { Page, PageHeader, SectionHeading } from "@/components/Page";
+import { Empty } from "@/components/Status";
 import {
 	Select,
 	SelectContent,
@@ -32,7 +34,7 @@ function CorpusMapJob({ source, ready }: { source: string; ready: boolean }) {
 	return (
 		<section className="space-y-3">
 			<div className="flex flex-wrap items-center gap-3">
-				<h2 className="font-semibold">Corpus map</h2>
+				<SectionHeading>Corpus map</SectionHeading>
 				<Link href={mapHref(source)} className="text-sm underline">
 					Open the map
 				</Link>
@@ -80,33 +82,28 @@ export default function DoctorPage() {
 	const source = known ? named : null;
 
 	return (
-		<div className="h-full overflow-y-auto">
-			<div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
-				<header className="flex flex-wrap items-center gap-3">
-					<h1 className="text-lg font-semibold">Doctor</h1>
-					<Select
-						value={source ?? ""}
-						onValueChange={(name) => router.push(doctorHref(name))}
-					>
-						<SelectTrigger className="w-56" aria-label="Database">
-							<SelectValue placeholder="Database" />
-						</SelectTrigger>
-						<SelectContent>
-							{databases.map((db) => (
-								<SelectItem key={db.name} value={db.name}>
-									{db.name}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</header>
-				{info && named !== null && !known && (
-					<p className="text-sm text-muted-foreground">
-						No database is named {named}.
-					</p>
-				)}
-				{source && <DoctorDatabase key={source} source={source} />}
-			</div>
-		</div>
+		<Page>
+			<PageHeader title="Doctor">
+				<Select
+					value={source ?? ""}
+					onValueChange={(name) => router.push(doctorHref(name))}
+				>
+					<SelectTrigger className="w-56" aria-label="Database">
+						<SelectValue placeholder="Database" />
+					</SelectTrigger>
+					<SelectContent>
+						{databases.map((db) => (
+							<SelectItem key={db.name} value={db.name}>
+								{db.name}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</PageHeader>
+			{info && named !== null && !known && (
+				<Empty>No database is named {named}.</Empty>
+			)}
+			{source && <DoctorDatabase key={source} source={source} />}
+		</Page>
 	);
 }
