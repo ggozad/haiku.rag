@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
@@ -46,6 +47,7 @@ export default function SessionMenu({
 }) {
 	const [sessions, setSessions] = useState<SessionSummary[]>([]);
 	const [renaming, setRenaming] = useState<string | null>(null);
+	const [deleting, setDeleting] = useState(false);
 
 	const act = (action: () => Promise<void>) => () => {
 		action().catch((error: Error) => onError(error.message));
@@ -92,11 +94,7 @@ export default function SessionMenu({
 					<DropdownMenuItem
 						variant="destructive"
 						disabled={running}
-						onSelect={act(async () => {
-							await deleteSession(sessionId);
-							const [next] = await listSessions();
-							onSessionChange(next ? next.id : (await createSession()).id);
-						})}
+						onSelect={() => setDeleting(true)}
 					>
 						<Trash2 />
 						Delete this session
@@ -150,6 +148,35 @@ export default function SessionMenu({
 							</Button>
 						</DialogFooter>
 					</form>
+				</DialogContent>
+			</Dialog>
+			<Dialog open={deleting} onOpenChange={setDeleting}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete this session?</DialogTitle>
+						<DialogDescription className="break-words">
+							“{title}” and every question and answer in it are deleted for
+							good.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setDeleting(false)}>
+							Keep it
+						</Button>
+						<Button
+							variant="destructive"
+							onClick={() => {
+								setDeleting(false);
+								act(async () => {
+									await deleteSession(sessionId);
+									const [next] = await listSessions();
+									onSessionChange(next ? next.id : (await createSession()).id);
+								})();
+							}}
+						>
+							Delete the session
+						</Button>
+					</DialogFooter>
 				</DialogContent>
 			</Dialog>
 		</>

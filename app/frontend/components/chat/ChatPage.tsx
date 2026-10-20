@@ -243,16 +243,14 @@ function ChatSession({
 						: "All documents"}
 				</Button>
 			</div>
-			<div className="min-h-0 flex-1 overflow-y-auto">
-				<MessageList
-					messages={agent.messages}
-					running={running}
-					evidenceByRun={evidenceByRun}
-					messageRuns={session.message_runs}
-					hidden={new Set(session.inserted)}
-					showSource={(info?.databases.length ?? 0) > 1}
-				/>
-			</div>
+			<MessageList
+				messages={agent.messages}
+				running={running}
+				evidenceByRun={evidenceByRun}
+				messageRuns={session.message_runs}
+				hidden={new Set(session.inserted)}
+				showSource={(info?.databases.length ?? 0) > 1}
+			/>
 			{notice && (
 				<div className="mx-auto w-full max-w-3xl px-4 pb-2">
 					<Alert>

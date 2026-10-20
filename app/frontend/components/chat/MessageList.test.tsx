@@ -1,13 +1,17 @@
 /** @vitest-environment jsdom */
 import type { Message } from "@ag-ui/client";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Evidence } from "@/lib/chat";
 import MessageList from "./MessageList";
 
-beforeAll(() => {
-	Element.prototype.scrollIntoView = () => {};
+let scrolls: number;
+beforeEach(() => {
+	scrolls = 0;
+	Element.prototype.scrollIntoView = () => {
+		scrolls++;
+	};
 });
 afterEach(cleanup);
 
@@ -84,5 +88,49 @@ describe("MessageList", () => {
 		const link = screen.getByRole("link", { name: "Open in the inspector" });
 		expect(link.getAttribute("href")).toBe("/inspect/stanevals/d1/chunks/c1");
 		expect(link.getAttribute("target")).toBe("_blank");
+	});
+
+	it("follows a streaming answer only while the reader is at the bottom", async () => {
+		const list = (last: string, extra: Message[] = []) => (
+			<MessageList
+				messages={[
+					{ id: "u1", role: "user", content: "Q" },
+					{ id: "a1", role: "assistant", content: last },
+					...extra,
+				]}
+				running
+				evidenceByRun={{}}
+				messageRuns={{}}
+				hidden={new Set()}
+				showSource={false}
+			/>
+		);
+		const { rerender } = render(list("One"));
+		const region = screen.getByRole("log");
+		Object.defineProperties(region, {
+			scrollHeight: { configurable: true, value: 2000 },
+			clientHeight: { configurable: true, value: 500 },
+			scrollTop: { configurable: true, writable: true, value: 1500 },
+		});
+		rerender(list("One two"));
+		const atBottom = scrolls;
+		expect(atBottom).toBeGreaterThan(0);
+
+		region.scrollTop = 200;
+		fireEvent.scroll(region);
+		rerender(list("One two three"));
+		expect(scrolls).toBe(atBottom);
+		const jump = screen.getByRole("button", { name: "Jump to latest" });
+
+		fireEvent.click(jump);
+		expect(scrolls).toBe(atBottom + 1);
+		expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+
+		region.scrollTop = 200;
+		fireEvent.scroll(region);
+		rerender(
+			list("One two three", [{ id: "u2", role: "user", content: "Next" }]),
+		);
+		expect(scrolls).toBe(atBottom + 2);
 	});
 });
