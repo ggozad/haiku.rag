@@ -77,7 +77,7 @@ ingester:
 
 ### Several databases
 
-`lancedb.databases` may name several databases. The chat searches all of them, the document filter narrows a conversation to chosen documents and databases, and the inspector and the doctor work on one database at a time. A search across the set fails while any member cannot be opened: the header lists each database with its state, and an unavailable one names the reason.
+`lancedb.databases` may name several databases. The chat searches all of them, the document filter narrows a conversation to chosen documents and databases, and the inspector and the doctor work on one database at a time. The filter applies its document ids in every chosen database, so with two copies of one database, choosing a document in one copy also admits it from the other. A search across the set fails while any member cannot be opened: the header lists each database with its state, and an unavailable one names the reason.
 
 The ingester writes one database. Under a configuration naming several, pass the one it writes with `--db` in the `ingester` service's command:
 
@@ -126,7 +126,7 @@ A doctor run and a map each read every chunk vector, at least chunks × dimensio
 | `/api/doctor/{source}` | GET | The latest doctor run |
 | `/api/doctor/{source}/run` | POST | Start a doctor run |
 | `/api/doctor/{source}/projection` | GET, POST | The latest corpus map, or start one |
-| `/api/doctor/{source}/projection/similarity` | GET | Every document's centroid cosine to one, in map order |
+| `/api/doctor/{source}/projection/similarity` | GET | Every document's centroid cosine to `id`, in map order, for the map `generation` names (409 once it is replaced) |
 | `/api/doctor/{source}/duplicates.yaml` | GET | The map's near-duplicate families |
 | `/health` | GET | Health, model and databases |
 

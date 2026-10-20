@@ -1,3 +1,5 @@
+import type { DatabaseEntry } from "./databases";
+
 export interface Item {
 	self_ref: string;
 	label: string;
@@ -66,4 +68,13 @@ export function chunkCount(node: OutlineNode): number {
 export function firstLine(text: string, length = 120): string {
 	const line = text.split("\n").find((l) => l.trim()) ?? "";
 	return line.length > length ? `${line.slice(0, length - 1)}…` : line;
+}
+
+// The databases a search covers: every available one the user has not unticked,
+// so one that becomes available later is searched by default.
+export function searched(
+	databases: DatabaseEntry[],
+	unticked: Set<string>,
+): string[] {
+	return databases.map((db) => db.name).filter((name) => !unticked.has(name));
 }

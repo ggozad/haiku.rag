@@ -153,3 +153,31 @@ export function nearestOf(
 		.sort((a, b) => similarity[b] - similarity[a])
 		.slice(0, k);
 }
+
+export interface Shade {
+	similarity: number[];
+	close: number[];
+	nearest: number[];
+	// Point indices, nearest last, so they are drawn on top.
+	order: number[];
+}
+
+// How every point is shaded while one is selected: only from scores computed
+// for the map on screen, and only while the selected document is on it.
+export function shading(
+	scores: { generation: string; similarity: number[] } | null,
+	generation: string | undefined,
+	points: Point[],
+	selectedId: string | null,
+): Shade | null {
+	if (!scores || scores.generation !== generation) return null;
+	const index = points.findIndex((p) => p.id === selectedId);
+	if (index === -1) return null;
+	const close = closeness(scores.similarity, index);
+	return {
+		similarity: scores.similarity,
+		close,
+		nearest: nearestOf(scores.similarity, index, 8),
+		order: points.map((_, i) => i).sort((a, b) => close[a] - close[b]),
+	};
+}

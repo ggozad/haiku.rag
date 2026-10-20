@@ -27,9 +27,13 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.4.2",
 		"@tailwindcss/postcss": "4.3.3",
+		"@testing-library/dom": "10.4.0",
+		"@testing-library/react": "16.3.0",
+		"@testing-library/user-event": "14.6.1",
 		"@types/node": "^22",
 		"@types/react": "^19",
 		"@types/react-dom": "^19",
+		"jsdom": "26.1.0",
 		"postcss": "^8.5.30",
 		"shadcn": "4.21.0",
 		"tailwindcss": "4.3.3",

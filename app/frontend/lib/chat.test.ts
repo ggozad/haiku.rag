@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	checkpoint,
 	evidenceAnchors,
-	evidenceOf,
-	latestTurnRuns,
 	loadDraft,
 	loadDraftImages,
 	loadPending,
@@ -18,41 +16,6 @@ import {
 	textOf,
 	toolResults,
 } from "./chat";
-
-const citation = (chunk_id: string) => ({
-	index: 1,
-	document_id: "d",
-	source: "alpha",
-	chunk_id,
-	document_uri: "u",
-	document_title: "t",
-	page_numbers: [],
-	headings: null,
-	content: "c",
-});
-
-describe("evidenceOf", () => {
-	it("lists the cited citations in order and the last successful program", () => {
-		const state = {
-			rag: {
-				citations: ["b", "a", "missing"],
-				citation_index: { a: citation("a"), b: citation("b") },
-				executions: [
-					{ code: "first()", success: true },
-					{ code: "second()", success: true },
-					{ code: "failed()", success: false },
-				],
-			},
-		};
-		const evidence = evidenceOf(state);
-		expect(evidence.citations.map((c) => c.chunk_id)).toEqual(["b", "a"]);
-		expect(evidence.program).toBe("second()");
-	});
-
-	it("is empty for a state without the rag namespace", () => {
-		expect(evidenceOf(undefined)).toEqual({ citations: [], program: null });
-	});
-});
 
 describe("messages", () => {
 	const messages: Message[] = [
@@ -106,8 +69,8 @@ describe("messages", () => {
 	});
 });
 
-describe("runs and evidence", () => {
-	it("gives the latest turn's messages its run, and anchors evidence after its last answer", () => {
+describe("evidenceAnchors", () => {
+	it("anchors each run's evidence after its last answer", () => {
 		const messages: Message[] = [
 			{ id: "u1", role: "user", content: "q" },
 			{ id: "a1", role: "assistant", content: "earlier" },
@@ -116,9 +79,8 @@ describe("runs and evidence", () => {
 			{ id: "t1", role: "tool", toolCallId: "c", content: "r" },
 			{ id: "a3", role: "assistant", content: "final" },
 		];
-		const runs = latestTurnRuns(messages, "run-2");
-		expect(runs).toEqual({ a2: "run-2", t1: "run-2", a3: "run-2" });
-		expect([...evidenceAnchors(messages, { ...runs, a1: "run-1" })]).toEqual([
+		const runs = { a1: "run-1", a2: "run-2", t1: "run-2", a3: "run-2" };
+		expect([...evidenceAnchors(messages, runs)]).toEqual([
 			[1, "run-1"],
 			[5, "run-2"],
 		]);

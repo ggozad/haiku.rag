@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { blocksOf, chunkCount, firstLine, type Item } from "./inspect";
+import {
+	blocksOf,
+	chunkCount,
+	firstLine,
+	type Item,
+	searched,
+} from "./inspect";
 
 const item = (label: string, chunk_ids: string[], heading_level = 0): Item => ({
 	self_ref: `#/x/${Math.random()}`,
@@ -50,5 +56,26 @@ describe("outline and text", () => {
 		).toBe(2);
 		expect(firstLine("\n  \nhello\nworld")).toBe("hello");
 		expect(firstLine("abcdef", 4)).toBe("abc…");
+	});
+});
+
+describe("searched", () => {
+	const db = (name: string) => ({ name, available: true, error: null });
+
+	it("names every available database the user has not unticked", () => {
+		expect(searched([db("alpha")], new Set())).toEqual(["alpha"]);
+		expect(searched([db("alpha"), db("beta")], new Set(["beta"]))).toEqual([
+			"alpha",
+		]);
+		expect(searched([db("alpha")], new Set(["alpha"]))).toEqual([]);
+	});
+
+	it("includes a database that becomes available later", () => {
+		const unticked = new Set(["beta"]);
+		expect(searched([db("alpha")], unticked)).toEqual(["alpha"]);
+		expect(searched([db("alpha"), db("beta"), db("gamma")], unticked)).toEqual([
+			"alpha",
+			"gamma",
+		]);
 	});
 });

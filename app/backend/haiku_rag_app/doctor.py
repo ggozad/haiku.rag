@@ -2,6 +2,7 @@ import asyncio
 import os
 import queue
 import threading
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -139,6 +140,15 @@ class Jobs:
         job.finished_at = _now()
 
 
+@dataclass(frozen=True)
+class Centroids:
+    """One map's unit centroids, in `ids` order, and the map they belong to."""
+
+    generation: str
+    ids: list[str]
+    unit: np.ndarray
+
+
 class Retained:
     """Unit centroids kept for similarity lookups, within one memory budget
     across databases. A newer projection evicts the oldest others; one that
@@ -146,22 +156,24 @@ class Retained:
 
     def __init__(self, budget: int = 256 * 1024**2) -> None:
         self.budget = budget
-        self._kept: dict[str, tuple[list[str], np.ndarray]] = {}
+        self._kept: dict[str, Centroids] = {}
 
-    def keep(self, source: str, ids: list[str], unit: np.ndarray) -> bool:
+    def keep(
+        self, source: str, generation: str, ids: list[str], unit: np.ndarray
+    ) -> bool:
         self._kept.pop(source, None)
         if unit.nbytes > self.budget:
             return False
         while self._kept and self._used() + unit.nbytes > self.budget:
             del self._kept[next(iter(self._kept))]
-        self._kept[source] = (ids, unit)
+        self._kept[source] = Centroids(generation, ids, unit)
         return True
 
-    def get(self, source: str) -> tuple[list[str], np.ndarray] | None:
+    def get(self, source: str) -> Centroids | None:
         return self._kept.get(source)
 
     def _used(self) -> int:
-        return sum(unit.nbytes for _, unit in self._kept.values())
+        return sum(kept.unit.nbytes for kept in self._kept.values())
 
 
 def configured_ref(request: Request) -> DatabaseRef:
@@ -239,7 +251,10 @@ async def start_projection(request: Request) -> JSONResponse:
         return projection
 
     def done(projection: Projection) -> dict[str, Any]:
-        neighbours = retained.keep(ref.name, projection.ids, projection.unit)
+        generation = uuid.uuid4().hex
+        neighbours = retained.keep(
+            ref.name, generation, projection.ids, projection.unit
+        )
         labels = {point["id"]: _label(point) for point in projection.points}
         return {
             "points": projection.points,
@@ -251,6 +266,7 @@ async def start_projection(request: Request) -> JSONResponse:
                 for family in projection.families
             ],
             "left_off": projection.left_off,
+            "generation": generation,
             "versions": projection.versions,
             "neighbours": neighbours,
             "yaml": duplicates_yaml(
@@ -273,9 +289,11 @@ async def get_projection(request: Request) -> JSONResponse:
     if job.status == "done":
         summary["stale"] = await _stale(request, ref.name, job.result["versions"])
         # A later map of another database may have evicted these centroids.
+        kept = request.app.state.retained.get(ref.name)
         summary["result"] = {
             **job.result,
-            "neighbours": request.app.state.retained.get(ref.name) is not None,
+            "neighbours": kept is not None
+            and kept.generation == job.result["generation"],
         }
     return JSONResponse({"projection": summary})
 
@@ -301,11 +319,20 @@ async def similarities(request: Request) -> JSONResponse:
             404,
             "similarity is unavailable: compute the map again, within the memory budget",
         )
-    ids, unit = kept
+    generation = request.query_params.get("generation")
+    if not generation:
+        raise HTTPException(400, "generation names the map the scores are for")
+    if generation != kept.generation:
+        raise HTTPException(409, "the map was computed again: reload it")
     doc_id = request.query_params.get("id", "")
-    if doc_id not in ids:
+    if doc_id not in kept.ids:
         raise HTTPException(404, f"no document {doc_id!r} on the map")
-    return JSONResponse({"similarity": similarity(unit, ids, doc_id)})
+    return JSONResponse(
+        {
+            "generation": kept.generation,
+            "similarity": similarity(kept.unit, kept.ids, doc_id),
+        }
+    )
 
 
 async def duplicates_export(request: Request) -> PlainTextResponse:

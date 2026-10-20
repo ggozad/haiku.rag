@@ -125,15 +125,16 @@ def test_near_duplicates_form_a_family_and_similarity_is_cosine():
 def test_the_budget_evicts_the_oldest_and_refuses_what_never_fits():
     retained = Retained(budget=64)
     small = np.zeros((2, 4), dtype=np.float32)
-    assert retained.keep("a", ["x", "y"], small)
-    assert retained.keep("b", ["x", "y"], small)
-    assert retained.keep("c", ["x", "y"], np.zeros((4, 4), dtype=np.float32))
+    assert retained.keep("a", "g1", ["x", "y"], small)
+    assert retained.keep("b", "g2", ["x", "y"], small)
+    assert retained.keep("c", "g3", ["x", "y"], np.zeros((4, 4), dtype=np.float32))
     assert retained.get("a") is None and retained.get("b") is None
-    assert not retained.keep("d", ["x"], np.zeros((10, 4), dtype=np.float32))
+    assert not retained.keep("d", "g4", ["x"], np.zeros((10, 4), dtype=np.float32))
     assert retained.get("d") is None
-    assert retained.keep("c", ["x"], small)
+    assert retained.keep("c", "g5", ["x"], small)
     kept = retained.get("c")
-    assert kept is not None and kept[1].shape == (2, 4)
+    assert kept is not None and kept.generation == "g5"
+    assert kept.unit.shape == (2, 4)
 
 
 @pytest.fixture
@@ -194,7 +195,8 @@ async def test_the_map_places_documents_and_their_families(client, mapped):
 
     similar = (
         await client.get(
-            "/api/doctor/alpha/projection/similarity", params={"id": mapped["copy-a"]}
+            "/api/doctor/alpha/projection/similarity",
+            params={"id": mapped["copy-a"], "generation": result["generation"]},
         )
     ).json()["similarity"]
     assert len(similar) == len(result["points"])
@@ -251,16 +253,37 @@ async def test_staleness_is_unknown_when_the_versions_cannot_be_read(
 
 async def test_similarity_needs_a_kept_map_and_a_known_document(app, client, mapped):
     url = "/api/doctor/alpha/projection/similarity"
-    assert (await client.get(url, params={"id": "x"})).status_code == 404
+    params = {"generation": "g"}
+    assert (await client.get(url, params={"id": "x", **params})).status_code == 404
     app.state.retained = Retained(budget=1)
     await client.post("/api/doctor/alpha/projection")
     projection = await _settled(client, "alpha")
     assert projection["result"]["neighbours"] is False
-    assert (await client.get(url, params={"id": mapped["other"]})).status_code == 404
+    params = {"generation": projection["result"]["generation"]}
+    other = {"id": mapped["other"], **params}
+    assert (await client.get(url, params=other)).status_code == 404
     app.state.retained = Retained()
     await client.post("/api/doctor/alpha/projection")
-    await _settled(client, "alpha")
-    assert (await client.get(url, params={"id": "nope"})).status_code == 404
+    projection = await _settled(client, "alpha")
+    params = {"generation": projection["result"]["generation"]}
+    assert (await client.get(url, params={"id": "nope", **params})).status_code == 404
     app.state.retained = Retained()
     evicted = (await client.get("/api/doctor/alpha/projection")).json()
     assert evicted["projection"]["result"]["neighbours"] is False
+
+
+async def test_similarity_answers_only_for_the_map_it_names(client, mapped):
+    url = "/api/doctor/alpha/projection/similarity"
+    await client.post("/api/doctor/alpha/projection")
+    first = (await _settled(client, "alpha"))["result"]["generation"]
+    await client.post("/api/doctor/alpha/projection")
+    second = (await _settled(client, "alpha"))["result"]["generation"]
+    assert first != second
+
+    doc = mapped["copy-a"]
+    replaced = await client.get(url, params={"id": doc, "generation": first})
+    assert replaced.status_code == 409
+    current = await client.get(url, params={"id": doc, "generation": second})
+    assert current.status_code == 200
+    assert current.json()["generation"] == second
+    assert (await client.get(url, params={"id": doc})).status_code == 400

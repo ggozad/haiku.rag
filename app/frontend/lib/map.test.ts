@@ -6,6 +6,7 @@ import {
 	hit,
 	nearestOf,
 	type Point,
+	shading,
 	toScreen,
 	zoomAt,
 } from "./map";
@@ -94,5 +95,27 @@ describe("closeness", () => {
 		const similarity = [0.2, 1, 0.9, 0.5, 0.95];
 		expect(nearestOf(similarity, 1, 3)).toEqual([4, 2, 3]);
 		expect(nearestOf(similarity, 1, 10)).toHaveLength(4);
+	});
+});
+
+describe("shading", () => {
+	const points = ["a", "b", "c"].map((id) => point(id, 0, 0));
+	const scores = { generation: "g2", similarity: [1, 0.2, 0.9] };
+
+	it("shades by the scores of the map on screen", () => {
+		const shade = shading(scores, "g2", points, "a");
+		expect(shade?.nearest).toEqual([2, 1]);
+		expect(shade?.order).toEqual([1, 0, 2]);
+		expect(shade?.similarity).toBe(scores.similarity);
+	});
+
+	it("ignores scores computed for another map", () => {
+		expect(shading(scores, "g3", points, "a")).toBeNull();
+	});
+
+	it("needs scores and a selected document on the map", () => {
+		expect(shading(null, "g2", points, "a")).toBeNull();
+		expect(shading(scores, "g2", points, null)).toBeNull();
+		expect(shading(scores, "g2", points, "gone")).toBeNull();
 	});
 });

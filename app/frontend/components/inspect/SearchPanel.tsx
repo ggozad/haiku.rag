@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import type { DatabaseEntry } from "@/lib/databases";
 import { type Attachment, readImage } from "@/lib/images";
-import { firstLine } from "@/lib/inspect";
+import { firstLine, searched } from "@/lib/inspect";
 import type { ChunkRef } from "./ChunkDialog";
 
 interface Result {
@@ -40,9 +40,8 @@ export default function SearchPanel({
 	const [limit, setLimit] = useState("10");
 	const [type, setType] = useState("hybrid");
 	const [filter, setFilter] = useState("");
-	const [chosen, setChosen] = useState<Set<string>>(
-		() => new Set(databases.map((db) => db.name)),
-	);
+	const [unticked, setUnticked] = useState<Set<string>>(() => new Set());
+	const sources = searched(databases, unticked);
 	const [results, setResults] = useState<Result[]>([]);
 	const [rendering, setRendering] = useState("");
 	const [asAgent, setAsAgent] = useState(false);
@@ -57,7 +56,7 @@ export default function SearchPanel({
 	useEffect(() => {
 		controller.current?.abort();
 		setBusy(false);
-	}, [query, image, limit, type, filter, chosen]);
+	}, [query, image, limit, type, filter, sources.join("\n")]);
 	useEffect(() => () => controller.current?.abort(), []);
 
 	const run = async () => {
@@ -76,7 +75,7 @@ export default function SearchPanel({
 					limit: Number(limit),
 					search_type: image ? "vector" : type,
 					filter: filter.trim() || null,
-					sources: databases.length > 1 ? [...chosen] : null,
+					sources,
 				}),
 			});
 			const data = await response.json();
@@ -157,7 +156,10 @@ export default function SearchPanel({
 							</Button>
 						</>
 					)}
-					<Button type="submit" disabled={busy || (!image && !query.trim())}>
+					<Button
+						type="submit"
+						disabled={busy || !sources.length || (!image && !query.trim())}
+					>
 						Search
 					</Button>
 				</div>
@@ -191,7 +193,7 @@ export default function SearchPanel({
 						value={filter}
 						onChange={(event) => setFilter(event.target.value)}
 					/>
-					{databases.length > 1 &&
+					{(databases.length > 1 || sources.length < databases.length) &&
 						databases.map((db) => (
 							<label
 								key={db.name}
@@ -200,9 +202,9 @@ export default function SearchPanel({
 							>
 								<Checkbox
 									id={`search-db-${db.name}`}
-									checked={chosen.has(db.name)}
+									checked={!unticked.has(db.name)}
 									onCheckedChange={() =>
-										setChosen((prev) => {
+										setUnticked((prev) => {
 											const next = new Set(prev);
 											if (next.has(db.name)) next.delete(db.name);
 											else next.add(db.name);

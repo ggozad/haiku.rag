@@ -5,5 +5,10 @@ export default defineConfig({
 	resolve: {
 		alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
 	},
-	test: { include: ["lib/**/*.test.ts"] },
+	esbuild: { jsx: "automatic" },
+	// Component tests choose jsdom with an `@vitest-environment` comment.
+	test: {
+		include: ["lib/**/*.test.ts", "components/**/*.test.tsx"],
+		setupFiles: ["./vitest.setup.ts"],
+	},
 });

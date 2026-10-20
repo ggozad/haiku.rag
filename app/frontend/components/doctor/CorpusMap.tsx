@@ -15,11 +15,10 @@ import {
 import {
 	type ColourBy,
 	categories,
-	closeness,
 	fitView,
 	hit,
-	nearestOf,
 	type Point,
+	shading,
 	toScreen,
 	type View,
 	zoomAt,
@@ -38,6 +37,7 @@ interface MapResult {
 	points: Point[];
 	families: Family[];
 	left_off: number;
+	generation: string;
 	neighbours: boolean;
 }
 
@@ -73,8 +73,11 @@ export default function CorpusMap({
 
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const [view, setView] = useState<View>({ k: 1, tx: 0, ty: 0 });
-	const [hovered, setHovered] = useState<Point | null>(null);
-	const [selected, setSelected] = useState<Point | null>(null);
+	// Held by id, so a recomputed map resolves them against its own points.
+	const [hoveredId, setHoveredId] = useState<string | null>(null);
+	const [selectedId, setSelectedId] = useState<string | null>(null);
+	const setHovered = (point: Point | null) => setHoveredId(point?.id ?? null);
+	const setSelected = (point: Point | null) => setSelectedId(point?.id ?? null);
 	const [family, setFamily] = useState<number | null>(null);
 	const [colourBy, setColourBy] = useState<ColourBy>("family");
 	const [term, setTerm] = useState("");
@@ -99,32 +102,29 @@ export default function CorpusMap({
 				)
 			: null;
 	}, [points, term]);
-	const similar = useJson<{ similarity: number[] }>(
+	const byId = useMemo(() => new Map(points.map((p) => [p.id, p])), [points]);
+	const selected = (selectedId && byId.get(selectedId)) || null;
+	const hovered = (hoveredId && byId.get(hoveredId)) || null;
+	const similar = useJson<{ generation: string; similarity: number[] }>(
 		selected && result?.neighbours
-			? `${base}/projection/similarity?${new URLSearchParams({ id: selected.id })}`
+			? `${base}/projection/similarity?${new URLSearchParams({ id: selected.id, generation: result.generation })}`
 			: null,
 	);
-	const byId = useMemo(() => new Map(points.map((p) => [p.id, p])), [points]);
 	// While a document is selected, every other is shaded by its closeness to it.
-	const shade = useMemo(() => {
-		const similarity = similar.data?.similarity;
-		const index = selected ? points.findIndex((p) => p.id === selected.id) : -1;
-		if (!similarity || index === -1 || similarity.length !== points.length)
-			return null;
-		const close = closeness(similarity, index);
-		return {
-			similarity,
-			close,
-			nearest: nearestOf(similarity, index, 8),
-			// Nearest last, so they are drawn on top.
-			order: points.map((_, i) => i).sort((a, b) => close[a] - close[b]),
-		};
-	}, [similar.data, selected, points]);
+	const shade = useMemo(
+		() => shading(similar.data, result?.generation, points, selectedId),
+		[similar.data, result?.generation, points, selectedId],
+	);
 
-	// Refit when a new map arrives, not when the same map is read again.
+	// Refit, drop the family selection and any selection not on the new map, when
+	// a new map arrives, not when the same map is read again.
 	const computedAt = result ? job?.finished_at : null;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: a new map has a new finish time
 	useEffect(() => {
+		setFamily(null);
+		if (!result) return;
+		setSelectedId((id) => (id && byId.has(id) ? id : null));
+		setHoveredId((id) => (id && byId.has(id) ? id : null));
 		const element = canvas.current;
 		if (!element || !points.length) return;
 		setView(fitView(points, element.clientWidth, element.clientHeight));

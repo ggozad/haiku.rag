@@ -16,14 +16,6 @@ export interface Citation {
 	picture_refs?: string[];
 }
 
-// The fields of the capability's state this UI reads. The capability owns the
-// rest of its namespace, and the backend keeps the whole state.
-interface RAGState {
-	citation_index: Record<string, Citation>;
-	citations: string[];
-	executions?: unknown[];
-}
-
 // A selected document: ids repeat only between copies of a database, so the
 // database name is part of its identity.
 export interface DocumentRef {
@@ -41,37 +33,6 @@ export interface Evidence {
 	// The last program the model ran successfully for the question, if any.
 	program: string | null;
 	summary?: RunSummary;
-}
-
-interface CodeExecution {
-	code: string;
-	success?: boolean;
-}
-
-export function ragStateOf(state: unknown): RAGState {
-	const rag = (state as Record<string, unknown> | undefined)?.rag as
-		| Partial<RAGState>
-		| undefined;
-	return {
-		citation_index: rag?.citation_index ?? {},
-		citations: rag?.citations ?? [],
-		executions: rag?.executions ?? [],
-	};
-}
-
-// What the last question rests on: the state after a run holds that
-// question's citations and executions only.
-export function evidenceOf(state: unknown): Evidence {
-	const rag = ragStateOf(state);
-	const citations = rag.citations
-		.map((id) => rag.citation_index[id])
-		.filter((citation): citation is Citation => citation !== undefined);
-	const executions = (rag.executions as CodeExecution[] | undefined) ?? [];
-	const successful = executions.filter((entry) => entry.success !== false);
-	return {
-		citations,
-		program: successful.length ? successful[successful.length - 1].code : null,
-	};
 }
 
 // Tool results by the id of the call they answer.
@@ -106,20 +67,6 @@ export function textOf(message: Message): string {
 	return message.content
 		.map((part) => (part.type === "text" ? part.text : ""))
 		.join("");
-}
-
-// The run each message belongs to, for the latest turn only: every message
-// after the last user message the person sent belongs to `runId`.
-export function latestTurnRuns(
-	messages: Message[],
-	runId: string,
-): Record<string, string> {
-	const runs: Record<string, string> = {};
-	for (let i = messages.length - 1; i >= 0; i--) {
-		if (messages[i].role === "user") break;
-		runs[messages[i].id] = runId;
-	}
-	return runs;
 }
 
 // For each run, the index of its last assistant message with text, after
