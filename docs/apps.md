@@ -3,9 +3,9 @@
 A browser application over haiku.rag, in the `app/` directory of the repository. It has four pages:
 
 - **Chat**: conversational RAG over every configured database, with citations, pictures, visual grounding, image questions and stored sessions.
-- **Ingestion**: the ingester's queue, sources, providers and jobs, with cancel, retry and refresh.
 - **Inspector**: a database's documents, their items, outline, chunks, pages and pictures, what the agent receives for a chunk, search, and database info.
 - **Doctor**: `haiku-rag doctor` as a page, and a map of the corpus with its near-duplicate documents.
+- **Ingestion**: the ingester's queue, sources, providers and jobs, with cancel, retry and refresh. The header's ingestion chip opens it and shows the ingester's state: unreachable, degraded, dead letters, ingesting, or idle.
 
 Three services run it: a Starlette backend that reads LanceDB, `haiku-ingester serve` as the only writer, and a Next.js frontend. The terminal equivalents are [Chat](chat.md), the [ingester](ingester.md) dashboard, `haiku-rag inspect` and `haiku-rag doctor`.
 
@@ -95,11 +95,22 @@ Sessions live on the backend, in a SQLite file at `HAIKU_RAG_APP_SESSIONS`, whic
 
 ## Ingestion
 
-The page reads the ingester's control plane through the frontend every three seconds while it is visible: health, queue counts and throughput, sources, docling-serve endpoints, and active, failed and recently succeeded jobs. Every job is browsable by status, source and URI. Cancelling a job removes it from the queue, and a conversion already running finishes and may still write its document.
+The header chip reads the ingester's health every ten seconds while the page is visible. The page reads the ingester's control plane through the frontend every three seconds while it is visible: health, queue counts and throughput, sources, docling-serve endpoints, and active, failed and recently succeeded jobs. Every job is browsable by status, source and URI. Cancelling a job removes it from the queue, and a conversion already running finishes and may still write its document.
 
 ## Inspector
 
 Documents are listed by a title-or-URI search and a SQL filter on their attributes. A document shows its items in reading order, coloured by the chunk holding them, its outline with chunk counts, its chunks, its pages with their chunks drawn, and its pictures. A chunk shows its content and provenance, the context the agent receives for it, its place on the page, and the chunks similar to it. Search runs across the databases by text, or by image when the embedder is multimodal, and shows the results as the agent sees them. Info reports what `haiku-rag info` does, with the database's tags and version history, and it is the one view of a database the app cannot open.
+
+Every inspector view has an address that reopens it:
+
+| Address | View |
+|---------|------|
+| `/inspect/{db}` | The database's documents |
+| `/inspect/{db}/{document}?tab=&offset=&page=&item=` | A document, its tab, the chunk list's offset, the drawn page and the highlighted item |
+| `/inspect/{db}/{document}/chunks/{chunk}?view=` | A chunk, over its document |
+| `/search?q=&db=&type=&limit=&filter=` | A search, one `db` per database searched |
+
+`list_q`, `list_filter` and `list_offset` carry the document list's search, filter and page on every address of a database. An image cannot ride in an address: an image search keeps its image and results until the browser reloads. The doctor's address is `/doctor/{db}`.
 
 ## Doctor
 

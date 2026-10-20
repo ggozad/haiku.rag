@@ -161,3 +161,31 @@ export function formatAge(seconds: number | null | undefined): string {
 	if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
 	return `${(seconds / 3600).toFixed(1)}h`;
 }
+
+export interface IngestionState {
+	state: "unreachable" | "degraded" | "dead" | "busy" | "idle";
+	label: string;
+}
+
+export interface Health {
+	status: string;
+	queue_counts: Record<string, number>;
+}
+
+// The one state the header shows: the first that holds, in this order.
+export function ingestionState(health: Health | Error): IngestionState {
+	if (health instanceof Error)
+		return { state: "unreachable", label: "Ingester unreachable" };
+	if (health.status !== "ok")
+		return { state: "degraded", label: "Ingester degraded" };
+	const counts = health.queue_counts;
+	const dead = counts.dead ?? 0;
+	if (dead)
+		return {
+			state: "dead",
+			label: `${dead} dead ${dead === 1 ? "letter" : "letters"}`,
+		};
+	const pending = (counts.queued ?? 0) + (counts.claimed ?? 0);
+	if (pending) return { state: "busy", label: `Ingesting ${pending}` };
+	return { state: "idle", label: "Ingester idle" };
+}

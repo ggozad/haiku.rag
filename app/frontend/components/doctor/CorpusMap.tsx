@@ -12,6 +12,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { documentHref } from "@/lib/addresses";
 import { type ColourBy, categories, type Point, shading } from "@/lib/map";
 import { useJson } from "@/lib/useJson";
 import MapCanvas, { type Family, type Paint } from "./MapCanvas";
@@ -250,7 +251,7 @@ export default function CorpusMap({
 										</p>
 										<Link
 											className="text-xs underline"
-											href={`/inspect?${new URLSearchParams({ source, document: selected.id })}`}
+											href={documentHref(source, selected.id)}
 										>
 											Open in the inspector
 										</Link>

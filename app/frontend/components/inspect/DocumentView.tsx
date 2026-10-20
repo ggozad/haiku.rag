@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { blocksOf, type Item, type OutlineNode } from "@/lib/inspect";
 import { useJson } from "@/lib/useJson";
@@ -19,19 +19,36 @@ interface DocumentInfo {
 	updated_at: string;
 }
 
+// The open tab, the chunk list's offset, the drawn page and the highlighted item.
+export interface DocumentState {
+	tab: string;
+	offset: number;
+	page: number | null;
+	item: number | null;
+}
+
+export const OPENING: DocumentState = {
+	tab: "content",
+	offset: 0,
+	page: null,
+	item: null,
+};
+
 export default function DocumentView({
 	source,
 	documentId,
+	state,
+	onState,
 	onOpenChunk,
 }: {
 	source: string;
 	documentId: string;
+	state: DocumentState;
+	onState: (change: Partial<DocumentState>) => void;
 	onOpenChunk: (chunkId: string) => void;
 }) {
+	const { tab, offset, page, item } = state;
 	const base = `/api/backend/api/inspect/${encodeURIComponent(source)}/documents/${encodeURIComponent(documentId)}`;
-	const [tab, setTab] = useState("content");
-	const [jumpTo, setJumpTo] = useState<number | null>(null);
-	const [offset, setOffset] = useState(0);
 	const doc = useJson<DocumentInfo>(base);
 	const items = useJson<{ items: Item[] }>(`${base}/items`);
 	const outline = useJson<{ outline: OutlineNode[] }>(`${base}/outline`);
@@ -41,7 +58,6 @@ export default function DocumentView({
 	const pages = useJson<{ pages: PageEntry[] }>(
 		tab === "pages" ? `${base}/pages` : null,
 	);
-	const [page, setPage] = useState<number | null>(null);
 	const pictureList = useJson<{ pictures: Picture[] }>(
 		tab === "pictures" ? `${base}/pictures` : null,
 	);
@@ -91,10 +107,7 @@ export default function DocumentView({
 			</div>
 			<Tabs
 				value={tab}
-				onValueChange={(value) => {
-					setJumpTo(null);
-					setTab(value);
-				}}
+				onValueChange={(value) => onState({ tab: value })}
 				className="flex min-h-0 flex-1 flex-col"
 			>
 				<TabsList className="mx-4 mt-3">
@@ -114,8 +127,7 @@ export default function DocumentView({
 						loading={items.loading}
 						error={items.error}
 						pictureUrl={pictureUrl}
-						jumpTo={jumpTo}
-						onJumped={() => setJumpTo(null)}
+						highlighted={item}
 						onOpenChunk={onOpenChunk}
 					/>
 				</TabsContent>
@@ -126,10 +138,7 @@ export default function DocumentView({
 					<OutlineTab
 						outline={outline.data?.outline}
 						error={outline.error}
-						onJump={(index) => {
-							setTab("content");
-							setJumpTo(index);
-						}}
+						onJump={(index) => onState({ tab: "content", item: index })}
 					/>
 				</TabsContent>
 				<TabsContent
@@ -140,7 +149,7 @@ export default function DocumentView({
 						page={chunks.data}
 						error={chunks.error}
 						offset={offset}
-						onOffset={setOffset}
+						onOffset={(next) => onState({ offset: next })}
 						onOpenChunk={onOpenChunk}
 					/>
 				</TabsContent>
@@ -153,7 +162,7 @@ export default function DocumentView({
 						error={pages.error}
 						page={page}
 						pageUrl={(n) => `${base}/pages/${n}`}
-						onPage={setPage}
+						onPage={(next) => onState({ page: next })}
 						onOpenChunk={onOpenChunk}
 					/>
 				</TabsContent>

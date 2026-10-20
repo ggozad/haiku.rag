@@ -1,8 +1,31 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import DocumentView from "./DocumentView";
+import DocumentView, { type DocumentState, OPENING } from "./DocumentView";
+
+// Holds the view's state as the page's URL does.
+function Stateful({
+	source,
+	documentId,
+	onOpenChunk,
+}: {
+	source: string;
+	documentId: string;
+	onOpenChunk: (chunkId: string) => void;
+}) {
+	const [state, setState] = useState<DocumentState>(OPENING);
+	return (
+		<DocumentView
+			source={source}
+			documentId={documentId}
+			state={state}
+			onState={(change) => setState((prev) => ({ ...prev, ...change }))}
+			onOpenChunk={onOpenChunk}
+		/>
+	);
+}
 
 const item = (n: number, label = "text", chunk = `c${n}`) => ({
 	self_ref: `#/texts/${n}`,
@@ -99,9 +122,7 @@ describe("DocumentView", () => {
 	it("shows the content, and opens the chunk an item belongs to", async () => {
 		const opened = vi.fn();
 		const user = userEvent.setup();
-		render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={opened} />,
-		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={opened} />);
 		await screen.findByText("Title of d1");
 		await user.click(await screen.findByText("Item 1"));
 		expect(opened).toHaveBeenCalledWith("c1");
@@ -110,9 +131,7 @@ describe("DocumentView", () => {
 
 	it("jumps from the outline to the heading's item in the content", async () => {
 		const user = userEvent.setup();
-		render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={() => {}} />,
-		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
 		await screen.findByText("Item 0");
 		await user.click(screen.getByRole("tab", { name: "Outline" }));
 		await user.click(await screen.findByText("Second section"));
@@ -127,9 +146,7 @@ describe("DocumentView", () => {
 	it("pages through the chunks, and keeps the page across tabs", async () => {
 		const opened = vi.fn();
 		const user = userEvent.setup();
-		render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={opened} />,
-		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={opened} />);
 		await user.click(screen.getByRole("tab", { name: "Chunks" }));
 		await screen.findByText("Chunk 0 text");
 		await user.click(screen.getByRole("button", { name: "Next" }));
@@ -144,9 +161,7 @@ describe("DocumentView", () => {
 	it("draws a page with the chunks on it", async () => {
 		const opened = vi.fn();
 		const user = userEvent.setup();
-		render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={opened} />,
-		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={opened} />);
 		await user.click(screen.getByRole("tab", { name: "Pages" }));
 		await user.click(await screen.findByRole("button", { name: "3" }));
 		const page = screen.getByAltText("Page 3 with its chunks drawn");
@@ -158,20 +173,46 @@ describe("DocumentView", () => {
 	it("lists the pictures, saying when one has no caption", async () => {
 		const opened = vi.fn();
 		const user = userEvent.setup();
-		render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={opened} />,
-		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={opened} />);
 		await user.click(screen.getByRole("tab", { name: "Pictures" }));
 		await screen.findByText("No caption or description.");
 		await user.click(screen.getByRole("button", { name: "Open its chunk" }));
 		expect(opened).toHaveBeenCalledWith("c9");
 	});
 
+	it("opens the tab, chunk page, drawn page and item its state names", async () => {
+		const view = (state: Partial<DocumentState>) =>
+			render(
+				<DocumentView
+					source="alpha"
+					documentId="d1"
+					state={{ ...OPENING, ...state }}
+					onState={() => {}}
+					onOpenChunk={() => {}}
+				/>,
+			);
+		let shown = view({ tab: "chunks", offset: 50 });
+		await screen.findByText("Chunk 50 text");
+		expect(screen.getByText(/51–100 of/)).toBeTruthy();
+		shown.unmount();
+
+		shown = view({ tab: "pages", page: 3 });
+		await screen.findByAltText("Page 3 with its chunks drawn");
+		shown.unmount();
+
+		view({ tab: "content", item: 2 });
+		await waitFor(() => expect(scrolled).toEqual(["item-2"]));
+		expect(
+			document.getElementById("item-2")?.getAttribute("aria-current"),
+		).toBe("location");
+		expect(
+			document.getElementById("item-1")?.hasAttribute("aria-current"),
+		).toBe(false);
+	});
+
 	it("reads the shared views once, and a tab's own view only when shown", async () => {
 		const user = userEvent.setup();
-		render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={() => {}} />,
-		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
 		await screen.findByText("Item 0");
 		expect(reads("/pages") + reads("/pictures")).toBe(0);
 		await user.click(screen.getByRole("tab", { name: "Outline" }));
@@ -185,7 +226,7 @@ describe("DocumentView", () => {
 	it("reads the database and document it names, and follows a change of either", async () => {
 		const user = userEvent.setup();
 		const { rerender } = render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={() => {}} />,
+			<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />,
 		);
 		await screen.findByText("Title of d1");
 		expect(
@@ -202,9 +243,7 @@ describe("DocumentView", () => {
 
 		requested = [];
 		vi.stubGlobal("fetch", serve("d2"));
-		rerender(
-			<DocumentView source="beta" documentId="d2" onOpenChunk={() => {}} />,
-		);
+		rerender(<Stateful source="beta" documentId="d2" onOpenChunk={() => {}} />);
 		await screen.findByText("Title of d2");
 		expect(requested.length).toBeGreaterThan(0);
 		expect(
@@ -223,7 +262,7 @@ describe("DocumentView", () => {
 			pictures(() => Response.json({ pictures: [] })),
 		);
 		const { unmount } = render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={() => {}} />,
+			<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />,
 		);
 		await user.click(screen.getByRole("tab", { name: "Pictures" }));
 		await screen.findByText("This document has no pictures.");
@@ -235,9 +274,7 @@ describe("DocumentView", () => {
 				Response.json({ error: "no such document" }, { status: 404 }),
 			),
 		);
-		render(
-			<DocumentView source="alpha" documentId="d1" onOpenChunk={() => {}} />,
-		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
 		await user.click(screen.getByRole("tab", { name: "Pictures" }));
 		await screen.findByText("no such document");
 	});

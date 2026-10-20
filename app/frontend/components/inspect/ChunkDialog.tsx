@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
 	Dialog,
 	DialogContent,
@@ -14,6 +13,7 @@ import { useJson } from "@/lib/useJson";
 
 export interface ChunkRef {
 	source: string;
+	documentId: string;
 	chunkId: string;
 }
 
@@ -35,6 +35,7 @@ interface Similar {
 	results: {
 		source: string;
 		chunk_id: string;
+		document_id: string;
 		document_title: string | null;
 		document_uri: string | null;
 		score: number;
@@ -69,16 +70,22 @@ function Loading({ error }: { error: string | null }) {
 	);
 }
 
+export const VIEWS = ["details", "agent", "grounding", "similar"];
+
 export default function ChunkDialog({
 	chunk: ref,
+	view,
+	onView,
 	onOpen,
 	onClose,
 }: {
 	chunk: ChunkRef | null;
+	view: string;
+	onView: (view: string) => void;
 	onOpen: (chunk: ChunkRef) => void;
 	onClose: () => void;
 }) {
-	const [tab, setTab] = useState("details");
+	const tab = VIEWS.includes(view) ? view : "details";
 	const base = ref
 		? `/api/backend/api/inspect/${encodeURIComponent(ref.source)}/chunks/${encodeURIComponent(ref.chunkId)}`
 		: null;
@@ -108,10 +115,7 @@ export default function ChunkDialog({
 		<Dialog
 			open={ref !== null}
 			onOpenChange={(open) => {
-				if (!open) {
-					setTab("details");
-					onClose();
-				}
+				if (!open) onClose();
 			}}
 		>
 			<DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-4xl">
@@ -123,7 +127,7 @@ export default function ChunkDialog({
 						{ref?.chunkId}
 					</DialogDescription>
 				</DialogHeader>
-				<Tabs value={tab} onValueChange={setTab}>
+				<Tabs value={tab} onValueChange={onView}>
 					<TabsList>
 						<TabsTrigger value="details">Details</TabsTrigger>
 						<TabsTrigger value="agent">As the agent sees it</TabsTrigger>
@@ -207,7 +211,11 @@ export default function ChunkDialog({
 										type="button"
 										className="w-full rounded px-2 py-1 text-left text-sm hover:bg-muted"
 										onClick={() =>
-											onOpen({ source: row.source, chunkId: row.chunk_id })
+											onOpen({
+												source: row.source,
+												documentId: row.document_id,
+												chunkId: row.chunk_id,
+											})
 										}
 									>
 										<div className="flex gap-2 text-xs text-muted-foreground">

@@ -4,6 +4,7 @@ import {
 	describeFailure,
 	formatAge,
 	ingester,
+	ingestionState,
 	Poller,
 	type Snapshot,
 } from "./ingestion";
@@ -233,5 +234,48 @@ describe("ingester requests", () => {
 		expect(formatAge(42)).toBe("42s");
 		expect(formatAge(300)).toBe("5m");
 		expect(formatAge(5400)).toBe("1.5h");
+	});
+});
+
+describe("ingestionState", () => {
+	const health = (extra = {}) => ({
+		status: "ok",
+		queue_counts: { queued: 0, claimed: 0, succeeded: 9, dead: 0 },
+		...extra,
+	});
+
+	it("names the first state that holds", () => {
+		expect(ingestionState(new Error("down"))).toEqual({
+			state: "unreachable",
+			label: "Ingester unreachable",
+		});
+		expect(
+			ingestionState(
+				health({
+					status: "degraded",
+					queue_counts: { queued: 3, claimed: 1, dead: 2 },
+				}),
+			).state,
+		).toBe("degraded");
+		expect(
+			ingestionState(
+				health({ queue_counts: { queued: 3, claimed: 1, dead: 2 } }),
+			),
+		).toEqual({ state: "dead", label: "2 dead letters" });
+		expect(
+			ingestionState(
+				health({ queue_counts: { queued: 3, claimed: 1, dead: 0 } }),
+			),
+		).toEqual({ state: "busy", label: "Ingesting 4" });
+		expect(ingestionState(health())).toEqual({
+			state: "idle",
+			label: "Ingester idle",
+		});
+	});
+
+	it("counts one dead letter in the singular", () => {
+		expect(ingestionState(health({ queue_counts: { dead: 1 } })).label).toBe(
+			"1 dead letter",
+		);
 	});
 });

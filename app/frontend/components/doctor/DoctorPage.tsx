@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 import {
 	Select,
 	SelectContent,
@@ -8,6 +9,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { doctorHref } from "@/lib/addresses";
 import { useDatabases } from "@/lib/databases";
 import { formatBytes, scanBytes } from "@/lib/doctor";
 import { useJson } from "@/lib/useJson";
@@ -17,11 +19,15 @@ import CorpusMap from "./CorpusMap";
 export default function DoctorPage() {
 	const { info } = useDatabases();
 	const databases = info?.databases ?? [];
-	const [source, setSource] = useState<string | null>(null);
-
+	const router = useRouter();
+	const named = useParams<{ db?: string[] }>().db?.[0] ?? null;
+	const first = databases[0]?.name;
 	useEffect(() => {
-		if (source === null && databases.length) setSource(databases[0].name);
-	}, [source, databases]);
+		if (named === null && first) router.replace(doctorHref(first));
+	}, [named, first, router]);
+	const known =
+		info && named !== null && databases.some((db) => db.name === named);
+	const source = known ? named : null;
 
 	const details = useJson<{
 		info: {
@@ -45,7 +51,10 @@ export default function DoctorPage() {
 			<div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
 				<header className="flex flex-wrap items-center gap-3">
 					<h1 className="text-lg font-semibold">Doctor</h1>
-					<Select value={source ?? ""} onValueChange={setSource}>
+					<Select
+						value={source ?? ""}
+						onValueChange={(name) => router.push(doctorHref(name))}
+					>
 						<SelectTrigger className="w-56" aria-label="Database">
 							<SelectValue placeholder="Database" />
 						</SelectTrigger>
@@ -68,6 +77,11 @@ export default function DoctorPage() {
 						</span>
 					) : null}
 				</header>
+				{info && named !== null && !known && (
+					<p className="text-sm text-muted-foreground">
+						No database is named {named}.
+					</p>
+				)}
 				<p className="text-xs text-muted-foreground">
 					Results are kept until the next run or a restart of the backend, and
 					one job runs at a time across databases.

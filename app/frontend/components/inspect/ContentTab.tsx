@@ -12,16 +12,19 @@ function ItemBlock({
 	pictureUrl,
 	onOpen,
 	index,
+	highlighted,
 }: {
 	item: Item;
 	block: Block;
 	pictureUrl: string;
 	onOpen: (chunkId: string) => void;
 	index: number;
+	highlighted: boolean;
 }) {
 	const className = cn(
 		"rounded px-2 py-1 text-left",
 		block.tint !== null && TINTS[block.tint],
+		highlighted && "ring-2 ring-primary",
 		block.chunkId && "cursor-pointer hover:ring-1 hover:ring-ring",
 	);
 	let body: React.ReactNode;
@@ -69,6 +72,7 @@ function ItemBlock({
 		default:
 			body = <span className="whitespace-pre-wrap">{item.text}</span>;
 	}
+	const current = highlighted ? "location" : undefined;
 	const title = item.chunk_ids.length
 		? `Chunks: ${item.chunk_ids.join(", ")}`
 		: "In no chunk";
@@ -78,27 +82,32 @@ function ItemBlock({
 			id={`item-${index}`}
 			className={cn(className, "block w-full")}
 			title={title}
+			aria-current={current}
 			onClick={() => block.chunkId && onOpen(block.chunkId)}
 		>
 			{body}
 		</button>
 	) : (
-		<div id={`item-${index}`} className={className} title={title}>
+		<div
+			id={`item-${index}`}
+			className={className}
+			title={title}
+			aria-current={current}
+		>
 			{body}
 		</div>
 	);
 }
 
 // The document's items in reading order, tinted by the chunk holding them.
-// `jumpTo` scrolls to an item once this tab has rendered it.
+// The highlighted item is scrolled to once this tab has rendered it.
 export default function ContentTab({
 	items,
 	blocks,
 	loading,
 	error,
 	pictureUrl,
-	jumpTo,
-	onJumped,
+	highlighted,
 	onOpenChunk,
 }: {
 	items: Item[] | undefined;
@@ -106,18 +115,16 @@ export default function ContentTab({
 	loading: boolean;
 	error: string | null;
 	pictureUrl: (ref: string) => string;
-	jumpTo: number | null;
-	onJumped: () => void;
+	highlighted: number | null;
 	onOpenChunk: (chunkId: string) => void;
 }) {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: blocks render the targets
 	useEffect(() => {
-		if (jumpTo === null) return;
-		const target = document.getElementById(`item-${jumpTo}`);
-		if (!target) return;
-		target.scrollIntoView({ block: "start" });
-		onJumped();
-	}, [jumpTo, blocks]);
+		if (highlighted === null) return;
+		document
+			.getElementById(`item-${highlighted}`)
+			?.scrollIntoView({ block: "start" });
+	}, [highlighted, blocks]);
 
 	return (
 		<>
@@ -130,6 +137,7 @@ export default function ContentTab({
 						item={item}
 						block={blocks[index]}
 						index={index}
+						highlighted={index === highlighted}
 						pictureUrl={pictureUrl(item.self_ref)}
 						onOpen={onOpenChunk}
 					/>

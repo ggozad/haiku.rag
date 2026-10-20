@@ -12,6 +12,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { type SearchInputs, searchHref } from "@/lib/addresses";
 import type { DatabaseEntry } from "@/lib/databases";
 import { decoded } from "@/lib/http";
 import { type Attachment, readImage } from "@/lib/images";
@@ -21,6 +22,7 @@ import type { ChunkRef } from "./ChunkDialog";
 interface Result {
 	source: string;
 	chunk_id: string;
+	document_id: string;
 	document_title: string | null;
 	document_uri: string | null;
 	score: number;
@@ -29,22 +31,64 @@ interface Result {
 	content: string;
 }
 
+interface Answer {
+	results: Result[];
+	rendering: string;
+}
+
+// Each search's image and answer, by its address. An image cannot ride in a
+// URL, so these last until the browser reloads.
+// ponytail: one entry per search run in this tab, never evicted; cap it if that grows.
+const held = new Map<
+	string,
+	{ image: Attachment | null; answer: Answer | null }
+>();
+
+// Runs the search its `inputs` name, once, as it mounts: its owner gives it a
+// new key for each address.
 export default function SearchPanel({
 	databases,
+	inputs,
+	onSearch,
 	onOpen,
 }: {
 	databases: DatabaseEntry[];
+	inputs: SearchInputs;
+	onSearch: (inputs: SearchInputs) => void;
 	onOpen: (chunk: ChunkRef) => void;
 }) {
-	const [query, setQuery] = useState("");
-	const [image, setImage] = useState<Attachment | null>(null);
-	const [limit, setLimit] = useState("10");
-	const [type, setType] = useState("hybrid");
-	const [filter, setFilter] = useState("");
+	const key = searchHref(inputs);
+	const entry = held.get(key);
+	const [query, setQuery] = useState(inputs.q);
+	const [image, setImage] = useState<Attachment | null>(entry?.image ?? null);
+	const [limit, setLimit] = useState(inputs.limit);
+	const [type, setType] = useState(inputs.type);
+	const [filter, setFilter] = useState(inputs.filter);
+	// An address naming databases picks those, and one naming none picks every
+	// available database, those becoming available later included.
+	const [picked, setPicked] = useState<Set<string> | null>(() =>
+		inputs.dbs.length ? new Set(inputs.dbs) : null,
+	);
 	const [unticked, setUnticked] = useState<Set<string>>(() => new Set());
-	const sources = searched(databases, unticked);
-	const [results, setResults] = useState<Result[]>([]);
-	const [rendering, setRendering] = useState("");
+	const sources = picked
+		? databases.map((db) => db.name).filter((name) => picked.has(name))
+		: searched(databases, unticked);
+	const ticked = (name: string) =>
+		picked ? picked.has(name) : !unticked.has(name);
+	const toggle = (name: string) => {
+		const flip = (prev: Set<string>) => {
+			const next = new Set(prev);
+			if (next.has(name)) next.delete(name);
+			else next.add(name);
+			return next;
+		};
+		if (picked) setPicked(flip(picked));
+		else setUnticked(flip);
+	};
+	const [answer, setAnswer] = useState<Answer>(
+		entry?.answer ?? { results: [], rendering: "" },
+	);
+	const { results, rendering } = answer;
 	const [asAgent, setAsAgent] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -52,15 +96,7 @@ export default function SearchPanel({
 	const controller = useRef<AbortController | null>(null);
 	const imageSearch = databases.some((db) => db.supports_image_search);
 
-	// Changing the question, or leaving, drops the search in flight.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: each input supersedes the search
-	useEffect(() => {
-		controller.current?.abort();
-		setBusy(false);
-	}, [query, image, limit, type, filter, sources.join("\n")]);
-	useEffect(() => () => controller.current?.abort(), []);
-
-	const run = async () => {
+	const run = async (searchImage: Attachment | null) => {
 		controller.current?.abort();
 		const current = new AbortController();
 		controller.current = current;
@@ -72,28 +108,50 @@ export default function SearchPanel({
 				signal: current.signal,
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
-					...(image ? { image: image.data } : { query }),
-					limit: Number(limit),
-					search_type: image ? "vector" : type,
-					filter: filter.trim() || null,
-					sources,
+					...(searchImage ? { image: searchImage.data } : { query: inputs.q }),
+					limit: Number(inputs.limit),
+					search_type: searchImage ? "vector" : inputs.type,
+					filter: inputs.filter.trim() || null,
+					sources: inputs.dbs.length
+						? inputs.dbs
+						: searched(databases, new Set()),
 				}),
 			});
-			const data = await decoded<{ results: Result[]; rendering: string }>(
-				response,
-			);
+			const data = await decoded<Answer>(response);
 			if (current.signal.aborted) return;
-			setResults(data.results);
-			setRendering(data.rendering);
+			held.set(key, { image: searchImage, answer: data });
+			setAnswer(data);
 		} catch (err) {
 			if (!current.signal.aborted) {
 				setError(err instanceof Error ? err.message : String(err));
-				setResults([]);
-				setRendering("");
+				setAnswer({ results: [], rendering: "" });
 			}
 		} finally {
 			if (!current.signal.aborted) setBusy(false);
 		}
+	};
+
+	// An address naming no database searches every available one, so it waits
+	// until the databases are known.
+	const known = inputs.dbs.length > 0 || databases.length > 0;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: runs once per address
+	useEffect(() => {
+		if (!known) return;
+		if (!entry?.answer && (entry?.image || inputs.q)) run(entry?.image ?? null);
+		return () => controller.current?.abort();
+	}, [known]);
+
+	const submit = () => {
+		const next = {
+			q: image ? "" : query.trim(),
+			dbs: sources,
+			type,
+			limit,
+			filter: filter.trim(),
+		};
+		held.set(searchHref(next), { image, answer: null });
+		if (searchHref(next) === key) run(image);
+		else onSearch(next);
 	};
 
 	return (
@@ -102,7 +160,7 @@ export default function SearchPanel({
 				className="space-y-2 border-b p-4"
 				onSubmit={(event) => {
 					event.preventDefault();
-					run();
+					submit();
 				}}
 			>
 				<div className="flex gap-2">
@@ -204,15 +262,8 @@ export default function SearchPanel({
 							>
 								<Checkbox
 									id={`search-db-${db.name}`}
-									checked={!unticked.has(db.name)}
-									onCheckedChange={() =>
-										setUnticked((prev) => {
-											const next = new Set(prev);
-											if (next.has(db.name)) next.delete(db.name);
-											else next.add(db.name);
-											return next;
-										})
-									}
+									checked={ticked(db.name)}
+									onCheckedChange={() => toggle(db.name)}
 								/>
 								{db.name}
 							</label>
@@ -251,7 +302,11 @@ export default function SearchPanel({
 									type="button"
 									className="w-full rounded-md border px-3 py-2 text-left hover:bg-muted"
 									onClick={() =>
-										onOpen({ source: result.source, chunkId: result.chunk_id })
+										onOpen({
+											source: result.source,
+											documentId: result.document_id,
+											chunkId: result.chunk_id,
+										})
 									}
 								>
 									<div className="flex gap-2 text-xs text-muted-foreground">

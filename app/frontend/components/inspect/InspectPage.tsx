@@ -1,6 +1,11 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import {
+	useParams,
+	usePathname,
+	useRouter,
+	useSearchParams,
+} from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,12 +16,24 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import {
+	chunkHref,
+	databaseHref,
+	documentHref,
+	type InspectView,
+	inspectView,
+	listOf,
+	listState,
+	searchHref,
+	searchOf,
+	withList,
+} from "@/lib/addresses";
 import { useDatabases } from "@/lib/databases";
 import { formatRelativeTime } from "@/lib/format";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
 import ChunkDialog, { type ChunkRef } from "./ChunkDialog";
-import DocumentView from "./DocumentView";
+import DocumentView, { type DocumentState, OPENING } from "./DocumentView";
 import InfoDialog from "./InfoDialog";
 import SearchPanel from "./SearchPanel";
 
@@ -35,49 +52,117 @@ interface Listing {
 
 const PAGE = 50;
 
+function documentState(query: URLSearchParams): DocumentState {
+	const number = (key: string) =>
+		query.has(key) ? Number(query.get(key)) : null;
+	return {
+		tab: query.get("tab") ?? OPENING.tab,
+		offset: number("offset") ?? OPENING.offset,
+		page: number("page"),
+		item: number("item"),
+	};
+}
+
+function withDocument(
+	query: URLSearchParams,
+	change: Partial<DocumentState>,
+): URLSearchParams {
+	const next = new URLSearchParams(query);
+	for (const [key, value] of Object.entries(change)) {
+		const opening = OPENING[key as keyof DocumentState];
+		if (value === null || value === opening) next.delete(key);
+		else next.set(key, String(value));
+	}
+	return next;
+}
+
+// Every view, and its state, is read from the address.
 export default function InspectPage() {
 	const { info } = useDatabases();
-	const available = info?.databases.filter((db) => db.available) ?? [];
-	const [source, setSource] = useState<string | null>(null);
-	const [text, setText] = useState("");
-	const [query, setQuery] = useState("");
-	const [filterText, setFilterText] = useState("");
-	const [filter, setFilter] = useState("");
-	const [offset, setOffset] = useState(0);
-	const [documentId, setDocumentId] = useState<string | null>(null);
-	const [chunk, setChunk] = useState<ChunkRef | null>(null);
-	const [mode, setMode] = useState<"documents" | "search">("documents");
+	const databases = info?.databases ?? [];
+	const available = databases.filter((db) => db.available);
+	const router = useRouter();
+	const pathname = usePathname();
+	const query = useSearchParams();
+	const path = useParams<{ path?: string[] }>().path;
+	const view: InspectView =
+		pathname === "/search" ? { kind: "search" } : inspectView(path);
 	const [infoOpen, setInfoOpen] = useState(false);
 
-	// The map links here with ?source=…&document=….
-	const linked = useSearchParams();
+	// The search page keeps showing the list of the database last open, and the
+	// database pages link back to the search last run.
+	const [lastList, setLastList] = useState<{
+		db: string;
+		query: string;
+	} | null>(null);
+	const [lastSearch, setLastSearch] = useState("/search");
+	const here = query.toString();
+	const viewDb = "db" in view ? view.db : null;
+	const listHere = listOf(query).toString();
 	useEffect(() => {
-		if (source !== null || !available.length) return;
-		const wanted = linked.get("source");
-		const known = available.find((db) => db.name === wanted);
-		setSource(known ? known.name : available[0].name);
-		if (known) setDocumentId(linked.get("document"));
-	}, [source, available, linked]);
+		if (viewDb !== null) setLastList({ db: viewDb, query: listHere });
+	}, [viewDb, listHere]);
+	const searching = view.kind === "search";
+	useEffect(() => {
+		if (searching) setLastSearch(here ? `/search?${here}` : "/search");
+	}, [searching, here]);
+
+	const first = available[0] ?? databases[0];
+	useEffect(() => {
+		if (view.kind === "home" && first) router.replace(databaseHref(first.name));
+	}, [view.kind, first, router]);
+
+	const source = "db" in view ? view.db : (lastList?.db ?? first?.name ?? null);
+	const listQuery =
+		"db" in view
+			? query
+			: new URLSearchParams(lastList?.db === source ? lastList.query : "");
+	const list = listState(listQuery);
+	const [text, setText] = useState(list.q);
+	const [filterText, setFilterText] = useState(list.filter);
+	useEffect(() => {
+		setText(list.q);
+		setFilterText(list.filter);
+	}, [list.q, list.filter]);
 
 	const params = new URLSearchParams({
 		limit: String(PAGE),
-		offset: String(offset),
+		offset: String(list.offset),
 	});
-	if (query) params.set("q", query);
-	if (filter) params.set("filter", filter);
+	if (list.q) params.set("q", list.q);
+	if (list.filter) params.set("filter", list.filter);
 	// A database the app cannot open offers Info only.
-	const selected = info?.databases.find((db) => db.name === source);
+	const selected = databases.find((db) => db.name === source);
 	const listing = useJson<Listing>(
 		source && selected?.available
 			? `/api/backend/api/inspect/${encodeURIComponent(source)}/documents?${params}`
 			: null,
 	);
 
-	const choose = (name: string) => {
-		setSource(name);
-		setOffset(0);
-		setDocumentId(null);
+	const showList = (next: typeof list) => {
+		if (source === null) return;
+		router.push(
+			"db" in view
+				? `${pathname}?${withList(query, next)}`
+				: databaseHref(source, withList(listQuery, next)),
+		);
 	};
+
+	// The query an address of `db` carries from here.
+	const carried = (db: string) =>
+		db === source ? listOf(listQuery) : undefined;
+
+	const openChunk = (ref: ChunkRef) => {
+		const keep =
+			"doc" in view && view.db === ref.source && view.doc === ref.documentId
+				? new URLSearchParams(query)
+				: carried(ref.source);
+		keep?.delete("view");
+		router.push(chunkHref(ref.source, ref.documentId, ref.chunkId, keep));
+	};
+
+	const documentQuery = new URLSearchParams(query);
+	documentQuery.delete("view");
 
 	return (
 		<div className="grid h-full grid-cols-1 md:grid-cols-[22rem_minmax(0,1fr)]">
@@ -86,15 +171,18 @@ export default function InspectPage() {
 					<div className="flex gap-1">
 						<Button
 							size="sm"
-							variant={mode === "documents" ? "secondary" : "ghost"}
-							onClick={() => setMode("documents")}
+							variant={view.kind === "search" ? "ghost" : "secondary"}
+							disabled={!source}
+							onClick={() =>
+								source && router.push(databaseHref(source, listOf(listQuery)))
+							}
 						>
 							Documents
 						</Button>
 						<Button
 							size="sm"
-							variant={mode === "search" ? "secondary" : "ghost"}
-							onClick={() => setMode("search")}
+							variant={view.kind === "search" ? "secondary" : "ghost"}
+							onClick={() => router.push(lastSearch)}
 						>
 							Search
 						</Button>
@@ -108,7 +196,10 @@ export default function InspectPage() {
 							Info
 						</Button>
 					</div>
-					<Select value={source ?? ""} onValueChange={choose}>
+					<Select
+						value={source ?? ""}
+						onValueChange={(name) => router.push(databaseHref(name))}
+					>
 						<SelectTrigger className="w-full" aria-label="Database">
 							<SelectValue placeholder="Database" />
 						</SelectTrigger>
@@ -133,9 +224,11 @@ export default function InspectPage() {
 						hidden={!selected?.available}
 						onSubmit={(event) => {
 							event.preventDefault();
-							setQuery(text.trim());
-							setFilter(filterText.trim());
-							setOffset(0);
+							showList({
+								q: text.trim(),
+								filter: filterText.trim(),
+								offset: 0,
+							});
 						}}
 						className="space-y-2"
 					>
@@ -165,10 +258,13 @@ export default function InspectPage() {
 						<li key={doc.id}>
 							<button
 								type="button"
-								onClick={() => setDocumentId(doc.id)}
+								onClick={() =>
+									source &&
+									router.push(documentHref(source, doc.id, listOf(listQuery)))
+								}
 								className={cn(
 									"w-full border-b px-3 py-2 text-left text-sm hover:bg-muted",
-									doc.id === documentId && "bg-muted",
+									"doc" in view && doc.id === view.doc && "bg-muted",
 								)}
 							>
 								<div className="truncate font-medium">
@@ -196,21 +292,23 @@ export default function InspectPage() {
 						<Button
 							size="sm"
 							variant="outline"
-							disabled={offset === 0}
-							onClick={() => setOffset(Math.max(0, offset - PAGE))}
+							disabled={list.offset === 0}
+							onClick={() =>
+								showList({ ...list, offset: Math.max(0, list.offset - PAGE) })
+							}
 						>
 							Previous
 						</Button>
 						<span className="flex-1 text-center text-muted-foreground tabular-nums">
 							{listing.data.total
-								? `${offset + 1}–${offset + listing.data.documents.length} of ${listing.data.total}`
+								? `${list.offset + 1}–${list.offset + listing.data.documents.length} of ${listing.data.total}`
 								: "No documents"}
 						</span>
 						<Button
 							size="sm"
 							variant="outline"
-							disabled={offset + PAGE >= listing.data.total}
-							onClick={() => setOffset(offset + PAGE)}
+							disabled={list.offset + PAGE >= listing.data.total}
+							onClick={() => showList({ ...list, offset: list.offset + PAGE })}
 						>
 							Next
 						</Button>
@@ -218,15 +316,45 @@ export default function InspectPage() {
 				)}
 			</aside>
 			<section className="min-h-0 min-w-0">
-				{mode === "search" ? (
-					<SearchPanel databases={available} onOpen={setChunk} />
-				) : source && documentId ? (
-					<DocumentView
-						key={`${source}:${documentId}`}
-						source={source}
-						documentId={documentId}
-						onOpenChunk={(chunkId) => setChunk({ source, chunkId })}
+				{view.kind === "search" ? (
+					<SearchPanel
+						key={here}
+						databases={available}
+						inputs={searchOf(query)}
+						onSearch={(inputs) => router.push(searchHref(inputs))}
+						onOpen={openChunk}
 					/>
+				) : "db" in view && info && !selected ? (
+					<p className="p-6 text-sm text-muted-foreground">
+						No database is named {view.db}.
+					</p>
+				) : "doc" in view ? (
+					<DocumentView
+						key={`${view.db}:${view.doc}`}
+						source={view.db}
+						documentId={view.doc}
+						state={documentState(documentQuery)}
+						onState={(change) =>
+							router.push(
+								documentHref(
+									view.db,
+									view.doc,
+									withDocument(documentQuery, change),
+								),
+							)
+						}
+						onOpenChunk={(chunkId) =>
+							openChunk({
+								source: view.db,
+								documentId: view.doc,
+								chunkId,
+							})
+						}
+					/>
+				) : view.kind === "unknown" ? (
+					<p className="p-6 text-sm text-muted-foreground">
+						The inspector has no page at this address.
+					</p>
 				) : (
 					<p className="p-6 text-sm text-muted-foreground">
 						Pick a document to see its content, outline and chunks.
@@ -234,9 +362,24 @@ export default function InspectPage() {
 				)}
 			</section>
 			<ChunkDialog
-				chunk={chunk}
-				onOpen={setChunk}
-				onClose={() => setChunk(null)}
+				chunk={
+					view.kind === "chunk"
+						? { source: view.db, documentId: view.doc, chunkId: view.chunk }
+						: null
+				}
+				view={query.get("view") ?? "details"}
+				onView={(next) => {
+					if (view.kind !== "chunk") return;
+					const kept = new URLSearchParams(query);
+					if (next === "details") kept.delete("view");
+					else kept.set("view", next);
+					router.push(chunkHref(view.db, view.doc, view.chunk, kept));
+				}}
+				onOpen={openChunk}
+				onClose={() =>
+					view.kind === "chunk" &&
+					router.push(documentHref(view.db, view.doc, documentQuery))
+				}
 			/>
 			{source && (
 				<InfoDialog
