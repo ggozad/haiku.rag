@@ -73,21 +73,6 @@ class CappedOutput:
         return text + "\n... (output truncated)" if self.truncated else text
 
 
-def recovery_hint(stderr: str) -> str:
-    """Name the workaround for sandbox limits models trip over repeatedly.
-
-    The instructions already say file objects are not iterable, and models write
-    ``for line in open(...)`` regardless. Carrying the fix in the error gives
-    them something to act on for the retry.
-    """
-    if "TextIOWrapper" in stderr and "not iterable" in stderr:
-        return (
-            "\n\nHint: file objects cannot be iterated here. Read lines with "
-            '.readlines() or .read().split("\\n").'
-        )
-    return ""
-
-
 class Sandbox:
     """Execute code in a sandboxed Python interpreter.
 

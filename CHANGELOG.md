@@ -10,6 +10,11 @@
 ### Changed
 
 - The `cross-encoder` extra requires `sentence-transformers>=4.0.0` and `transformers>=4.56.0`.
+- `pydantic-monty` bumped to 1.2. The sandbox iterates file objects and supports `match` statements, `os.walk`, `os.path`, `Path.glob`, `json.load` and `csv`.
+
+### Removed
+
+- `recovery_hint` from `haiku.rag.sandbox`.
 
 ### Fixed
 

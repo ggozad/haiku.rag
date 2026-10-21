@@ -36,7 +36,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 ├── embeddings/             # VoyageAI, Cohere, vLLM, OpenRouter (ollama/openai via pydantic-ai)
 ├── reranking/              # cross-encoder, Cohere, Zero Entropy, Jina, Jina-local, vLLM, OpenRouter
 ├── sandbox/                # pydantic-monty sandbox used by RAGCapability and MCP execute_code
-│   ├── sandbox.py          # Sandbox, SandboxResult, recovery_hint
+│   ├── sandbox.py          # Sandbox, SandboxResult
 │   └── dependencies.py     # AnalysisContext (per-invocation filter)
 ├── providers/              # docling_serve.py (docling-serve client), picture_description.py
 ├── capabilities/           # Native Pydantic AI capabilities

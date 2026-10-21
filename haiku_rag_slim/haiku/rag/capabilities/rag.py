@@ -41,7 +41,7 @@ from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
 from haiku.rag.client import HaikuRAG, all_found
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig
-from haiku.rag.sandbox import AnalysisContext, Sandbox, recovery_hint
+from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.exceptions import AmbiguousCitationError, AmbiguousDatabaseError
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.citation import (
@@ -712,10 +712,7 @@ class RAGCapability(AbstractCapability[Any]):
             )
         )
         if not result.success:
-            raise ToolFailed(
-                f"{result.stderr}{recovery_hint(result.stderr)}"
-                f"\n\nOutput: {result.stdout}"
-            )
+            raise ToolFailed(f"{result.stderr}\n\nOutput: {result.stdout}")
         return result.stdout or "No output."
 
     async def _cite(self, chunk_ids: list[str]) -> str:

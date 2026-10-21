@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.context import build_toc
-from haiku.rag.sandbox import AnalysisContext, Sandbox, recovery_hint
+from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.models import Document, SearchResult
 from haiku.rag.store.schema import DocumentMetaRecord
 from haiku.rag.utils.images import collect_pictures
@@ -447,17 +447,16 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         metadata) and `toc.json` (`doc_id`, `title`, `tree`; each node has
         self_ref, level, title, page_numbers, item_range as a slice into
         items.jsonl, chunk_ids and children; an empty tree means no headings).
-        Read files with `Path.read_text()` or `open()`; a file object cannot be
-        iterated, use `.readlines()`. `await search(query, limit=10)` returns
-        dicts with chunk_id, content, document_id, document_title, document_uri,
-        source, score, page_numbers, headings, doc_item_refs, labels,
-        picture_refs (the doc_item_refs that are pictures) and chunk_meta.
-        `await list_documents()` returns dicts with id, title, uri, created_at,
-        source and metadata. Both see the documents `filter` and `sources`
-        select. Useful modules include json, re, math, pathlib, datetime,
-        collections, itertools, functools and dataclasses; decimal and
-        statistics do not exist. No generator functions, match statements or
-        class inheritance.
+        Read files with `Path.read_text()` or `open()`. `await search(query,
+        limit=10)` returns dicts with chunk_id, content, document_id,
+        document_title, document_uri, source, score, page_numbers, headings,
+        doc_item_refs, labels, picture_refs (the doc_item_refs that are
+        pictures) and chunk_meta. `await list_documents()` returns dicts with
+        id, title, uri, created_at, source and metadata. Both see the documents
+        `filter` and `sources` select. Useful modules include json, re, math,
+        pathlib, datetime, collections, itertools, functools and dataclasses;
+        decimal and statistics do not exist. No generator functions or class
+        inheritance.
         Files are read-only, there is no network, a call has a time limit named
         in the error when it is hit, and output past a size is truncated.
 
@@ -482,10 +481,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         finally:
             await sandbox.close()
         if not result.success:
-            raise ToolError(
-                f"{result.stderr}{recovery_hint(result.stderr)}"
-                f"\n\nOutput: {result.stdout}"
-            )
+            raise ToolError(f"{result.stderr}\n\nOutput: {result.stdout}")
         return result.stdout or "No output."
 
     return mcp
