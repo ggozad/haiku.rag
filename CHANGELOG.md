@@ -5,6 +5,11 @@
 ### Added
 
 - EPUB ingestion (`.epub`, `application/epub+zip`) through `docling-local` and `docling-serve`. Pictures carry no image data.
+- `reranking.model_kwargs`, passed to the Transformers model loader by the `cross-encoder` reranker. Other providers reject a non-empty value.
+
+### Changed
+
+- The `cross-encoder` extra requires `sentence-transformers>=4.0.0` and `transformers>=4.56.0`.
 
 ### Fixed
 

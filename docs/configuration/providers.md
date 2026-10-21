@@ -374,3 +374,16 @@ reranking:
 Picture chunks go as image documents beside the text documents in one rerank request. A chunk with neither text nor picture bytes is not sent.
 
 On OpenRouter, `base_url` defaults to `https://openrouter.ai/api/v1`, and `nvidia/llama-nemotron-rerank-vl-1b-v2:free` is the reranker that takes images. Its text-only rerankers reject a document with no text. Rerank models are listed at `/v1/models?output_modalities=rerank`.
+
+### Model loading options
+
+```yaml
+reranking:
+  model:
+    provider: cross-encoder
+    name: BAAI/bge-reranker-base
+  model_kwargs:
+    dtype: float16
+```
+
+`model_kwargs` is forwarded to the Transformers model loader and is supported only by the `cross-encoder` provider.

@@ -32,6 +32,22 @@ embeddings:
     assert config["embeddings"]["model"]["vector_dim"] == 1024
 
 
+def test_reranking_model_kwargs_load_from_yaml():
+    from haiku.rag.config.models import RerankingConfig
+
+    config = RerankingConfig.model_validate(
+        yaml.safe_load("""
+model:
+  provider: cross-encoder
+  name: BAAI/bge-reranker-base
+model_kwargs:
+  dtype: float16
+""")
+    )
+    assert config.model_kwargs == {"dtype": "float16"}
+    assert RerankingConfig().model_kwargs is None
+
+
 def test_find_config_file_cwd(tmp_path, monkeypatch):
     """Test finding config in current directory."""
     monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
