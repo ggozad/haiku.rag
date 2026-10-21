@@ -18,6 +18,16 @@ async def _settled(client, source: str, kind_path: str = "") -> dict:
     raise AssertionError("the job did not settle")
 
 
+async def _running(client, source: str) -> dict:
+    # A job's status changes on the request loop after its work has started.
+    for _ in range(100):
+        run = (await client.get(f"/api/doctor/{source}")).json()["run"]
+        if run["status"] == "running":
+            return run
+        await asyncio.sleep(0.01)
+    raise AssertionError("the job did not start")
+
+
 async def test_a_doctor_run_reports_its_checks_and_progress(client):
     assert (await client.get("/api/doctor/alpha")).json() == {"run": None}
     started = await client.post("/api/doctor/alpha/run", params={"providers": "false"})
@@ -45,10 +55,7 @@ async def test_jobs_run_one_at_a_time_and_a_duplicate_is_refused(
 
     monkeypatch.setattr(doctor, "run_doctor", held)
     await client.post("/api/doctor/alpha/run")
-    for _ in range(100):
-        if (await client.get("/api/doctor/alpha")).json()["run"]["status"] == "running":
-            break
-        await asyncio.sleep(0.01)
+    await _running(client, "alpha")
     again = await client.post("/api/doctor/alpha/run")
     assert again.status_code == 409
     queued = await client.post("/api/doctor/beta/run")
@@ -75,9 +82,7 @@ async def test_the_request_loop_answers_during_a_blocking_job(client, monkeypatc
     try:
         assert await asyncio.to_thread(entered.wait, 5)
         assert (await client.get("/health")).status_code == 200
-        state = await client.get("/api/doctor/alpha")
-        assert state.status_code == 200
-        assert state.json()["run"]["status"] == "running"
+        await _running(client, "alpha")
     finally:
         release.set()
         assert (await _settled(client, "alpha"))["status"] == "done"
