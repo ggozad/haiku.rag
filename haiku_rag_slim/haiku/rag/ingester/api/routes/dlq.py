@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 
+from haiku.rag.ingester.api.routes.jobs import retry_served
 from haiku.rag.ingester.api.server import APIState, get_state
-from haiku.rag.ingester.exceptions import BlockingTombstoneError
 from haiku.rag.ingester.queue.models import Job, JobStatus
 
 router = APIRouter(prefix="/dlq", tags=["dlq"])
@@ -25,13 +25,4 @@ async def retry_from_dlq(job_id: str, state: APIState = Depends(get_state)) -> J
     """Convenience alias for /jobs/{id}/retry — same effect, separate
     endpoint so operator tooling can wire DLQ rescues without coupling
     to the generic /jobs path."""
-    try:
-        return await state.job_repo.retry(job_id)
-    except BlockingTombstoneError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="job not found"
-        ) from exc
+    return await retry_served(job_id, state)

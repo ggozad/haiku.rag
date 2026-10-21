@@ -40,6 +40,7 @@ class ProvidersResponse(BaseModel):
 
 class SourceSummary(BaseModel):
     source_id: str
+    database: str | None
     type: Literal["fs", "http", "s3", "webdav", "plugin"]
     last_polled_at: datetime | None
     circuit_breaker_open: bool
@@ -47,6 +48,9 @@ class SourceSummary(BaseModel):
     # or None when the most recent attempt actually polled. Lets operators
     # see at a glance why a source isn't picking up new work.
     last_skip_reason: str | None = None
+    # The most recent failed discovery, cleared by the next successful sweep.
+    last_error: str | None = None
+    last_error_at: datetime | None = None
 
 
 class RefreshResponse(BaseModel):

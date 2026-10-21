@@ -97,6 +97,7 @@ class FSPoller(BasePoller):
             raise
         except Exception as exc:
             self._breaker.record_failure()
+            self._record_error(exc)
             logger.exception("watchfiles loop failed for %s: %s", self.source_id, exc)
 
     async def _handle_watch_change(self, change: Change, path: Path) -> None:

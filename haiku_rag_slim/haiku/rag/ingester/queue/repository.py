@@ -60,6 +60,13 @@ def _attempts_minus_one() -> sa.ColumnElement[int]:
     return sa.case((jobs.c.attempts - 1 < 0, 0), else_=jobs.c.attempts - 1)
 
 
+def _of_sources(source_ids: Collection[str] | None) -> list[sa.ColumnElement[bool]]:
+    """The condition limiting jobs to `source_ids`, none for None."""
+    if source_ids is None:
+        return []
+    return [jobs.c.source_id.in_(sorted(source_ids))]
+
+
 def _row_to_job(row: Mapping) -> Job:
     extra_text = row["extra"]
     return Job(
@@ -159,7 +166,7 @@ class JobRepo:
         return _row_to_job(row) if row else None
 
     async def claim_next(
-        self, worker_id: str, *, exclude_source_ids: set[str] | None = None
+        self, worker_id: str, *, source_ids: Collection[str] | None = None
     ) -> Job | None:
         """Atomically claim the oldest queued job whose scheduled_at <= now.
         A single `UPDATE ... WHERE id = (SELECT ... LIMIT 1) RETURNING` keeps
@@ -168,16 +175,15 @@ class JobRepo:
         write lock, so a racing connection re-evaluates the subquery against
         the committed state and finds the row already claimed.
 
-        `exclude_source_ids` skips jobs from those sources (a paused breaker).
-        Empty or None adds no clause, leaving the query unchanged."""
+        `source_ids` limits the claim to jobs of those sources, and an empty
+        collection claims nothing. None claims from every source."""
         now = _utcnow_iso()
         conditions = [
             self._owned,
             jobs.c.status == "queued",
             jobs.c.scheduled_at <= now,
         ]
-        if exclude_source_ids:
-            conditions.append(jobs.c.source_id.notin_(sorted(exclude_source_ids)))
+        conditions.extend(_of_sources(source_ids))
         candidate = (
             sa.select(jobs.c.id)
             .where(*conditions)
@@ -334,10 +340,16 @@ class JobRepo:
                     raise BlockingTombstoneError(job_id, blocking)
         raise KeyError(f"Job {job_id!r} not found or not retryable")
 
-    async def retry_failed(self, statuses: Collection[JobStatus]) -> int:
+    async def retry_failed(
+        self,
+        statuses: Collection[JobStatus],
+        *,
+        source_ids: Collection[str] | None = None,
+    ) -> int:
         """Re-queue the latest failed job of each URI whose status is in
-        `statuses`, unless the URI was ingested after it. Returns how many
-        were re-queued.
+        `statuses`, unless the URI was ingested after it. `source_ids` limits
+        it to those sources' jobs, and None retries every source's. Returns
+        how many were re-queued.
 
         Assumes no discovery runs meanwhile: a job enqueued between a revive's
         lock and its update can complete unseen and leave a superseded failure
@@ -351,7 +363,7 @@ class JobRepo:
             )
         query = (
             sa.select(jobs.c.id)
-            .where(self._owned, jobs.c.status.in_(wanted))
+            .where(self._owned, jobs.c.status.in_(wanted), *_of_sources(source_ids))
             .order_by(jobs.c.completed_at, jobs.c.id)
         )
         async with self._engine.connect() as conn:
@@ -473,6 +485,21 @@ class JobRepo:
             row = (await conn.execute(stmt)).first()
         return row is not None
 
+    async def cancel_unconfigured(self, source_ids: Collection[str]) -> int:
+        """Delete the queued and claimed jobs of every source outside
+        `source_ids`. Returns how many were deleted.
+
+        A claim is deleted too, so this runs only while no process serves
+        those sources."""
+        stmt = sa.delete(jobs).where(
+            self._owned,
+            jobs.c.status.in_(["queued", "claimed"]),
+            jobs.c.source_id.notin_(sorted(source_ids)),
+        )
+        async with self._engine.begin() as conn:
+            result = await conn.execute(stmt)
+        return result.rowcount or 0
+
     async def list_jobs(
         self,
         *,
@@ -493,6 +520,21 @@ class JobRepo:
         async with self._engine.connect() as conn:
             rows = (await conn.execute(query)).mappings().all()
         return [_row_to_job(r) for r in rows]
+
+    async def live_jobs(self, source_ids: Collection[str]) -> list[Job]:
+        """Every queued and claimed job of `source_ids`, oldest first."""
+        query = (
+            sa.select(jobs)
+            .where(
+                self._owned,
+                jobs.c.status.in_(["queued", "claimed"]),
+                *_of_sources(source_ids),
+            )
+            .order_by(jobs.c.enqueued_at, jobs.c.id)
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(query)).mappings().all()
+        return [_row_to_job(row) for row in rows]
 
     async def has_pending(self, source_id: str) -> bool:
         """True iff at least one queued/claimed job exists for the source.
@@ -524,26 +566,36 @@ class JobRepo:
             rows = (await conn.execute(query)).all()
         return {status: n for status, n in rows}
 
-    async def counts_by_status_since(self, since: datetime) -> dict[str, int]:
+    async def counts_by_status_since(
+        self, since: datetime, *, source_ids: Collection[str] | None = None
+    ) -> dict[str, int]:
         """status -> count of jobs that reached a terminal state at or after
         `since` (by completed_at). Only succeeded, dead and rejected set
         completed_at, so those are the only keys returned. Lets a one-shot batch report the
-        work it finished, independent of terminal rows from earlier runs."""
+        work it finished, independent of terminal rows from earlier runs.
+        `source_ids` limits the counts to those sources' jobs."""
         query = (
             sa.select(jobs.c.status, sa.func.count().label("n"))
-            .where(self._owned, jobs.c.completed_at >= since.isoformat())
+            .where(
+                self._owned,
+                jobs.c.completed_at >= since.isoformat(),
+                *_of_sources(source_ids),
+            )
             .group_by(jobs.c.status)
         )
         async with self._engine.connect() as conn:
             rows = (await conn.execute(query)).all()
         return {status: n for status, n in rows}
 
-    async def batch_progress_counts_since(self, since: datetime) -> dict[str, int]:
+    async def batch_progress_counts_since(
+        self, since: datetime, *, source_ids: Collection[str] | None = None
+    ) -> dict[str, int]:
         """Counts for a one-shot batch progress snapshot.
 
         Live rows are counted regardless of enqueue time because run-batch
         drains the whole pending queue. Terminal rows are counted only when
         this run completed them, matching BatchReport semantics.
+        `source_ids` limits the counts to those sources' jobs.
         """
         query = (
             sa.select(jobs.c.status, sa.func.count().label("n"))
@@ -553,6 +605,7 @@ class JobRepo:
                     jobs.c.status.in_(["queued", "claimed"]),
                     jobs.c.completed_at >= since.isoformat(),
                 ),
+                *_of_sources(source_ids),
             )
             .group_by(jobs.c.status)
         )

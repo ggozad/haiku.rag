@@ -22,12 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import (
     APIConfig,
     AppConfig,
     FSSourceConfig,
+    IngestedDatabase,
     IngesterConfig,
+    LanceDBConfig,
     QueueConfig,
     RetryPolicyConfig,
     WorkerConfig,
@@ -434,28 +435,34 @@ async def test_run_batch_as_a_dml_only_role(postgres_dburi, tmp_path):
         await apply_migrations(admin)
         await grant_dml(admin, role_url)
         config = AppConfig(
+            lancedb=LanceDBConfig(databases={"haiku.rag": str(db_path)}),
             ingester=IngesterConfig(
                 queue=QueueConfig(dburi=role_url, namespace="t"),
-                sources=[
-                    FSSourceConfig(
-                        type="fs", id="local", root=corpus, poll_interval_s=3600.0
+                databases={
+                    "haiku.rag": IngestedDatabase(
+                        sources=[
+                            FSSourceConfig(
+                                type="fs",
+                                id="local",
+                                root=corpus,
+                                poll_interval_s=3600.0,
+                            )
+                        ]
                     )
-                ],
+                },
                 workers=WorkerConfig(
                     worker_count=1,
                     poll_idle_interval_s=0.05,
                     retry=RetryPolicyConfig(max_attempts=1),
                 ),
                 api=APIConfig(enabled=False),
-            )
+            ),
         )
 
-        report = await IngesterApp(
-            config=config, scope=DatabaseScope.at(db_path)
-        ).run_batch()
+        report = await IngesterApp(config=config).run_batch()
 
         assert (report.succeeded, report.dead) == (1, 0)
-        async with HaikuRAG(db_path, config) as rag:
+        async with HaikuRAG(config=config) as rag:
             document = await rag.get_document_by_uri(uri)
         assert document is not None
         assert document.metadata["source_id"] == "local"

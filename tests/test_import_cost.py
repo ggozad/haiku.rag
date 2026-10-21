@@ -11,7 +11,9 @@ ENTRY_POINTS = [
     "import haiku.rag.sources.registry",
     "from haiku.rag.config import AppConfig\n"
     "from haiku.rag.ingester.app import IngesterApp\n"
-    "IngesterApp(config=AppConfig())",
+    "config = AppConfig.model_validate({'ingester': {'databases': {'haiku.rag': "
+    "{'sources': [{'type': 'fs', 'root': '/tmp'}]}}}})\n"
+    "IngesterApp(config=config)",
 ]
 
 

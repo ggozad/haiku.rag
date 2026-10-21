@@ -207,12 +207,12 @@ writing process per database URI, any number of read-only consumers.
 
 The recommended layout for production is "different buckets, same account, separate IAM roles per process":
 
-- **Ingestion process**: IAM role with `s3:Get/List` on the documents bucket and `s3:Get/Put/Delete` on the LanceDB bucket. Runs `haiku-ingester serve` (with `ingester.sources[type=s3]` pointing at the documents bucket). Exactly one such process per LanceDB URI.
+- **Ingestion process**: IAM role with `s3:Get/List` on the documents bucket and `s3:Get/Put/Delete` on the LanceDB bucket. Runs `haiku-ingester serve` (with an `s3` source in `ingester.databases` pointing at the documents bucket). Exactly one such process per LanceDB URI.
 - **Consumer processes** (1..N): IAM role with `s3:Get/List` on the LanceDB bucket only. Run `haiku-rag mcp`, the chat TUI, etc. They never see the documents bucket.
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
-`haiku-ingester` writes the database the configuration places, or the one `--db PATH` names. With several configured it refuses to start, see [Multiple databases](multiple-databases.md#ingester).
+`haiku-ingester` writes every database `ingester.databases` names, see [Multiple databases](multiple-databases.md#ingester).
 
 ## Multiple databases
 

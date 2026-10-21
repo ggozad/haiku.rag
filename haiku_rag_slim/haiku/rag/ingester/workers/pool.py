@@ -42,17 +42,19 @@ _WORKER_BREAKER_COOLDOWN_S = 60.0
 
 class WorkerPool:
     """`worker_count` async tasks each pull jobs from the queue and run them
-    through `run_job`. While a worker processes a job it renews the job's lease
-    on a `heartbeat_interval_s` cadence; a reaper task resets claims whose lease
-    has gone stale (`lease_ttl_s`) so a crashed worker doesn't strand its job,
-    without reaping jobs that are merely slow. Lifecycle: build it, await
+    through `run_job`. `clients` maps a source id to the client that writes
+    its jobs, and only those sources' jobs are claimed. While a worker
+    processes a job it renews the job's lease on a `heartbeat_interval_s`
+    cadence; a reaper task resets claims whose lease has gone stale
+    (`lease_ttl_s`) so a crashed worker doesn't strand its job, without
+    reaping jobs that are merely slow. Lifecycle: build it, await
     start(), let it run, await stop().
     """
 
     def __init__(
         self,
         *,
-        client: "HaikuRAG",
+        clients: "Mapping[str, HaikuRAG]",
         job_repo: JobRepo,
         sync_repo: SyncStateRepo,
         worker_count: int = 4,
@@ -66,7 +68,7 @@ class WorkerPool:
         sources: "list[Source] | None" = None,
         metadata_providers: "Mapping[str, MetadataProvider] | None" = None,
     ):
-        self._client = client
+        self._clients: dict[str, HaikuRAG] = dict(clients)
         self._jobs = job_repo
         self._sync = sync_repo
         self._worker_count = worker_count
@@ -149,8 +151,13 @@ class WorkerPool:
             self._breakers[source_id] = breaker
         return breaker
 
-    def _paused_source_ids(self) -> set[str]:
-        return {sid for sid, b in self._breakers.items() if b.is_open}
+    def _claimable_source_ids(self) -> set[str]:
+        """Served sources whose breaker is closed."""
+        return {
+            source_id
+            for source_id in self._clients
+            if not ((breaker := self._breakers.get(source_id)) and breaker.is_open)
+        }
 
     async def start(self) -> None:
         if self._workers:
@@ -215,7 +222,7 @@ class WorkerPool:
         coroutine. Used by tests; not by `start()`."""
         processed = 0
         while True:
-            job = await self._jobs.claim_next(worker_id)
+            job = await self._jobs.claim_next(worker_id, source_ids=self._clients)
             if job is None:
                 return processed
             await self._process(job)
@@ -224,7 +231,7 @@ class WorkerPool:
     async def _worker_loop(self, worker_id: str) -> None:
         while not self._stop.is_set():
             job = await self._jobs.claim_next(
-                worker_id, exclude_source_ids=self._paused_source_ids()
+                worker_id, source_ids=self._claimable_source_ids()
             )
             if job is None:
                 try:
@@ -352,7 +359,7 @@ class WorkerPool:
         logger.info("Processing %s %s (job %s)", job.op.value, job.uri, job.id)
         try:
             result = await run_job(
-                self._client,
+                self._clients[job.source_id],
                 job,
                 sources=self._sources,
                 metadata_providers=self._metadata_providers,

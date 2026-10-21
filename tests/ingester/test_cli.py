@@ -23,6 +23,7 @@ from haiku.rag.ingester.batch import (
 from haiku.rag.ingester.cli import _cli as cli
 from haiku.rag.ingester.cli import _resolve_queue_config
 from haiku.rag.ingester.cli import cli as ingester_cli
+from haiku.rag.ingester.exceptions import DuplicateSourceError
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.store.exceptions import (
@@ -129,13 +130,13 @@ def test_a_server_queue_without_a_namespace_exits_one(tmp_path, monkeypatch, cap
     config_file = tmp_path / "haiku.rag.yaml"
     config_file.write_text(
         "ingester:\n  queue:\n    dburi: postgresql+asyncpg://u:p@host/db\n"
+        "  databases:\n"
+        f"    haiku.rag: {{sources: [{{type: fs, root: {tmp_path}}}]}}\n"
     )
     import haiku.rag.config as config_module
 
     monkeypatch.setattr(config_module, "_config", None)
-    monkeypatch.setattr(
-        sys, "argv", ["haiku-ingester", "run-batch", "--db", str(tmp_path / "x")]
-    )
+    monkeypatch.setattr(sys, "argv", ["haiku-ingester", "run-batch"])
     monkeypatch.setenv("HAIKU_RAG_CONFIG_PATH", str(config_file))
 
     with pytest.raises(SystemExit) as exit_info:
@@ -148,7 +149,7 @@ def test_a_server_queue_without_a_namespace_exits_one(tmp_path, monkeypatch, cap
 def test_run_batch_reports_and_exits_zero(monkeypatch):
     fake = _fake_app(BatchReport(succeeded=3, dead=0), monkeypatch)
 
-    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+    result = runner.invoke(cli, ["run-batch"])
 
     assert result.exit_code == 0
     assert "3 succeeded, 0 dead" in result.output
@@ -166,7 +167,7 @@ def test_run_batch_reports_and_exits_zero(monkeypatch):
 def test_run_batch_retry_names_the_statuses_to_retry(monkeypatch, selection, statuses):
     fake = _fake_app(BatchReport(succeeded=2, retried=2), monkeypatch)
 
-    result = runner.invoke(cli, ["run-batch", "--retry", selection, "--db", "x"])
+    result = runner.invoke(cli, ["run-batch", "--retry", selection])
 
     assert result.exit_code == 0
     assert fake.run_batch.await_args.kwargs["retry"] == statuses
@@ -176,7 +177,7 @@ def test_run_batch_retry_names_the_statuses_to_retry(monkeypatch, selection, sta
 def test_run_batch_without_retry_retries_nothing(monkeypatch):
     fake = _fake_app(BatchReport(succeeded=1), monkeypatch)
 
-    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+    result = runner.invoke(cli, ["run-batch"])
 
     assert result.exit_code == 0
     assert fake.run_batch.await_args.kwargs["retry"] == set()
@@ -208,7 +209,7 @@ def test_run_batch_passes_progress_callback_when_enabled(monkeypatch):
         lambda _: _progress_context(lambda snapshot: None),
     )
 
-    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+    result = runner.invoke(cli, ["run-batch"])
 
     assert result.exit_code == 0
     fake.run_batch.assert_awaited_once()
@@ -218,7 +219,7 @@ def test_run_batch_passes_progress_callback_when_enabled(monkeypatch):
 def test_run_batch_exits_nonzero_when_dead(monkeypatch):
     _fake_app(BatchReport(succeeded=1, dead=2), monkeypatch)
 
-    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+    result = runner.invoke(cli, ["run-batch"])
 
     assert result.exit_code == 1
     assert "2 dead" in result.output
@@ -227,7 +228,7 @@ def test_run_batch_exits_nonzero_when_dead(monkeypatch):
 def test_run_batch_exits_zero_on_rejections_alone(monkeypatch):
     _fake_app(BatchReport(succeeded=1, dead=0, rejected=2), monkeypatch)
 
-    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+    result = runner.invoke(cli, ["run-batch"])
 
     assert result.exit_code == 0
     assert "Batch complete: 1 succeeded, 0 dead, 2 rejected" in result.output
@@ -236,7 +237,7 @@ def test_run_batch_exits_zero_on_rejections_alone(monkeypatch):
 def test_run_batch_exits_nonzero_when_sweep_fails(monkeypatch):
     _fake_app(BatchReport(succeeded=2, dead=0, failed_sweeps=["docs"]), monkeypatch)
 
-    result = runner.invoke(cli, ["run-batch", "--db", "x.lancedb"])
+    result = runner.invoke(cli, ["run-batch"])
 
     assert result.exit_code == 1
     assert "failed to sweep: docs" in result.output
@@ -249,7 +250,7 @@ def test_run_batch_dry_run_writes_default_manifest(monkeypatch, tmp_path):
     )
 
     with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(cli, ["run-batch", "--dry-run", "--db", "x.lancedb"])
+        result = runner.invoke(cli, ["run-batch", "--dry-run"])
 
         assert result.exit_code == 0
         assert "Dry run complete: 1 upsert, 1 delete, 2 unchanged -> manifest-" in (
@@ -272,7 +273,7 @@ def test_run_batch_dry_run_writes_explicit_output(monkeypatch, tmp_path):
 
     result = runner.invoke(
         cli,
-        ["run-batch", "--dry-run", "--output", str(output), "--db", "x.lancedb"],
+        ["run-batch", "--dry-run", "--output", str(output)],
     )
 
     assert result.exit_code == 0
@@ -290,7 +291,7 @@ def test_run_batch_dry_run_exits_nonzero_when_sweep_fails(monkeypatch, tmp_path)
 
     result = runner.invoke(
         cli,
-        ["run-batch", "--dry-run", "--output", str(output), "--db", "x.lancedb"],
+        ["run-batch", "--dry-run", "--output", str(output)],
     )
 
     assert result.exit_code == 1
@@ -303,9 +304,7 @@ def test_run_batch_manifest_exits_zero_on_rejections_alone(monkeypatch, tmp_path
     _write_manifest(manifest_path)
     _fake_manifest_app(BatchReport(succeeded=1, dead=0, rejected=1), monkeypatch)
 
-    result = runner.invoke(
-        cli, ["run-batch", "--manifest", str(manifest_path), "--db", "x.lancedb"]
-    )
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
 
     assert result.exit_code == 0
     assert "Manifest batch complete: 1 succeeded, 0 dead, 1 rejected" in result.output
@@ -316,9 +315,7 @@ def test_run_batch_manifest_replays_manifest(monkeypatch, tmp_path):
     _write_manifest(manifest_path)
     fake = _fake_manifest_app(BatchReport(succeeded=2, dead=0), monkeypatch)
 
-    result = runner.invoke(
-        cli, ["run-batch", "--manifest", str(manifest_path), "--db", "x.lancedb"]
-    )
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
 
     assert result.exit_code == 0
     assert "Manifest batch complete: 2 succeeded, 0 dead" in result.output
@@ -437,7 +434,7 @@ def test_serve_invokes_app(monkeypatch):
     fake = AsyncMock()
     monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", lambda **_: fake)
 
-    result = runner.invoke(cli, ["serve", "--db", "x.lancedb", "--no-api"])
+    result = runner.invoke(cli, ["serve", "--no-api"])
 
     assert result.exit_code == 0
     fake.serve.assert_awaited_once_with(api=False)
@@ -453,9 +450,7 @@ def test_serve_passes_host_and_port(monkeypatch):
 
     monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", _capture)
 
-    result = runner.invoke(
-        cli, ["serve", "--db", "x.lancedb", "--host", "0.0.0.0", "--port", "9999"]
-    )
+    result = runner.invoke(cli, ["serve", "--host", "0.0.0.0", "--port", "9999"])
 
     assert result.exit_code == 0
     assert captured["config"].ingester.api.host == "0.0.0.0"
@@ -472,9 +467,7 @@ def test_serve_passes_root_path(monkeypatch):
 
     monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", _capture)
 
-    result = runner.invoke(
-        cli, ["serve", "--db", "x.lancedb", "--root-path", "/ingester/"]
-    )
+    result = runner.invoke(cli, ["serve", "--root-path", "/ingester/"])
 
     assert result.exit_code == 0
     # Assignment is normalized (trailing slash stripped) via validate_assignment.
@@ -627,6 +620,7 @@ def test_cli_entry_point(monkeypatch):
         SourceUnavailableError("papers would not open"),
         UnknownDatabaseError("no such database"),
         ImportError("docling is not installed"),
+        DuplicateSourceError("source id(s) a name several configured sources"),
     ],
     ids=lambda e: type(e).__name__,
 )
@@ -643,114 +637,165 @@ def test_cli_entry_point_exits_cleanly_on_known_errors(monkeypatch, capsys, erro
     assert f"Error: {error}" in capsys.readouterr().err
 
 
-class TestPlacingTheIngesterDatabase:
-    """The ingester writes wherever the configuration places the database, and
-    resolves that once. `--db PATH` is the operator's explicit override and
-    constructs the scope directly."""
+class TestPlacingTheIngesterDatabases:
+    """The ingester writes every database `ingester.databases` names, where
+    `lancedb.databases` places it, or the one a name selects."""
 
     @staticmethod
-    def _app(config: AppConfig, db_path=None):
+    def _app(config: AppConfig, database_name=None):
         from haiku.rag.ingester.app import IngesterApp
-        from haiku.rag.ingester.cli import _scope_for
 
-        return IngesterApp(config=config, scope=_scope_for(db_path))
+        return IngesterApp(config=config, database_name=database_name)
 
-    def test_a_configured_location_becomes_the_scope(self, tmp_path):
-        config = AppConfig(
-            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
+    @staticmethod
+    def _ingesting(databases: dict, ingested: list[str]) -> AppConfig:
+        return AppConfig.model_validate(
+            {
+                "lancedb": {"databases": databases},
+                "ingester": {
+                    "databases": {
+                        name: {
+                            "sources": [{"type": "fs", "id": name, "root": "/tmp/docs"}]
+                        }
+                        for name in ingested
+                    }
+                },
+            }
         )
 
-        [ref] = self._app(config)._scope.databases
+    @staticmethod
+    def _placed(app) -> dict:
+        return {ref.name: ref.location for ref, _ in app._databases}
 
-        assert ref.name == "prod"
-        assert ref.location == "s3://bucket/prod.lancedb"
-        assert ref.db_path is None
-
-    def test_an_override_names_the_database_by_its_stem(self, tmp_path):
-        config = AppConfig(
-            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
-        )
-        override = tmp_path / "local.lancedb"
-
-        [ref] = self._app(config, override)._scope.databases
-
-        assert ref.name == "local"
-        assert ref.location == override
-
-    def test_the_override_is_the_cli_s_alone(self, tmp_path):
-        """`IngesterApp` takes a resolved scope, so a Python caller has no path
-        to slip past the configuration; only the CLI constructs one."""
-        from haiku.rag.client.scope import DatabaseScope
-        from haiku.rag.ingester.cli import _scope_for
-
-        assert _scope_for(None) is None
-        assert _scope_for(tmp_path / "local.lancedb") == DatabaseScope.at(
-            tmp_path / "local.lancedb"
+    def test_each_ingested_database_is_placed_where_lancedb_puts_it(self, tmp_path):
+        config = self._ingesting(
+            {"prod": "s3://bucket/prod.lancedb", "docs": str(tmp_path / "docs")},
+            ["prod", "docs"],
         )
 
-    def test_a_path_without_a_stem_is_a_usage_error(self):
-        from pathlib import Path
+        assert self._placed(self._app(config)) == {
+            "prod": "s3://bucket/prod.lancedb",
+            "docs": tmp_path / "docs",
+        }
 
-        import typer
-
-        from haiku.rag.ingester.cli import _scope_for
-
-        with pytest.raises(typer.BadParameter, match="no name"):
-            _scope_for(Path("/"))
-
-    def test_one_configured_database_is_accepted(self, tmp_path):
-        """A one-entry mapping names which database to write."""
-        config = AppConfig(
-            lancedb=LanceDBConfig(databases={"docs": str(tmp_path / "docs.lancedb")})
+    def test_each_database_gets_its_own_sources(self, tmp_path):
+        config = self._ingesting(
+            {"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}, ["a", "b"]
         )
 
-        scope = self._app(config)._scope
+        app = self._app(config)
 
-        assert scope.names == ("docs",)
-        assert not scope.covers_multiple
+        assert [
+            (ref.name, [source.id for source in sources])
+            for ref, sources in app._databases
+        ] == [("a", ["a"]), ("b", ["b"])]
 
-    def test_a_tagged_entry_is_refused(self, tmp_path):
-        from haiku.rag.config.models import DatabaseEntry
-        from haiku.rag.store.exceptions import TagError
+    def test_the_ingested_database_is_written_among_several_configured(self, tmp_path):
+        """A config shared with readers names other databases, a tagged one
+        included. The ingester writes the one its sources name."""
+        config = self._ingesting(
+            {
+                "papers": str(tmp_path / "papers.lancedb"),
+                "wiki": str(tmp_path / "wiki.lancedb"),
+                "release": {"location": str(tmp_path / "papers.lancedb"), "tag": "v1"},
+            },
+            ["wiki"],
+        )
+
+        assert list(self._placed(self._app(config))) == ["wiki"]
+
+    def test_without_ingested_databases_startup_is_refused(self, tmp_path):
+        from haiku.rag.ingester.exceptions import NothingToIngestError
 
         config = AppConfig(
             lancedb=LanceDBConfig(
                 databases={
-                    "docs": DatabaseEntry(
-                        location=str(tmp_path / "docs.lancedb"), tag="v1"
-                    )
+                    "a": str(tmp_path / "a"),
+                    "b": {"location": str(tmp_path / "b"), "tag": "v1"},
                 }
             )
         )
 
-        with pytest.raises(TagError, match="'docs' is configured at tag 'v1'"):
+        with pytest.raises(NothingToIngestError, match="ingester.databases"):
             self._app(config)
 
-    def test_a_set_is_refused_with_a_remedy_this_command_has(self, tmp_path):
-        """The remedy in the message is `--db PATH`, an argument this command
-        has; `sources=` is a Python argument no CLI user can pass."""
+    def test_two_ingested_databases_at_one_location_are_refused(self, tmp_path):
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
-        config = AppConfig(
-            lancedb=LanceDBConfig(
-                databases={"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}
-            )
+        config = self._ingesting(
+            {"a": str(tmp_path / "x"), "b": str(tmp_path / "y" / ".." / "x")},
+            ["a", "b"],
         )
 
-        with pytest.raises(AmbiguousDatabaseError) as raised:
+        with pytest.raises(AmbiguousDatabaseError, match="'a' and 'b'"):
             self._app(config)
 
-        assert "--db PATH" in str(raised.value)
-        assert "sources=" not in str(raised.value)
+    def test_two_ingested_databases_at_one_uri_are_refused(self):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
-    def test_several_configured_databases_exit_cleanly(self, tmp_path, monkeypatch):
-        """No selector names one of a set, so the CLI exits with the message
-        and no traceback."""
+        config = self._ingesting(
+            {"a": "s3://bucket/x.lancedb", "b": "s3://bucket/x.lancedb/"},
+            ["a", "b"],
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="'a' and 'b'"):
+            self._app(config)
+
+    def test_a_path_and_its_file_uri_are_refused(self, tmp_path):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        location = tmp_path / "x.lancedb"
+        config = self._ingesting(
+            {"a": str(location), "b": location.as_uri()}, ["a", "b"]
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="'a' and 'b'"):
+            self._app(config)
+
+    def test_a_relative_path_with_a_colon_and_its_absolute_path_are_refused(
+        self, tmp_path, monkeypatch
+    ):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        monkeypatch.chdir(tmp_path)
+        config = self._ingesting(
+            {"a": "archive:2026.lancedb", "b": str(tmp_path / "archive:2026.lancedb")},
+            ["a", "b"],
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="'a' and 'b'"):
+            self._app(config)
+
+    def test_a_name_selects_one_database(self, tmp_path):
+        config = self._ingesting(
+            {"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}, ["a", "b"]
+        )
+
+        app = self._app(config, "b")
+
+        assert list(self._placed(app)) == ["b"]
+
+    def test_a_shared_location_is_refused_whatever_is_selected(self, tmp_path):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = self._ingesting(
+            {"a": str(tmp_path / "x"), "b": str(tmp_path / "x")}, ["a", "b"]
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="'a' and 'b'"):
+            self._app(config, "a")
+
+    def test_a_shared_location_exits_cleanly(self, tmp_path, monkeypatch):
+        """The CLI exits with the message and no traceback."""
         config_file = tmp_path / "haiku.rag.yaml"
+        location = tmp_path / "a.lancedb"
         config_file.write_text(
             "lancedb:\n  databases:\n"
-            f"    a: {tmp_path / 'a.lancedb'}\n"
-            f"    b: {tmp_path / 'b.lancedb'}\n"
+            f"    a: {location}\n"
+            f"    b: {location}\n"
+            "ingester:\n  databases:\n"
+            f"    a: {{sources: [{{type: fs, id: a, root: {tmp_path}}}]}}\n"
+            f"    b: {{sources: [{{type: fs, id: b, root: {tmp_path}}}]}}\n"
         )
         import haiku.rag.config as config_module
 
@@ -763,6 +808,31 @@ class TestPlacingTheIngesterDatabase:
             ingester_cli()
 
         assert exit_info.value.code == 1
+
+
+def test_run_batch_db_name_selects_the_database(monkeypatch):
+    built = {}
+
+    def _app(**kwargs):
+        built.update(kwargs)
+        fake = AsyncMock()
+        fake.run_batch.return_value = BatchReport(succeeded=1)
+        return fake
+
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", _app)
+
+    result = runner.invoke(cli, ["run-batch", "--db-name", "papers"])
+
+    assert result.exit_code == 0
+    assert built["database_name"] == "papers"
+
+
+@pytest.mark.parametrize("command", ["serve", "run-batch"])
+def test_db_path_is_no_ingester_option(command):
+    result = runner.invoke(cli, [command, "--db", "x.lancedb"])
+
+    assert result.exit_code == 2
+    assert "No such option" in result.output
 
 
 @pytest.mark.parametrize("command, joins", [("run-batch", True), ("serve", False)])
@@ -779,7 +849,7 @@ def test_one_shot_commands_join_the_traceparent_trace(monkeypatch, command, join
     monkeypatch.setenv("TRACESTATE", "vendor=value")
     monkeypatch.setenv("LOGFIRE_DISTRIBUTED_TRACING", "false")
 
-    runner.invoke(cli, [command, "--db", "x.lancedb"])
+    runner.invoke(cli, [command])
 
     if joins:
         assert seen == [("4bf92f3577b34da6a3ce929d0e0e4736", "vendor=value")]

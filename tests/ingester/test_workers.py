@@ -24,8 +24,10 @@ def client():
 
 
 def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
+    """A pool that serves `source_ids` through `client`."""
+    source_ids = kwargs.pop("source_ids", ("src",))
     return WorkerPool(
-        client=client,
+        clients={source_id: client for source_id in source_ids},
         job_repo=jobs,
         sync_repo=sync,
         worker_count=kwargs.pop("worker_count", 2),
@@ -38,6 +40,54 @@ def _pool(client, jobs, sync, **kwargs) -> WorkerPool:
         source_retry_policies=kwargs.pop("source_retry_policies", None),
         sources=kwargs.pop("sources", None),
     )
+
+
+# --- routing ---
+
+
+def _ingesting_client() -> AsyncMock:
+    client = AsyncMock(spec=HaikuRAG)
+    client._ingest_observed.side_effect = lambda uri, **_: Document(
+        id=uri, content="x", uri=uri, metadata={"md5": "m", "source_revision": "r"}
+    )
+    return client
+
+
+async def test_a_job_runs_through_its_sources_client(jobs, sync):
+    papers, wiki = _ingesting_client(), _ingesting_client()
+    await jobs.enqueue("papers", "p", JobOp.UPSERT)
+    await jobs.enqueue("wiki", "w", JobOp.UPSERT)
+    pool = WorkerPool(
+        clients={"papers": papers, "wiki": wiki}, job_repo=jobs, sync_repo=sync
+    )
+
+    assert await pool.drain_once() == 2
+
+    assert [call.args[0] for call in papers._ingest_observed.await_args_list] == ["p"]
+    assert [call.args[0] for call in wiki._ingest_observed.await_args_list] == ["w"]
+
+
+async def test_a_job_of_an_unserved_source_is_not_claimed(client, jobs, sync):
+    client._ingest_observed.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    other = await jobs.enqueue("other", "o", JobOp.UPSERT)
+    served = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert other is not None and served is not None
+    pool = _pool(client, jobs, sync)
+
+    await pool.start()
+    try:
+        while (job := await jobs.get_job(served.id)) and job.status is not (
+            JobStatus.SUCCEEDED
+        ):
+            await asyncio.sleep(0.02)
+    finally:
+        await pool.stop()
+
+    left = await jobs.get_job(other.id)
+    assert left is not None and left.status is JobStatus.QUEUED
+    assert await pool.drain_once() == 0
 
 
 # --- worker identity ---
@@ -311,6 +361,7 @@ async def test_transient_error_reschedules_with_the_sources_policy(client, jobs,
         sync,
         retry_policy=RetryPolicy(base_delay_s=60.0, jitter=0.0),
         source_retry_policies={"slow": RetryPolicy(base_delay_s=200.0, jitter=0.0)},
+        source_ids=("src", "slow"),
     )
     started = datetime.now(UTC)
     while await pool.drain_once():
@@ -1090,7 +1141,14 @@ async def test_breaker_isolates_sources(client, jobs, sync):
         await jobs.enqueue("bad", f"b{i}", JobOp.UPSERT)
         await jobs.enqueue("good", f"g{i}", JobOp.UPSERT)
 
-    pool = _pool(client, jobs, sync, worker_count=2, poll_idle_interval_s=0.02)
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=2,
+        poll_idle_interval_s=0.02,
+        source_ids=("bad", "good"),
+    )
     # Open the bad source's breaker without touching the queue.
     for _ in range(10):
         pool._breaker_for("bad").record_failure()

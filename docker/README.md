@@ -72,11 +72,13 @@ ingester:
     auth_token: ${INGESTER_TOKEN}
   queue:
     path: /data/ingester.db   # persist queue in the data volume
-  sources:
-    - type: fs
-      id: docs
-      root: /docs             # container path, not host path
-      delete_orphans: true
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: docs
+          root: /docs             # container path, not host path
+          delete_orphans: true
 ```
 
 The MCP server always opens the database read-only, so it can run beside

@@ -58,6 +58,8 @@ class BasePoller:
         self._stop = asyncio.Event()
         self._last_polled_at: datetime | None = None
         self._last_skip_reason: str | None = None
+        self._last_error: str | None = None
+        self._last_error_at: datetime | None = None
         self._default_max_attempts = default_max_attempts
 
     @property
@@ -78,6 +80,24 @@ class BasePoller:
         "circuit_open"), or None when the most recent attempt actually polled.
         Cleared on the next successful sweep."""
         return self._last_skip_reason
+
+    @property
+    def last_error(self) -> str | None:
+        """The error of the most recent failed discovery, None once a sweep
+        succeeds after it."""
+        return self._last_error
+
+    @property
+    def last_error_at(self) -> datetime | None:
+        return self._last_error_at
+
+    def _record_error(self, exc: Exception) -> None:
+        self._last_error = str(exc) or type(exc).__name__
+        self._last_error_at = datetime.now(UTC)
+
+    def _clear_error(self) -> None:
+        self._last_error = None
+        self._last_error_at = None
 
     async def run(self) -> None:  # pragma: no cover - subclasses override
         raise NotImplementedError
@@ -148,6 +168,7 @@ class BasePoller:
                 self._breaker.record_success()
                 self._last_polled_at = datetime.now(UTC)
                 self._last_skip_reason = None
+                self._clear_error()
                 span.set_attribute("upsert", counts[SourceEventKind.UPSERT])
                 span.set_attribute("delete", counts[SourceEventKind.DELETE])
                 span.set_attribute("unchanged", counts[SourceEventKind.UNCHANGED])
@@ -162,6 +183,7 @@ class BasePoller:
                 return True
             except Exception as exc:
                 self._breaker.record_failure()
+                self._record_error(exc)
                 span.set_attribute(
                     "consecutive_failures", self._breaker.consecutive_failures
                 )
@@ -236,12 +258,14 @@ class BasePoller:
                 self._breaker.record_success()
                 self._last_polled_at = datetime.now(UTC)
                 self._last_skip_reason = None
+                self._clear_error()
                 span.set_attribute("upsert", summary.upsert_count)
                 span.set_attribute("delete", summary.delete_count)
                 span.set_attribute("unchanged", summary.unchanged_count)
                 return True, summary, changes
             except Exception as exc:
                 self._breaker.record_failure()
+                self._record_error(exc)
                 span.set_attribute(
                     "consecutive_failures", self._breaker.consecutive_failures
                 )

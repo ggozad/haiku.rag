@@ -9,7 +9,9 @@ from haiku.rag.config import (
     AppConfig,
     FSSourceConfig,
     HTTPSourceConfig,
+    IngestedDatabase,
     IngesterConfig,
+    LanceDBConfig,
     QueueConfig,
     RetryPolicyConfig,
     S3SourceConfig,
@@ -19,7 +21,7 @@ from haiku.rag.config import (
 
 def test_default_ingester_config_has_sane_values():
     cfg = IngesterConfig()
-    assert cfg.sources == []
+    assert cfg.databases == {}
     assert cfg.workers.worker_count == 4
     assert cfg.workers.retry.max_attempts == 5
     assert cfg.workers.lease_ttl_s == 120
@@ -85,7 +87,7 @@ def test_api_root_path_normalized_on_assignment():
 
 
 def test_discriminator_picks_fs_source():
-    cfg = IngesterConfig.model_validate(
+    cfg = IngestedDatabase.model_validate(
         {"sources": [{"type": "fs", "root": "/tmp/docs"}]}
     )
     assert isinstance(cfg.sources[0], FSSourceConfig)
@@ -95,7 +97,7 @@ def test_discriminator_picks_fs_source():
 
 
 def test_source_carries_metadata_provider_name():
-    cfg = IngesterConfig.model_validate(
+    cfg = IngestedDatabase.model_validate(
         {
             "sources": [
                 {"type": "fs", "root": "/tmp/docs", "metadata_provider": "example"}
@@ -106,7 +108,7 @@ def test_source_carries_metadata_provider_name():
 
 
 def test_discriminator_picks_http_source():
-    cfg = IngesterConfig.model_validate(
+    cfg = IngestedDatabase.model_validate(
         {"sources": [{"type": "http", "id": "arxiv", "urls": ["https://x"]}]}
     )
     assert isinstance(cfg.sources[0], HTTPSourceConfig)
@@ -114,7 +116,7 @@ def test_discriminator_picks_http_source():
 
 
 def test_discriminator_picks_s3_source():
-    cfg = IngesterConfig.model_validate(
+    cfg = IngestedDatabase.model_validate(
         {"sources": [{"type": "s3", "uri": "s3://bucket/prefix/"}]}
     )
     assert isinstance(cfg.sources[0], S3SourceConfig)
@@ -122,7 +124,7 @@ def test_discriminator_picks_s3_source():
 
 
 def test_discriminator_picks_webdav_source():
-    cfg = IngesterConfig.model_validate(
+    cfg = IngestedDatabase.model_validate(
         {
             "sources": [
                 {
@@ -143,7 +145,7 @@ def test_discriminator_picks_webdav_source():
 
 
 def test_discriminator_picks_plugin_source():
-    cfg = IngesterConfig.model_validate(
+    cfg = IngestedDatabase.model_validate(
         {
             "sources": [
                 {
@@ -164,11 +166,11 @@ def test_discriminator_picks_plugin_source():
 
 def test_discriminator_rejects_unknown_type():
     with pytest.raises(ValidationError):
-        IngesterConfig.model_validate({"sources": [{"type": "ftp", "uri": "x"}]})
+        IngestedDatabase.model_validate({"sources": [{"type": "ftp", "uri": "x"}]})
 
 
 def test_per_source_retry_overrides_default():
-    cfg = IngesterConfig.model_validate(
+    cfg = IngestedDatabase.model_validate(
         {
             "sources": [
                 {
@@ -189,22 +191,24 @@ def test_per_source_retry_overrides_default():
 def test_yaml_round_trip():
     yaml_text = """
 ingester:
-  sources:
-    - type: fs
-      root: /data/docs
-      ignore_patterns: ["**/.git/**"]
-      delete_orphans: true
-    - type: s3
-      uri: s3://my-bucket/incoming/
-      poll_interval_s: 300
-      storage_options:
-        endpoint: http://seaweed:8333
-    - type: http
-      id: arxiv
-      urls: [https://arxiv.org/pdf/2301.12345.pdf]
-      headers:
-        Authorization: Bearer abc
-      poll_interval_s: 86400
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          root: /data/docs
+          ignore_patterns: ["**/.git/**"]
+          delete_orphans: true
+        - type: s3
+          uri: s3://my-bucket/incoming/
+          poll_interval_s: 300
+          storage_options:
+            endpoint: http://seaweed:8333
+        - type: http
+          id: arxiv
+          urls: [https://arxiv.org/pdf/2301.12345.pdf]
+          headers:
+            Authorization: Bearer abc
+          poll_interval_s: 86400
   workers:
     worker_count: 8
   api:
@@ -212,8 +216,7 @@ ingester:
 """
     data = yaml.safe_load(yaml_text)
     app = AppConfig.model_validate(data)
-    assert len(app.ingester.sources) == 3
-    fs, s3, http = app.ingester.sources
+    fs, s3, http = app.ingester.databases["haiku.rag"].sources
     assert isinstance(fs, FSSourceConfig)
     assert isinstance(s3, S3SourceConfig)
     assert isinstance(http, HTTPSourceConfig)
@@ -222,3 +225,85 @@ ingester:
     assert http.headers["Authorization"] == "Bearer abc"
     assert app.ingester.workers.worker_count == 8
     assert app.ingester.api.enabled is False
+
+
+_FS = {"type": "fs", "root": "/tmp/docs"}
+
+
+def test_ingester_sources_is_refused_with_the_replacement_named():
+    with pytest.raises(ValidationError, match="ingester.databases"):
+        AppConfig.model_validate({"ingester": {"sources": [_FS]}})
+
+
+def test_an_ingested_database_is_one_lancedb_names():
+    config = AppConfig.model_validate(
+        {
+            "lancedb": {"databases": {"papers": "/srv/papers.lancedb"}},
+            "ingester": {"databases": {"papers": {"sources": [_FS]}}},
+        }
+    )
+
+    assert list(config.ingester.databases) == ["papers"]
+
+
+def test_an_ingested_database_unknown_to_lancedb_is_refused():
+    with pytest.raises(ValidationError, match=r"ingester\.databases\[wiki\]"):
+        AppConfig.model_validate(
+            {
+                "lancedb": {"databases": {"papers": "/srv/papers.lancedb"}},
+                "ingester": {"databases": {"wiki": {"sources": [_FS]}}},
+            }
+        )
+
+
+def test_an_ingested_database_at_a_tag_is_refused():
+    with pytest.raises(ValidationError, match=r"ingester\.databases\[papers\].*tag"):
+        AppConfig.model_validate(
+            {
+                "lancedb": {
+                    "databases": {
+                        "papers": {"location": "/srv/papers.lancedb", "tag": "v1"}
+                    }
+                },
+                "ingester": {"databases": {"papers": {"sources": [_FS]}}},
+            }
+        )
+
+
+def test_a_tagged_entry_the_ingester_does_not_name_is_left_to_readers():
+    config = AppConfig(
+        lancedb=LanceDBConfig(
+            databases={
+                "papers": "/srv/papers.lancedb",
+                "papers-release": {"location": "/srv/papers.lancedb", "tag": "v1"},
+            }
+        ),
+        ingester=IngesterConfig(
+            databases={"papers": IngestedDatabase.model_validate({"sources": [_FS]})}
+        ),
+    )
+
+    assert list(config.ingester.databases) == ["papers"]
+
+
+def test_without_lancedb_databases_the_default_database_is_ingested():
+    config = AppConfig.model_validate(
+        {"ingester": {"databases": {"haiku.rag": {"sources": [_FS]}}}}
+    )
+
+    assert list(config.ingester.databases) == ["haiku.rag"]
+
+
+def test_without_lancedb_databases_another_name_is_refused():
+    with pytest.raises(ValidationError, match=r"ingester\.databases\[papers\]"):
+        AppConfig.model_validate(
+            {"ingester": {"databases": {"papers": {"sources": [_FS]}}}}
+        )
+
+
+def test_an_ingested_database_without_sources_is_refused():
+    with pytest.raises(ValidationError) as raised:
+        AppConfig.model_validate({"ingester": {"databases": {"haiku.rag": {}}}})
+
+    [error] = raised.value.errors()
+    assert error["loc"] == ("ingester", "databases", "haiku.rag", "sources")

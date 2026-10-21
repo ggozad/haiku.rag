@@ -174,7 +174,7 @@
       details.panel > summary::before { content: "▸"; color: var(--muted); }
       details.panel[open] > summary::before { content: "▾"; }
       details.panel > summary .spacer { flex: 1; }
-      details.panel > summary button {
+      details.panel > summary button, details.panel > summary select {
         background: var(--bg); color: var(--text); border: 1px solid var(--border);
         padding: 4px 10px; border-radius: 4px; font: inherit; font-size: 11px;
         text-transform: none; letter-spacing: 0; cursor: pointer;
@@ -292,6 +292,7 @@
           <summary>
             <span>Database</span>
             <span class="spacer"></span>
+            <select id="db-select" hidden></select>
             <button type="button" id="db-refresh">Refresh</button>
           </summary>
           <div class="body" id="db-body">
@@ -339,17 +340,24 @@
         return res.json();
       }
 
+      // The API's `detail` when it gives one, else the path and status.
+      async function failure(res, path) {
+        const body = await res.json().catch(() => ({}));
+        const detail = typeof body.detail === "string" ? body.detail : null;
+        return new Error(detail || `${path} → ${res.status}`);
+      }
+
       async function postJson(path) {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch(path, { method: "POST", headers });
-        if (!res.ok) throw new Error(`${path} → ${res.status}`);
+        if (!res.ok) throw await failure(res, path);
         return res.json();
       }
 
       async function deleteJson(path) {
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const res = await fetch(path, { method: "DELETE", headers });
-        if (!res.ok) throw new Error(`${path} → ${res.status}`);
+        if (!res.ok) throw await failure(res, path);
         return res.json();
       }
 
@@ -449,6 +457,7 @@
             '<div class="empty">no sources configured</div>';
           return;
         }
+        const showDatabase = new Set(sources.map((s) => s.database)).size > 1;
         const rows = sources
           .map((s) => {
             let circuitBadge = '<span class="badge ok">OK</span>';
@@ -470,13 +479,20 @@
             const skipBadge = reason
               ? ` <span class="badge warn" data-tip="Most recent sweep attempt was skipped (${escapeHtml(reason)}).">${escapeHtml(label)}</span>`
               : "";
-            const polledCell = s.last_polled_at
-              ? relTime(s.last_polled_at) + skipBadge
-              : reason
-                ? skipBadge.trim()
-                : "—";
+            const errorBadge = s.last_error
+              ? ` <span class="badge bad" data-tip="${escapeHtml(s.last_error)} (${relTime(s.last_error_at)})">sweep failed</span>`
+              : "";
+            const polledCell =
+              (s.last_polled_at
+                ? relTime(s.last_polled_at) + skipBadge
+                : reason
+                  ? skipBadge.trim()
+                  : "—") + errorBadge;
+            const databaseCell = showDatabase
+              ? `<td>${escapeHtml(s.database ?? "—")}</td>`
+              : "";
             return `<tr>
-              <td>${escapeHtml(s.source_id)}</td>
+              <td>${escapeHtml(s.source_id)}</td>${databaseCell}
               <td>${escapeHtml(s.type)}</td>
               <td>${polledCell}</td>
               <td>${circuitBadge}</td>
@@ -488,7 +504,7 @@
           .join("");
         $("sources-body").innerHTML = `<table>
           <thead><tr>
-            <th>ID</th><th>Type</th><th>Last polled</th><th>Circuit</th><th></th>
+            <th>ID</th>${showDatabase ? "<th>Database</th>" : ""}<th>Type</th><th>Last polled</th><th>Circuit</th><th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
@@ -658,6 +674,7 @@
           renderChips(health.queue_counts);
           renderStats(stats);
           renderSources(sources);
+          renderDatabaseNames(sources);
           renderProviders(providers);
           renderActive(active);
           renderDead(dead);
@@ -682,17 +699,19 @@
       // Action handlers (called from inline onclick — kept on window).
       window.cancelJob = async (id) => {
         if (!confirm(`Cancel job ${id.slice(0, 8)}…?`)) return;
-        try { await deleteJson(`jobs/${encodeURIComponent(id)}`); } catch (e) {}
+        try { await deleteJson(`jobs/${encodeURIComponent(id)}`); } catch (e) { alert(e.message); }
         refresh();
       };
       window.retryJob = async (id) => {
-        try { await postJson(`jobs/${encodeURIComponent(id)}/retry`); } catch (e) {}
+        try { await postJson(`jobs/${encodeURIComponent(id)}/retry`); } catch (e) { alert(e.message); }
         refresh();
       };
       window.refreshSource = async (sid) => {
         try {
           await postJson(`sources/${encodeURIComponent(sid)}/refresh`);
-        } catch (e) {}
+        } catch (e) {
+          alert(e.message);
+        }
         refresh();
       };
 
@@ -803,13 +822,39 @@
           <div class="breakdown">Migrations: ${migration}${unindexed}</div>`;
       }
 
+      // The ingested databases, named by the sources that feed them. The
+      // selector shows only when there is more than one.
+      function renderDatabaseNames(sources) {
+        const names = [...new Set(sources.map((s) => s.database).filter(Boolean))];
+        const select = $("db-select");
+        const current = [...select.options].map((o) => o.value);
+        if (names.join("\n") === current.join("\n")) return;
+        const selected = select.value;
+        select.innerHTML = names
+          .map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+          .join("");
+        if (names.includes(selected)) select.value = selected;
+        select.hidden = names.length < 2;
+        if (!current.length && $("db-panel").open) loadDatabase();
+      }
+
       let dbLoaded = false;
+      let dbRequest = 0;
       async function loadDatabase() {
+        const request = ++dbRequest;
+        const name = $("db-select").value;
+        if (!name) {
+          $("db-body").innerHTML = '<div class="empty">no ingested database</div>';
+          return;
+        }
         $("db-body").innerHTML = '<div class="empty">loading…</div>';
         try {
-          renderDatabase(await fetchJson("database"));
+          const info = await fetchJson(`databases/${encodeURIComponent(name)}`);
+          if (request !== dbRequest) return;
+          renderDatabase(info);
           dbLoaded = true;
         } catch (e) {
+          if (request !== dbRequest) return;
           $("db-body").innerHTML = `<div class="empty">error: ${escapeHtml(e.message)}</div>`;
         }
       }
@@ -829,6 +874,14 @@
 
       $("db-panel").addEventListener("toggle", (e) => {
         if (e.target.open && !dbLoaded) loadDatabase();
+      });
+      $("db-select").addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      $("db-select").addEventListener("change", () => {
+        $("db-panel").open = true;
+        loadDatabase();
       });
       $("db-refresh").addEventListener("click", (e) => {
         e.preventDefault();

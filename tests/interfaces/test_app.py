@@ -473,19 +473,23 @@ def documented_secret_shapes() -> AppConfig:
             },
             "ingester": {
                 "queue": {"dburi": "postgresql+asyncpg://ingest:PGSECRET@db/queue"},
-                "sources": [
-                    {
-                        "type": "http",
-                        "id": "reports",
-                        "urls": ["https://reports.example/a.pdf"],
-                        "headers": {"Authorization": "Bearer HDRSECRET"},
-                    },
-                    {
-                        "type": "webdav",
-                        "id": "dav",
-                        "base_url": "https://alice:DAVSECRET@dav.example/remote/",
-                    },
-                ],
+                "databases": {
+                    "haiku.rag": {
+                        "sources": [
+                            {
+                                "type": "http",
+                                "id": "reports",
+                                "urls": ["https://reports.example/a.pdf"],
+                                "headers": {"Authorization": "Bearer HDRSECRET"},
+                            },
+                            {
+                                "type": "webdav",
+                                "id": "dav",
+                                "base_url": "https://alice:DAVSECRET@dav.example/remote/",
+                            },
+                        ]
+                    }
+                },
             },
         }
     )

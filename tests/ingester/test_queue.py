@@ -467,24 +467,39 @@ async def test_claim_next_returns_oldest_first(jobs):
     assert second.id == j2.id
 
 
-async def test_claim_next_excludes_source_ids(jobs):
+async def test_claim_next_claims_only_the_given_sources(jobs):
     a = await jobs.enqueue("a", "u", JobOp.UPSERT)
     b = await jobs.enqueue("b", "u", JobOp.UPSERT)
     assert a is not None
     assert b is not None
-    first = await jobs.claim_next("w", exclude_source_ids={"a"})
+    first = await jobs.claim_next("w", source_ids={"b"})
     assert first is not None
     assert first.id == b.id
-    # The "a" job is excluded, so nothing more is claimable.
-    assert await jobs.claim_next("w", exclude_source_ids={"a"}) is None
+    assert await jobs.claim_next("w", source_ids={"b"}) is None
 
 
-async def test_claim_next_empty_exclude_is_noop(jobs):
+async def test_claim_next_with_no_sources_claims_nothing(jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert job is not None
-    claimed = await jobs.claim_next("w", exclude_source_ids=set())
-    assert claimed is not None
-    assert claimed.id == job.id
+    assert await jobs.claim_next("w", source_ids=set()) is None
+
+
+async def test_cancel_unconfigured_deletes_live_jobs_of_other_sources(jobs):
+    kept = await jobs.enqueue("kept", "u", JobOp.UPSERT)
+    claimed = await jobs.enqueue("gone", "claimed", JobOp.UPSERT)
+    assert await jobs.claim_next("w", source_ids={"gone"}) is not None
+    dead = await jobs.enqueue("gone", "dead", JobOp.UPSERT)
+    assert kept is not None and claimed is not None and dead is not None
+    dead_claim = await jobs.claim_next("w", source_ids={"gone"})
+    assert dead_claim is not None and dead_claim.id == dead.id
+    assert await jobs.mark_dead(dead.id, "boom", "w")
+    queued = await jobs.enqueue("gone", "queued", JobOp.DELETE)
+    assert queued is not None
+
+    assert await jobs.cancel_unconfigured({"kept"}) == 2
+
+    remaining = {job.id for job in await jobs.list_jobs(limit=50)}
+    assert remaining == {kept.id, dead.id}
 
 
 async def test_claim_next_skips_future_scheduled(conn, jobs):
@@ -2104,6 +2119,19 @@ async def test_retry_failed_revives_the_chosen_statuses_only(jobs):
     assert await _status(jobs, rejected.id) is JobStatus.QUEUED
 
 
+async def test_retry_failed_revives_the_given_sources_only(jobs):
+    served = await _failed(jobs, "a")
+    other = await jobs.enqueue("other", "b", JobOp.UPSERT)
+    assert other is not None
+    assert await jobs.claim_next("w", source_ids={"other"}) is not None
+    assert await jobs.mark_dead(other.id, "boom", "w")
+
+    assert await jobs.retry_failed({JobStatus.DEAD}, source_ids={"s"}) == 1
+
+    assert await _status(jobs, served.id) is JobStatus.QUEUED
+    assert await _status(jobs, other.id) is JobStatus.DEAD
+
+
 async def test_retry_failed_refuses_a_live_or_succeeded_status(jobs):
     with pytest.raises(ValueError, match="queued"):
         await jobs.retry_failed({JobStatus.DEAD, JobStatus.QUEUED})
@@ -2239,3 +2267,38 @@ async def test_retry_failed_stays_within_its_namespace(
 
     assert await _status(own, mine.id) is JobStatus.QUEUED
     assert await _status(foreign, theirs.id) is JobStatus.DEAD
+
+
+async def test_run_counts_cover_the_given_sources_only(jobs):
+    since = datetime.now(UTC) - timedelta(seconds=1)
+    for source_id in ("a", "b"):
+        assert await jobs.enqueue(source_id, "queued", JobOp.UPSERT) is not None
+        done = await jobs.enqueue(source_id, "done", JobOp.UPSERT)
+        assert done is not None
+        claimed = await jobs.claim_next("w", source_ids={source_id})
+        assert claimed is not None
+        assert await jobs.mark_succeeded(claimed.id, "w")
+
+    assert await jobs.counts_by_status_since(since, source_ids={"a"}) == {
+        "succeeded": 1
+    }
+    assert await jobs.batch_progress_counts_since(since, source_ids={"a"}) == {
+        "queued": 1,
+        "succeeded": 1,
+    }
+
+
+async def test_live_jobs_lists_every_queued_and_claimed_job_of_the_sources(jobs):
+    for i in range(60):
+        assert await jobs.enqueue("a", f"u{i}", JobOp.UPSERT) is not None
+    claimed = await jobs.claim_next("w", source_ids={"a"})
+    assert claimed is not None
+    finished = await jobs.claim_next("w", source_ids={"a"})
+    assert finished is not None and await jobs.mark_succeeded(finished.id, "w")
+    assert await jobs.enqueue("b", "other", JobOp.UPSERT) is not None
+
+    live = await jobs.live_jobs({"a"})
+
+    assert len(live) == 59
+    assert {job.source_id for job in live} == {"a"}
+    assert {job.status for job in live} == {JobStatus.QUEUED, JobStatus.CLAIMED}

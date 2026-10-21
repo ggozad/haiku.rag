@@ -841,8 +841,16 @@ def test_set_config_reaches_the_factories(monkeypatch, tmp_path):
         ),
         ({"ingester": {"queue": {"bogus": 1}}}, "ingester.queue.bogus"),
         (
-            {"ingester": {"sources": [{"type": "fs", "root": "/tmp", "bogus": 1}]}},
-            "ingester.sources.0.fs.bogus",
+            {
+                "ingester": {
+                    "databases": {
+                        "haiku.rag": {
+                            "sources": [{"type": "fs", "root": "/tmp", "bogus": 1}]
+                        }
+                    }
+                }
+            },
+            "ingester.databases.haiku.rag.sources.0.fs.bogus",
         ),
     ],
 )
@@ -966,7 +974,7 @@ def test_explicit_relative_data_dir_is_kept():
 
 
 # Values the complete example shows deliberately rather than as defaults.
-_EXAMPLE_DEVIATIONS = {"storage.data_dir", "ingester.sources"}
+_EXAMPLE_DEVIATIONS = {"storage.data_dir"}
 
 
 def _flatten(data: dict, prefix: str = "") -> dict:

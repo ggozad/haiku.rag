@@ -4,7 +4,7 @@
 
 For one-off ingestion, `haiku-rag add-src` is enough, see [CLI](cli.md#add).
 
-Run one ingester per database: haiku.rag allows one writing process per database (see [Operational constraints](configuration/storage.md#operational-constraints)). MCP servers and other read-only consumers can run beside it.
+One ingester writes every database its configuration names, with one queue and one control plane. haiku.rag allows one writing process per database (see [Operational constraints](configuration/storage.md#operational-constraints)), so no other process writes them. MCP servers and other read-only consumers can run beside it.
 
 ## Install
 
@@ -18,31 +18,79 @@ The extra pulls `fastapi`, `uvicorn`, `sqlalchemy`, `aiosqlite`, `asyncpg` and t
 
 ## Configure sources
 
-Sources are listed under `ingester.sources` in `haiku.rag.yaml`. The minimum is one:
+Sources are listed under `ingester.databases` in `haiku.rag.yaml`, keyed by the database they are ingested into: a name in `lancedb.databases`, or `haiku.rag` when none is configured. The minimum is one source:
 
 ```yaml
 ingester:
-  sources:
-    - type: fs
-      id: local-docs
-      root: /Users/you/docs
-      delete_orphans: true
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: local-docs
+          root: /Users/you/docs
+          delete_orphans: true
 ```
 
-Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document another source ingested last, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing while it still has documents it listed before. The sweep fails instead. To retire a source, remove it from the configuration, and delete its documents by hand if they should go. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+With `lancedb.databases` configured, each key names one of its entries. One process ingests every database it names:
+
+```yaml
+lancedb:
+  databases:
+    papers: /srv/haiku/papers.lancedb
+    wiki: s3://my-bucket/wiki.lancedb
+    papers-release: {location: /srv/haiku/papers.lancedb, tag: v1}
+
+ingester:
+  databases:
+    papers:
+      sources:
+        - type: fs
+          id: papers
+          root: /srv/papers
+    wiki:
+      sources:
+        - type: s3
+          id: wiki-export
+          uri: s3://my-bucket/wiki-export/
+        - type: http
+          id: wiki-pages
+          urls: [https://example.com/handbook.html]
+```
+
+```bash
+haiku-ingester serve                         # papers and wiki
+haiku-ingester run-batch                     # one sweep over both, then exit
+haiku-ingester run-batch --db-name wiki      # wiki's sources only
+```
+
+The ingester writes every database a key names, each through its own client, and leaves the other entries to readers, such as `papers-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. A configuration carrying `ingester.sources` fails at load. `serve` and `run-batch` refuse to start when `ingester.databases` names no database.
+
+One process serves every database, so they start and stop together. If a database fails to open, startup fails for all of them: for example when it needs a migration, when its recorded embedder differs from the configuration, or when its store is unreachable. Remove its key to ingest the others. If a conversion stalls, the process exits (see [Run it under a supervisor](#run-it-under-a-supervisor)), and every database waits for the restart. If a database's writes fail while the ingester runs, only that database's sources pause, since each source has its own worker circuit breaker. If databases must not stop together, run one ingester per database, each with its own queue or namespace.
+
+Source ids are unique across every database: startup fails when two sources share an id, given or derived from their target. Two keys whose databases sit at one location fail startup too, a path and its `file://` URI included, and two names a case-insensitive filesystem treats as one directory, since a database has one writer. Each open database holds its own embedder client.
+
+Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document another source ingested last, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing while it still has documents it listed before. The sweep fails instead. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+
+### Removing or moving a source
+
+To retire a source, remove it from the configuration, and delete its documents by hand if they should go. Its queued and claimed jobs are deleted when `serve`, `run-batch` or a manifest replay next starts, never by `--dry-run`. Its finished jobs stay until `retention_days` prunes them. This relies on one ingester per queue namespace (see [Postgres](#postgres)).
+
+A source moved under another key keeps its id and its queue record. At the next start, reconciliation finds its documents missing from the new database and ingests them again there. The old database keeps its copies until they are deleted by hand.
 
 ### Filesystem
 
 ```yaml
 ingester:
-  sources:
-    - type: fs
-      id: local-docs                          # optional, derived from root
-      root: /Users/you/docs
-      poll_interval_s: 300
-      delete_orphans: true
-      ignore_patterns: ["**/.git/**", "**/node_modules/**"]
-      include_patterns: ["*.md", "*.pdf"]    # optional allow-list
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: local-docs                          # optional, derived from root
+          root: /Users/you/docs
+          poll_interval_s: 300
+          delete_orphans: true
+          ignore_patterns: ["**/.git/**", "**/node_modules/**"]
+          include_patterns: ["*.md", "*.pdf"]    # optional allow-list
 ```
 
 `watchfiles` delivers changes as they happen, and a periodic sweep catches anything missed while the service was down.
@@ -53,20 +101,22 @@ With `converter: docling-local`, a LaTeX document is converted where it sits, an
 
 ```yaml
 ingester:
-  sources:
-    - type: s3
-      id: corp-docs
-      uri: s3://my-bucket/incoming/
-      poll_interval_s: 300
-      delete_orphans: true
-      ignore_patterns: ["draft*"]
-      include_patterns: ["*.pdf", "*.md"]
-      storage_options:
-        endpoint: http://seaweed:8333         # omit for the AWS default chain
-        aws_access_key_id: ${AWS_KEY}
-        aws_secret_access_key: ${AWS_SECRET}
-        region: us-east-1
-        allow_http: "true"
+  databases:
+    haiku.rag:
+      sources:
+        - type: s3
+          id: corp-docs
+          uri: s3://my-bucket/incoming/
+          poll_interval_s: 300
+          delete_orphans: true
+          ignore_patterns: ["draft*"]
+          include_patterns: ["*.pdf", "*.md"]
+          storage_options:
+            endpoint: http://seaweed:8333         # omit for the AWS default chain
+            aws_access_key_id: ${AWS_KEY}
+            aws_secret_access_key: ${AWS_SECRET}
+            region: us-east-1
+            allow_http: "true"
 ```
 
 Each sweep lists the prefix and fetches only keys whose ETag differs from the document's stored `metadata["source_revision"]`. When the fetched bytes match the stored MD5, as after a multipart re-upload, only the revision is updated and nothing is re-chunked.
@@ -77,14 +127,16 @@ Each sweep lists the prefix and fetches only keys whose ETag differs from the do
 
 ```yaml
 ingester:
-  sources:
-    - type: http
-      id: arxiv
-      urls:
-        - https://arxiv.org/pdf/2301.12345.pdf
-      headers:
-        Authorization: Bearer ${SOME_TOKEN}
-      poll_interval_s: 86400
+  databases:
+    haiku.rag:
+      sources:
+        - type: http
+          id: arxiv
+          urls:
+            - https://arxiv.org/pdf/2301.12345.pdf
+          headers:
+            Authorization: Bearer ${SOME_TOKEN}
+          poll_interval_s: 86400
 ```
 
 Change detection uses `HEAD`. A URL removed from `urls`, or answering `410 Gone`, counts as gone. Other failures leave the decision to the fetch. A URL whose server sends neither `ETag` nor `Last-Modified` is not fetched again once ingested. The source fetches only the URLs in `urls`, so its `headers` reach no other URL.
@@ -93,14 +145,16 @@ Change detection uses `HEAD`. A URL removed from `urls`, or answering `410 Gone`
 
 ```yaml
 ingester:
-  sources:
-    - type: webdav
-      id: nextcloud
-      base_url: https://nextcloud.example.com/remote.php/dav/files/alice/Documents/
-      username: alice
-      password: ${NEXTCLOUD_APP_PASSWORD}
-      ignore_patterns: ["**/Trash/**"]
-      poll_interval_s: 600
+  databases:
+    haiku.rag:
+      sources:
+        - type: webdav
+          id: nextcloud
+          base_url: https://nextcloud.example.com/remote.php/dav/files/alice/Documents/
+          username: alice
+          password: ${NEXTCLOUD_APP_PASSWORD}
+          ignore_patterns: ["**/Trash/**"]
+          poll_interval_s: 600
 ```
 
 Each sweep issues one `PROPFIND` with `Depth: infinity` against `base_url`. A file's `getetag`, or `getlastmodified` when the server sends no ETag, decides whether it changed. A file missing from the listing counts as gone. Fetches are plain `GET`s.
@@ -110,11 +164,11 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
 `headers` can replace HTTP Basic with a bearer token:
 
 ```yaml
-    - type: webdav
-      id: kdrive
-      base_url: https://kdrive.infomaniak.com/app/drive/123/
-      headers:
-        Authorization: Bearer ${KDRIVE_TOKEN}
+        - type: webdav
+          id: kdrive
+          base_url: https://kdrive.infomaniak.com/app/drive/123/
+          headers:
+            Authorization: Bearer ${KDRIVE_TOKEN}
 ```
 
 ### File size limits
@@ -122,9 +176,9 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
 `max_file_size` (bytes) rejects oversized files before they are read into memory. They go straight to the dead-letter queue.
 
 ```yaml
-    - type: fs
-      root: /data/docs
-      max_file_size: 104857600        # 100 MB
+        - type: fs
+          root: /data/docs
+          max_file_size: 104857600        # 100 MB
 ```
 
 FS and S3 sources know the size before downloading, so the limit always applies. HTTP and WebDAV rely on the `Content-Length` header, and a response without one, such as a chunked response, is fetched in full.
@@ -134,10 +188,10 @@ FS and S3 sources know the size before downloading, so the limit always applies.
 A source can attach custom metadata to every document it ingests through a `metadata_provider`, a callable an external package registers under the `haiku.rag.metadata_providers` entry-point group:
 
 ```yaml
-    - type: webdav
-      id: handbook
-      base_url: https://dav.example.com/remote.php/dav/files/svc
-      metadata_provider: example-provider
+        - type: webdav
+          id: handbook
+          base_url: https://dav.example.com/remote.php/dav/files/svc
+          metadata_provider: example-provider
 ```
 
 The entry point is a zero-argument callable returning the provider, so a class is its own factory. The ingester calls the provider with `(source_id, uri, result)`, where `result` is the source's `FetchResult`, and merges the returned dict into the document's metadata:
@@ -176,14 +230,14 @@ The provider is also called for each [PDF attachment](configuration/processing.m
 To ingest from something the four built-in types (`fs`, `http`, `s3`, `webdav`) do not cover, such as a git host or a ticketing system, a package registers a source factory under the `haiku.rag.sources` entry-point group and the configuration names it with `type: plugin`:
 
 ```yaml
-    - type: plugin
-      id: api-docs
-      plugin: git
-      options:
-        owner: acme
-        repo: api
-        branch: main
-        token: ${SCM_TOKEN}
+        - type: plugin
+          id: api-docs
+          plugin: git
+          options:
+            owner: acme
+            repo: api
+            branch: main
+            token: ${SCM_TOKEN}
 ```
 
 `plugin` is the entry-point name. `options` is passed to the factory as given, and the factory validates it. The base source fields are handled by the ingester and are not part of `options`.
@@ -273,13 +327,15 @@ A source can override the retry policy:
 
 ```yaml
 ingester:
-  sources:
-    - type: http
-      id: flaky-api
-      urls: [...]
-      retry:
-        max_attempts: 10
-        base_delay_s: 10
+  databases:
+    haiku.rag:
+      sources:
+        - type: http
+          id: flaky-api
+          urls: [...]
+          retry:
+            max_attempts: 10
+            base_delay_s: 10
 ```
 
 The block replaces the worker's policy for that source's jobs. A field it leaves out takes the policy default, not the worker's value.
@@ -290,13 +346,15 @@ After `failure_threshold` consecutive discovery failures, a source's circuit bre
 
 ```yaml
 ingester:
-  sources:
-    - type: http
-      id: rate-limited
-      urls: [...]
-      circuit_breaker:
-        failure_threshold: 5
-        cooldown_s: 600
+  databases:
+    haiku.rag:
+      sources:
+        - type: http
+          id: rate-limited
+          urls: [...]
+          circuit_breaker:
+            failure_threshold: 5
+            cooldown_s: 600
 ```
 
 Workers keep a second breaker per source over job failures. After 5 consecutive transient job failures they stop claiming that source's jobs for 60 seconds. Both values are fixed. `/health` reports the breaker, and opening it emits an `ingester.worker breaker opened` event.
@@ -306,7 +364,6 @@ Workers keep a second breaker per source over job failures. After 5 consecutive 
 ```bash
 haiku-ingester serve                          # workers, pollers and API
 haiku-ingester serve --no-api                 # workers and pollers only
-haiku-ingester serve --db /path.lancedb       # explicit database
 haiku-ingester serve --host 0.0.0.0           # bind the API on all interfaces
 haiku-ingester serve --port 9000              # API port
 ```
@@ -340,20 +397,20 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 |---|---|---|
 | `GET` | `/` | Browser dashboard. Unauthenticated. Its script sends the token on its own requests |
 | `GET` | `/health` | Queue counts, live workers and pollers, worker breaker state. `status` is `degraded` when a worker or poller is down or the worker breaker is open. Unauthenticated |
-| `GET` | `/sources` | Configured sources, last poll time, breaker state, last skip reason |
+| `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason, and the error and time of the last failed discovery, cleared by the next successful sweep |
 | `POST` | `/sources/{id}/refresh` | Run a sweep now. Skipped (`refreshed: false`) while the source has queued or claimed jobs or its breaker is open |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |
-| `POST` | `/jobs/{id}/retry` | Reset a dead, rejected or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI |
+| `POST` | `/jobs/{id}/retry` | Reset a dead, rejected or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI, and 409 for a job whose source is not configured |
 | `DELETE` | `/jobs/{id}` | Cancel a queued or claimed job |
 | `GET` | `/dlq` | Dead jobs, filtered by `source_id`, `limit` (default 50, at most 500), `offset` |
-| `POST` | `/dlq/{id}/retry` | Re-queue a dead job |
+| `POST` | `/dlq/{id}/retry` | Re-queue a dead job, as `/jobs/{id}/retry` does |
 | `GET` | `/stats` | Throughput over 5 minutes, 30 minutes and 1 hour, worker occupancy, oldest queued age, per-source dead and backlog counts |
-| `GET` | `/database` | The database report `haiku-rag info` prints |
+| `GET` | `/databases/{name}` | The report `haiku-rag info` prints, for one ingested database. 404 for any other name |
 | `GET` | `/config` | The effective configuration, defaults filled in and secrets redacted, as YAML text in a JSON `yaml` field |
 | `GET` | `/providers` | Reachability of each `providers.docling_serve.base_url` entry (`/health`, 2 s timeout) |
 
-OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds.
+OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds. A source whose last discovery failed is marked `sweep failed`, with the error on hover. With more than one database, the sources table names each source's database, and the database panel selects the database it reports on.
 
 ![Ingester dashboard mid-ingest: queue depth, per-source health, active and recent jobs](img/ingester-dashboard.png)
 
@@ -391,9 +448,11 @@ location /ingester/ {
 `run-batch` runs one discovery sweep over every source, drains the queue and exits. New and changed files are ingested, and, with `delete_orphans`, documents whose files are gone are deleted. It is the mode for building a database in CI or on a schedule.
 
 ```bash
-haiku-ingester run-batch
-haiku-ingester run-batch --db rag.lancedb
+haiku-ingester run-batch                     # every database in ingester.databases
+haiku-ingester run-batch --db-name papers    # one of them
 ```
+
+`--db-name` sweeps that database's sources and drains their jobs only. `--retry` and `--dry-run` follow the selection, and the other databases' queued jobs stay queued. `--manifest` takes a manifest from a dry run with the same `--db-name`, and refuses one naming another database's sources. It is still a writer of that database, so it must not run while `serve` writes it.
 
 It exits non-zero when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 
@@ -430,19 +489,21 @@ A source id is an identity. An `fs` source without an `id` derives it from its r
 
 ```yaml
 ingester:
-  sources:
-    - type: fs
-      id: handbook
-      root: /srv/handbook
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: handbook
+          root: /srv/handbook
 ```
 
-When two sources cover the same URI (nested roots or prefixes, one URL in two `http` sources), the latest ingestion takes ownership and a warning names both ids. Overlapping sources are a configuration error.
+When two sources of one database cover the same URI (nested roots or prefixes, one URL in two `http` sources), the latest ingestion takes ownership and a warning names both ids. Overlapping sources within a database are a configuration error. Sources of different databases may cover the same URI: each database holds its own copy.
 
 ### Reconciliation at startup
 
 The ingester's state is in two places: the documents in the database, and the queue's record of what each source ingested, which deletion is computed from. Either can be restored or lost without the other, for example a queue file on container-local storage or a database restored from backup.
 
-Every `serve` and `run-batch` reconciles them before its first sweep. For each source:
+Every `serve` and `run-batch` reconciles them before its first sweep. For each source, against the database it is ingested into:
 
 - A document the source owns with no queue record gets one back, so the next sweep can delete it if its file is gone.
 - A recorded revision for a URI the database no longer holds is cleared, so the next sweep re-ingests it.
@@ -533,7 +594,7 @@ ingester:
 
 The `asyncpg` driver comes with the `ingester` extra. `dburi` overrides `path` and the `--queue` flag.
 
-Several ingesters share one Postgres queue, each under its own namespace and each writing its own database. An ingester claims, counts, prunes and serves through its API the rows of its namespace and no others, so source ids need to be unique within a namespace, not across the queue. A namespace is stable across restarts and upgrades: an ingester started under a new one does not see the rows recorded under the old. Two processes under one namespace are two writers of one database, and a database has one writer (see [storage](configuration/storage.md)). The database role sees every row: namespaces separate ingesters in the application, not in Postgres.
+Several ingesters share one Postgres queue, each under its own namespace and each writing its own databases. An ingester claims, counts, prunes and serves through its API the rows of its namespace and no others, so source ids need to be unique within a namespace, not across the queue. A namespace is stable across restarts and upgrades: an ingester started under a new one does not see the rows recorded under the old. Two constraints hold independently. A namespace has one process: a second one deletes the first's queued and claimed jobs at startup, as jobs of sources it does not configure. A database has one writer (see [storage](configuration/storage.md)): two namespaces never ingest into the same database. The database role sees every row: namespaces separate ingesters in the application, not in Postgres.
 
 `serve`, `run-batch` and `--dry-run` refuse a server `dburi` without a namespace, and never create or migrate a server queue: they read its schema version and fail naming the command to run. A SQLite queue is owned by one process, migrates itself at startup and records its rows under `namespace`, empty unless configured.
 
