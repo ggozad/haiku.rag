@@ -184,6 +184,7 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 | `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ | ✅ |
 | `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`<img>` HTML blocks only, not `![alt](url)`) | n/a |
 | `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a | n/a |
+| `.epub` | n/a | n/a | n/a (pictures carry no image data) | n/a | n/a |
 | Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |
 
 #### Picture handling

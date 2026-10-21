@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- EPUB ingestion (`.epub`, `application/epub+zip`) through `docling-local` and `docling-serve`. Pictures carry no image data.
+
 ### Fixed
 
 - `CitationPolicyCapability` enforces a question whose only evidence came from its first round when the question arrives inside `message_history`, as under `AGUIAdapter`. `RAGCapability` takes a new question's identity at its first model request, as the index of the request that opens it.

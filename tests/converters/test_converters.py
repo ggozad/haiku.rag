@@ -1,6 +1,7 @@
 """Tests for document converters."""
 
 import asyncio
+import base64
 import copy
 import logging
 import re
@@ -8,6 +9,7 @@ import sys
 import tempfile
 import threading
 import time
+import zipfile
 from collections import Counter
 from email.message import EmailMessage
 from pathlib import Path
@@ -66,6 +68,65 @@ GREEK = (
     "στην Πάτρα, όπου απασχολούνται περισσότεροι από εκατό εργαζόμενοι."
 )
 UNDETECTABLE = bytes(range(256)) * 4
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def write_epub(path: Path, src_quote: str = '"') -> Path:
+    """Write a two-chapter EPUB whose second chapter holds a captioned picture.
+
+    Only the spine puts chapter one first: the manifest, the archive entries and
+    the file names all list chapter two first.
+    """
+    opf = (
+        '<?xml version="1.0"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        '<dc:identifier id="id">lunar</dc:identifier><dc:title>Lunar Guide</dc:title>'
+        "<dc:language>en</dc:language></metadata><manifest>"
+        '<item id="c2" href="text/a.xhtml" media-type="application/xhtml+xml"/>'
+        '<item id="c1" href="text/b.xhtml" media-type="application/xhtml+xml"/>'
+        '<item id="moon" href="images/moon.png" media-type="image/png"/>'
+        '</manifest><spine><itemref idref="c1"/><itemref idref="c2"/></spine></package>'
+    )
+
+    def chapter(heading: str, body: str) -> str:
+        return (
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<html xmlns="http://www.w3.org/1999/xhtml">'
+            f"<head><title>{heading}</title></head>"
+            f"<body><h1>{heading}</h1>{body}</body></html>"
+        )
+
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED
+        )
+        archive.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0"?>'
+            '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/content.opf" '
+            'media-type="application/oebps-package+xml"/></rootfiles></container>',
+        )
+        archive.writestr("OEBPS/content.opf", opf)
+        archive.writestr(
+            "OEBPS/text/a.xhtml",
+            chapter(
+                "Chapter Two",
+                "<p>Tides are caused by lunar gravity.</p>"
+                f"<figure><img src={src_quote}../images/moon.png{src_quote} alt='moon'/>"
+                "<figcaption>The Moon</figcaption></figure>",
+            ),
+        )
+        archive.writestr(
+            "OEBPS/text/b.xhtml",
+            chapter("Chapter One", "<p>The Moon orbits the Earth every 27 days.</p>"),
+        )
+        archive.writestr("OEBPS/images/moon.png", PNG_1X1)
+    return path
 
 
 class TestVlmApiUrl:
@@ -617,6 +678,30 @@ class TestDoclingLocalConverter:
         assert ".txt" in extensions
         assert ".eml" in extensions
         assert ".msg" in extensions
+        assert ".epub" in extensions
+
+    async def test_convert_epub_reads_chapters_in_spine_order(
+        self, converter, tmp_path
+    ):
+        doc = await converter.convert_file(write_epub(tmp_path / "lunar.epub"))
+
+        titles = [t.text for t in doc.texts if t.label == DocItemLabel.TITLE]
+        assert titles == ["Chapter One", "Chapter Two"]
+        markdown = doc.export_to_markdown()
+        assert "The Moon orbits the Earth every 27 days." in markdown
+        assert "Tides are caused by lunar gravity." in markdown
+
+    @pytest.mark.parametrize("src_quote", ['"', "'"])
+    async def test_convert_epub_keeps_pictures_without_image_data(
+        self, converter, tmp_path, src_quote
+    ):
+        doc = await converter.convert_file(
+            write_epub(tmp_path / "lunar.epub", src_quote=src_quote)
+        )
+
+        assert len(doc.pictures) == 1
+        assert doc.pictures[0].image is None
+        assert doc.pictures[0].caption_text(doc) == "The Moon"
 
     async def test_convert_eml_reads_subject_and_body(self, converter, tmp_path):
         """An .eml file converts to its subject as title and its body as text."""
@@ -858,7 +943,7 @@ class TestDoclingLocalConverter:
         pics_with_image = [p for p in doc.pictures if p.image is not None]
         assert len(pics_with_image) == len(doc.pictures)
 
-    def test_build_format_options_covers_pdf_image_html_md_docx_pptx(self, config):
+    def test_build_format_options_covers_pdf_image_html_md_docx_pptx_epub(self, config):
         """`_build_format_options()` registers every format we care about and
         shares the same `PdfPipelineOptions` instance across them so
         picture-description / classification / chart settings apply uniformly."""
@@ -874,6 +959,7 @@ class TestDoclingLocalConverter:
             InputFormat.MD,
             InputFormat.DOCX,
             InputFormat.PPTX,
+            InputFormat.EPUB,
         }
         assert wired <= set(options.keys()), (
             f"Missing format options: {wired - set(options.keys())}"
@@ -1926,6 +2012,7 @@ class TestDoclingServeConverter:
         assert ".md" in extensions
         assert ".eml" in extensions
         assert ".msg" in extensions
+        assert ".epub" in extensions
 
     async def test_convert_text_success(self, converter):
         """Test successful text conversion via docling-serve async workflow."""
@@ -2491,6 +2578,14 @@ class TestDoclingServeConverterIntegration:
         markdown = doc.export_to_markdown()
         assert "見出し" in markdown
         assert JAPANESE in markdown
+
+    @pytest.mark.vcr()
+    async def test_convert_epub_real_service(self, converter, tmp_path):
+        doc = await converter.convert_file(write_epub(tmp_path / "lunar.epub"))
+
+        titles = [t.text for t in doc.texts if t.label == DocItemLabel.TITLE]
+        assert titles == ["Chapter One", "Chapter Two"]
+        assert "Tides are caused by lunar gravity." in doc.export_to_markdown()
 
     @pytest.mark.integration
     async def test_picture_description_end_to_end(

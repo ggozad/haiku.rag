@@ -386,6 +386,7 @@ def get_extension_from_content_type_or_url(url: str, content_type: str) -> str:
         "application/pdf": ".pdf",
         "application/json": ".json",
         "text/csv": ".csv",
+        "application/epub+zip": ".epub",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",

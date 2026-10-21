@@ -30,7 +30,7 @@ Every extra `haiku.rag-slim` defines:
 
 | Extra | Provides | In `haiku.rag` |
 |---|---|---|
-| `docling` | PDF, DOCX, PPTX, XLSX, HTML, LaTeX, email and images, converted locally | yes |
+| `docling` | PDF, DOCX, PPTX, XLSX, HTML, EPUB, LaTeX, email and images, converted locally | yes |
 | `tui` | Terminal UI for `chat` and `inspect` | yes |
 | `voyageai` | VoyageAI embeddings | yes |
 | `cohere` | Cohere embeddings and reranking | yes |
