@@ -1733,6 +1733,8 @@ cohere = [
 ]
 cross-encoder = [
     { name = "sentence-transformers" },
+    { name = "transformers", version = "5.8.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
+    { name = "transformers", version = "5.17.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
 ]
 docling = [
     { name = "docling" },
@@ -1816,11 +1818,12 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=14.3.3" },
-    { name = "sentence-transformers", marker = "extra == 'cross-encoder'", specifier = ">=3.0.0,<6.0.0" },
+    { name = "sentence-transformers", marker = "extra == 'cross-encoder'", specifier = ">=4.0.0,<6.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'ingester'", specifier = ">=2.0" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8.2.4" },
     { name = "textual-image", specifier = ">=0.8.5" },
     { name = "torch", marker = "extra == 'jina'", specifier = ">=2.0.0" },
+    { name = "transformers", marker = "extra == 'cross-encoder'", specifier = ">=4.56.0,<6.0.0" },
     { name = "transformers", marker = "extra == 'jina'", specifier = ">=4.40.0,<6.0.0" },
     { name = "tree-sitter", marker = "extra == 'tui'", specifier = ">=0.25.2" },
     { name = "tree-sitter-json", marker = "extra == 'tui'", specifier = ">=0.24.8" },

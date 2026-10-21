@@ -23,6 +23,12 @@ def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
             "providers"
         )
 
+    if config.reranking.model_kwargs and model.provider != "cross-encoder":
+        raise ValueError(
+            "reranking.model_kwargs is only supported on the cross-encoder "
+            f"provider (got '{model.provider}')"
+        )
+
     if model.provider == "cohere":
         from haiku.rag.reranking.cohere import CohereReranker
 
@@ -60,6 +66,6 @@ def get_reranker(config: AppConfig | None = None) -> RerankerBase | None:
             raise ValueError("cross-encoder reranker requires name in reranking.model")
         from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
 
-        return CrossEncoderReranker(model.name)
+        return CrossEncoderReranker(model.name, config.reranking.model_kwargs)
 
     raise ValueError(f"Unknown reranking provider: {model.provider}")

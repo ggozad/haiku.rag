@@ -187,10 +187,12 @@ class RerankingConfig(ConfigModel):
         multimodal: Whether the reranker scores picture chunks by their image
             bytes in addition to text. Supported on the vllm and openrouter
             providers.
+        model_kwargs: Options for the Transformers model loader; cross-encoder only.
     """
 
     model: ModelConfig | None = None
     multimodal: bool = False
+    model_kwargs: dict | None = None
 
 
 class QAConfig(ConfigModel):

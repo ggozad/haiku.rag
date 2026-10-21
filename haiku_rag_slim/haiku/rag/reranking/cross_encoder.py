@@ -21,11 +21,14 @@ class CrossEncoderReranker(RerankerBase):
     Loads the model in-process. Pass any HuggingFace cross-encoder reranker
     as ``model`` (e.g. ``BAAI/bge-reranker-v2-m3``, ``Qwen/Qwen3-Reranker-0.6B``,
     ``cross-encoder/ms-marco-MiniLM-L-6-v2``).
+
+    ``model_kwargs`` goes to the Transformers loader under ``CrossEncoder``
+    verbatim.
     """
 
-    def __init__(self, model: str):
+    def __init__(self, model: str, model_kwargs: dict | None = None):
         self._model = model
-        self._reranker = CrossEncoder(model)
+        self._reranker = CrossEncoder(model, model_kwargs=model_kwargs)
 
     async def _rerank(
         self, query: str, chunks: list[Chunk], top_n: int = 10

@@ -105,6 +105,17 @@ class TestGetReranker:
         with pytest.raises(ValueError, match="vLLM reranker requires base_url"):
             get_reranker(config)
 
+    @pytest.mark.parametrize("provider", ["vllm", "jina-local"])
+    def test_model_kwargs_are_rejected_for_non_cross_encoder(self, provider):
+        config = AppConfig(
+            reranking=RerankingConfig(
+                model=ModelConfig(provider=provider, name="reranker"),
+                model_kwargs={"dtype": "float16"},
+            )
+        )
+        with pytest.raises(ValueError, match=rf"reranking\.model_kwargs.*{provider}"):
+            get_reranker(config)
+
     def test_cross_encoder_provider_without_name_raises_error(self):
         config = AppConfig(
             reranking=RerankingConfig(
@@ -539,6 +550,22 @@ async def test_cross_encoder_reranker():
 
 
 @pytest.mark.integration
+def test_cross_encoder_loads_model_kwargs_dtype():
+    try:
+        import torch
+
+        from haiku.rag.reranking.cross_encoder import CrossEncoderReranker
+
+        reranker = CrossEncoderReranker(
+            "cross-encoder/ms-marco-MiniLM-L-6-v2", {"dtype": "float16"}
+        )
+        assert reranker._reranker.model is not None
+        assert next(reranker._reranker.model.parameters()).dtype == torch.float16
+    except ImportError:
+        pytest.skip("sentence-transformers not installed")
+
+
+@pytest.mark.integration
 async def test_cross_encoder_separates_saturated_scores():
     """`mxbai-rerank-base-v2` ships a Sigmoid it evaluates in bf16, where every
     strongly-relevant candidate rounds to exactly 1.0. Squashing the logits
@@ -581,7 +608,7 @@ async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
     from haiku.rag.reranking import cross_encoder as ce_module
 
     class _StubCrossEncoder:
-        def __init__(self, model):
+        def __init__(self, model, model_kwargs=None):
             self.model = model
 
         def rank(self, query, documents, top_k=10, activation_fn=None):
@@ -609,6 +636,24 @@ async def test_cross_encoder_reranks_via_model_ranking(monkeypatch):
     titled = Chunk(content="body", document_title="Title")
     await reranker.rerank("query", [titled], top_n=1)
     assert reranker._reranker.documents == ["Title\nbody"]
+
+
+def test_cross_encoder_factory_forwards_model_kwargs(monkeypatch):
+    from haiku.rag.reranking import cross_encoder as ce_module
+
+    loader = MagicMock()
+    monkeypatch.setattr(ce_module, "CrossEncoder", loader)
+    model_kwargs = {"dtype": "float16"}
+    config = AppConfig(
+        reranking=RerankingConfig(
+            model=ModelConfig(provider="cross-encoder", name="stub/model"),
+            model_kwargs=model_kwargs,
+        )
+    )
+
+    get_reranker(config)
+
+    loader.assert_called_once_with("stub/model", model_kwargs=model_kwargs)
 
 
 def test_missing_reranker_dependency_raises(monkeypatch):
