@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -300,19 +301,19 @@ async def _column_values(table, column: str) -> list:
     return [row[column] for row in rows]
 
 
-class _DuplicateFamily(BaseModel):
+class DuplicateFamily(BaseModel):
     members: list[str]
     keep: str
     similarity: dict[str, float]
     sizes: dict[str, int]
 
 
-def _duplicate_families(
+def duplicate_families(
     doc_ids: list[str],
     centroids: np.ndarray,
     counts: np.ndarray,
     cfg: DuplicateDetectionConfig,
-) -> list[_DuplicateFamily]:
+) -> list[DuplicateFamily]:
     """Cluster documents whose embedding centroids are nearly identical.
 
     ``centroids`` holds one summed (unnormalized) centroid per document and
@@ -371,7 +372,7 @@ def _duplicate_families(
     for idx in range(n):
         components.setdefault(find(idx), []).append(idx)
 
-    families: list[_DuplicateFamily] = []
+    families: list[DuplicateFamily] = []
     for indices in components.values():
         if len(indices) < 2:
             continue
@@ -379,7 +380,7 @@ def _duplicate_families(
         # Largest document (most chunks) is the one to keep; smallest id on a tie.
         keep = min(members, key=lambda d: (-sizes[d], d))
         families.append(
-            _DuplicateFamily(
+            DuplicateFamily(
                 members=members,
                 keep=keep,
                 similarity={ids[i]: round(float(best[i]), 3) for i in indices},
@@ -405,11 +406,12 @@ def _common_path_prefix(labels: list[str]) -> str:
     return lo[: cut + 1] if cut > 16 else ""
 
 
-def _write_duplicates_out(
-    path: Path, families: list[_DuplicateFamily], label: Callable[[str], str]
-) -> None:
-    """One block per group; ``keep_suggested`` marks the document to keep and
-    ``similarity`` is the highest centroid cosine to another group member."""
+def duplicates_yaml(
+    families: list[DuplicateFamily], label: Callable[[str], str]
+) -> str:
+    """The families as YAML, one block per group; ``keep_suggested`` marks the
+    document to keep and ``similarity`` is the highest centroid cosine to another
+    group member."""
     groups = []
     for n, family in enumerate(families, start=1):
         groups.append(
@@ -428,8 +430,7 @@ def _write_duplicates_out(
                 ],
             }
         )
-    with open(path, "w", encoding="utf-8") as handle:
-        yaml.safe_dump({"groups": groups}, handle, sort_keys=False, allow_unicode=True)
+    return yaml.safe_dump({"groups": groups}, sort_keys=False, allow_unicode=True)
 
 
 def _check_duplicate_documents(
@@ -441,13 +442,13 @@ def _check_duplicate_documents(
     cfg: DuplicateDetectionConfig,
     yaml_path: Path | None = None,
 ) -> CheckResult:
-    families = _duplicate_families(doc_ids, centroids, counts, cfg)
+    families = duplicate_families(doc_ids, centroids, counts, cfg)
 
     def label(doc_id: str) -> str:
         return uri_by_doc.get(doc_id) or title_by_doc.get(doc_id) or doc_id
 
     if yaml_path is not None:
-        _write_duplicates_out(yaml_path, families, label)
+        yaml_path.write_text(duplicates_yaml(families, label), encoding="utf-8")
 
     if not families:
         return CheckResult(
@@ -614,12 +615,9 @@ def _check_vector_dimension(stored_dim: int | None, actual_dim: int) -> CheckRes
     )
 
 
-def _check_unembedded_chunks(id_column, embedded: "np.ndarray") -> CheckResult:
-    """All-zero vectors, reported as a count with a few sampled ids so a large
-    corpus never materializes every chunk id."""
-    zero_rows = np.nonzero(~embedded)[0]
-    zero_count = int(zero_rows.size)
-    sample = [id_column[int(i)].as_py() for i in zero_rows[:_SAMPLE_LIMIT]]
+def _check_unembedded_chunks(zero_count: int, sample: list[str]) -> CheckResult:
+    """All-zero vectors, reported as a count with a few sampled ids."""
+    sample = list(sample)
     if zero_count > _SAMPLE_LIMIT:
         sample.append(f"... (+{zero_count - _SAMPLE_LIMIT} more)")
     return CheckResult(
@@ -632,6 +630,62 @@ def _check_unembedded_chunks(id_column, embedded: "np.ndarray") -> CheckResult:
         ),
         remediation="haiku-rag rebuild --embed-only" if zero_count else None,
         details=sample,
+    )
+
+
+@dataclass
+class VectorScan:
+    """What one read of the chunk vectors gives: a summed centroid and an
+    embedded-chunk count per document, the dimensions, and the all-zero
+    vectors as a count with a sample of their ids."""
+
+    document_ids: list[str]
+    centroids: "np.ndarray"
+    counts: "np.ndarray"
+    stored_dimension: int | None
+    dimension: int
+    unembedded_count: int
+    unembedded_sample: list[str]
+
+
+async def scan_vectors(store: Store) -> VectorScan:
+    """Read every chunk vector once and reduce it to per-document centroids.
+
+    Holds the (chunks, dimension) float32 matrix during the read and frees it
+    before returning.
+    """
+    arrow = (
+        await store.chunks_table.query()
+        .select(["id", "vector", "document_id"])
+        .to_arrow()
+    )
+    stored = store.stored_settings
+    stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
+    dimension = arrow.schema.field("vector").type.list_size
+
+    # Reshape the Arrow fixed-size-list child buffer directly into an (N, dim)
+    # float32 matrix. Going through to_pylist() would box N*dim Python floats
+    # (tens of GB and most of the wall-clock on large corpora); the stored
+    # vectors are already float32, so this keeps the layout and the dtype.
+    vec_col = arrow.column("vector").combine_chunks()
+    vectors = vec_col.values.to_numpy(zero_copy_only=False).reshape(-1, dimension)
+    embedded = vectors.any(axis=1) if vectors.size else np.zeros(0, dtype=bool)
+
+    zero_rows = np.nonzero(~embedded)[0]
+    id_column = arrow.column("id")
+    sample = [id_column[int(i)].as_py() for i in zero_rows[:_SAMPLE_LIMIT]]
+
+    document_ids, centroids, counts = _document_centroids(
+        arrow.column("document_id"), vectors, embedded, dimension
+    )
+    return VectorScan(
+        document_ids=document_ids,
+        centroids=centroids,
+        counts=counts,
+        stored_dimension=stored_dim,
+        dimension=dimension,
+        unembedded_count=int(zero_rows.size),
+        unembedded_sample=sample,
     )
 
 
@@ -791,38 +845,19 @@ async def run_db_checks(
 
     notify("Scanning chunk vectors")
     # Vector dimension, unembedded vectors and duplicate detection share one
-    # scan of the vector column — the heaviest read on large corpora.
-    arrow = (
-        await store.chunks_table.query()
-        .select(["id", "vector", "document_id"])
-        .to_arrow()
+    # scan of the vector column, the heaviest read on large corpora.
+    scan = await scan_vectors(store)
+    results.append(_check_vector_dimension(scan.stored_dimension, scan.dimension))
+    results.append(
+        _check_unembedded_chunks(scan.unembedded_count, scan.unembedded_sample)
     )
-    stored = store.stored_settings
-    stored_dim = stored.get("embeddings", {}).get("model", {}).get("vector_dim")
-    actual_dim = arrow.schema.field("vector").type.list_size
-    results.append(_check_vector_dimension(stored_dim, actual_dim))
-
-    # Reshape the Arrow fixed-size-list child buffer directly into an (N, dim)
-    # float32 matrix. Going through to_pylist() would box N*dim Python floats
-    # (tens of GB and most of the wall-clock on large corpora); the stored
-    # vectors are already float32, so this keeps the layout and the dtype.
-    vec_col = arrow.column("vector").combine_chunks()
-    vectors = vec_col.values.to_numpy(zero_copy_only=False).reshape(-1, actual_dim)
-    embedded = vectors.any(axis=1) if vectors.size else np.zeros(0, dtype=bool)
-
-    results.append(_check_unembedded_chunks(arrow.column("id"), embedded))
 
     notify("Detecting near-duplicate documents")
-    centroid_doc_ids, centroids, counts = _document_centroids(
-        arrow.column("document_id"), vectors, embedded, actual_dim
-    )
-    # The matrix is the largest object here; drop it before clustering.
-    del vectors
     results.append(
         _check_duplicate_documents(
-            centroid_doc_ids,
-            centroids,
-            counts,
+            scan.document_ids,
+            scan.centroids,
+            scan.counts,
             uri_by_doc,
             title_by_doc,
             config.doctor.duplicates,
@@ -841,6 +876,7 @@ async def run_db_checks(
     results.append(_check_picture_data(missing_picture_docs, content_type_by_doc))
 
     notify("Checking settings and indexes")
+    stored = store.stored_settings
     total_settings = await store.settings_table.count_rows()
     canonical = len(
         await store.settings_table.query().where("id = 'settings'").to_list()

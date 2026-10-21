@@ -90,7 +90,7 @@ Codex and Claude Desktop setup is in the [MCP docs](https://ggozad.github.io/hai
 ## Examples
 
 - [Docker setup](https://github.com/ggozad/haiku.rag/tree/main/examples/docker): docling-serve, the ingester and the MCP server
-- [Web application](https://github.com/ggozad/haiku.rag/tree/main/app): conversational RAG over AG-UI with a CopilotKit frontend
+- [Web application](https://ggozad.github.io/haiku.rag/apps/): chat, ingestion, inspector and doctor in the browser
 
 ## Documentation
 

@@ -1,0 +1,135 @@
+import type { Message } from "@ag-ui/client";
+import type { DocumentRef, Evidence } from "./chat";
+import { decoded } from "./http";
+
+const BASE = "/api/backend/api/sessions";
+
+export interface SessionSummary {
+	id: string;
+	title: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface Session extends SessionSummary {
+	messages: Message[];
+	state: Record<string, unknown>;
+	selection: DocumentRef[];
+	runs: Record<string, Evidence>;
+	message_runs: Record<string, string>;
+	inserted: string[];
+	in_flight_run_id: string | null;
+}
+
+export async function listSessions(): Promise<SessionSummary[]> {
+	return (await decoded<{ sessions: SessionSummary[] }>(await fetch(BASE)))
+		.sessions;
+}
+
+export async function createSession(): Promise<SessionSummary> {
+	return decoded(await fetch(BASE, { method: "POST" }));
+}
+
+export async function getSession(id: string): Promise<Session> {
+	return decoded(await fetch(`${BASE}/${encodeURIComponent(id)}`));
+}
+
+export async function updateSession(
+	id: string,
+	change: { title?: string; selection?: DocumentRef[] },
+): Promise<Session> {
+	return decoded(
+		await fetch(`${BASE}/${encodeURIComponent(id)}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(change),
+		}),
+	);
+}
+
+export async function deleteSession(id: string): Promise<void> {
+	const response = await fetch(`${BASE}/${encodeURIComponent(id)}`, {
+		method: "DELETE",
+	});
+	if (!response.ok) await decoded(response);
+}
+
+export function exportUrl(id: string): string {
+	return `${BASE}/${encodeURIComponent(id)}/export`;
+}
+
+export type RunOutcome = "stored" | "not-stored" | "pending";
+
+// After a run whose stream was lost, waits until the session no longer holds
+// it, then says whether the backend stored it. Membership, not recency: another
+// tab may have committed a later turn in between. A run still held when the
+// waiting runs out is pending: neither stored nor lost yet.
+export async function reconcile(
+	id: string,
+	runId: string,
+	waitMs = 500,
+	attempts = 120,
+): Promise<{ session: Session; outcome: RunOutcome }> {
+	let session = await getSession(id);
+	for (let n = 0; session.in_flight_run_id === runId && n < attempts; n++) {
+		await new Promise((resolve) => setTimeout(resolve, waitMs));
+		session = await getSession(id);
+	}
+	const outcome: RunOutcome =
+		runId in session.runs
+			? "stored"
+			: session.in_flight_run_id === runId
+				? "pending"
+				: "not-stored";
+	return { session, outcome };
+}
+
+const ACTIVE_KEY = "haiku.rag.activeSession";
+
+export function activeSessionId(): string | null {
+	try {
+		return localStorage.getItem(ACTIVE_KEY);
+	} catch {
+		return null;
+	}
+}
+
+export function rememberActiveSession(id: string): void {
+	try {
+		localStorage.setItem(ACTIVE_KEY, id);
+	} catch {
+		// A browser refusing storage opens the newest session next time.
+	}
+}
+
+// The session the chat opens: the one its address names, then the one this
+// browser last had open, then the newest. Null when there is none.
+export function opening(
+	sessions: SessionSummary[],
+	named: string | null,
+	remembered: string | null,
+): string | null {
+	const known = (id: string | null) => sessions.some((s) => s.id === id);
+	if (known(named)) return named;
+	if (known(remembered)) return remembered;
+	return sessions[0]?.id ?? null;
+}
+
+// A new session whose selection is `document`. A session left without its
+// selection is deleted, so a failure leaves nothing behind.
+export async function askAbout(document: DocumentRef): Promise<string> {
+	const { id } = await createSession();
+	try {
+		await updateSession(id, { selection: [document] });
+	} catch (error) {
+		await deleteSession(id).catch(() => {});
+		throw error;
+	}
+	return id;
+}
+
+// Loads the session the chat opens with, creating one when there is none.
+export async function startSession(named: string | null): Promise<Session> {
+	const id = opening(await listSessions(), named, activeSessionId());
+	return getSession(id ?? (await createSession()).id);
+}

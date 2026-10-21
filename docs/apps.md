@@ -1,79 +1,72 @@
-# Web application
+# Web app
 
-A browser-based reference implementation of conversational RAG, built on a Starlette backend with pydantic-ai's `AGUIAdapter` and a Next.js / CopilotKit frontend. It lives in the `app/` directory of the haiku.rag repository.
+The web app is a browser interface to a haiku.rag knowledge base. In it you ask questions and check each answer against its cited passages, follow the ingester as it adds the documents you copy into a folder, inspect documents and their chunks, and run health checks.
 
-It is a starting point for your own deployment. The terminal equivalent is [Chat](chat.md).
+![Chat: an answer with the agent's steps and its sources](img/app-chat.png)
 
 !!! warning "No authentication"
-    An illustrative example meant as a starting point, with no authentication. The compose files bind the frontend and backend to `127.0.0.1`. The frontend proxies every backend route, so don't expose either to an untrusted network.
+    The app has no authentication. The Compose files publish its ports on `127.0.0.1` only. Keep them unreachable from untrusted networks.
 
-It streams answers and tool calls, shows expandable citations with visual grounding, restricts searches through a document filter, and keeps sessions in the browser with markdown export.
+## Set it up
 
-## Quick start
+The app runs with Docker Compose from the `app/` directory of the repository. Copy the two example files:
 
 ```bash
 cd app
 cp .env.example .env
 cp haiku.rag.yaml.example haiku.rag.yaml
+```
+
+`.env` contains the API keys and two paths on your machine: `DB_VOLUME` for the database and `DOCS_VOLUME` for the documents to ingest. It also contains `INGESTER_TOKEN`, a secret that the frontend sends to the ingester. Both the backend and the ingester require it.
+
+`haiku.rag.yaml` is a haiku.rag [configuration](configuration/index.md): the models, the database and the ingester's source. The example expects Ollama with `gpt-oss` and `qwen3-embedding:4b`.
+
+Edit both files for your paths, token and models. Then start the app and open `http://localhost:3000`:
+
+```bash
 docker compose up -d --build
-# with hot reload instead: docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-The frontend is at `http://localhost:3000` and the backend at `http://localhost:8001`. The app needs an existing database, created with the `haiku-rag` CLI.
+Three services run: a backend that reads the database, the [ingester](ingester.md), which writes it, and the frontend.
 
-## Configuration
+To work across several databases, list them under `lancedb.databases` (see [Multiple databases](configuration/multiple-databases.md)), and mount each one into the `backend` and `ingester` services. Chat searches all of them, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources)).
 
-`.env` in the `app/` directory holds the secrets and the database path:
+## Ask questions
 
-```bash
-# API keys for the providers haiku.rag.yaml uses (none for Ollama)
-ANTHROPIC_API_KEY=your-anthropic-key
-OPENAI_API_KEY=your-openai-key
+Type a question in Chat and press Enter. Shift+Enter starts a new line, and the stop button ends an answer early. The answer streams in with the agent's steps: its searches, and any program it wrote to count or compare across documents. Below the answer, a badge says whether the answer is grounded in its sources, and the sources follow.
 
-# Host path of the LanceDB database, mounted at /data
-DB_VOLUME=/path/to/your/haiku.rag.lancedb
+Open a source to read the cited passage. For a document with page images, such as a PDF, "View in document" shows the passage highlighted on its pages, scanned pages included. "Open in the inspector" opens the passage's chunk in a new tab.
 
-# Optional: Logfire for observability
-LOGFIRE_TOKEN=your-logfire-token
-```
+To ask about particular documents, choose them with the "All documents" filter above the conversation. With a vision model (`qa.model.vision: true`), a question can carry images: pick, paste or drop them into the box.
 
-`haiku.rag.yaml`, copied from `haiku.rag.yaml.example`, places the database at `/data` and configures the models. The compose files point `HAIKU_RAG_CONFIG_PATH` at it. The example uses Ollama on the host through `providers.ollama.base_url: http://host.docker.internal:11434`, which takes precedence over `OLLAMA_BASE_URL`:
+The server keeps every conversation. The menu at the top left starts a new one, switches between them, renames, exports one as Markdown, and deletes.
 
-```yaml
-lancedb:
-  databases:
-    haiku.rag: /data
+## Add documents
 
-qa:
-  model:
-    provider: ollama
-    name: gpt-oss
+Copy files into the `DOCS_VOLUME` folder. The ingester converts, chunks and embeds each one. The app finds a document at most 30 seconds after the ingester finishes it, the default of `lancedb.read_consistency_interval_seconds`. The ingester updates a document when its file changes, and deletes it when the file is removed.
 
-embeddings:
-  model:
-    provider: ollama
-    name: qwen3-embedding:4b
-    vector_dim: 2560
-```
+The chip at the top right shows the ingester's state: idle, ingesting, holding failed jobs, degraded, or unreachable. Click it for the ingestion page. It shows the queue, each source with any error from its last scan, the jobs running now and the ones that failed, with buttons to retry a failed job, cancel one, or rescan a source.
 
-Outside compose, the backend loads its configuration like the CLI: `HAIKU_RAG_CONFIG_PATH`, then `./haiku.rag.yaml`, then the platform directory.
+![Ingestion: the queue, the source and a document being ingested](img/app-ingestion.png)
 
-## API endpoints
+## Inspect documents and chunks
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/v1/chat/stream` | POST | AG-UI chat streaming |
-| `/api/documents` | GET | List all documents |
-| `/api/info` | GET | Database statistics |
-| `/api/visualize/{chunk_id}` | GET | Visual grounding images (base64) |
-| `/health` | GET | Health check |
+The Inspector lists the documents of a database. Open one to read its converted text, and to see its outline, chunks, pages and pictures.
 
-## Development
+The agent searches and cites chunks, short passages of a document. A chunk's page shows its text, what the agent receives when a search returns it, its place on the original page, and the most similar chunks. It is the place to look when an answer cites the wrong passage or misses one.
 
-The backend reloads automatically on file changes. For frontend changes:
+![A chunk on its original page, a scanned report from 1970](img/app-inspector-chunk.png)
 
-```bash
-docker compose -f docker-compose.dev.yml up -d --build frontend
-```
+The Map tab places documents near others about similar things. "Compute the map" builds it, and "Compute again" refreshes it after new documents arrive. Select a document to list its nearest neighbours.
 
-If `LOGFIRE_TOKEN` is set, LLM calls are traced and available in the Logfire dashboard.
+Ctrl+K, or Cmd+K on a Mac, searches from any page, by text or, with a multimodal embedder, by image. Each inspector page has its own address, so Back returns to the previous view and a link reopens the same one. "Ask about this document" starts a conversation limited to the open document.
+
+## Check its health
+
+The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". Each warning names its fix. The checks and the map run in the background. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
+
+![The doctor: a near-duplicate pair and the checks](img/app-doctor.png)
+
+## For developers
+
+The app's architecture, its API and its tests are described in [`app/README.md`](https://github.com/ggozad/haiku.rag/tree/main/app).

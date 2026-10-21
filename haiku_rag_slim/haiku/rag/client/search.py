@@ -63,7 +63,7 @@ async def search(
     results = _dedup_picture_chunks(results)
 
     if include_images:
-        await _populate_image_data(client, results)
+        await populate_image_data(client, results)
 
     return results
 
@@ -140,7 +140,7 @@ async def search_sources(
         owners = await client.clients_for(list(by_owner))
         await gather_all(
             *(
-                _populate_image_data(owner, by_owner[name])
+                populate_image_data(owner, by_owner[name])
                 for name, owner in zip(by_owner, owners, strict=True)
             )
         )
@@ -380,8 +380,12 @@ def _dedup_picture_chunks(results: list[SearchResult]) -> list[SearchResult]:
     return [r for r, k in zip(results, keep) if k]
 
 
-async def _populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -> None:
+async def populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -> None:
     """Attach base64 picture bytes to ``SearchResult.image_data`` in-place.
+
+    `client` reads one database, the one the results came from. The search
+    path calls this before expanding; a caller building results from chunks
+    calls it to attach what a search would have.
 
     A result carries a picture when its refs include the picture directly, or
     when they include the picture's caption — the common case where a prose

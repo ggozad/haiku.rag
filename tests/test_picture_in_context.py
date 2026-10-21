@@ -10,7 +10,7 @@ from pydantic_ai.messages import BinaryContent, ToolReturn
 
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.search import _populate_image_data
+from haiku.rag.client.search import populate_image_data
 from haiku.rag.config import AppConfig
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
@@ -66,7 +66,7 @@ async def test_populate_image_data_attaches_base64(temp_db_path):
             labels=["paragraph", "picture"],
         )
 
-        await _populate_image_data(rag, [text_only, with_picture])
+        await populate_image_data(rag, [text_only, with_picture])
 
         # Text-only result is unchanged
         assert text_only.image_data is None
@@ -109,7 +109,7 @@ async def test_populate_image_data_attaches_picture_via_caption(temp_db_path):
             labels=["caption"],
         )
 
-        await _populate_image_data(rag, [via_caption])
+        await populate_image_data(rag, [via_caption])
 
         assert via_caption.image_data == {"#/pictures/0": PICTURE_B64}
         assert via_caption.picture_captions == {"#/pictures/0": "Figure 1. The layout."}

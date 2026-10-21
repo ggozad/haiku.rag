@@ -337,8 +337,12 @@ class ChunkRepository:
         Returns:
             List of chunks ordered by their order field.
         """
-        query = self.store.chunks_table.query().where(
-            f"document_id = '{escape_sql_string(document_id)}'"
+        from lancedb.query import ColumnOrdering
+
+        query = (
+            self.store.chunks_table.query()
+            .where(f"document_id = '{escape_sql_string(document_id)}'")
+            .order_by([ColumnOrdering(column_name="order")])
         )
 
         if offset is not None:
@@ -376,7 +380,6 @@ class ChunkRepository:
                 )
             )
 
-        chunks.sort(key=lambda c: c.order)
         return chunks
 
     async def get_chunk_ids_by_self_ref_grouped(
