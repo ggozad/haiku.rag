@@ -16,7 +16,7 @@ The frontend is at `http://localhost:3000`, the backend at `http://localhost:800
 ## Services
 
 - **backend**: the `haiku_rag_app` package, a Starlette app. It opens one read-only client over every configured database on first use, and retries a database that failed to open.
-- **ingester**: `haiku-ingester serve`, the only writer of LanceDB. It ingests the documents mounted at `/docs` into one database. For a configuration naming several, add `--db` with that database's path inside the container to the service's command. `--db` takes a path, so an ingester writing to object storage under such a configuration needs its own `haiku.rag.yaml` naming that one.
+- **ingester**: `haiku-ingester serve`, the only writer of LanceDB. The example configuration ingests the documents mounted at `/docs` into `haiku.rag`. With several databases, it writes each one listed under `ingester.databases`, and the ingestion page names each source's database. One process serves them all: if one database fails to open, the ingester starts for none of them, and the backend keeps serving the others.
 - **frontend**: Next.js. It proxies the backend at `/api/backend/*`. At `/api/ingester/*` it proxies the ingester, adds `INGESTER_TOKEN` as a bearer token, and forwards only these writes: refresh a source, retry a job or a dead letter, and cancel a job.
 
 The backend and the ingester both read `haiku.rag.yaml`. The example configuration references `${INGESTER_TOKEN}`, so both require it.

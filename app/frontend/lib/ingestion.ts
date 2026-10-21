@@ -162,6 +162,15 @@ export function formatAge(seconds: number | null | undefined): string {
 	return `${(seconds / 3600).toFixed(1)}h`;
 }
 
+// The databases written by the ingester, named by the sources that feed them.
+export function ingestedDatabases(sources: { database: string | null }[]) {
+	return [
+		...new Set(
+			sources.flatMap((source) => (source.database ? [source.database] : [])),
+		),
+	];
+}
+
 export interface IngestionState {
 	state: "unreachable" | "degraded" | "dead" | "busy" | "idle";
 	label: string;

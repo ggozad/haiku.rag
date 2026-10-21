@@ -3,6 +3,7 @@ import {
 	CYCLE,
 	describeFailure,
 	formatAge,
+	ingestedDatabases,
 	ingester,
 	ingestionState,
 	Poller,
@@ -234,6 +235,19 @@ describe("ingester requests", () => {
 		expect(formatAge(42)).toBe("42s");
 		expect(formatAge(300)).toBe("5m");
 		expect(formatAge(5400)).toBe("1.5h");
+	});
+});
+
+describe("ingestedDatabases", () => {
+	it("names each database once, in source order, skipping a source with none", () => {
+		expect(
+			ingestedDatabases([
+				{ database: "papers" },
+				{ database: null },
+				{ database: "docs" },
+				{ database: "papers" },
+			]),
+		).toEqual(["papers", "docs"]);
 	});
 });
 

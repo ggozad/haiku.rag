@@ -47,10 +47,13 @@ const answers: Record<string, unknown> = {
 	sources: [
 		{
 			source_id: "docs",
+			database: "docs",
 			type: "filesystem",
 			last_polled_at: null,
 			circuit_breaker_open: false,
 			last_skip_reason: null,
+			last_error: null,
+			last_error_at: null,
 		},
 	],
 	providers: { docling_serve: [] },
@@ -64,7 +67,8 @@ const answers: Record<string, unknown> = {
 	"jobs?status=claimed&limit=20": [job("running", "claimed")],
 	"jobs?status=dead&limit=10": [job("broken", "dead")],
 	"jobs?status=succeeded&limit=10": [job("done", "succeeded")],
-	database: { path: "/data/docs.lancedb" },
+	"databases/docs": { path: "/data/docs.lancedb" },
+	"databases/papers": { path: "/data/papers.lancedb" },
 };
 
 let calls: { path: string; method: string }[];
@@ -89,7 +93,10 @@ beforeEach(() => {
 					path.endsWith("/refresh") ? { refreshed: true } : {},
 				);
 			if (path.startsWith("jobs?limit=")) return Response.json([]);
-			return Response.json(answers[path] ?? null);
+			const answer = answers[path];
+			return answer instanceof Response
+				? answer.clone()
+				: Response.json(answer ?? null);
 		}),
 	);
 });
@@ -107,7 +114,7 @@ const browserReads = () =>
 describe("IngestionPage", () => {
 	it("shows the queue, sources and jobs from one poll", async () => {
 		render(<IngestionPage />);
-		await screen.findByText("Writes /data/docs.lancedb");
+		await screen.findByText("Writes docs");
 		expect(screen.getByText("2/2 workers · 1/1 pollers")).toBeTruthy();
 		expect(screen.getByText("2 / 9")).toBeTruthy();
 		expect(screen.getByText("1/2")).toBeTruthy();
@@ -116,6 +123,67 @@ describe("IngestionPage", () => {
 		expect(screen.getByText("conversion failed")).toBeTruthy();
 		expect(screen.getByText("file:///docs/done.md")).toBeTruthy();
 		expect(screen.getByText("4s")).toBeTruthy();
+	});
+
+	it("names each source's database and its failed discovery", async () => {
+		const [docs] = answers.sources as Record<string, unknown>[];
+		answers.sources = [
+			docs,
+			{
+				...docs,
+				source_id: "papers-s3",
+				database: "papers",
+				type: "s3",
+				last_error: "bucket unreadable",
+				last_error_at: "2026-10-20T10:00:00Z",
+			},
+		];
+		try {
+			render(<IngestionPage />);
+			await screen.findByText("Writes docs, papers");
+			expect(
+				screen.getByRole("columnheader", { name: "Database" }),
+			).toBeTruthy();
+			const row = screen.getByRole("row", { name: /papers-s3/ });
+			expect(within(row).getByText("papers")).toBeTruthy();
+			expect(within(row).getByText("discovery failed")).toBeTruthy();
+			expect(within(row).getByText("bucket unreadable")).toBeTruthy();
+		} finally {
+			answers.sources = [docs];
+		}
+	});
+
+	it("leaves out the database column when one database is ingested", async () => {
+		render(<IngestionPage />);
+		await screen.findByText("filesystem");
+		expect(screen.queryByRole("columnheader", { name: "Database" })).toBeNull();
+		expect(screen.queryByText("discovery failed")).toBeNull();
+	});
+
+	it("reads a database's info when its panel opens", async () => {
+		const user = userEvent.setup();
+		render(<IngestionPage />);
+		await screen.findByText("Writes docs");
+		await user.click(screen.getByRole("button", { name: "Database docs" }));
+		await screen.findByText(/\/data\/docs\.lancedb/);
+		expect(calls.some((call) => call.path === "databases/docs")).toBe(true);
+	});
+
+	it("keeps an open database panel through a failed sources poll", async () => {
+		const user = userEvent.setup();
+		render(<IngestionPage />);
+		await screen.findByText("Writes docs");
+		await user.click(screen.getByRole("button", { name: "Database docs" }));
+		await screen.findByText(/\/data\/docs\.lancedb/);
+		const sources = answers.sources;
+		answers.sources = new Response("down", { status: 502 });
+		try {
+			await user.click(screen.getByRole("button", { name: "Refresh" }));
+			await screen.findByText("The ingester answered 502.");
+			expect(screen.getByText(/\/data\/docs\.lancedb/)).toBeTruthy();
+		} finally {
+			answers.sources = sources;
+		}
 	});
 
 	it("refreshes a source, says so, and reads everything again", async () => {

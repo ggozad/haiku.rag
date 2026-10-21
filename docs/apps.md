@@ -29,7 +29,7 @@ docker compose up -d --build
 
 Three services run: a backend that reads the database, the [ingester](ingester.md), which writes it, and the frontend.
 
-To work across several databases, list them under `lancedb.databases` (see [Multiple databases](configuration/multiple-databases.md)). Chat searches all of them, and the inspector and the doctor show one at a time. The ingester writes one of them: add `--db` with that database's path inside the container to the `ingester` service's command.
+To work across several databases, list them under `lancedb.databases` (see [Multiple databases](configuration/multiple-databases.md)), and mount each one into the `backend` and `ingester` services. Chat searches all of them, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources)).
 
 ## Ask questions
 
@@ -45,7 +45,7 @@ The server keeps every conversation. The menu at the top left starts a new one, 
 
 Copy files into the `DOCS_VOLUME` folder. The ingester converts, chunks and embeds each one, and the document is searchable as soon as it finishes. The ingester updates a document when its file changes, and deletes it when the file is removed.
 
-The chip at the top right shows the ingester's state: idle, ingesting, holding failed jobs, degraded, or unreachable. Click it for the ingestion page. It shows the queue, each source, the jobs running now and the ones that failed, with buttons to retry a failed job, cancel one, or rescan a source.
+The chip at the top right shows the ingester's state: idle, ingesting, holding failed jobs, degraded, or unreachable. Click it for the ingestion page. It shows the queue, each source with any error from its last scan, the jobs running now and the ones that failed, with buttons to retry a failed job, cancel one, or rescan a source.
 
 ![Ingestion: the queue, the source and a document being ingested](img/app-ingestion.png)
 

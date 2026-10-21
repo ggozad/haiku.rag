@@ -21,7 +21,12 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { formatRelativeTime } from "@/lib/format";
-import { ingester, Poller, type Snapshot } from "@/lib/ingestion";
+import {
+	ingestedDatabases,
+	ingester,
+	Poller,
+	type Snapshot,
+} from "@/lib/ingestion";
 import JobDialog from "./JobDialog";
 import JobsBrowser from "./JobsBrowser";
 import JobTable from "./JobTable";
@@ -53,12 +58,10 @@ function Lazy({
 	title,
 	path,
 	render,
-	onLoad,
 }: {
 	title: string;
 	path: string;
 	render: (data: unknown) => React.ReactNode;
-	onLoad?: (data: unknown) => void;
 }) {
 	const [data, setData] = useState<unknown>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -71,7 +74,6 @@ function Lazy({
 					.then((value) => {
 						setData(value);
 						setError(null);
-						onLoad?.(value);
 					})
 					.catch((err: Error) => setError(err.message));
 			}}
@@ -96,10 +98,11 @@ function Lazy({
 export default function IngestionPage() {
 	const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
-	const [database, setDatabase] = useState<string | null>(null);
 	const [confirming, setConfirming] = useState<Job | null>(null);
 	const [viewing, setViewing] = useState<Job | null>(null);
 	const [revision, setRevision] = useState(0);
+	// The last databases read, kept through a failed poll with their panels.
+	const [databases, setDatabases] = useState<string[]>([]);
 	const poller = useMemo(() => new Poller(setSnapshot), []);
 
 	useEffect(() => {
@@ -109,15 +112,20 @@ export default function IngestionPage() {
 		};
 		visible();
 		document.addEventListener("visibilitychange", visible);
-		// A failure leaves the header to the database panel.
-		ingester("database")
-			.then((info) => setDatabase((info as { path: string }).path))
-			.catch(() => {});
 		return () => {
 			document.removeEventListener("visibilitychange", visible);
 			poller.stop();
 		};
 	}, [poller]);
+
+	useEffect(() => {
+		const sources = snapshot?.sources.data as Source[] | undefined;
+		if (!sources) return;
+		const names = ingestedDatabases(sources);
+		setDatabases((known) =>
+			known.join("\n") === names.join("\n") ? known : names,
+		);
+	}, [snapshot]);
 
 	const act = useCallback(
 		async (action: () => Promise<string | null>) => {
@@ -177,9 +185,9 @@ export default function IngestionPage() {
 						{health.worker_breaker_consecutive_failures} failures
 					</Badge>
 				)}
-				{database && (
+				{databases.length > 0 && (
 					<span className="text-sm text-muted-foreground">
-						Writes {database}
+						Writes {databases.join(", ")}
 					</span>
 				)}
 			</PageHeader>
@@ -306,16 +314,18 @@ export default function IngestionPage() {
 			/>
 
 			<div className="space-y-2">
-				<Lazy
-					title="Database"
-					path="database"
-					onLoad={(info) => setDatabase((info as { path: string }).path)}
-					render={(data) => (
-						<pre className="overflow-x-auto font-mono text-xs">
-							{JSON.stringify(data, null, 2)}
-						</pre>
-					)}
-				/>
+				{databases.map((name) => (
+					<Lazy
+						key={name}
+						title={`Database ${name}`}
+						path={`databases/${encodeURIComponent(name)}`}
+						render={(data) => (
+							<pre className="overflow-x-auto font-mono text-xs">
+								{JSON.stringify(data, null, 2)}
+							</pre>
+						)}
+					/>
+				))}
 				<Lazy
 					title="Configuration"
 					path="config"

@@ -23,10 +23,13 @@ export interface Stats {
 
 export interface Source {
 	source_id: string;
+	database: string | null;
 	type: string;
 	last_polled_at: string | null;
 	circuit_breaker_open: boolean;
 	last_skip_reason: string | null;
+	last_error: string | null;
+	last_error_at: string | null;
 }
 
 export interface Providers {

@@ -29,9 +29,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # The one writer of the database: it ingests the documents DOCS_VOLUME
-  # mounts at /docs into the database the backend reads. A configuration
-  # naming several databases selects the one it writes with --db PATH.
+  # The one writer of the databases. It ingests the documents mounted from
+  # DOCS_VOLUME at /docs, and writes each database listed under
+  # ingester.databases.
   ingester:
     build:
       context: ..

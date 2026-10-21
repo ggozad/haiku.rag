@@ -12,9 +12,11 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
+import { ingestedDatabases } from "@/lib/ingestion";
 import type { Source, Stats } from "./types";
 
 // The configured sources, their queue and dead-letter counts, and Refresh.
+// The database column shows when the ingester writes more than one.
 export default function SourcesPanel({
 	sources,
 	stats,
@@ -24,12 +26,14 @@ export default function SourcesPanel({
 	stats: Stats | undefined;
 	onRefresh: (sourceId: string) => void;
 }) {
+	const showDatabase = ingestedDatabases(sources).length > 1;
 	return (
 		<div className="overflow-x-auto rounded-md border">
 			<Table>
 				<TableHeader>
 					<TableRow>
 						<TableHead>Source</TableHead>
+						{showDatabase && <TableHead>Database</TableHead>}
 						<TableHead>Type</TableHead>
 						<TableHead>Last polled</TableHead>
 						<TableHead>Queued</TableHead>
@@ -42,6 +46,7 @@ export default function SourcesPanel({
 					{sources.map((source) => (
 						<TableRow key={source.source_id}>
 							<TableCell className="font-medium">{source.source_id}</TableCell>
+							{showDatabase && <TableCell>{source.database ?? "—"}</TableCell>}
 							<TableCell>{source.type}</TableCell>
 							<TableCell>
 								{source.last_polled_at
@@ -63,6 +68,23 @@ export default function SourcesPanel({
 										skipped: {source.last_skip_reason}
 									</Badge>
 								)}
+								{source.last_error && (
+									<>
+										<Badge
+											variant="destructive"
+											title={
+												source.last_error_at
+													? formatRelativeTime(source.last_error_at, true)
+													: undefined
+											}
+										>
+											discovery failed
+										</Badge>
+										<span className="text-xs text-destructive">
+											{source.last_error}
+										</span>
+									</>
+								)}
 							</TableCell>
 							<TableCell className="text-right">
 								<Button
@@ -78,7 +100,10 @@ export default function SourcesPanel({
 					))}
 					{sources.length === 0 && (
 						<TableRow>
-							<TableCell colSpan={7} className="text-muted-foreground">
+							<TableCell
+								colSpan={showDatabase ? 8 : 7}
+								className="text-muted-foreground"
+							>
 								No sources are configured.
 							</TableCell>
 						</TableRow>
