@@ -18,16 +18,37 @@ The extra pulls `fastapi`, `uvicorn`, `sqlalchemy`, `aiosqlite`, `asyncpg` and t
 
 ## Configure sources
 
-Sources are listed under `ingester.sources` in `haiku.rag.yaml`. The minimum is one:
+Sources are listed under `ingester.databases` in `haiku.rag.yaml`, keyed by the database they are ingested into: a name in `lancedb.databases`, or `haiku.rag` when none is configured. The minimum is one source:
 
 ```yaml
 ingester:
-  sources:
-    - type: fs
-      id: local-docs
-      root: /Users/you/docs
-      delete_orphans: true
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: local-docs
+          root: /Users/you/docs
+          delete_orphans: true
 ```
+
+With `lancedb.databases` configured, the key names one of its entries:
+
+```yaml
+lancedb:
+  databases:
+    docs: s3://my-bucket/docs.lancedb
+    docs-release: {location: "s3://my-bucket/docs.lancedb", tag: v1}
+
+ingester:
+  databases:
+    docs:
+      sources:
+        - type: s3
+          id: docs-inbox
+          uri: s3://my-bucket/incoming/
+```
+
+The ingester writes the database its key names and leaves the other entries to readers, such as `docs-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. `ingester.sources` is no longer read: a configuration carrying it fails at load.
 
 Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document another source ingested last, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing while it still has documents it listed before. The sweep fails instead. To retire a source, remove it from the configuration, and delete its documents by hand if they should go. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
 
@@ -35,14 +56,16 @@ Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `
 
 ```yaml
 ingester:
-  sources:
-    - type: fs
-      id: local-docs                          # optional, derived from root
-      root: /Users/you/docs
-      poll_interval_s: 300
-      delete_orphans: true
-      ignore_patterns: ["**/.git/**", "**/node_modules/**"]
-      include_patterns: ["*.md", "*.pdf"]    # optional allow-list
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: local-docs                          # optional, derived from root
+          root: /Users/you/docs
+          poll_interval_s: 300
+          delete_orphans: true
+          ignore_patterns: ["**/.git/**", "**/node_modules/**"]
+          include_patterns: ["*.md", "*.pdf"]    # optional allow-list
 ```
 
 `watchfiles` delivers changes as they happen, and a periodic sweep catches anything missed while the service was down.
@@ -53,20 +76,22 @@ With `converter: docling-local`, a LaTeX document is converted where it sits, an
 
 ```yaml
 ingester:
-  sources:
-    - type: s3
-      id: corp-docs
-      uri: s3://my-bucket/incoming/
-      poll_interval_s: 300
-      delete_orphans: true
-      ignore_patterns: ["draft*"]
-      include_patterns: ["*.pdf", "*.md"]
-      storage_options:
-        endpoint: http://seaweed:8333         # omit for the AWS default chain
-        aws_access_key_id: ${AWS_KEY}
-        aws_secret_access_key: ${AWS_SECRET}
-        region: us-east-1
-        allow_http: "true"
+  databases:
+    haiku.rag:
+      sources:
+        - type: s3
+          id: corp-docs
+          uri: s3://my-bucket/incoming/
+          poll_interval_s: 300
+          delete_orphans: true
+          ignore_patterns: ["draft*"]
+          include_patterns: ["*.pdf", "*.md"]
+          storage_options:
+            endpoint: http://seaweed:8333         # omit for the AWS default chain
+            aws_access_key_id: ${AWS_KEY}
+            aws_secret_access_key: ${AWS_SECRET}
+            region: us-east-1
+            allow_http: "true"
 ```
 
 Each sweep lists the prefix and fetches only keys whose ETag differs from the document's stored `metadata["source_revision"]`. When the fetched bytes match the stored MD5, as after a multipart re-upload, only the revision is updated and nothing is re-chunked.
@@ -77,14 +102,16 @@ Each sweep lists the prefix and fetches only keys whose ETag differs from the do
 
 ```yaml
 ingester:
-  sources:
-    - type: http
-      id: arxiv
-      urls:
-        - https://arxiv.org/pdf/2301.12345.pdf
-      headers:
-        Authorization: Bearer ${SOME_TOKEN}
-      poll_interval_s: 86400
+  databases:
+    haiku.rag:
+      sources:
+        - type: http
+          id: arxiv
+          urls:
+            - https://arxiv.org/pdf/2301.12345.pdf
+          headers:
+            Authorization: Bearer ${SOME_TOKEN}
+          poll_interval_s: 86400
 ```
 
 Change detection uses `HEAD`. A URL removed from `urls`, or answering `410 Gone`, counts as gone. Other failures leave the decision to the fetch. A URL whose server sends neither `ETag` nor `Last-Modified` is not fetched again once ingested. The source fetches only the URLs in `urls`, so its `headers` reach no other URL.
@@ -93,14 +120,16 @@ Change detection uses `HEAD`. A URL removed from `urls`, or answering `410 Gone`
 
 ```yaml
 ingester:
-  sources:
-    - type: webdav
-      id: nextcloud
-      base_url: https://nextcloud.example.com/remote.php/dav/files/alice/Documents/
-      username: alice
-      password: ${NEXTCLOUD_APP_PASSWORD}
-      ignore_patterns: ["**/Trash/**"]
-      poll_interval_s: 600
+  databases:
+    haiku.rag:
+      sources:
+        - type: webdav
+          id: nextcloud
+          base_url: https://nextcloud.example.com/remote.php/dav/files/alice/Documents/
+          username: alice
+          password: ${NEXTCLOUD_APP_PASSWORD}
+          ignore_patterns: ["**/Trash/**"]
+          poll_interval_s: 600
 ```
 
 Each sweep issues one `PROPFIND` with `Depth: infinity` against `base_url`. A file's `getetag`, or `getlastmodified` when the server sends no ETag, decides whether it changed. A file missing from the listing counts as gone. Fetches are plain `GET`s.
@@ -110,11 +139,11 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
 `headers` can replace HTTP Basic with a bearer token:
 
 ```yaml
-    - type: webdav
-      id: kdrive
-      base_url: https://kdrive.infomaniak.com/app/drive/123/
-      headers:
-        Authorization: Bearer ${KDRIVE_TOKEN}
+        - type: webdav
+          id: kdrive
+          base_url: https://kdrive.infomaniak.com/app/drive/123/
+          headers:
+            Authorization: Bearer ${KDRIVE_TOKEN}
 ```
 
 ### File size limits
@@ -122,9 +151,9 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
 `max_file_size` (bytes) rejects oversized files before they are read into memory. They go straight to the dead-letter queue.
 
 ```yaml
-    - type: fs
-      root: /data/docs
-      max_file_size: 104857600        # 100 MB
+        - type: fs
+          root: /data/docs
+          max_file_size: 104857600        # 100 MB
 ```
 
 FS and S3 sources know the size before downloading, so the limit always applies. HTTP and WebDAV rely on the `Content-Length` header, and a response without one, such as a chunked response, is fetched in full.
@@ -134,10 +163,10 @@ FS and S3 sources know the size before downloading, so the limit always applies.
 A source can attach custom metadata to every document it ingests through a `metadata_provider`, a callable an external package registers under the `haiku.rag.metadata_providers` entry-point group:
 
 ```yaml
-    - type: webdav
-      id: handbook
-      base_url: https://dav.example.com/remote.php/dav/files/svc
-      metadata_provider: example-provider
+        - type: webdav
+          id: handbook
+          base_url: https://dav.example.com/remote.php/dav/files/svc
+          metadata_provider: example-provider
 ```
 
 The entry point is a zero-argument callable returning the provider, so a class is its own factory. The ingester calls the provider with `(source_id, uri, result)`, where `result` is the source's `FetchResult`, and merges the returned dict into the document's metadata:
@@ -176,14 +205,14 @@ The provider is also called for each [PDF attachment](configuration/processing.m
 To ingest from something the four built-in types (`fs`, `http`, `s3`, `webdav`) do not cover, such as a git host or a ticketing system, a package registers a source factory under the `haiku.rag.sources` entry-point group and the configuration names it with `type: plugin`:
 
 ```yaml
-    - type: plugin
-      id: api-docs
-      plugin: git
-      options:
-        owner: acme
-        repo: api
-        branch: main
-        token: ${SCM_TOKEN}
+        - type: plugin
+          id: api-docs
+          plugin: git
+          options:
+            owner: acme
+            repo: api
+            branch: main
+            token: ${SCM_TOKEN}
 ```
 
 `plugin` is the entry-point name. `options` is passed to the factory as given, and the factory validates it. The base source fields are handled by the ingester and are not part of `options`.
@@ -273,13 +302,15 @@ A source can override the retry policy:
 
 ```yaml
 ingester:
-  sources:
-    - type: http
-      id: flaky-api
-      urls: [...]
-      retry:
-        max_attempts: 10
-        base_delay_s: 10
+  databases:
+    haiku.rag:
+      sources:
+        - type: http
+          id: flaky-api
+          urls: [...]
+          retry:
+            max_attempts: 10
+            base_delay_s: 10
 ```
 
 The block replaces the worker's policy for that source's jobs. A field it leaves out takes the policy default, not the worker's value.
@@ -290,13 +321,15 @@ After `failure_threshold` consecutive discovery failures, a source's circuit bre
 
 ```yaml
 ingester:
-  sources:
-    - type: http
-      id: rate-limited
-      urls: [...]
-      circuit_breaker:
-        failure_threshold: 5
-        cooldown_s: 600
+  databases:
+    haiku.rag:
+      sources:
+        - type: http
+          id: rate-limited
+          urls: [...]
+          circuit_breaker:
+            failure_threshold: 5
+            cooldown_s: 600
 ```
 
 Workers keep a second breaker per source over job failures. After 5 consecutive transient job failures they stop claiming that source's jobs for 60 seconds. Both values are fixed. `/health` reports the breaker, and opening it emits an `ingester.worker breaker opened` event.
@@ -430,10 +463,12 @@ A source id is an identity. An `fs` source without an `id` derives it from its r
 
 ```yaml
 ingester:
-  sources:
-    - type: fs
-      id: handbook
-      root: /srv/handbook
+  databases:
+    haiku.rag:
+      sources:
+        - type: fs
+          id: handbook
+          root: /srv/handbook
 ```
 
 When two sources cover the same URI (nested roots or prefixes, one URL in two `http` sources), the latest ingestion takes ownership and a warning names both ids. Overlapping sources are a configuration error.

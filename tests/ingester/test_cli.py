@@ -743,6 +743,50 @@ class TestPlacingTheIngesterDatabase:
         assert "--db PATH" in str(raised.value)
         assert "sources=" not in str(raised.value)
 
+    @staticmethod
+    def _ingesting(databases: dict, ingested: list[str]) -> AppConfig:
+        return AppConfig.model_validate(
+            {
+                "lancedb": {"databases": databases},
+                "ingester": {
+                    "databases": {
+                        name: {"sources": [{"type": "fs", "root": "/tmp/docs"}]}
+                        for name in ingested
+                    }
+                },
+            }
+        )
+
+    def test_the_ingested_database_is_written_among_several_configured(self, tmp_path):
+        """A config shared with readers names other databases, a tagged one
+        included. The ingester writes the one its sources name."""
+        config = self._ingesting(
+            {
+                "papers": str(tmp_path / "papers.lancedb"),
+                "wiki": str(tmp_path / "wiki.lancedb"),
+                "release": {"location": str(tmp_path / "papers.lancedb"), "tag": "v1"},
+            },
+            ["wiki"],
+        )
+
+        app = self._app(config)
+
+        assert app._scope.names == ("wiki",)
+        assert app._source_configs == config.ingester.databases["wiki"].sources
+
+    def test_two_ingested_databases_are_refused(self, tmp_path):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = self._ingesting(
+            {"a": str(tmp_path / "a.lancedb"), "b": str(tmp_path / "b.lancedb")},
+            ["a", "b"],
+        )
+
+        with pytest.raises(
+            AmbiguousDatabaseError, match="ingester.databases names a, b"
+        ):
+            self._app(config)
+
     def test_several_configured_databases_exit_cleanly(self, tmp_path, monkeypatch):
         """No selector names one of a set, so the CLI exits with the message
         and no traceback."""

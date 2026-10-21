@@ -10,6 +10,7 @@ from haiku.rag.config import (
     APIConfig,
     AppConfig,
     FSSourceConfig,
+    IngestedDatabase,
     IngesterConfig,
     QueueConfig,
     RetryPolicyConfig,
@@ -414,14 +415,18 @@ def _ingester_config(tmp_path, queue_path):
     return AppConfig(
         ingester=IngesterConfig(
             queue=QueueConfig(path=queue_path),
-            sources=[
-                FSSourceConfig(
-                    type="fs",
-                    id="corpus",
-                    root=tmp_path / "corpus",
-                    poll_interval_s=3600,
+            databases={
+                "haiku.rag": IngestedDatabase(
+                    sources=[
+                        FSSourceConfig(
+                            type="fs",
+                            id="corpus",
+                            root=tmp_path / "corpus",
+                            poll_interval_s=3600,
+                        )
+                    ]
                 )
-            ],
+            },
             workers=WorkerConfig(
                 worker_count=1,
                 poll_idle_interval_s=0.05,

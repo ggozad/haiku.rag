@@ -3,6 +3,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from haiku.rag.config import AppConfig, DatabaseEntry
+from haiku.rag.config.models import DEFAULT_DATABASE_NAME
 from haiku.rag.store.exceptions import (
     AmbiguousDatabaseError,
     TagError,
@@ -140,7 +141,7 @@ class DatabaseScope:
             return cls.at(database_path)
 
         declared: Mapping[str, str | Path | DatabaseEntry] = configured or {
-            "haiku.rag": config.storage.data_dir / DEFAULT_DATABASE_FILENAME
+            DEFAULT_DATABASE_NAME: config.storage.data_dir / DEFAULT_DATABASE_FILENAME
         }
 
         if database_name is not None:

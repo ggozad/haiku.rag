@@ -19,6 +19,7 @@ from haiku.rag.config import (
     APIConfig,
     AppConfig,
     FSSourceConfig,
+    IngestedDatabase,
     IngesterConfig,
     QueueConfig,
     RetryPolicyConfig,
@@ -49,14 +50,18 @@ def _config(tmp_path, root=None, **worker_kwargs) -> AppConfig:
     return AppConfig(
         ingester=IngesterConfig(
             queue=QueueConfig(path=tmp_path / "queue.db"),
-            sources=[
-                FSSourceConfig(
-                    type="fs",
-                    id="local",
-                    root=root or tmp_path,
-                    poll_interval_s=3600.0,
+            databases={
+                "haiku.rag": IngestedDatabase(
+                    sources=[
+                        FSSourceConfig(
+                            type="fs",
+                            id="local",
+                            root=root or tmp_path,
+                            poll_interval_s=3600.0,
+                        )
+                    ]
                 )
-            ],
+            },
             workers=workers,
             api=APIConfig(enabled=False),
         ),
@@ -298,7 +303,7 @@ async def test_run_batch_retries_with_the_sources_backoff(tmp_path, use_client):
     config.ingester.workers.retry = RetryPolicyConfig(
         max_attempts=2, base_delay_s=3600.0, jitter=0.0
     )
-    config.ingester.sources[0].retry = RetryPolicyConfig(
+    config.ingester.databases["haiku.rag"].sources[0].retry = RetryPolicyConfig(
         max_attempts=2, base_delay_s=0.0, jitter=0.0
     )
 

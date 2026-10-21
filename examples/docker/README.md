@@ -70,7 +70,7 @@ docker compose pull          # back to the published image when done
 | `./docs` | `/docs` | `haiku-ingester` only | Documents to ingest (watched by the FS source) |
 | `./haiku.rag.yaml` | `/app/haiku.rag.yaml` | both haiku containers | Configuration file |
 
-`haiku.rag.yaml` must exist before `docker compose up`, or Docker creates a directory in its place. The example config sets `ingester.sources[0].root: /docs` - this is the **container path**, not your host path. Documents placed in `./docs` on your host will appear at `/docs` inside the container.
+`haiku.rag.yaml` must exist before `docker compose up`, or Docker creates a directory in its place. The example config sets the `root: /docs` of its one source under `ingester.databases` - this is the **container path**, not your host path. Documents placed in `./docs` on your host will appear at `/docs` inside the container.
 
 ## Usage
 

@@ -27,6 +27,7 @@ from haiku.rag.config import (
     APIConfig,
     AppConfig,
     FSSourceConfig,
+    IngestedDatabase,
     IngesterConfig,
     QueueConfig,
     RetryPolicyConfig,
@@ -436,11 +437,18 @@ async def test_run_batch_as_a_dml_only_role(postgres_dburi, tmp_path):
         config = AppConfig(
             ingester=IngesterConfig(
                 queue=QueueConfig(dburi=role_url, namespace="t"),
-                sources=[
-                    FSSourceConfig(
-                        type="fs", id="local", root=corpus, poll_interval_s=3600.0
+                databases={
+                    "haiku.rag": IngestedDatabase(
+                        sources=[
+                            FSSourceConfig(
+                                type="fs",
+                                id="local",
+                                root=corpus,
+                                poll_interval_s=3600.0,
+                            )
+                        ]
                     )
-                ],
+                },
                 workers=WorkerConfig(
                     worker_count=1,
                     poll_idle_interval_s=0.05,

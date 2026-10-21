@@ -81,19 +81,29 @@ class IngesterApp:
     """
 
     def __init__(self, *, config: AppConfig, scope: "DatabaseScope | None" = None):
-        """The ingester over the database `scope` covers, or the one the
-        configuration places when no scope is handed in."""
+        """The ingester over the database `scope` covers, or the one
+        `ingester.databases` names when no scope is handed in."""
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         self._config = config
-        self._scope = scope if scope is not None else DatabaseScope.resolve(config)
+        ingested = config.ingester.databases
+        if len(ingested) > 1:
+            raise AmbiguousDatabaseError(
+                "haiku-ingester writes one database, and ingester.databases "
+                f"names {', '.join(ingested)}"
+            )
+        [name] = ingested or [None]
+        self._source_configs = ingested[name].sources if name is not None else []
+        if scope is not None:
+            self._scope = scope
+        else:
+            self._scope = DatabaseScope.resolve(config, database_name=name)
         if self._scope.covers_multiple:
             raise AmbiguousDatabaseError(
                 "haiku-ingester writes one database, and lancedb.databases "
-                f"names {', '.join(self._scope.names)}; select one with "
-                "--db PATH, or give each database its own ingester with a "
-                "configuration naming a single one"
+                f"names {', '.join(self._scope.names)}; name it under "
+                "ingester.databases, or select one with --db PATH"
             )
         self._scope.refuse_tags("haiku-ingester writes")
         queue = config.ingester.queue
@@ -138,7 +148,7 @@ class IngesterApp:
                 self._scope, self._config, create=True
             ) as client:
                 self._pollers = PollerManager(
-                    configs=ingester_cfg.sources,
+                    configs=self._source_configs,
                     job_repo=self._jobs,
                     sync_repo=self._sync,
                     supported_extensions=supported_extensions,
@@ -148,7 +158,7 @@ class IngesterApp:
                     [
                         (source.source_id, cfg.metadata_provider)
                         for cfg, source in zip(
-                            ingester_cfg.sources, self._pollers.sources
+                            self._source_configs, self._pollers.sources
                         )
                     ],
                     load_metadata_providers(),
@@ -213,7 +223,7 @@ class IngesterApp:
             self._sync = SyncStateRepo(self._engine, ingester_cfg.queue.namespace)
             supported_extensions = get_converter(self._config).supported_extensions
             self._pollers = PollerManager(
-                configs=ingester_cfg.sources,
+                configs=self._source_configs,
                 job_repo=self._jobs,
                 sync_repo=self._sync,
                 supported_extensions=supported_extensions,
@@ -318,14 +328,14 @@ class IngesterApp:
                     "Ingester running: %d worker(s), %d source(s), "
                     "%d docling-serve instance(s)",
                     ingester_cfg.workers.worker_count,
-                    len(ingester_cfg.sources),
+                    len(self._source_configs),
                     len(self._config.providers.docling_serve.base_urls),
                 )
             else:
                 logger.info(
                     "Ingester running: %d worker(s), %d source(s)",
                     ingester_cfg.workers.worker_count,
-                    len(ingester_cfg.sources),
+                    len(self._source_configs),
                 )
 
             api_task, api_server = await self._maybe_start_api(api)

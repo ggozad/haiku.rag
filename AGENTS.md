@@ -298,7 +298,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `DoctorConfig` - duplicates (DuplicateDetectionConfig: similarity_threshold 0.97, min_chunks 3)
 - `ProvidersConfig` - ollama, docling_serve (OllamaConfig, DoclingServeConfig)
 - `PromptsConfig` - domain_preamble, picture_description
-- `IngesterConfig` - sources, queue (QueueConfig), workers (WorkerConfig), api (APIConfig)
+- `IngesterConfig` - databases (database name → `IngestedDatabase`: sources), queue (QueueConfig), workers (WorkerConfig), api (APIConfig)
 - `EvaluationsConfig` - judge (ModelConfig | None), system_one (SystemOneConfig | None: provider, base_url, model; key from `TYPESAFE_API_KEY`)
 - `LanceDBConfig` - databases (name → local path or URI), api_key, region, storage_options, read_consistency_interval_seconds, index_cache_size_bytes, metadata_cache_size_bytes
 

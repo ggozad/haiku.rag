@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from haiku.rag.utils.paths import get_default_data_dir
 
+DEFAULT_DATABASE_NAME = "haiku.rag"
+
 # pydantic-ai's `ThinkingEffort`; importing it loads the whole package at config import.
 ThinkingEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 
@@ -743,13 +745,34 @@ SourceConfig = Annotated[
 ]
 
 
-class IngesterConfig(ConfigModel):
-    """Production ingester settings."""
+class IngestedDatabase(ConfigModel):
+    """The sources one database is ingested from."""
 
-    sources: list[SourceConfig] = []
+    sources: list[SourceConfig] = Field(min_length=1)
+
+
+class IngesterConfig(ConfigModel):
+    """Production ingester settings.
+
+    `databases` maps the name of a database in `lancedb.databases`, or
+    `haiku.rag` when none is configured, to the sources it is ingested from.
+    """
+
+    databases: dict[str, IngestedDatabase] = Field(default_factory=dict)
     queue: QueueConfig = Field(default_factory=QueueConfig)
     workers: WorkerConfig = Field(default_factory=WorkerConfig)
     api: APIConfig = Field(default_factory=APIConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sources_names_its_replacement(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "sources" in data:
+            raise ValueError(
+                "ingester.sources is not a setting. Write ingester.databases: "
+                "{NAME: {sources: [...]}} instead, NAME being the database "
+                "the sources are ingested into"
+            )
+        return data
 
 
 class HookConfig(ConfigModel):
@@ -777,3 +800,28 @@ class AppConfig(ConfigModel):
     evaluations: "EvaluationsConfig" = Field(
         default_factory=lambda: EvaluationsConfig()
     )
+
+    @model_validator(mode="after")
+    def _ingested_databases_are_live_and_configured(self) -> "AppConfig":
+        configured = self.lancedb.databases
+        for name in self.ingester.databases:
+            if not configured:
+                if name != DEFAULT_DATABASE_NAME:
+                    raise ValueError(
+                        f"ingester.databases[{name}] names no configured "
+                        "database. With no lancedb.databases the only one is "
+                        f"{DEFAULT_DATABASE_NAME}"
+                    )
+                continue
+            entry = configured.get(name)
+            if entry is None:
+                raise ValueError(
+                    f"ingester.databases[{name}] names no database in "
+                    f"lancedb.databases, which names {', '.join(sorted(configured))}"
+                )
+            if isinstance(entry, DatabaseEntry) and entry.tag is not None:
+                raise ValueError(
+                    f"ingester.databases[{name}] names a database configured at "
+                    f"tag {entry.tag!r}, and the ingester writes the live database"
+                )
+        return self

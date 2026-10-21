@@ -10,6 +10,8 @@
 ### Changed
 
 - The `cross-encoder` extra requires `sentence-transformers>=4.0.0` and `transformers>=4.56.0`.
+- `ingester.sources` replaced by `ingester.databases`, a map from a database name to its sources. A configuration carrying `ingester.sources` fails at load. Migration: `ingester.databases: {NAME: {sources: <list>}}`, NAME the key in `lancedb.databases`, or `haiku.rag` when none is configured.
+- `haiku-ingester` writes the database its `ingester.databases` key names. Other `lancedb.databases` entries, tagged ones included, no longer stop it from starting.
 - `pydantic-monty` bumped to 1.2. The sandbox iterates file objects and supports `match` statements, `os.walk`, `os.path`, `Path.glob`, `json.load` and `csv`.
 
 ### Removed
