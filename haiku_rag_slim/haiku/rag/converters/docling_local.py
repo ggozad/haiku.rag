@@ -102,6 +102,7 @@ class DoclingLocalConverter(DocumentConverter):
         ".csv",
         ".docx",
         ".eml",
+        ".epub",
         ".html",
         ".xhtml",
         ".jpeg",
@@ -221,9 +222,9 @@ class DoclingLocalConverter(DocumentConverter):
 
         Every wired FormatOption gets the same `PdfPipelineOptions` instance so
         picture-description / classification / chart settings apply uniformly
-        across PDF, IMAGE, HTML, MD, DOCX, PPTX. HTML and Markdown additionally
-        receive backend options gated on `fetch_remote_images`. Only the HTML
-        backend takes `headers`.
+        across PDF, IMAGE, HTML, MD, DOCX, PPTX, EPUB. HTML and Markdown
+        additionally receive backend options gated on `fetch_remote_images`.
+        Only the HTML backend takes `headers`.
 
         Args:
             source_uri: Origin URI used by the HTML and Markdown backends to
@@ -238,6 +239,7 @@ class DoclingLocalConverter(DocumentConverter):
         )
         from docling.datamodel.base_models import InputFormat
         from docling.document_converter import (
+            EpubFormatOption,
             HTMLFormatOption,
             ImageFormatOption,
             MarkdownFormatOption,
@@ -280,6 +282,12 @@ class DoclingLocalConverter(DocumentConverter):
             ),
             InputFormat.DOCX: WordFormatOption(pipeline_options=pipeline_options),
             InputFormat.PPTX: PowerpointFormatOption(pipeline_options=pipeline_options),
+            # EPUB pictures carry no image data. Extracting it needs
+            # `EpubBackendOptions(fetch_images=True, enable_local_fetch=True)`,
+            # which fails the whole conversion on an `<img>` with a
+            # single-quoted or out-of-archive `src` before docling 2.135.0.
+            # docling-serve sets neither option (docling-project/docling-jobkit#275).
+            InputFormat.EPUB: EpubFormatOption(pipeline_options=pipeline_options),
         }
 
     def _refuse_if_wedged(self) -> None:

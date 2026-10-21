@@ -10,7 +10,7 @@ Python 3.12 or newer.
 
 ```bash
 uv pip install haiku.rag-slim
-uv pip install 'haiku.rag-slim[docling]'          # PDF, DOCX, PPTX, XLSX, HTML, LaTeX, email and image conversion
+uv pip install 'haiku.rag-slim[docling]'          # PDF, DOCX, PPTX, XLSX, HTML, EPUB, LaTeX, email and image conversion
 uv pip install 'haiku.rag-slim[docling,anthropic,cross-encoder]'
 ```
 

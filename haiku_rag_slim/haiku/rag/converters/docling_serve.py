@@ -45,6 +45,7 @@ class DoclingServeConverter(DocumentConverter):
         ".csv",
         ".docx",
         ".eml",
+        ".epub",
         ".html",
         ".xhtml",
         ".jpeg",

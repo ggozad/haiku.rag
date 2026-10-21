@@ -1,0 +1,200 @@
+interactions:
+- request:
+    body: !!binary |
+      LS00MDAwMGZmZDM5N2QxMWU0ZjkyMGE3ODdiMTQ2ODA5Ng0KQ29udGVudC1EaXNwb3NpdGlvbjog
+      Zm9ybS1kYXRhOyBuYW1lPSJ0b19mb3JtYXRzIg0KDQpqc29uDQotLTQwMDAwZmZkMzk3ZDExZTRm
+      OTIwYTc4N2IxNDY4MDk2DQpDb250ZW50LURpc3Bvc2l0aW9uOiBmb3JtLWRhdGE7IG5hbWU9ImRv
+      X29jciINCg0KdHJ1ZQ0KLS00MDAwMGZmZDM5N2QxMWU0ZjkyMGE3ODdiMTQ2ODA5Ng0KQ29udGVu
+      dC1EaXNwb3NpdGlvbjogZm9ybS1kYXRhOyBuYW1lPSJmb3JjZV9vY3IiDQoNCmZhbHNlDQotLTQw
+      MDAwZmZkMzk3ZDExZTRmOTIwYTc4N2IxNDY4MDk2DQpDb250ZW50LURpc3Bvc2l0aW9uOiBmb3Jt
+      LWRhdGE7IG5hbWU9Im9jcl9lbmdpbmUiDQoNCmF1dG8NCi0tNDAwMDBmZmQzOTdkMTFlNGY5MjBh
+      Nzg3YjE0NjgwOTYNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0iZG9fdGFi
+      bGVfc3RydWN0dXJlIg0KDQp0cnVlDQotLTQwMDAwZmZkMzk3ZDExZTRmOTIwYTc4N2IxNDY4MDk2
+      DQpDb250ZW50LURpc3Bvc2l0aW9uOiBmb3JtLWRhdGE7IG5hbWU9InBkZl9iYWNrZW5kIg0KDQpk
+      b2NsaW5nX3BhcnNlDQotLTQwMDAwZmZkMzk3ZDExZTRmOTIwYTc4N2IxNDY4MDk2DQpDb250ZW50
+      LURpc3Bvc2l0aW9uOiBmb3JtLWRhdGE7IG5hbWU9InRhYmxlX21vZGUiDQoNCmFjY3VyYXRlDQot
+      LTQwMDAwZmZkMzk3ZDExZTRmOTIwYTc4N2IxNDY4MDk2DQpDb250ZW50LURpc3Bvc2l0aW9uOiBm
+      b3JtLWRhdGE7IG5hbWU9InRhYmxlX2NlbGxfbWF0Y2hpbmciDQoNCnRydWUNCi0tNDAwMDBmZmQz
+      OTdkMTFlNGY5MjBhNzg3YjE0NjgwOTYNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsg
+      bmFtZT0iaW1hZ2VzX3NjYWxlIg0KDQoyLjANCi0tNDAwMDBmZmQzOTdkMTFlNGY5MjBhNzg3YjE0
+      NjgwOTYNCkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0iaW1hZ2VfZXhwb3J0
+      X21vZGUiDQoNCnJlZmVyZW5jZWQNCi0tNDAwMDBmZmQzOTdkMTFlNGY5MjBhNzg3YjE0NjgwOTYN
+      CkNvbnRlbnQtRGlzcG9zaXRpb246IGZvcm0tZGF0YTsgbmFtZT0iaW5jbHVkZV9pbWFnZXMiDQoN
+      CnRydWUNCi0tNDAwMDBmZmQzOTdkMTFlNGY5MjBhNzg3YjE0NjgwOTYNCkNvbnRlbnQtRGlzcG9z
+      aXRpb246IGZvcm0tZGF0YTsgbmFtZT0iaW5jbHVkZV9wYWdlX2ltYWdlcyINCg0KdHJ1ZQ0KLS00
+      MDAwMGZmZDM5N2QxMWU0ZjkyMGE3ODdiMTQ2ODA5Ng0KQ29udGVudC1EaXNwb3NpdGlvbjogZm9y
+      bS1kYXRhOyBuYW1lPSJkb19waWN0dXJlX2Rlc2NyaXB0aW9uIg0KDQpmYWxzZQ0KLS00MDAwMGZm
+      ZDM5N2QxMWU0ZjkyMGE3ODdiMTQ2ODA5Ng0KQ29udGVudC1EaXNwb3NpdGlvbjogZm9ybS1kYXRh
+      OyBuYW1lPSJ0YXJnZXRfdHlwZSINCg0KemlwDQotLTQwMDAwZmZkMzk3ZDExZTRmOTIwYTc4N2Ix
+      NDY4MDk2DQpDb250ZW50LURpc3Bvc2l0aW9uOiBmb3JtLWRhdGE7IG5hbWU9ImZpbGVzIjsgZmls
+      ZW5hbWU9Imx1bmFyLmVwdWIiDQpDb250ZW50LVR5cGU6IGFwcGxpY2F0aW9uL29jdGV0LXN0cmVh
+      bQ0KDQpQSwMEFAAAAAAAbVJVXW9hqywUAAAAFAAAAAgAAABtaW1ldHlwZWFwcGxpY2F0aW9uL2Vw
+      dWIremlwUEsDBBQAAAAAAG1SVV0eC9fJ3QAAAN0AAAAWAAAATUVUQS1JTkYvY29udGFpbmVyLnht
+      bDw/eG1sIHZlcnNpb249IjEuMCI/Pjxjb250YWluZXIgdmVyc2lvbj0iMS4wIiB4bWxucz0idXJu
+      Om9hc2lzOm5hbWVzOnRjOm9wZW5kb2N1bWVudDp4bWxuczpjb250YWluZXIiPjxyb290ZmlsZXM+
+      PHJvb3RmaWxlIGZ1bGwtcGF0aD0iT0VCUFMvY29udGVudC5vcGYiIG1lZGlhLXR5cGU9ImFwcGxp
+      Y2F0aW9uL29lYnBzLXBhY2thZ2UreG1sIi8+PC9yb290ZmlsZXM+PC9jb250YWluZXI+UEsDBBQA
+      AAAAAG1SVV2JoJ6BNQIAADUCAAARAAAAT0VCUFMvY29udGVudC5vcGY8P3htbCB2ZXJzaW9uPSIx
+      LjAiPz48cGFja2FnZSB4bWxucz0iaHR0cDovL3d3dy5pZHBmLm9yZy8yMDA3L29wZiIgdmVyc2lv
+      bj0iMy4wIiB1bmlxdWUtaWRlbnRpZmllcj0iaWQiPjxtZXRhZGF0YSB4bWxuczpkYz0iaHR0cDov
+      L3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iPjxkYzppZGVudGlmaWVyIGlkPSJpZCI+bHVuYXI8
+      L2RjOmlkZW50aWZpZXI+PGRjOnRpdGxlPkx1bmFyIEd1aWRlPC9kYzp0aXRsZT48ZGM6bGFuZ3Vh
+      Z2U+ZW48L2RjOmxhbmd1YWdlPjwvbWV0YWRhdGE+PG1hbmlmZXN0PjxpdGVtIGlkPSJjMiIgaHJl
+      Zj0idGV4dC9hLnhodG1sIiBtZWRpYS10eXBlPSJhcHBsaWNhdGlvbi94aHRtbCt4bWwiLz48aXRl
+      bSBpZD0iYzEiIGhyZWY9InRleHQvYi54aHRtbCIgbWVkaWEtdHlwZT0iYXBwbGljYXRpb24veGh0
+      bWwreG1sIi8+PGl0ZW0gaWQ9Im1vb24iIGhyZWY9ImltYWdlcy9tb29uLnBuZyIgbWVkaWEtdHlw
+      ZT0iaW1hZ2UvcG5nIi8+PC9tYW5pZmVzdD48c3BpbmU+PGl0ZW1yZWYgaWRyZWY9ImMxIi8+PGl0
+      ZW1yZWYgaWRyZWY9ImMyIi8+PC9zcGluZT48L3BhY2thZ2U+UEsDBBQAAAAAAG1SVV3Eyq80JQEA
+      ACUBAAASAAAAT0VCUFMvdGV4dC9hLnhodG1sPD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0i
+      dXRmLTgiPz48aHRtbCB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94aHRtbCI+PGhlYWQ+
+      PHRpdGxlPkNoYXB0ZXIgVHdvPC90aXRsZT48L2hlYWQ+PGJvZHk+PGgxPkNoYXB0ZXIgVHdvPC9o
+      MT48cD5UaWRlcyBhcmUgY2F1c2VkIGJ5IGx1bmFyIGdyYXZpdHkuPC9wPjxmaWd1cmU+PGltZyBz
+      cmM9Ii4uL2ltYWdlcy9tb29uLnBuZyIgYWx0PSdtb29uJy8+PGZpZ2NhcHRpb24+VGhlIE1vb248
+      L2ZpZ2NhcHRpb24+PC9maWd1cmU+PC9ib2R5PjwvaHRtbD5QSwMEFAAAAAAAbVJVXey+973PAAAA
+      zwAAABIAAABPRUJQUy90ZXh0L2IueGh0bWw8P3htbCB2ZXJzaW9uPSIxLjAiIGVuY29kaW5nPSJ1
+      dGYtOCI/PjxodG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hodG1sIj48aGVhZD48
+      dGl0bGU+Q2hhcHRlciBPbmU8L3RpdGxlPjwvaGVhZD48Ym9keT48aDE+Q2hhcHRlciBPbmU8L2gx
+      PjxwPlRoZSBNb29uIG9yYml0cyB0aGUgRWFydGggZXZlcnkgMjcgZGF5cy48L3A+PC9ib2R5Pjwv
+      aHRtbD5QSwMEFAAAAAAAbVJVXZMgSRxGAAAARgAAABUAAABPRUJQUy9pbWFnZXMvbW9vbi5wbmeJ
+      UE5HDQoaCgAAAA1JSERSAAAAAQAAAAEIBgAAAB8VxIkAAAANSURBVHjaY2T4z1APAAOGAYBaNH1r
+      AAAAAElFTkSuQmCCUEsBAhQDFAAAAAAAbVJVXW9hqywUAAAAFAAAAAgAAAAAAAAAAAAAAIABAAAA
+      AG1pbWV0eXBlUEsBAhQDFAAAAAAAbVJVXR4L18ndAAAA3QAAABYAAAAAAAAAAAAAAIABOgAAAE1F
+      VEEtSU5GL2NvbnRhaW5lci54bWxQSwECFAMUAAAAAABtUlVdiaCegTUCAAA1AgAAEQAAAAAAAAAA
+      AAAAgAFLAQAAT0VCUFMvY29udGVudC5vcGZQSwECFAMUAAAAAABtUlVdxMqvNCUBAAAlAQAAEgAA
+      AAAAAAAAAAAAgAGvAwAAT0VCUFMvdGV4dC9hLnhodG1sUEsBAhQDFAAAAAAAbVJVXey+973PAAAA
+      zwAAABIAAAAAAAAAAAAAAIABBAUAAE9FQlBTL3RleHQvYi54aHRtbFBLAQIUAxQAAAAAAG1SVV2T
+      IEkcRgAAAEYAAAAVAAAAAAAAAAAAAACAAQMGAABPRUJQUy9pbWFnZXMvbW9vbi5wbmdQSwUGAAAA
+      AAYABgB8AQAAfAYAAAAADQotLTQwMDAwZmZkMzk3ZDExZTRmOTIwYTc4N2IxNDY4MDk2LS0NCg==
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '3646'
+      content-type:
+      - multipart/form-data; boundary=40000ffd397d11e4f920a787b1468096
+      host:
+      - localhost:5001
+    method: POST
+    uri: http://localhost:5001/v1/convert/file/async
+  response:
+    headers:
+      content-length:
+      - '167'
+      content-type:
+      - application/json
+    parsed_body:
+      error_message: null
+      failure: null
+      task_id: ff0b8dee-2cf9-4a93-8625-3a2f7613503b
+      task_meta: null
+      task_position: 1
+      task_status: pending
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/ff0b8dee-2cf9-4a93-8625-3a2f7613503b
+  response:
+    headers:
+      content-length:
+      - '170'
+      content-type:
+      - application/json
+    parsed_body:
+      error_message: null
+      failure: null
+      task_id: ff0b8dee-2cf9-4a93-8625-3a2f7613503b
+      task_meta: null
+      task_position: null
+      task_status: started
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/ff0b8dee-2cf9-4a93-8625-3a2f7613503b
+  response:
+    headers:
+      content-length:
+      - '170'
+      content-type:
+      - application/json
+    parsed_body:
+      error_message: null
+      failure: null
+      task_id: ff0b8dee-2cf9-4a93-8625-3a2f7613503b
+      task_meta: null
+      task_position: null
+      task_status: success
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/result/ff0b8dee-2cf9-4a93-8625-3a2f7613503b
+  response:
+    body:
+      string: !!binary |
+        UEsDBBQAAAAAAG06VV0AAAAAAAAAAAAAAAAKAAAAYXJ0aWZhY3RzL1BLAwQUAAAACABtOlVdByeC
+        1z4CAABKCgAACgAAAGx1bmFyLmpzb27FVk2PmzAQvedXWLS3RvkgUXa717bHqpe9VREyMASrxrZs
+        k5ZG+e+1HSBeAgmpqlRCAs+8sd88ng2HCUKBSnIocMRwAcELCj7zhBK2M7eyAKaDqcXsQSrCmc0v
+        Z8vFbHEKNzW0ZFieQlySHbHAgxmZcUEK0JVwMCwEJQnWZqY5iDL+8JsIV2VwMTFTVFGOVW6gm+fl
+        x8Xz6Qo3q3ATrmpcRii8WXZmZwpM8ujWz0rJiC4lnCkooFkkIbMl7+ZnQD1jkhOaSrCcv2+bGGfa
+        NB9RXIG0dRdVDYdIcq6jJkpxDNSGS6YEJCQjkJ65xTythmi5XA8jF0F1jcu+b2s0/NJqvgjq3HF6
+        GxzeA163YHcfFMfn/je67CQvhWr1D9zqbfMNwY5gTfNNH4HA0vr1pb8jx7Hbe5/SviI9miyDNnus
+        n7bn6a4o46ugiabgMZd877mv3kUW+CnHQoNE35gHt0S6yYnX11XBlmMFGzJX3365p3VLfkTnrzmg
+        r5wzxGVMtELajL9gqXME5jCqUPiEUlyp2aUsoytHaxY+2mQrz2TTWyWCJPZg8t7VQ635+pMPW9Mm
+        R8u8us+al0fZo6xJUlDIMEQJLhWkKK6Q+xShncR7oqs+U96uGa3T+t/Z8X6REvNi7Z/AHVt4eIvW
+        PU9qowaNlW+d/Z7l/69laiLX1KgFO/fk99XLcn1tHxssGLoJqLfLZOZzy7juhjEzQdwS2HYE1zim
+        XknwA6poj2kJEdFQeImMy6IbE3jnag/HyfEPUEsBAhQDFAAAAAAAbTpVXQAAAAAAAAAAAAAAAAoA
+        AAAAAAAAAAAQAO1BAAAAAGFydGlmYWN0cy9QSwECFAMUAAAACABtOlVdByeC1z4CAABKCgAACgAA
+        AAAAAAAAAAAApIEoAAAAbHVuYXIuanNvblBLBQYAAAAAAgACAHAAAACOAgAAAAA=
+    headers:
+      content-disposition:
+      - attachment; filename="converted_docs.zip"
+      content-length:
+      - '788'
+      content-type:
+      - application/zip
+    status:
+      code: 200
+      message: OK
+version: 1

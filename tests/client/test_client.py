@@ -615,6 +615,7 @@ def test_get_extension_from_content_type_or_url():
     assert get_extension_from_content_type_or_url("", "text/html") == ".html"
     assert get_extension_from_content_type_or_url("", "application/pdf") == ".pdf"
     assert get_extension_from_content_type_or_url("", "text/plain") == ".txt"
+    assert get_extension_from_content_type_or_url("", "application/epub+zip") == ".epub"
 
     # URL extension detection
     assert (
