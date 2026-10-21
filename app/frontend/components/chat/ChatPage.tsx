@@ -3,12 +3,13 @@
 import { HttpAgent } from "@ag-ui/client";
 import { Filter } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { Loading } from "@/components/Status";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
 	type DocumentRef,
+	giveBack,
 	loadDraft,
 	loadDraftImages,
 	loadPending,
@@ -20,7 +21,7 @@ import {
 	settlePending,
 } from "@/lib/chat";
 import { useDatabases } from "@/lib/databases";
-import { type Attachment, userContent } from "@/lib/images";
+import { type Attachment, MAX_IMAGES, userContent } from "@/lib/images";
 import {
 	getSession,
 	reconcile,
@@ -64,6 +65,11 @@ function ChatSession({
 	const [draft, setDraft] = useState(() => loadDraft(sessionId));
 	const [images, setImages] = useState(() => loadDraftImages(sessionId));
 	const [notice, setNotice] = useState<string | null>(null);
+	// The box as last rendered, read when a question comes back.
+	const box = useRef({ text: draft, images });
+	useEffect(() => {
+		box.current = { text: draft, images };
+	});
 	const [filterOpen, setFilterOpen] = useState(false);
 
 	useEffect(() => {
@@ -102,15 +108,31 @@ function ChatSession({
 	}, [sessionId, images]);
 
 	const restore = useCallback(
-		(text: string, attached: Attachment[], why: string) => {
+		(question: PendingRun, why: string) => {
+			const back = giveBack(box.current, {
+				text: question.text,
+				images: question.images ?? [],
+			});
 			// Saved as well as set: switching sessions unmounts this one and
 			// stops its run, and the question waits in that session's draft.
-			saveDraft(sessionId, text);
-			const kept = saveDraftImages(sessionId, attached);
-			setDraft(text);
-			setImages(attached);
+			saveDraft(sessionId, back.text);
+			const kept = saveDraftImages(sessionId, back.images);
+			setDraft(back.text);
+			setImages(back.images);
+			const offered =
+				(question.images ?? []).length + box.current.images.length;
 			setNotice(
-				kept ? why : `${why} Its images could not be kept: attach them again.`,
+				[
+					`${why} Your question is back in the box.`,
+					!kept || question.imagesDropped
+						? "Its images could not be kept: attach them again."
+						: null,
+					back.images.length < offered
+						? `Only ${MAX_IMAGES} images fit with one question, so some of your draft's were left out.`
+						: null,
+				]
+					.filter(Boolean)
+					.join(" "),
 			);
 		},
 		[sessionId],
@@ -141,16 +163,11 @@ function ChatSession({
 				if (outcome === "stored") {
 					setNotice("The connection dropped, but the answer was saved.");
 				} else {
-					const why =
-						failure === null
-							? "The answer was stopped. Your question is back in the box."
-							: `The answer failed: ${failure}`;
 					restore(
-						run.text,
-						run.images ?? [],
-						run.imagesDropped
-							? `${why} Its images could not be kept: attach them again.`
-							: why,
+						run,
+						failure === null
+							? "The answer was stopped."
+							: `The answer failed: ${failure}`,
 					);
 				}
 			} catch (error) {

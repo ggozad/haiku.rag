@@ -1,5 +1,5 @@
 import type { InputContent, Message } from "@ag-ui/client";
-import type { Attachment } from "./images";
+import { type Attachment, MAX_IMAGES } from "./images";
 
 export interface Citation {
 	index: number;
@@ -186,6 +186,20 @@ export function saveDraftImages(
 	} catch {
 		return false;
 	}
+}
+
+interface Draft {
+	text: string;
+	images: Attachment[];
+}
+
+// What the box holds once a question was not stored: the question, then any
+// draft the reader started meanwhile, within the images one question takes.
+export function giveBack(box: Draft, question: Draft): Draft {
+	return {
+		text: [question.text, box.text].filter((text) => text.trim()).join("\n\n"),
+		images: [...question.images, ...box.images].slice(0, MAX_IMAGES),
+	};
 }
 
 const PENDING_KEY = "haiku.rag.pending.";

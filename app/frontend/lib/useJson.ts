@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { decoded } from "./http";
 
 // GETs `url` and reports through `on` unless `signal` aborted first, so a
@@ -27,7 +27,12 @@ export async function load<T>(
 
 // GETs `url` whenever it changes, aborting the request it replaces, so a
 // response for an earlier selection never lands. A null url reads nothing.
-export function useJson<T>(url: string | null): {
+// A change of `refresh` reads the same url again and shows the last answer
+// until the new one lands.
+export function useJson<T>(
+	url: string | null,
+	refresh?: unknown,
+): {
 	data: T | null;
 	error: string | null;
 	loading: boolean;
@@ -35,10 +40,15 @@ export function useJson<T>(url: string | null): {
 	const [data, setData] = useState<T | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
+	const read = useRef(url);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: refresh only triggers a read
 	useEffect(() => {
-		setData(null);
-		setError(null);
+		if (read.current !== url) {
+			read.current = url;
+			setData(null);
+			setError(null);
+		}
 		if (url === null) {
 			setLoading(false);
 			return;
@@ -46,12 +56,15 @@ export function useJson<T>(url: string | null): {
 		const controller = new AbortController();
 		setLoading(true);
 		void load<T>(url, controller.signal, {
-			data: setData,
+			data: (value) => {
+				setData(value);
+				setError(null);
+			},
 			error: setError,
 			done: () => setLoading(false),
 		});
 		return () => controller.abort();
-	}, [url]);
+	}, [url, refresh]);
 
 	return { data, error, loading };
 }

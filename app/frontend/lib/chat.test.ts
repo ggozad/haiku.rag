@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
 	checkpoint,
 	evidenceAnchors,
+	giveBack,
 	loadDraft,
 	loadDraftImages,
 	loadPending,
@@ -16,6 +17,7 @@ import {
 	textOf,
 	toolResults,
 } from "./chat";
+import { MAX_IMAGES } from "./images";
 
 describe("messages", () => {
 	const messages: Message[] = [
@@ -218,6 +220,41 @@ describe("drafts", () => {
 		expect(saveDraftImages("s1", [image])).toBe(false);
 		expect(loadDraftImages("s1")).toEqual([]);
 		vi.unstubAllGlobals();
+	});
+});
+
+describe("giveBack", () => {
+	const image = { data: "AAAA", mimeType: "image/png", name: "a.png" };
+	const question = { text: "How many tanks?", images: [image] };
+
+	it("returns the question to an empty box", () => {
+		expect(giveBack({ text: " \n", images: [] }, question)).toEqual(question);
+	});
+
+	it("puts the question before a draft, keeping both", () => {
+		const other = { data: "BBBB", mimeType: "image/png", name: "b.png" };
+		expect(
+			giveBack({ text: "next question", images: [other] }, question),
+		).toEqual({
+			text: "How many tanks?\n\nnext question",
+			images: [image, other],
+		});
+		expect(giveBack({ text: "", images: [other] }, question)).toEqual({
+			text: "How many tanks?",
+			images: [image, other],
+		});
+	});
+
+	it("keeps the question's images first, up to the limit", () => {
+		const many = Array.from({ length: MAX_IMAGES }, (_, n) => ({
+			...image,
+			name: `${n}.png`,
+		}));
+		const back = giveBack(
+			{ text: "", images: [image] },
+			{ text: "q", images: many },
+		);
+		expect(back.images).toEqual(many);
 	});
 });
 

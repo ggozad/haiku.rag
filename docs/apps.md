@@ -43,7 +43,7 @@ The server keeps every conversation. The menu at the top left starts a new one, 
 
 ## Add documents
 
-Copy files into the `DOCS_VOLUME` folder. The ingester converts, chunks and embeds each one, and the document is searchable as soon as it finishes. The ingester updates a document when its file changes, and deletes it when the file is removed.
+Copy files into the `DOCS_VOLUME` folder. The ingester converts, chunks and embeds each one. The app finds a document at most 30 seconds after the ingester finishes it, the default of `lancedb.read_consistency_interval_seconds`. The ingester updates a document when its file changes, and deletes it when the file is removed.
 
 The chip at the top right shows the ingester's state: idle, ingesting, holding failed jobs, degraded, or unreachable. Click it for the ingestion page. It shows the queue, each source with any error from its last scan, the jobs running now and the ones that failed, with buttons to retry a failed job, cancel one, or rescan a source.
 

@@ -169,10 +169,12 @@ export default function InspectPage() {
 	if (list.filter) params.set("filter", list.filter);
 	// A database the app cannot open offers Info only.
 	const selected = databases.find((db) => db.name === source);
+	// Read again whenever the databases are, so the ingester's writes appear.
 	const listing = useJson<Listing>(
 		source && selected?.available
 			? `/api/backend/api/inspect/${encodeURIComponent(source)}/documents?${params}`
 			: null,
+		info,
 	);
 
 	const showList = (next: typeof list) => {
