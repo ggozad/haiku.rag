@@ -8,6 +8,7 @@
 - `reranking.model_kwargs`, passed to the Transformers model loader by the `cross-encoder` reranker. Other providers reject a non-empty value.
 - `GET /sources` reports each source's `database`.
 - Startup fails on two sources sharing an id (`DuplicateSourceError`), and on two `ingester.databases` keys at one location.
+- `haiku-ingester run-batch --db-name NAME` runs one database of `ingester.databases`. `IngesterApp(database_name=)` is the same in Python.
 
 ### Changed
 
@@ -18,6 +19,8 @@
 - `serve`, `run-batch` and manifest replay delete, at startup, the queued and claimed jobs of sources absent from `ingester.databases`.
 - `POST /jobs/{id}/retry` and `POST /dlq/{id}/retry` answer 409 for a job whose source is not configured.
 - `JobRepo.retry_failed` takes `source_ids=`, and `run-batch --retry` revives the failures of configured sources only.
+- `haiku-ingester serve` and `run-batch` no longer take `--db PATH`, and `IngesterApp` no longer takes `scope=`. Place databases in `lancedb.databases`.
+- `JobRepo.counts_by_status_since` and `batch_progress_counts_since` take `source_ids=`.
 - `JobRepo.claim_next(exclude_source_ids=)` replaced by `source_ids=`, the sources to claim from. `WorkerPool(client=)` replaced by `clients=`, a map from source id to client.
 - `pydantic-monty` bumped to 1.2. The sandbox iterates file objects and supports `match` statements, `os.walk`, `os.path`, `Path.glob`, `json.load` and `csv`.
 

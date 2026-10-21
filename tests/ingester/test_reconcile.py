@@ -5,13 +5,13 @@ from docling_core.types.doc.document import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import (
     APIConfig,
     AppConfig,
     FSSourceConfig,
     IngestedDatabase,
     IngesterConfig,
+    LanceDBConfig,
     QueueConfig,
     RetryPolicyConfig,
     WorkerConfig,
@@ -221,7 +221,13 @@ async def test_warns_about_documents_of_an_unconfigured_source(client, sync):
         await reconcile(client, sync, ["fs:corpus"])
 
     messages = [record.getMessage() for record in records]
-    assert [m for m in messages if "fs:retired" in m and "2 document" in m]
+    assert [
+        m
+        for m in messages
+        if "fs:retired" in m
+        and "2 document" in m
+        and "not one of this database's sources" in m
+    ]
 
 
 async def test_unattributed_documents_are_left_alone(client, sync):
@@ -413,6 +419,7 @@ async def test_queue_repairs_write_one_transaction_each(client, sync, monkeypatc
 
 def _ingester_config(tmp_path, queue_path):
     return AppConfig(
+        lancedb=LanceDBConfig(databases={"haiku.rag": str(tmp_path / "db.lancedb")}),
         ingester=IngesterConfig(
             queue=QueueConfig(path=queue_path),
             databases={
@@ -433,7 +440,7 @@ def _ingester_config(tmp_path, queue_path):
                 retry=RetryPolicyConfig(max_attempts=1),
             ),
             api=APIConfig(enabled=False),
-        )
+        ),
     )
 
 
@@ -444,16 +451,14 @@ async def test_queue_loss_does_not_strand_documents(tmp_path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     queue_path = tmp_path / "queue.db"
-    db_path = tmp_path / "db.lancedb"
+    tmp_path / "db.lancedb"
     config = _ingester_config(tmp_path, queue_path)
 
     async def run_batch():
-        return await IngesterApp(
-            config=config, scope=DatabaseScope.at(db_path)
-        ).run_batch()
+        return await IngesterApp(config=config).run_batch()
 
     async def stored_uris():
-        async with HaikuRAG(db_path, config) as rag:
+        async with HaikuRAG(config=config) as rag:
             return {doc.uri for doc in await rag.list_documents()}
 
     first = corpus / "first.md"

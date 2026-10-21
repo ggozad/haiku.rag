@@ -33,6 +33,7 @@ from haiku.rag.config import (  # noqa: E402
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.exceptions import (  # noqa: E402
     DuplicateSourceError,
+    NothingToIngestError,
     QueueError,
 )
 from haiku.rag.ingester.queue.migrations import (  # noqa: E402
@@ -52,7 +53,6 @@ from haiku.rag.store.exceptions import (  # noqa: E402
 )
 
 if TYPE_CHECKING:
-    from haiku.rag.client.scope import DatabaseScope
     from haiku.rag.ingester.app import BatchProgress, BatchProgressCallback
 
 _cli = typer.Typer(
@@ -98,6 +98,7 @@ def cli() -> None:
         DuplicateSourceError,
         ImportError,
         MigrationRequiredError,
+        NothingToIngestError,
         QueueError,
         ReadOnlyError,
         SourceUnavailableError,
@@ -258,26 +259,8 @@ def _load_manifest(path: Path) -> BatchManifest:
     return BatchManifest.model_validate(data)
 
 
-def _scope_for(db: Path | None) -> "DatabaseScope | None":
-    """`--db PATH` is the operator's explicit override: that database, whatever
-    is configured. None leaves placement to the configuration."""
-    from haiku.rag.client.scope import DatabaseScope
-
-    if db is None:
-        return None
-    try:
-        return DatabaseScope.at(db)
-    except ValueError as error:
-        raise typer.BadParameter(str(error), param_hint="--db") from error
-
-
 @_cli.command("serve")
 def serve(
-    db: Path | None = typer.Option(
-        None,
-        "--db",
-        help="LanceDB path (overrides the configured database location).",
-    ),
     host: str | None = typer.Option(
         None,
         "--host",
@@ -312,7 +295,7 @@ def serve(
         app_config.ingester.api.port = port
     if root_path is not None:
         app_config.ingester.api.root_path = root_path
-    app = IngesterApp(config=app_config, scope=_scope_for(db))
+    app = IngesterApp(config=app_config)
     asyncio.run(app.serve(api=not no_api))
 
 
@@ -331,10 +314,10 @@ _RETRY_STATUSES = {
 
 @_cli.command("run-batch")
 def run_batch(
-    db: Path | None = typer.Option(
+    db_name: str | None = typer.Option(
         None,
-        "--db",
-        help="LanceDB path (overrides the configured database location).",
+        "--db-name",
+        help="Run one database of ingester.databases, by name, instead of all.",
     ),
     dry_run: bool = typer.Option(
         False,
@@ -359,9 +342,10 @@ def run_batch(
         "document not ingested since.",
     ),
 ) -> None:
-    """Run one discover sweep across every configured source, drain the queue,
-    then exit. New and changed resources are ingested, resources that vanished
-    from a source are deleted. Exits non-zero if any job dead-letters or a
+    """Run one discover sweep across the sources of every ingested database,
+    or of the one --db-name selects, drain the queue, then exit. New and
+    changed resources are ingested, resources that vanished from a source
+    are deleted. Exits non-zero if any job dead-letters or a
     source's sweep does not complete."""
     if manifest is not None and dry_run:
         typer.echo("Error: --manifest cannot be combined with --dry-run")
@@ -376,7 +360,7 @@ def run_batch(
     asyncio.run(
         _run_batch(
             get_config(),
-            db,
+            db_name,
             dry_run=dry_run,
             output=output,
             manifest_path=manifest,
@@ -387,7 +371,7 @@ def run_batch(
 
 async def _run_batch(
     app_config: AppConfig,
-    db_path: Path | None,
+    db_name: str | None,
     *,
     dry_run: bool = False,
     output: Path | None = None,
@@ -396,7 +380,7 @@ async def _run_batch(
 ) -> None:
     from haiku.rag.ingester.app import IngesterApp
 
-    app = IngesterApp(config=app_config, scope=_scope_for(db_path))
+    app = IngesterApp(config=app_config, database_name=db_name)
     if dry_run:
         report = await app.run_batch_dry_run()
         if report.failed_sweeps:

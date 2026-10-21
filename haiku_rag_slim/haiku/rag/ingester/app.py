@@ -12,7 +12,11 @@ from sqlalchemy.engine import make_url
 
 from haiku.rag.config import AppConfig, SourceConfig
 from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
-from haiku.rag.ingester.exceptions import DuplicateSourceError, QueueError
+from haiku.rag.ingester.exceptions import (
+    DuplicateSourceError,
+    NothingToIngestError,
+    QueueError,
+)
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.base import max_attempts
 from haiku.rag.ingester.pollers.manager import PollerManager
@@ -22,12 +26,13 @@ from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.reconcile import reconcile
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
+from haiku.rag.uri import is_local_uri, uri_to_path
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
     from haiku.rag.client import HaikuRAG
-    from haiku.rag.client.scope import DatabaseRef, DatabaseScope
+    from haiku.rag.client.scope import DatabaseRef
 
 logger = logging.getLogger(__name__)
 
@@ -82,38 +87,44 @@ class IngesterApp:
     WorkerPool, and a HaikuRAG client for the worker pool to ingest through.
     """
 
-    def __init__(self, *, config: AppConfig, scope: "DatabaseScope | None" = None):
+    def __init__(self, *, config: AppConfig, database_name: str | None = None):
         """The ingester over every database `ingester.databases` names, or
-        over the one `scope` covers, fed by the configured sources."""
+        over the one `database_name` selects, fed by its configured sources."""
         from haiku.rag.client.scope import DatabaseScope
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+        from haiku.rag.store.exceptions import UnknownDatabaseError
 
         self._config = config
         ingested = config.ingester.databases
-        self._databases: list[tuple[DatabaseRef, list[SourceConfig]]]
-        if scope is not None:
-            if len(ingested) > 1:
-                raise AmbiguousDatabaseError(
-                    "--db PATH places one database, and ingester.databases "
-                    f"names {', '.join(ingested)}"
-                )
-            scope.refuse_tags("haiku-ingester writes")
-            [ref] = scope.databases
-            self._databases = [
-                (
-                    ref,
-                    [source for entry in ingested.values() for source in entry.sources],
-                )
-            ]
-        else:
-            self._databases = [
-                (
-                    DatabaseScope.resolve(config, database_name=name).databases[0],
-                    entry.sources,
-                )
-                for name, entry in ingested.items()
-            ]
-        _refuse_shared_locations([ref for ref, _ in self._databases])
+        if not ingested:
+            raise NothingToIngestError(
+                "ingester.databases names no database. Map each database to "
+                "the sources it is ingested from"
+            )
+        if database_name is not None and database_name not in ingested:
+            raise UnknownDatabaseError(
+                f"unknown database {database_name!r}: ingester.databases names "
+                f"{', '.join(ingested) or 'none'}"
+            )
+        databases = [
+            (
+                DatabaseScope.resolve(config, database_name=name).databases[0],
+                entry.sources,
+            )
+            for name, entry in ingested.items()
+        ]
+        _refuse_shared_locations([ref for ref, _ in databases])
+        self._databases: list[tuple[DatabaseRef, list[SourceConfig]]] = [
+            (ref, sources)
+            for ref, sources in databases
+            if database_name in (None, ref.name)
+        ]
+        self._unselected_sources = [
+            source
+            for ref, sources in databases
+            if database_name not in (None, ref.name)
+            for source in sources
+        ]
+        self._configured_source_ids: set[str] = set()
         queue = config.ingester.queue
         if (
             queue.dburi
@@ -166,10 +177,15 @@ class IngesterApp:
                 clients = {
                     ref.name: await self._open(stack, ref) for ref, _ in self._databases
                 }
+                # Every local database exists once open, so comparing directory
+                # identities catches two names the filesystem treats as one.
+                _refuse_shared_locations([ref for ref, _ in self._databases])
             except BaseException:
                 await self._pollers.close_sources()
                 raise
-            cancelled = await self._jobs.cancel_unconfigured(source_databases)
+            cancelled = await self._jobs.cancel_unconfigured(
+                self._configured_source_ids
+            )
             if cancelled:
                 logger.info(
                     "Deleted %d queued or claimed job(s) of sources no longer "
@@ -245,19 +261,32 @@ class IngesterApp:
             raise type(error)(f"database {ref.name!r}: {error}") from error
 
     async def _build_pollers(self) -> PollerManager:
-        """One poller per configured source, every database's together.
-        Raises DuplicateSourceError when two sources share an id."""
+        """One poller per source of the selected databases, together. Records
+        the id of every configured source, selected or not, and raises
+        DuplicateSourceError when two share one."""
         from haiku.rag.converters import get_converter
+        from haiku.rag.ingester.pollers.factory import build_source
 
         assert self._jobs is not None and self._sync is not None
+        supported_extensions = get_converter(self._config).supported_extensions
         manager = PollerManager(
             configs=[source for _, sources in self._databases for source in sources],
             job_repo=self._jobs,
             sync_repo=self._sync,
-            supported_extensions=get_converter(self._config).supported_extensions,
+            supported_extensions=supported_extensions,
             default_max_attempts=self._config.ingester.workers.retry.max_attempts,
         )
         ids = [poller.source_id for poller in manager.pollers]
+        # An unselected source's id is known only once its adapter is built.
+        try:
+            for config in self._unselected_sources:
+                source = build_source(config, supported_extensions=supported_extensions)
+                ids.append(source.source_id)
+                await source.aclose()
+        except BaseException:
+            await manager.close_sources()
+            raise
+        self._configured_source_ids = set(ids)
         duplicates = sorted(
             {source_id for source_id in ids if ids.count(source_id) > 1}
         )
@@ -265,7 +294,7 @@ class IngesterApp:
             await manager.close_sources()
             raise DuplicateSourceError(
                 f"source id(s) {', '.join(duplicates)} name several configured "
-                "sources; give each source its own id"
+                "sources. Give each source its own id"
             )
         return manager
 
@@ -329,7 +358,9 @@ class IngesterApp:
         assert self._pool is not None and self._jobs is not None
         total = 0
         while True:
-            counts = await self._jobs.batch_progress_counts_since(started_at)
+            counts = await self._jobs.batch_progress_counts_since(
+                started_at, source_ids=self._source_databases()
+            )
             queued = counts.get("queued", 0)
             claimed = counts.get("claimed", 0)
             outstanding = queued + claimed
@@ -361,7 +392,9 @@ class IngesterApp:
                 )
                 break
             await asyncio.sleep(0.1)
-        completed = await self._jobs.counts_by_status_since(started_at)
+        completed = await self._jobs.counts_by_status_since(
+            started_at, source_ids=self._source_databases()
+        )
         return BatchReport(
             succeeded=completed.get("succeeded", 0),
             dead=completed.get("dead", 0),
@@ -490,10 +523,11 @@ class IngesterApp:
             configured = {source.source_id for source in self._pollers.sources}
             manifest_sources = {change.source_id for change in manifest.changes}
             missing = sorted(manifest_sources - configured)
-            if missing:  # pragma: no cover
+            if missing:
                 await self._pollers.close_sources()
                 raise ValueError(
-                    "Manifest references unconfigured source(s): " + ", ".join(missing)
+                    "Manifest names source(s) this run does not ingest: "
+                    + ", ".join(missing)
                 )
 
             seen: set[tuple[str, str]] = set()
@@ -514,10 +548,7 @@ class IngesterApp:
             manifest_change_keys = {
                 _manifest_change_key(change) for change in manifest.changes
             }
-            live_jobs = [
-                *await self._jobs.list_jobs(status=JobStatus.QUEUED, limit=10_000),
-                *await self._jobs.list_jobs(status=JobStatus.CLAIMED, limit=10_000),
-            ]
+            live_jobs = await self._jobs.live_jobs(configured)
             stale_jobs: list[Job] = []
             live_manifest_keys: set[tuple[str, str, str, str | None]] = set()
             for job in live_jobs:
@@ -629,16 +660,26 @@ def _refuse_shared_locations(refs: "list[DatabaseRef]") -> None:
     of the same tables."""
     from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
-    placed: dict[str, str] = {}
+    placed: dict[str | tuple[int, int], str] = {}
     for ref in refs:
-        location = (
-            str(ref.location.resolve())
-            if isinstance(ref.location, Path)
-            else ref.location.rstrip("/")
-        )
+        location = _location_identity(ref.location)
         if location in placed:
             raise AmbiguousDatabaseError(
                 f"ingester.databases names {placed[location]!r} and {ref.name!r} "
                 "at one location, and a database has one writer"
             )
         placed[location] = ref.name
+
+
+def _location_identity(location: "str | Path") -> str | tuple[int, int]:
+    """The identity of a database location: device and inode for an existing
+    local directory, the resolved path for a missing one, the URI for a
+    remote one."""
+    if isinstance(location, str) and not is_local_uri(location):
+        return location.rstrip("/")
+    path = (location if isinstance(location, Path) else uri_to_path(location)).resolve()
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return str(path)
+    return (stat.st_dev, stat.st_ino)

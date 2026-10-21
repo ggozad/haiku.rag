@@ -341,7 +341,6 @@ Workers keep a second breaker per source over job failures. After 5 consecutive 
 ```bash
 haiku-ingester serve                          # workers, pollers and API
 haiku-ingester serve --no-api                 # workers and pollers only
-haiku-ingester serve --db /path.lancedb       # explicit database
 haiku-ingester serve --host 0.0.0.0           # bind the API on all interfaces
 haiku-ingester serve --port 9000              # API port
 ```
@@ -426,9 +425,11 @@ location /ingester/ {
 `run-batch` runs one discovery sweep over every source, drains the queue and exits. New and changed files are ingested, and, with `delete_orphans`, documents whose files are gone are deleted. It is the mode for building a database in CI or on a schedule.
 
 ```bash
-haiku-ingester run-batch
-haiku-ingester run-batch --db rag.lancedb
+haiku-ingester run-batch                     # every database in ingester.databases
+haiku-ingester run-batch --db-name papers    # one of them
 ```
+
+`--db-name` sweeps that database's sources and drains their jobs only. `--retry`, `--dry-run` and `--manifest` follow the selection, and the other databases' queued jobs stay queued. It is still a writer of that database, so it cannot run while `serve` holds it.
 
 It exits non-zero when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 

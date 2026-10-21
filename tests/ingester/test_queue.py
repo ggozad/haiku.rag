@@ -2267,3 +2267,38 @@ async def test_retry_failed_stays_within_its_namespace(
 
     assert await _status(own, mine.id) is JobStatus.QUEUED
     assert await _status(foreign, theirs.id) is JobStatus.DEAD
+
+
+async def test_run_counts_cover_the_given_sources_only(jobs):
+    since = datetime.now(UTC) - timedelta(seconds=1)
+    for source_id in ("a", "b"):
+        assert await jobs.enqueue(source_id, "queued", JobOp.UPSERT) is not None
+        done = await jobs.enqueue(source_id, "done", JobOp.UPSERT)
+        assert done is not None
+        claimed = await jobs.claim_next("w", source_ids={source_id})
+        assert claimed is not None
+        assert await jobs.mark_succeeded(claimed.id, "w")
+
+    assert await jobs.counts_by_status_since(since, source_ids={"a"}) == {
+        "succeeded": 1
+    }
+    assert await jobs.batch_progress_counts_since(since, source_ids={"a"}) == {
+        "queued": 1,
+        "succeeded": 1,
+    }
+
+
+async def test_live_jobs_lists_every_queued_and_claimed_job_of_the_sources(jobs):
+    for i in range(60):
+        assert await jobs.enqueue("a", f"u{i}", JobOp.UPSERT) is not None
+    claimed = await jobs.claim_next("w", source_ids={"a"})
+    assert claimed is not None
+    finished = await jobs.claim_next("w", source_ids={"a"})
+    assert finished is not None and await jobs.mark_succeeded(finished.id, "w")
+    assert await jobs.enqueue("b", "other", JobOp.UPSERT) is not None
+
+    live = await jobs.live_jobs({"a"})
+
+    assert len(live) == 59
+    assert {job.source_id for job in live} == {"a"}
+    assert {job.status for job in live} == {JobStatus.QUEUED, JobStatus.CLAIMED}
