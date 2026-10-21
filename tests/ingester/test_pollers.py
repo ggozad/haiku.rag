@@ -850,3 +850,87 @@ async def test_dry_run_manifest_leaves_out_a_failed_sources_partial_changes(
 
     assert failed == ["broken"]
     assert {c.source_id for c in manifest.changes} == {"ok"}
+
+
+# --- last error ---
+
+
+async def test_a_failed_sweep_records_its_error_until_a_sweep_succeeds(
+    fs_config, jobs, sync
+):
+    source = _StubSource("src", [])
+    source.fail_with = RuntimeError("upstream down")
+    poller = _periodic(source, fs_config, jobs, sync)
+    before = datetime.now(UTC)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        assert await poller._sweep_once() is False
+
+    assert [r.getMessage() for r in records] == [
+        "discover() failed for src (consecutive=1): upstream down"
+    ]
+    assert poller.last_error == "upstream down"
+    assert poller.last_error_at is not None and poller.last_error_at >= before
+
+    source.fail_with = None
+    assert await poller._sweep_once() is True
+
+    assert (poller.last_error, poller.last_error_at) == (None, None)
+
+
+async def test_a_failed_dry_run_records_its_error_until_one_succeeds(
+    fs_config, jobs, sync
+):
+    source = _StubSource("src", [])
+    source.fail_with = EmptyListingError("src", 3)
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        ok, _summary, _changes = await poller._dry_run_once()
+
+    assert ok is False
+    assert [r.getMessage() for r in records] == [
+        "dry-run discover() failed for src (consecutive=1): "
+        + str(EmptyListingError("src", 3))
+    ]
+    assert poller.last_error == str(EmptyListingError("src", 3))
+
+    source.fail_with = None
+    ok, _summary, _changes = await poller._dry_run_once()
+
+    assert ok is True
+    assert poller.last_error is None
+
+
+async def test_an_error_without_a_message_is_named_by_its_type(fs_config, jobs, sync):
+    source = _StubSource("src", [])
+    source.fail_with = TimeoutError()
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        await poller._sweep_once()
+
+    assert [r.getMessage() for r in records] == [
+        "discover() failed for src (consecutive=1): "
+    ]
+
+    assert poller.last_error == "TimeoutError"
+
+
+async def test_a_failed_watch_loop_records_its_error(tmp_path, jobs, sync, monkeypatch):
+    async def _failing_watch(*_, **__):
+        raise RuntimeError("inotify limit reached")
+        yield  # pragma: no cover - makes this an async generator
+
+    monkeypatch.setattr("haiku.rag.ingester.pollers.fs.awatch", _failing_watch)
+    poller = _fs_poller(tmp_path, jobs, sync)
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.ingester.pollers.fs"), logging.ERROR
+    ) as records:
+        await poller._watch_loop()
+
+    assert [r.getMessage() for r in records] == [
+        "watchfiles loop failed for local: inotify limit reached"
+    ]
+    assert poller.last_error == "inotify limit reached"

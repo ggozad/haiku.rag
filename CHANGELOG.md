@@ -6,7 +6,7 @@
 
 - EPUB ingestion (`.epub`, `application/epub+zip`) through `docling-local` and `docling-serve`. Pictures carry no image data.
 - `reranking.model_kwargs`, passed to the Transformers model loader by the `cross-encoder` reranker. Other providers reject a non-empty value.
-- `GET /sources` reports each source's `database`.
+- `GET /sources` reports each source's `database`, and `last_error` and `last_error_at` from its last failed discovery, cleared by the next successful sweep. The dashboard marks such a source.
 - Startup fails on two sources sharing an id (`DuplicateSourceError`), and on two `ingester.databases` keys at one location.
 - `haiku-ingester run-batch --db-name NAME` runs one database of `ingester.databases`. `IngesterApp(database_name=)` is the same in Python.
 
@@ -16,6 +16,7 @@
 - `ingester.sources` replaced by `ingester.databases`, a map from a database name to its sources. A configuration carrying `ingester.sources` fails to load in every program that reads it, `haiku-rag` and the MCP server included. Migration: `ingester.databases: {NAME: {sources: <list>}}`, NAME the key in `lancedb.databases`, or `haiku.rag` when none is configured.
 - `haiku-ingester` writes every database `ingester.databases` names, each through its own client, from one process, queue and control plane. Other `lancedb.databases` entries, tagged ones included, no longer stop it from starting.
 - `GET /database` replaced by `GET /databases/{name}`. The dashboard's database panel selects among the ingested databases.
+- `serve` and `run-batch` refuse to start when `ingester.databases` names no database (`NothingToIngestError`).
 - `serve`, `run-batch` and manifest replay delete, at startup, the queued and claimed jobs of sources absent from `ingester.databases`.
 - `POST /jobs/{id}/retry` and `POST /dlq/{id}/retry` answer 409 for a job whose source is not configured.
 - `JobRepo.retry_failed` takes `source_ids=`, and `run-batch --retry` revives the failures of configured sources only.

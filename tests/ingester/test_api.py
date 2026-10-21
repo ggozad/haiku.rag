@@ -431,6 +431,8 @@ async def test_sources_lists_configured(tmp_path, jobs, sync):
     assert payload[0]["source_id"] == "local"
     assert payload[0]["database"] == "docs"
     assert payload[0]["type"] == "fs"
+    assert payload[0]["last_error"] is None
+    assert payload[0]["last_error_at"] is None
     assert payload[0]["circuit_breaker_open"] is False
 
 
@@ -869,6 +871,22 @@ async def test_each_ingested_database_answers_under_its_name(tmp_path, jobs, syn
         b = await client.get("/databases/b")
 
     assert (a.json()["exists"], b.json()["exists"]) == (True, False)
+
+
+async def test_a_database_name_with_a_slash_answers(tmp_path, jobs, sync):
+    await _seed_lancedb(tmp_path / "docs.lancedb")
+    state = APIState(
+        config=AppConfig(),
+        job_repo=jobs,
+        sync_repo=sync,
+        databases=_ingesting("team/docs", tmp_path / "docs.lancedb"),
+    )
+
+    async with _client(state) as client:
+        resp = await client.get("/databases/team%2Fdocs")
+
+    assert resp.status_code == 200
+    assert resp.json()["exists"] is True
 
 
 async def test_a_database_the_ingester_does_not_write_is_not_found(

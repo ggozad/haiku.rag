@@ -31,28 +31,49 @@ ingester:
           delete_orphans: true
 ```
 
-With `lancedb.databases` configured, the key names one of its entries:
+With `lancedb.databases` configured, each key names one of its entries. One process ingests every database it names:
 
 ```yaml
 lancedb:
   databases:
-    docs: s3://my-bucket/docs.lancedb
-    docs-release: {location: "s3://my-bucket/docs.lancedb", tag: v1}
+    papers: /srv/haiku/papers.lancedb
+    wiki: s3://my-bucket/wiki.lancedb
+    papers-release: {location: /srv/haiku/papers.lancedb, tag: v1}
 
 ingester:
   databases:
-    docs:
+    papers:
+      sources:
+        - type: fs
+          id: papers
+          root: /srv/papers
+    wiki:
       sources:
         - type: s3
-          id: docs-inbox
-          uri: s3://my-bucket/incoming/
+          id: wiki-export
+          uri: s3://my-bucket/wiki-export/
+        - type: http
+          id: wiki-pages
+          urls: [https://example.com/handbook.html]
 ```
 
-The ingester writes every database a key names, each through its own client, and leaves the other entries to readers, such as `docs-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. `ingester.sources` is no longer read: a configuration carrying it fails at load.
+```bash
+haiku-ingester serve                         # papers and wiki
+haiku-ingester run-batch                     # one sweep over both, then exit
+haiku-ingester run-batch --db-name wiki      # wiki's sources only
+```
 
-Source ids are unique across every database: startup fails when two sources share an id, given or derived from their target. Two keys whose databases sit at one location fail startup too, since a database has one writer. Each open database holds its own embedder client.
+The ingester writes every database a key names, each through its own client, and leaves the other entries to readers, such as `papers-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. A configuration carrying `ingester.sources` fails at load. `serve` and `run-batch` refuse to start when `ingester.databases` names no database.
 
-Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document another source ingested last, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing while it still has documents it listed before. The sweep fails instead. To retire a source, remove it from the configuration, and delete its documents by hand if they should go. Its queued and claimed jobs are deleted when `serve` or `run-batch` next starts, and its finished jobs stay until `retention_days` prunes them. This relies on one ingester per queue namespace (see [Postgres](#postgres)). `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+Source ids are unique across every database: startup fails when two sources share an id, given or derived from their target. Two keys whose databases sit at one location fail startup too, a path and its `file://` URI included, and two names a case-insensitive filesystem treats as one directory, since a database has one writer. Each open database holds its own embedder client.
+
+Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document another source ingested last, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing while it still has documents it listed before. The sweep fails instead. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format).
+
+### Removing or moving a source
+
+To retire a source, remove it from the configuration, and delete its documents by hand if they should go. Its queued and claimed jobs are deleted when `serve`, `run-batch` or a manifest replay next starts, never by `--dry-run`. Its finished jobs stay until `retention_days` prunes them. This relies on one ingester per queue namespace (see [Postgres](#postgres)).
+
+A source moved under another key keeps its id and its queue record. At the next start, reconciliation finds its documents missing from the new database and ingests them again there. The old database keeps its copies until they are deleted by hand.
 
 ### Filesystem
 
@@ -374,7 +395,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 |---|---|---|
 | `GET` | `/` | Browser dashboard. Unauthenticated. Its script sends the token on its own requests |
 | `GET` | `/health` | Queue counts, live workers and pollers, worker breaker state. `status` is `degraded` when a worker or poller is down or the worker breaker is open. Unauthenticated |
-| `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason |
+| `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason, and the error and time of the last failed discovery, cleared by the next successful sweep |
 | `POST` | `/sources/{id}/refresh` | Run a sweep now. Skipped (`refreshed: false`) while the source has queued or claimed jobs or its breaker is open |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |
@@ -387,7 +408,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `GET` | `/config` | The effective configuration, defaults filled in and secrets redacted, as YAML text in a JSON `yaml` field |
 | `GET` | `/providers` | Reachability of each `providers.docling_serve.base_url` entry (`/health`, 2 s timeout) |
 
-OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds.
+OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds. A source whose last discovery failed is marked `sweep failed`, with the error on hover. With more than one database, the sources table names each source's database, and the database panel selects the database it reports on.
 
 ![Ingester dashboard mid-ingest: queue depth, per-source health, active and recent jobs](img/ingester-dashboard.png)
 
@@ -429,7 +450,7 @@ haiku-ingester run-batch                     # every database in ingester.databa
 haiku-ingester run-batch --db-name papers    # one of them
 ```
 
-`--db-name` sweeps that database's sources and drains their jobs only. `--retry`, `--dry-run` and `--manifest` follow the selection, and the other databases' queued jobs stay queued. It is still a writer of that database, so it cannot run while `serve` holds it.
+`--db-name` sweeps that database's sources and drains their jobs only. `--retry` and `--dry-run` follow the selection, and the other databases' queued jobs stay queued. `--manifest` takes a manifest from a dry run with the same `--db-name`, and refuses one naming another database's sources. It is still a writer of that database, so it must not run while `serve` writes it.
 
 It exits non-zero when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 
@@ -474,7 +495,7 @@ ingester:
           root: /srv/handbook
 ```
 
-When two sources cover the same URI (nested roots or prefixes, one URL in two `http` sources), the latest ingestion takes ownership and a warning names both ids. Overlapping sources are a configuration error.
+When two sources of one database cover the same URI (nested roots or prefixes, one URL in two `http` sources), the latest ingestion takes ownership and a warning names both ids. Overlapping sources within a database are a configuration error. Sources of different databases may cover the same URI: each database holds its own copy.
 
 ### Reconciliation at startup
 
@@ -571,7 +592,7 @@ ingester:
 
 The `asyncpg` driver comes with the `ingester` extra. `dburi` overrides `path` and the `--queue` flag.
 
-Several ingesters share one Postgres queue, each under its own namespace and each writing its own databases. An ingester claims, counts, prunes and serves through its API the rows of its namespace and no others, so source ids need to be unique within a namespace, not across the queue. A namespace is stable across restarts and upgrades: an ingester started under a new one does not see the rows recorded under the old. Two processes under one namespace are two writers of one database, and a database has one writer (see [storage](configuration/storage.md)). Each would also delete the other's queued and claimed jobs at startup, as jobs of sources it does not configure. The database role sees every row: namespaces separate ingesters in the application, not in Postgres.
+Several ingesters share one Postgres queue, each under its own namespace and each writing its own databases. An ingester claims, counts, prunes and serves through its API the rows of its namespace and no others, so source ids need to be unique within a namespace, not across the queue. A namespace is stable across restarts and upgrades: an ingester started under a new one does not see the rows recorded under the old. Two constraints hold independently. A namespace has one process: a second one deletes the first's queued and claimed jobs at startup, as jobs of sources it does not configure. A database has one writer (see [storage](configuration/storage.md)): two namespaces never ingest into the same database. The database role sees every row: namespaces separate ingesters in the application, not in Postgres.
 
 `serve`, `run-batch` and `--dry-run` refuse a server `dburi` without a namespace, and never create or migrate a server queue: they read its schema version and fail naming the command to run. A SQLite queue is owned by one process, migrates itself at startup and records its rows under `namespace`, empty unless configured.
 
