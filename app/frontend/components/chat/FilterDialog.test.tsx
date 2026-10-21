@@ -11,7 +11,7 @@ const doc = (source: string, n: number) => ({
 	source,
 });
 
-const alpha = Array.from({ length: 620 }, (_, n) => doc("alpha", n));
+const alpha = Array.from({ length: 120 }, (_, n) => doc("alpha", n));
 let urls: URL[];
 let held: Promise<void> | null;
 let failAt: number | null;
@@ -23,7 +23,7 @@ beforeEach(() => {
 	held = null;
 	failAt = null;
 	gammaDown = false;
-	claimed = 620;
+	claimed = 120;
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async (url: string) => {
@@ -76,25 +76,31 @@ describe("FilterDialog", () => {
 	it("lists a page per database, says how many there are, and shows more", async () => {
 		const user = userEvent.setup();
 		open();
-		await screen.findByText("50 of 620");
+		await screen.findByText("50 of 120");
 		expect(screen.getByText("1 of 1")).toBeTruthy();
 		await user.click(screen.getByRole("button", { name: "Show more" }));
 		// Past the typing delay, which must not undo the page shown since.
 		await new Promise((resolve) => setTimeout(resolve, 300));
-		await screen.findByText("100 of 620");
+		await screen.findByText("100 of 120");
 		expect(screen.getByText("alpha report 0")).toBeTruthy();
 		expect(screen.getByText("alpha report 99")).toBeTruthy();
 		expect(screen.getByText("1 of 1")).toBeTruthy();
 	});
 
-	it("shows more past the backend's page limit", async () => {
+	it("asks for each further page at the page size, by offset", async () => {
 		const user = userEvent.setup();
 		open();
-		await screen.findByText("50 of 620");
-		for (let shown = 100; shown <= 600; shown += 50) {
-			await user.click(screen.getByRole("button", { name: "Show more" }));
-			await screen.findByText(`${shown} of 620`);
-		}
+		await screen.findByText("50 of 120");
+		await user.click(screen.getByRole("button", { name: "Show more" }));
+		await screen.findByText("100 of 120");
+		await user.click(screen.getByRole("button", { name: "Show more" }));
+		await screen.findByText("120 of 120");
+		expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+		const further = urls.filter((url) => url.searchParams.get("source"));
+		expect(further.map((url) => url.searchParams.get("offset"))).toEqual([
+			"50",
+			"100",
+		]);
 		expect(urls.every((url) => url.searchParams.get("limit") === "50")).toBe(
 			true,
 		);
@@ -104,11 +110,11 @@ describe("FilterDialog", () => {
 		const user = userEvent.setup();
 		failAt = 50;
 		open();
-		await screen.findByText("50 of 620");
+		await screen.findByText("50 of 120");
 		await user.click(screen.getByRole("button", { name: "Show more" }));
 		await screen.findByText(/read failed/);
 		await user.click(screen.getByRole("button", { name: "Show more" }));
-		await screen.findByText("100 of 620");
+		await screen.findByText("100 of 120");
 		expect(urls.map((url) => url.searchParams.get("offset")).slice(-2)).toEqual(
 			["50", "50"],
 		);
@@ -118,10 +124,10 @@ describe("FilterDialog", () => {
 		const user = userEvent.setup();
 		gammaDown = true;
 		open();
-		await screen.findByText("50 of 620");
+		await screen.findByText("50 of 120");
 		expect(screen.getByText(/database unavailable/)).toBeTruthy();
 		await user.click(screen.getByRole("button", { name: "Show more" }));
-		await screen.findByText("100 of 620");
+		await screen.findByText("100 of 120");
 		expect(urls.at(-1)?.searchParams.get("source")).toBe("alpha");
 		expect(urls.at(-1)?.searchParams.get("offset")).toBe("50");
 	});
@@ -129,15 +135,13 @@ describe("FilterDialog", () => {
 	it("stops offering more once a page comes back short", async () => {
 		const user = userEvent.setup();
 		// The total counts documents the pages no longer reach.
-		claimed = 700;
+		claimed = 200;
 		open();
-		await screen.findByText("50 of 700");
-		for (let shown = 100; shown <= 600; shown += 50) {
-			await user.click(screen.getByRole("button", { name: "Show more" }));
-			await screen.findByText(`${shown} of 700`);
-		}
+		await screen.findByText("50 of 200");
 		await user.click(screen.getByRole("button", { name: "Show more" }));
-		await screen.findByText("620 of 700");
+		await screen.findByText("100 of 200");
+		await user.click(screen.getByRole("button", { name: "Show more" }));
+		await screen.findByText("120 of 200");
 		expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
 	});
 
@@ -148,7 +152,7 @@ describe("FilterDialog", () => {
 			release = resolve;
 		});
 		open();
-		await screen.findByText("50 of 620");
+		await screen.findByText("50 of 120");
 		await user.type(
 			screen.getByPlaceholderText("Find a document"),
 			"report 11",
