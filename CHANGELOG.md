@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.99.0] - 2026-10-21
+
 ### Added
 
 - EPUB ingestion (`.epub`, `application/epub+zip`) through `docling-local` and `docling-serve`. Pictures carry no image data.
@@ -3024,7 +3026,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.98.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.99.0...HEAD
+[0.99.0]: https://github.com/ggozad/haiku.rag/compare/0.98.0...0.99.0
 [0.98.0]: https://github.com/ggozad/haiku.rag/compare/0.97.0...0.98.0
 [0.97.0]: https://github.com/ggozad/haiku.rag/compare/0.96.1...0.97.0
 [0.96.1]: https://github.com/ggozad/haiku.rag/compare/0.96.0...0.96.1
