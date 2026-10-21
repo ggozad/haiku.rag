@@ -883,7 +883,7 @@ class TestDoclingLocalConverter:
         """`fetch_remote_images=True` decodes inline `data:` URIs into picture
         bytes via the HTML backend. Default behavior."""
         png_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )
         html = f'<html><body><p>before</p><img src="data:image/png;base64,{png_b64}" alt="dot"/><p>after</p></body></html>'
@@ -902,7 +902,7 @@ class TestDoclingLocalConverter:
         bytes — even for inline `data:` URIs (docling's `fetch_images` gates
         all image decoding, not just remote fetches)."""
         png_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )
         html = f'<html><body><img src="data:image/png;base64,{png_b64}"/></body></html>'
@@ -927,7 +927,7 @@ class TestDoclingLocalConverter:
         upstream limitation, not something this PR can address.
         """
         png_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )
         md = (
@@ -1117,7 +1117,7 @@ class TestDoclingLocalConverter:
         from docling.backend import html_backend as html_backend_module
 
         canned_png = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )
         good_url = "https://cdn.example.com/static/cat.png"
@@ -1150,7 +1150,7 @@ class TestDoclingLocalConverter:
         )
 
         png_b64 = (
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
         )
         html = (
@@ -1523,7 +1523,7 @@ opens before its first heading and links to <a href="https://example.com/s">sear
 <p>Use <code>haiku_rag.search</code> for snake_case and an
 <a href="https://example.com">inline link</a> with &amp; entities.</p>
 <figure>
-  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="/>
+  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="/>
   <figcaption>Figure 1: a <code>code</code> caption</figcaption>
 </figure>
 <table><tr><th>Key</th><td>Value with <code>code</code></td></tr></table>
