@@ -5,6 +5,7 @@ pruning, not embedding."""
 
 import asyncio
 import logging
+import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -131,14 +132,17 @@ def use_client(monkeypatch):
     test."""
 
     def _install(client):
-        @asynccontextmanager
-        async def _cm(*_, **__):
-            yield client
+        """`client` serves every database, or a dict maps a database name to
+        its client."""
 
-        # The app opens the databases its scope covers: the double stands in
-        # for `_covering`.
+        @asynccontextmanager
+        async def _cm(scope):
+            yield client[scope.names[0]] if isinstance(client, dict) else client
+
+        # The app opens each database through `_covering`: the double stands
+        # in for it.
         stub = MagicMock()
-        stub._covering = lambda *a, **k: _cm()
+        stub._covering = lambda scope, *a, **k: _cm(scope)
         monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
 
     return _install
@@ -886,7 +890,7 @@ async def test_run_batch_from_manifest_rejects_unrelated_pending_work(
     engine = await open_queue(config.ingester.queue)
     try:
         jobs = JobRepo(engine)
-        await jobs.enqueue("other", "file:///outside.md", op=JobOp.UPSERT)
+        await jobs.enqueue("local", "file:///outside.md", op=JobOp.UPSERT)
     finally:
         await engine.dispose()
 
@@ -1083,3 +1087,196 @@ async def test_serve_closes_sources_after_pool_stops(tmp_path, use_client, monke
         await asyncio.wait_for(task, timeout=5.0)
 
     assert order == ["stop_pool", "close_sources"]
+
+
+# --- several databases ---
+
+
+def _two_databases(tmp_path) -> AppConfig:
+    for name in ("papers", "wiki"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / f"{name}.md").write_text(name)
+    return AppConfig.model_validate(
+        {
+            "lancedb": {
+                "databases": {
+                    name: str(tmp_path / f"{name}.lancedb")
+                    for name in ("papers", "wiki")
+                }
+            },
+            "ingester": {
+                "queue": {"path": str(tmp_path / "queue.db")},
+                "workers": {
+                    "worker_count": 2,
+                    "poll_idle_interval_s": 0.05,
+                    "retry": {"max_attempts": 1},
+                },
+                "api": {"enabled": False},
+                "databases": {
+                    name: {
+                        "sources": [
+                            {
+                                "type": "fs",
+                                "id": name,
+                                "root": str(tmp_path / name),
+                                "poll_interval_s": 3600.0,
+                            }
+                        ]
+                    }
+                    for name in ("papers", "wiki")
+                },
+            },
+        }
+    )
+
+
+def _ingested(client) -> list[str]:
+    return [
+        uri_to_path(call.args[0]).name
+        for call in client._ingest_observed.await_args_list
+    ]
+
+
+async def test_run_batch_ingests_each_database_through_its_own_client(
+    tmp_path, use_client
+):
+    papers, wiki = _mock_client(), _mock_client()
+    use_client({"papers": papers, "wiki": wiki})
+
+    report = await IngesterApp(config=_two_databases(tmp_path)).run_batch()
+
+    assert (report.succeeded, report.dead) == (2, 0)
+    assert _ingested(papers) == ["papers.md"]
+    assert _ingested(wiki) == ["wiki.md"]
+
+
+async def test_serve_ingests_each_database_through_its_own_client(tmp_path, use_client):
+    papers, wiki = _mock_client(), _mock_client()
+    use_client({"papers": papers, "wiki": wiki})
+    app = IngesterApp(config=_two_databases(tmp_path))
+
+    task = asyncio.create_task(app.serve(api=False))
+    try:
+        await _wait_until(lambda: _ingested(papers) and _ingested(wiki))
+    finally:
+        task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5.0)
+
+    assert _ingested(papers) == ["papers.md"]
+    assert _ingested(wiki) == ["wiki.md"]
+
+
+async def test_each_database_is_reconciled_against_its_own_sources(
+    tmp_path, use_client, monkeypatch
+):
+    papers, wiki = _mock_client(), _mock_client()
+    use_client({"papers": papers, "wiki": wiki})
+    seen = []
+
+    async def _reconcile(rag, sync, source_ids):
+        seen.append((rag, source_ids))
+        return []
+
+    monkeypatch.setattr("haiku.rag.ingester.app.reconcile", _reconcile)
+
+    await IngesterApp(config=_two_databases(tmp_path)).run_batch()
+
+    assert seen == [(papers, ["papers"]), (wiki, ["wiki"])]
+
+
+@pytest.mark.parametrize("explicit", [True, False])
+async def test_duplicate_source_ids_are_refused(tmp_path, use_client, explicit):
+    from haiku.rag.ingester.exceptions import DuplicateSourceError
+
+    use_client(_mock_client())
+    config = _two_databases(tmp_path)
+    for name, entry in config.ingester.databases.items():
+        source = entry.sources[0]
+        assert isinstance(source, FSSourceConfig)
+        source.root = tmp_path / "papers"
+        source.id = "shared" if explicit else None
+    shared = "shared" if explicit else f"fs:{tmp_path / 'papers'}"
+
+    with pytest.raises(DuplicateSourceError, match=re.escape(shared)):
+        await IngesterApp(config=config).run_batch()
+
+
+async def test_a_database_failing_to_open_is_named(tmp_path, monkeypatch):
+    from haiku.rag.store.exceptions import MigrationRequiredError
+
+    @asynccontextmanager
+    async def _open(scope):
+        if scope.names == ("wiki",):
+            raise MigrationRequiredError("Database requires migration")
+        yield _mock_client()
+
+    stub = MagicMock()
+    stub._covering = lambda scope, *a, **k: _open(scope)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+
+    with pytest.raises(MigrationRequiredError, match="database 'wiki'"):
+        await IngesterApp(config=_two_databases(tmp_path)).run_batch()
+
+
+async def _seed_unconfigured_jobs(config) -> JobRepo:
+    engine = await open_queue(config.ingester.queue)
+    jobs = JobRepo(engine)
+    claimed = await jobs.enqueue("removed", "claimed", JobOp.UPSERT)
+    assert claimed is not None
+    assert await jobs.claim_next("w") is not None
+    dead = await jobs.enqueue("removed", "dead", JobOp.UPSERT)
+    assert dead is not None and await jobs.claim_next("w") is not None
+    assert await jobs.mark_dead(dead.id, "boom", "w")
+    assert await jobs.enqueue("removed", "queued", JobOp.UPSERT) is not None
+    await engine.dispose()
+    return jobs
+
+
+async def _jobs_of(config, source_id: str) -> dict[str, JobStatus]:
+    engine = await open_queue(config.ingester.queue)
+    try:
+        return {
+            job.uri: job.status
+            for job in await JobRepo(engine).list_jobs(source_id=source_id)
+        }
+    finally:
+        await engine.dispose()
+
+
+async def test_startup_deletes_live_jobs_of_unconfigured_sources(tmp_path, use_client):
+    use_client({"papers": _mock_client(), "wiki": _mock_client()})
+    config = _two_databases(tmp_path)
+    await _seed_unconfigured_jobs(config)
+
+    await IngesterApp(config=config).run_batch()
+
+    assert await _jobs_of(config, "removed") == {"dead": JobStatus.DEAD}
+
+
+async def test_a_dry_run_leaves_jobs_of_unconfigured_sources(tmp_path):
+    config = _two_databases(tmp_path)
+    await _seed_unconfigured_jobs(config)
+
+    await IngesterApp(config=config).run_batch_dry_run()
+
+    assert await _jobs_of(config, "removed") == {
+        "claimed": JobStatus.CLAIMED,
+        "dead": JobStatus.DEAD,
+        "queued": JobStatus.QUEUED,
+    }
+
+
+async def test_retry_revives_only_the_failures_of_configured_sources(
+    tmp_path, use_client
+):
+    use_client({"papers": _mock_client(), "wiki": _mock_client()})
+    config = _two_databases(tmp_path)
+    await _seed_unconfigured_jobs(config)
+
+    report = await asyncio.wait_for(
+        IngesterApp(config=config).run_batch(retry={JobStatus.DEAD}), timeout=10
+    )
+
+    assert report.retried == 0
+    assert await _jobs_of(config, "removed") == {"dead": JobStatus.DEAD}

@@ -31,7 +31,10 @@ from haiku.rag.config import (  # noqa: E402
     set_config,
 )
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
-from haiku.rag.ingester.exceptions import QueueError  # noqa: E402
+from haiku.rag.ingester.exceptions import (  # noqa: E402
+    DuplicateSourceError,
+    QueueError,
+)
 from haiku.rag.ingester.queue.migrations import (  # noqa: E402
     apply_migrations,
     make_engine,
@@ -92,6 +95,7 @@ def cli() -> None:
     except (
         AmbiguousDatabaseError,
         ConfigMismatchError,
+        DuplicateSourceError,
         ImportError,
         MigrationRequiredError,
         QueueError,

@@ -2,16 +2,17 @@ import asyncio
 import logging
 import signal
 from collections.abc import Callable, Collection
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 from sqlalchemy.engine import make_url
 
-from haiku.rag.config import AppConfig
+from haiku.rag.config import AppConfig, SourceConfig
 from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
-from haiku.rag.ingester.exceptions import QueueError
+from haiku.rag.ingester.exceptions import DuplicateSourceError, QueueError
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.base import max_attempts
 from haiku.rag.ingester.pollers.manager import PollerManager
@@ -25,7 +26,8 @@ from haiku.rag.ingester.workers.retry import RetryPolicy
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
-    from haiku.rag.client.scope import DatabaseScope
+    from haiku.rag.client import HaikuRAG
+    from haiku.rag.client.scope import DatabaseRef, DatabaseScope
 
 logger = logging.getLogger(__name__)
 
@@ -81,31 +83,37 @@ class IngesterApp:
     """
 
     def __init__(self, *, config: AppConfig, scope: "DatabaseScope | None" = None):
-        """The ingester over the database `scope` covers, or the one
-        `ingester.databases` names when no scope is handed in."""
+        """The ingester over every database `ingester.databases` names, or
+        over the one `scope` covers, fed by the configured sources."""
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         self._config = config
         ingested = config.ingester.databases
-        if len(ingested) > 1:
-            raise AmbiguousDatabaseError(
-                "haiku-ingester writes one database, and ingester.databases "
-                f"names {', '.join(ingested)}"
-            )
-        [name] = ingested or [None]
-        self._source_configs = ingested[name].sources if name is not None else []
+        self._databases: list[tuple[DatabaseRef, list[SourceConfig]]]
         if scope is not None:
-            self._scope = scope
+            if len(ingested) > 1:
+                raise AmbiguousDatabaseError(
+                    "--db PATH places one database, and ingester.databases "
+                    f"names {', '.join(ingested)}"
+                )
+            scope.refuse_tags("haiku-ingester writes")
+            [ref] = scope.databases
+            self._databases = [
+                (
+                    ref,
+                    [source for entry in ingested.values() for source in entry.sources],
+                )
+            ]
         else:
-            self._scope = DatabaseScope.resolve(config, database_name=name)
-        if self._scope.covers_multiple:
-            raise AmbiguousDatabaseError(
-                "haiku-ingester writes one database, and lancedb.databases "
-                f"names {', '.join(self._scope.names)}; name it under "
-                "ingester.databases, or select one with --db PATH"
-            )
-        self._scope.refuse_tags("haiku-ingester writes")
+            self._databases = [
+                (
+                    DatabaseScope.resolve(config, database_name=name).databases[0],
+                    entry.sources,
+                )
+                for name, entry in ingested.items()
+            ]
+        _refuse_shared_locations([ref for ref, _ in self._databases])
         queue = config.ingester.queue
         if (
             queue.dburi
@@ -125,80 +133,16 @@ class IngesterApp:
 
     @asynccontextmanager
     async def _resources(self):
-        """Open the queue engine and construct the repos, client, pollers
-        and worker pool. Yields with everything built but nothing started —
-        callers own the start/stop lifecycle. Closes the client and queue
-        engine on exit."""
-        from haiku.rag.client import HaikuRAG
-        from haiku.rag.converters import get_converter
-
-        ingester_cfg = self._config.ingester
-        self._engine = await open_queue(ingester_cfg.queue)
+        """Open the queue engine and build the ingestion around it. Yields with
+        everything built but nothing started: callers own the start/stop
+        lifecycle. Closes the clients and the queue engine on exit."""
+        self._engine = await open_queue(self._config.ingester.queue)
         try:
-            self._jobs = JobRepo(self._engine, ingester_cfg.queue.namespace)
-            self._sync = SyncStateRepo(self._engine, ingester_cfg.queue.namespace)
-
-            supported_extensions = get_converter(self._config).supported_extensions
-            retry = RetryPolicy(**ingester_cfg.workers.retry.model_dump())
-
-            # The ingester is the sole writer for its LanceDB target; create on
-            # first start so docker-compose / fresh deployments don't require a
-            # manual `haiku-rag init`.
-            async with HaikuRAG._covering(
-                self._scope, self._config, create=True
-            ) as client:
-                self._pollers = PollerManager(
-                    configs=self._source_configs,
-                    job_repo=self._jobs,
-                    sync_repo=self._sync,
-                    supported_extensions=supported_extensions,
-                    default_max_attempts=ingester_cfg.workers.retry.max_attempts,
-                )
-                metadata_providers = build_providers(
-                    [
-                        (source.source_id, cfg.metadata_provider)
-                        for cfg, source in zip(
-                            self._source_configs, self._pollers.sources
-                        )
-                    ],
-                    load_metadata_providers(),
-                )
-                self._pool = WorkerPool(
-                    client=client,
-                    job_repo=self._jobs,
-                    sync_repo=self._sync,
-                    worker_count=ingester_cfg.workers.worker_count,
-                    retry_policy=retry,
-                    source_retry_policies={
-                        poller.source_id: RetryPolicy(
-                            **poller.config.retry.model_dump()
-                        )
-                        for poller in self._pollers.pollers
-                        if poller.config.retry is not None
-                    },
-                    poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
-                    lease_ttl_s=ingester_cfg.workers.lease_ttl_s,
-                    heartbeat_interval_s=ingester_cfg.workers.heartbeat_interval_s,
-                    reaper_interval_s=ingester_cfg.workers.reaper_interval_s,
-                    retention_s=(
-                        ingester_cfg.queue.retention_days * 86400
-                        if ingester_cfg.queue.retention_days is not None
-                        else None
-                    ),
-                    # Same Source instances the pollers discover with —
-                    # workers resolve URIs through them so authenticated
-                    # HTTP / WebDAV / S3 fetches reuse credentials.
-                    sources=self._pollers.sources,
-                    metadata_providers=metadata_providers,
-                )
-                # Between process lifetimes either database can be restored,
-                # rebuilt or lost on its own, so the two are brought back in
-                # step before any sweep reads sync_state.
-                await reconcile(
-                    client,
-                    self._sync,
-                    [source.source_id for source in self._pollers.sources],
-                )
+            self._jobs = JobRepo(self._engine, self._config.ingester.queue.namespace)
+            self._sync = SyncStateRepo(
+                self._engine, self._config.ingester.queue.namespace
+            )
+            async with self._ingestion():
                 yield
         finally:
             # Dispose the engine unconditionally. aiosqlite runs the underlying
@@ -210,25 +154,141 @@ class IngesterApp:
                 self._engine = None
 
     @asynccontextmanager
+    async def _ingestion(self):
+        """The clients, pollers and worker pool built from the configuration,
+        with each database reconciled against its sources."""
+        assert self._jobs is not None and self._sync is not None
+        ingester_cfg = self._config.ingester
+        self._pollers = await self._build_pollers()
+        source_databases = self._source_databases()
+        async with AsyncExitStack() as stack:
+            try:
+                clients = {
+                    ref.name: await self._open(stack, ref) for ref, _ in self._databases
+                }
+            except BaseException:
+                await self._pollers.close_sources()
+                raise
+            cancelled = await self._jobs.cancel_unconfigured(source_databases)
+            if cancelled:
+                logger.info(
+                    "Deleted %d queued or claimed job(s) of sources no longer "
+                    "configured",
+                    cancelled,
+                )
+            metadata_providers = build_providers(
+                [
+                    (poller.source_id, poller.config.metadata_provider)
+                    for poller in self._pollers.pollers
+                ],
+                load_metadata_providers(),
+            )
+            self._pool = WorkerPool(
+                clients={
+                    source_id: clients[database]
+                    for source_id, database in source_databases.items()
+                },
+                job_repo=self._jobs,
+                sync_repo=self._sync,
+                worker_count=ingester_cfg.workers.worker_count,
+                retry_policy=RetryPolicy(**ingester_cfg.workers.retry.model_dump()),
+                source_retry_policies={
+                    poller.source_id: RetryPolicy(**poller.config.retry.model_dump())
+                    for poller in self._pollers.pollers
+                    if poller.config.retry is not None
+                },
+                poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
+                lease_ttl_s=ingester_cfg.workers.lease_ttl_s,
+                heartbeat_interval_s=ingester_cfg.workers.heartbeat_interval_s,
+                reaper_interval_s=ingester_cfg.workers.reaper_interval_s,
+                retention_s=(
+                    ingester_cfg.queue.retention_days * 86400
+                    if ingester_cfg.queue.retention_days is not None
+                    else None
+                ),
+                # Same Source instances the pollers discover with —
+                # workers resolve URIs through them so authenticated
+                # HTTP / WebDAV / S3 fetches reuse credentials.
+                sources=self._pollers.sources,
+                metadata_providers=metadata_providers,
+            )
+            # Between process lifetimes either database can be restored,
+            # rebuilt or lost on its own, so the two are brought back in
+            # step before any sweep reads sync_state.
+            for ref, _ in self._databases:
+                await reconcile(
+                    clients[ref.name],
+                    self._sync,
+                    [
+                        source_id
+                        for source_id, database in source_databases.items()
+                        if database == ref.name
+                    ],
+                )
+            yield
+
+    async def _open(self, stack: AsyncExitStack, ref: "DatabaseRef") -> "HaikuRAG":
+        """A writable client over `ref`, created on first start and closed
+        with `stack`. An error opening it names the database."""
+        from haiku.rag.client import HaikuRAG
+        from haiku.rag.client.scope import DatabaseScope
+        from haiku.rag.store.exceptions import (
+            ConfigMismatchError,
+            MigrationRequiredError,
+        )
+
+        try:
+            return await stack.enter_async_context(
+                HaikuRAG._covering(DatabaseScope((ref,)), self._config, create=True)
+            )
+        except (ConfigMismatchError, MigrationRequiredError) as error:
+            raise type(error)(f"database {ref.name!r}: {error}") from error
+
+    async def _build_pollers(self) -> PollerManager:
+        """One poller per configured source, every database's together.
+        Raises DuplicateSourceError when two sources share an id."""
+        from haiku.rag.converters import get_converter
+
+        assert self._jobs is not None and self._sync is not None
+        manager = PollerManager(
+            configs=[source for _, sources in self._databases for source in sources],
+            job_repo=self._jobs,
+            sync_repo=self._sync,
+            supported_extensions=get_converter(self._config).supported_extensions,
+            default_max_attempts=self._config.ingester.workers.retry.max_attempts,
+        )
+        ids = [poller.source_id for poller in manager.pollers]
+        duplicates = sorted(
+            {source_id for source_id in ids if ids.count(source_id) > 1}
+        )
+        if duplicates:
+            await manager.close_sources()
+            raise DuplicateSourceError(
+                f"source id(s) {', '.join(duplicates)} name several configured "
+                "sources; give each source its own id"
+            )
+        return manager
+
+    def _source_databases(self) -> dict[str, str]:
+        """Source id to the name of the database it is ingested into."""
+        assert self._pollers is not None
+        databases = [ref.name for ref, sources in self._databases for _ in sources]
+        return {
+            poller.source_id: database
+            for poller, database in zip(self._pollers.pollers, databases)
+        }
+
+    @asynccontextmanager
     async def _discovery_resources(self):
         """Open only the queue and source pollers needed for discovery.
         Dry-runs must not create/open the LanceDB document store or worker
         pool because they are upstream checks only."""
-        from haiku.rag.converters import get_converter
-
         ingester_cfg = self._config.ingester
         self._engine = await open_queue(ingester_cfg.queue)
         try:
             self._jobs = JobRepo(self._engine, ingester_cfg.queue.namespace)
             self._sync = SyncStateRepo(self._engine, ingester_cfg.queue.namespace)
-            supported_extensions = get_converter(self._config).supported_extensions
-            self._pollers = PollerManager(
-                configs=self._source_configs,
-                job_repo=self._jobs,
-                sync_repo=self._sync,
-                supported_extensions=supported_extensions,
-                default_max_attempts=ingester_cfg.workers.retry.max_attempts,
-            )
+            self._pollers = await self._build_pollers()
             yield
         finally:
             if self._pollers is not None:
@@ -325,17 +385,19 @@ class IngesterApp:
             )
             if uses_docling_serve:  # pragma: no cover
                 logger.info(
-                    "Ingester running: %d worker(s), %d source(s), "
-                    "%d docling-serve instance(s)",
+                    "Ingester running: %d worker(s), %d database(s), %d "
+                    "source(s), %d docling-serve instance(s)",
                     ingester_cfg.workers.worker_count,
-                    len(self._source_configs),
+                    len(self._databases),
+                    len(self._pollers.pollers),
                     len(self._config.providers.docling_serve.base_urls),
                 )
             else:
                 logger.info(
-                    "Ingester running: %d worker(s), %d source(s)",
+                    "Ingester running: %d worker(s), %d database(s), %d source(s)",
                     ingester_cfg.workers.worker_count,
-                    len(self._source_configs),
+                    len(self._databases),
+                    len(self._pollers.pollers),
                 )
 
             api_task, api_server = await self._maybe_start_api(api)
@@ -388,7 +450,9 @@ class IngesterApp:
             await self._pool.start()
             try:
                 failed_sweeps = await self._pollers.sweep_all()
-                retried = await self._jobs.retry_failed(retry)
+                retried = await self._jobs.retry_failed(
+                    retry, source_ids=self._source_databases()
+                )
                 report = await self._drain_batch(
                     started_at, progress_callback=progress_callback
                 )
@@ -531,7 +595,8 @@ class IngesterApp:
             sync_repo=self._sync,
             pool=self._pool,
             pollers=self._pollers,
-            scope=self._scope,
+            databases={ref.name: ref for ref, _ in self._databases},
+            source_databases=self._source_databases(),
         )
         if ingester_cfg.api.auth_token is None:
             logger.warning("API auth_token is unset — control plane is unauthenticated")
@@ -557,3 +622,23 @@ class IngesterApp:
             ingester_cfg.api.root_path,
         )
         return asyncio.create_task(server.serve()), server
+
+
+def _refuse_shared_locations(refs: "list[DatabaseRef]") -> None:
+    """Raise when two databases sit at one location: each would be a writer
+    of the same tables."""
+    from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+    placed: dict[str, str] = {}
+    for ref in refs:
+        location = (
+            str(ref.location.resolve())
+            if isinstance(ref.location, Path)
+            else ref.location.rstrip("/")
+        )
+        if location in placed:
+            raise AmbiguousDatabaseError(
+                f"ingester.databases names {placed[location]!r} and {ref.name!r} "
+                "at one location, and a database has one writer"
+            )
+        placed[location] = ref.name

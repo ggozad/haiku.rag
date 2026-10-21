@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, Request
@@ -6,7 +7,7 @@ from fastapi import Depends, FastAPI, Request
 from haiku.rag.ingester.api.auth import require_auth
 
 if TYPE_CHECKING:
-    from haiku.rag.client.scope import DatabaseScope
+    from haiku.rag.client.scope import DatabaseRef
     from haiku.rag.config import AppConfig
     from haiku.rag.ingester.pollers.manager import PollerManager
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
@@ -16,14 +17,17 @@ if TYPE_CHECKING:
 @dataclass
 class APIState:
     """Everything the API handlers need to read or act on. Pool/pollers are
-    optional so the FastAPI app can be tested in isolation."""
+    optional so the FastAPI app can be tested in isolation. `databases` holds
+    the ingested databases by name, and `source_databases` maps a source id
+    to the name of its database."""
 
     config: "AppConfig"
     job_repo: "JobRepo"
     sync_repo: "SyncStateRepo"
     pool: "WorkerPool | None" = None
     pollers: "PollerManager | None" = None
-    scope: "DatabaseScope | None" = None
+    databases: "Mapping[str, DatabaseRef]" = field(default_factory=dict)
+    source_databases: Mapping[str, str] = field(default_factory=dict)
 
 
 def get_state(request: Request) -> APIState:

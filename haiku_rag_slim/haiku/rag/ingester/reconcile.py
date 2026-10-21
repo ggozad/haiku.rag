@@ -79,8 +79,8 @@ def _warn_unconfigured(index: _StoreIndex, configured: set[str]) -> None:
             counts[owner] = counts.get(owner, 0) + 1
     for source_id, count in sorted(counts.items()):
         logger.warning(
-            "%d document(s) belong to source %s, which is not configured; "
-            "they are not swept and not reconciled",
+            "%d document(s) belong to source %s, which is not one of this "
+            "database's sources. They are not swept and not reconciled",
             count,
             source_id,
         )

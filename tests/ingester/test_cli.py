@@ -23,6 +23,7 @@ from haiku.rag.ingester.batch import (
 from haiku.rag.ingester.cli import _cli as cli
 from haiku.rag.ingester.cli import _resolve_queue_config
 from haiku.rag.ingester.cli import cli as ingester_cli
+from haiku.rag.ingester.exceptions import DuplicateSourceError
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.store.exceptions import (
@@ -627,6 +628,7 @@ def test_cli_entry_point(monkeypatch):
         SourceUnavailableError("papers would not open"),
         UnknownDatabaseError("no such database"),
         ImportError("docling is not installed"),
+        DuplicateSourceError("source id(s) a name several configured sources"),
     ],
     ids=lambda e: type(e).__name__,
 )
@@ -643,10 +645,10 @@ def test_cli_entry_point_exits_cleanly_on_known_errors(monkeypatch, capsys, erro
     assert f"Error: {error}" in capsys.readouterr().err
 
 
-class TestPlacingTheIngesterDatabase:
-    """The ingester writes wherever the configuration places the database, and
-    resolves that once. `--db PATH` is the operator's explicit override and
-    constructs the scope directly."""
+class TestPlacingTheIngesterDatabases:
+    """The ingester writes every database `ingester.databases` names, where
+    `lancedb.databases` places it. `--db PATH` is the operator's explicit
+    override of a single one and constructs the scope directly."""
 
     @staticmethod
     def _app(config: AppConfig, db_path=None):
@@ -655,27 +657,124 @@ class TestPlacingTheIngesterDatabase:
 
         return IngesterApp(config=config, scope=_scope_for(db_path))
 
-    def test_a_configured_location_becomes_the_scope(self, tmp_path):
-        config = AppConfig(
-            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
+    @staticmethod
+    def _ingesting(databases: dict, ingested: list[str]) -> AppConfig:
+        return AppConfig.model_validate(
+            {
+                "lancedb": {"databases": databases},
+                "ingester": {
+                    "databases": {
+                        name: {
+                            "sources": [{"type": "fs", "id": name, "root": "/tmp/docs"}]
+                        }
+                        for name in ingested
+                    }
+                },
+            }
         )
 
-        [ref] = self._app(config)._scope.databases
+    @staticmethod
+    def _placed(app) -> dict:
+        return {ref.name: ref.location for ref, _ in app._databases}
 
-        assert ref.name == "prod"
-        assert ref.location == "s3://bucket/prod.lancedb"
-        assert ref.db_path is None
+    def test_each_ingested_database_is_placed_where_lancedb_puts_it(self, tmp_path):
+        config = self._ingesting(
+            {"prod": "s3://bucket/prod.lancedb", "docs": str(tmp_path / "docs")},
+            ["prod", "docs"],
+        )
+
+        assert self._placed(self._app(config)) == {
+            "prod": "s3://bucket/prod.lancedb",
+            "docs": tmp_path / "docs",
+        }
+
+    def test_each_database_gets_its_own_sources(self, tmp_path):
+        config = self._ingesting(
+            {"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}, ["a", "b"]
+        )
+
+        app = self._app(config)
+
+        assert [
+            (ref.name, [source.id for source in sources])
+            for ref, sources in app._databases
+        ] == [("a", ["a"]), ("b", ["b"])]
+
+    def test_the_ingested_database_is_written_among_several_configured(self, tmp_path):
+        """A config shared with readers names other databases, a tagged one
+        included. The ingester writes the one its sources name."""
+        config = self._ingesting(
+            {
+                "papers": str(tmp_path / "papers.lancedb"),
+                "wiki": str(tmp_path / "wiki.lancedb"),
+                "release": {"location": str(tmp_path / "papers.lancedb"), "tag": "v1"},
+            },
+            ["wiki"],
+        )
+
+        assert list(self._placed(self._app(config))) == ["wiki"]
+
+    def test_without_ingested_databases_nothing_is_opened(self, tmp_path):
+        config = AppConfig(
+            lancedb=LanceDBConfig(
+                databases={
+                    "a": str(tmp_path / "a"),
+                    "b": {"location": str(tmp_path / "b"), "tag": "v1"},
+                }
+            )
+        )
+
+        assert self._app(config)._databases == []
+
+    def test_two_ingested_databases_at_one_location_are_refused(self, tmp_path):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = self._ingesting(
+            {"a": str(tmp_path / "x"), "b": str(tmp_path / "y" / ".." / "x")},
+            ["a", "b"],
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="'a' and 'b'"):
+            self._app(config)
+
+    def test_two_ingested_databases_at_one_uri_are_refused(self):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = self._ingesting(
+            {"a": "s3://bucket/x.lancedb", "b": "s3://bucket/x.lancedb/"},
+            ["a", "b"],
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="'a' and 'b'"):
+            self._app(config)
 
     def test_an_override_names_the_database_by_its_stem(self, tmp_path):
-        config = AppConfig(
-            lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
-        )
+        config = self._ingesting({"prod": "s3://bucket/prod.lancedb"}, ["prod"])
         override = tmp_path / "local.lancedb"
 
-        [ref] = self._app(config, override)._scope.databases
+        assert self._placed(self._app(config, override)) == {"local": override}
 
-        assert ref.name == "local"
-        assert ref.location == override
+    def test_an_override_beside_several_ingested_databases_is_refused(self, tmp_path):
+        from haiku.rag.store.exceptions import AmbiguousDatabaseError
+
+        config = self._ingesting(
+            {"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}, ["a", "b"]
+        )
+
+        with pytest.raises(AmbiguousDatabaseError, match="names a, b"):
+            self._app(config, tmp_path / "local.lancedb")
+
+    def test_a_tagged_scope_is_refused(self, tmp_path):
+        from haiku.rag.client.scope import DatabaseRef, DatabaseScope
+        from haiku.rag.ingester.app import IngesterApp
+        from haiku.rag.store.exceptions import TagError
+
+        tagged = DatabaseScope(
+            (DatabaseRef.at(tmp_path / "docs.lancedb").at_tag("v1"),)
+        )
+
+        with pytest.raises(TagError, match="'docs' is configured at tag 'v1'"):
+            IngesterApp(config=AppConfig(), scope=tagged)
 
     def test_the_override_is_the_cli_s_alone(self, tmp_path):
         """`IngesterApp` takes a resolved scope, so a Python caller has no path
@@ -698,103 +797,17 @@ class TestPlacingTheIngesterDatabase:
         with pytest.raises(typer.BadParameter, match="no name"):
             _scope_for(Path("/"))
 
-    def test_one_configured_database_is_accepted(self, tmp_path):
-        """A one-entry mapping names which database to write."""
-        config = AppConfig(
-            lancedb=LanceDBConfig(databases={"docs": str(tmp_path / "docs.lancedb")})
-        )
-
-        scope = self._app(config)._scope
-
-        assert scope.names == ("docs",)
-        assert not scope.covers_multiple
-
-    def test_a_tagged_entry_is_refused(self, tmp_path):
-        from haiku.rag.config.models import DatabaseEntry
-        from haiku.rag.store.exceptions import TagError
-
-        config = AppConfig(
-            lancedb=LanceDBConfig(
-                databases={
-                    "docs": DatabaseEntry(
-                        location=str(tmp_path / "docs.lancedb"), tag="v1"
-                    )
-                }
-            )
-        )
-
-        with pytest.raises(TagError, match="'docs' is configured at tag 'v1'"):
-            self._app(config)
-
-    def test_a_set_is_refused_with_a_remedy_this_command_has(self, tmp_path):
-        """The remedy in the message is `--db PATH`, an argument this command
-        has; `sources=` is a Python argument no CLI user can pass."""
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-        config = AppConfig(
-            lancedb=LanceDBConfig(
-                databases={"a": str(tmp_path / "a"), "b": str(tmp_path / "b")}
-            )
-        )
-
-        with pytest.raises(AmbiguousDatabaseError) as raised:
-            self._app(config)
-
-        assert "--db PATH" in str(raised.value)
-        assert "sources=" not in str(raised.value)
-
-    @staticmethod
-    def _ingesting(databases: dict, ingested: list[str]) -> AppConfig:
-        return AppConfig.model_validate(
-            {
-                "lancedb": {"databases": databases},
-                "ingester": {
-                    "databases": {
-                        name: {"sources": [{"type": "fs", "root": "/tmp/docs"}]}
-                        for name in ingested
-                    }
-                },
-            }
-        )
-
-    def test_the_ingested_database_is_written_among_several_configured(self, tmp_path):
-        """A config shared with readers names other databases, a tagged one
-        included. The ingester writes the one its sources name."""
-        config = self._ingesting(
-            {
-                "papers": str(tmp_path / "papers.lancedb"),
-                "wiki": str(tmp_path / "wiki.lancedb"),
-                "release": {"location": str(tmp_path / "papers.lancedb"), "tag": "v1"},
-            },
-            ["wiki"],
-        )
-
-        app = self._app(config)
-
-        assert app._scope.names == ("wiki",)
-        assert app._source_configs == config.ingester.databases["wiki"].sources
-
-    def test_two_ingested_databases_are_refused(self, tmp_path):
-        from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-        config = self._ingesting(
-            {"a": str(tmp_path / "a.lancedb"), "b": str(tmp_path / "b.lancedb")},
-            ["a", "b"],
-        )
-
-        with pytest.raises(
-            AmbiguousDatabaseError, match="ingester.databases names a, b"
-        ):
-            self._app(config)
-
-    def test_several_configured_databases_exit_cleanly(self, tmp_path, monkeypatch):
-        """No selector names one of a set, so the CLI exits with the message
-        and no traceback."""
+    def test_a_shared_location_exits_cleanly(self, tmp_path, monkeypatch):
+        """The CLI exits with the message and no traceback."""
         config_file = tmp_path / "haiku.rag.yaml"
+        location = tmp_path / "a.lancedb"
         config_file.write_text(
             "lancedb:\n  databases:\n"
-            f"    a: {tmp_path / 'a.lancedb'}\n"
-            f"    b: {tmp_path / 'b.lancedb'}\n"
+            f"    a: {location}\n"
+            f"    b: {location}\n"
+            "ingester:\n  databases:\n"
+            f"    a: {{sources: [{{type: fs, id: a, root: {tmp_path}}}]}}\n"
+            f"    b: {{sources: [{{type: fs, id: b, root: {tmp_path}}}]}}\n"
         )
         import haiku.rag.config as config_module
 

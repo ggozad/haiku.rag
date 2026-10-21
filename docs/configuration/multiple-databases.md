@@ -137,7 +137,7 @@ The server covers the configured set. `sources` on the search tools, `list_docum
 
 ## Ingester
 
-`haiku-ingester` writes the database `ingester.databases` names, and leaves the other entries to readers. With several names under `ingester.databases` it refuses to start with `AmbiguousDatabaseError`. Run one ingester per database, each with a configuration whose `ingester.databases` names only its own.
+`haiku-ingester` writes every database `ingester.databases` names, from one process, and leaves the other entries to readers. See [Ingester](../ingester.md#configure-sources).
 
 ## Ranking
 

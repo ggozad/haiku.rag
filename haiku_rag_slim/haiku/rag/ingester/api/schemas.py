@@ -40,6 +40,7 @@ class ProvidersResponse(BaseModel):
 
 class SourceSummary(BaseModel):
     source_id: str
+    database: str | None
     type: Literal["fs", "http", "s3", "webdav", "plugin"]
     last_polled_at: datetime | None
     circuit_breaker_open: bool

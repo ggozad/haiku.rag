@@ -4,9 +4,8 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
-from haiku.rag.client.scope import DatabaseScope
+from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.config import AppConfig
-from haiku.rag.config.models import LanceDBConfig
 from haiku.rag.ingester.api.server import APIState, build_app
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.ingester.queue.repository import JobRepo
@@ -15,7 +14,6 @@ from haiku.rag.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
-from tests.conftest import for_path
 
 
 @pytest.fixture
@@ -24,6 +22,7 @@ def state(jobs, sync):
         config=AppConfig(),
         job_repo=jobs,
         sync_repo=sync,
+        source_databases={"src": "haiku.rag"},
     )
 
 
@@ -411,6 +410,7 @@ def _build_pollers_state(tmp_path, jobs, sync, source_id: str = "local"):
         job_repo=jobs,
         sync_repo=sync,
         pollers=manager,
+        source_databases={source_id: "docs"},
     )
     return state, manager
 
@@ -429,6 +429,7 @@ async def test_sources_lists_configured(tmp_path, jobs, sync):
     payload = resp.json()
     assert len(payload) == 1
     assert payload[0]["source_id"] == "local"
+    assert payload[0]["database"] == "docs"
     assert payload[0]["type"] == "fs"
     assert payload[0]["circuit_breaker_open"] is False
 
@@ -694,7 +695,8 @@ async def test_dashboard_wires_database_and_config_panels(state):
     body = resp.text
     assert 'id="db-panel"' in body
     assert 'id="config-panel"' in body
-    assert 'fetchJson("database")' in body
+    assert "fetchJson(`databases/${encodeURIComponent(name)}`)" in body
+    assert 'id="db-select"' in body
     assert 'fetchJson("config")' in body
     assert "loadDatabase" in body
     assert "loadConfig" in body
@@ -822,14 +824,21 @@ async def _seed_lancedb(path):
     )
 
 
+def _ingesting(name: str, location) -> dict[str, DatabaseRef]:
+    return {name: DatabaseRef.configured(name, str(location))}
+
+
 async def test_database_reports_info(tmp_path, jobs, sync):
     db_path = tmp_path / "docs.lancedb"
     await _seed_lancedb(db_path)
     state = APIState(
-        config=AppConfig(), job_repo=jobs, sync_repo=sync, scope=for_path(db_path)
+        config=AppConfig(),
+        job_repo=jobs,
+        sync_repo=sync,
+        databases=_ingesting("docs", db_path),
     )
     async with _client(state) as client:
-        resp = await client.get("/database")
+        resp = await client.get("/databases/docs")
     assert resp.status_code == 200
     body = resp.json()
     assert body["exists"] is True
@@ -843,36 +852,59 @@ async def test_database_reports_info(tmp_path, jobs, sync):
     assert body["vector_index"]["exists"] is False
 
 
-async def test_database_503_when_no_database_is_configured(state):
-    async with _client(state) as client:
-        resp = await client.get("/database")
-    assert resp.status_code == 503
-
-
-async def test_the_report_follows_a_configured_uri(tmp_path, jobs, sync):
-    """A configured location places the database, so the report opens that
-    and not the local default."""
-    db_path = tmp_path / "configured.lancedb"
-    await _seed_lancedb(db_path)
-    config = AppConfig(lancedb=LanceDBConfig(databases={"configured": str(db_path)}))
+async def test_each_ingested_database_answers_under_its_name(tmp_path, jobs, sync):
+    await _seed_lancedb(tmp_path / "a.lancedb")
     state = APIState(
-        config=config,
+        config=AppConfig(),
         job_repo=jobs,
         sync_repo=sync,
-        scope=DatabaseScope.resolve(config),
+        databases={
+            **_ingesting("a", tmp_path / "a.lancedb"),
+            **_ingesting("b", tmp_path / "b.lancedb"),
+        },
     )
 
     async with _client(state) as client:
-        resp = await client.get("/database")
+        a = await client.get("/databases/a")
+        b = await client.get("/databases/b")
 
-    assert resp.status_code == 200
-    assert resp.json()["stored_version"] == "1.2.3"
+    assert (a.json()["exists"], b.json()["exists"]) == (True, False)
+
+
+async def test_a_database_the_ingester_does_not_write_is_not_found(
+    tmp_path, jobs, sync
+):
+    state = APIState(
+        config=AppConfig(),
+        job_repo=jobs,
+        sync_repo=sync,
+        databases=_ingesting("docs", tmp_path / "docs.lancedb"),
+    )
+    async with _client(state) as client:
+        resp = await client.get("/databases/other")
+    assert resp.status_code == 404
 
 
 async def test_database_requires_auth(state):
     async with _client(state, auth_token="secret") as client:
-        resp = await client.get("/database")
+        resp = await client.get("/databases/docs")
     assert resp.status_code == 401
+
+
+@pytest.mark.parametrize("route", ["/jobs/{id}/retry", "/dlq/{id}/retry"])
+async def test_retry_refuses_a_job_of_an_unconfigured_source(state, jobs, route):
+    job = await jobs.enqueue("removed", "u", JobOp.UPSERT)
+    assert job is not None
+    assert await jobs.claim_next("w") is not None
+    assert await jobs.mark_dead(job.id, "boom", "w")
+
+    async with _client(state) as client:
+        resp = await client.post(route.format(id=job.id))
+
+    assert resp.status_code == 409
+    assert "'removed'" in resp.json()["detail"]
+    refused = await jobs.get_job(job.id)
+    assert refused is not None and refused.status is JobStatus.DEAD
 
 
 @pytest.mark.parametrize("route", ["/jobs/{id}/retry", "/dlq/{id}/retry"])

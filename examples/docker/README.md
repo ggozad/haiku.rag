@@ -154,7 +154,11 @@ Postgres instead, point `ingester.queue.dburi` at the server in
 ingester:
   queue:
     dburi: postgresql+asyncpg://haiku:secret@postgres:5432/haiku_rag
+    namespace: haiku
 ```
+
+A server queue needs a `namespace`, and the ingester never creates a server
+queue's tables itself.
 
 Add a Postgres service and wire the ingester to it with a
 `docker-compose.override.yml` (auto-loaded by Compose):
@@ -182,10 +186,17 @@ services:
         condition: service_healthy
 ```
 
-Workers claim jobs with `FOR UPDATE SKIP LOCKED`, so several ingesters can
-share one Postgres queue. Each still needs a database of its own: the
-one-writer rule is haiku.rag's and holds on every store, LanceDB Cloud
-included.
+Create the tables once Postgres is up, then start the stack:
+
+```bash
+docker compose up -d postgres
+docker compose run --rm haiku-ingester haiku-ingester --config /app/haiku.rag.yaml queue init
+docker compose up -d
+```
+
+Several ingesters can share one Postgres queue, each under its own
+namespace. Each still writes databases of its own: the one-writer rule is
+haiku.rag's and holds on every store, LanceDB Cloud included.
 
 ## Documentation
 

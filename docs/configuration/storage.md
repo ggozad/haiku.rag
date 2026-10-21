@@ -212,7 +212,7 @@ The recommended layout for production is "different buckets, same account, separ
 
 Each process picks up its own credentials from the AWS default chain (env vars, IAM instance role, AWS profile), so no credentials are hard-coded in the configuration files.
 
-`haiku-ingester` writes the database `ingester.databases` names, or the one `--db PATH` names. With several named it refuses to start, see [Multiple databases](multiple-databases.md#ingester).
+`haiku-ingester` writes every database `ingester.databases` names, or the one `--db PATH` names when it names a single one, see [Multiple databases](multiple-databases.md#ingester).
 
 ## Multiple databases
 

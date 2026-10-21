@@ -174,7 +174,7 @@
       details.panel > summary::before { content: "▸"; color: var(--muted); }
       details.panel[open] > summary::before { content: "▾"; }
       details.panel > summary .spacer { flex: 1; }
-      details.panel > summary button {
+      details.panel > summary button, details.panel > summary select {
         background: var(--bg); color: var(--text); border: 1px solid var(--border);
         padding: 4px 10px; border-radius: 4px; font: inherit; font-size: 11px;
         text-transform: none; letter-spacing: 0; cursor: pointer;
@@ -292,6 +292,7 @@
           <summary>
             <span>Database</span>
             <span class="spacer"></span>
+            <select id="db-select" hidden></select>
             <button type="button" id="db-refresh">Refresh</button>
           </summary>
           <div class="body" id="db-body">
@@ -658,6 +659,7 @@
           renderChips(health.queue_counts);
           renderStats(stats);
           renderSources(sources);
+          renderDatabaseNames(sources);
           renderProviders(providers);
           renderActive(active);
           renderDead(dead);
@@ -803,11 +805,32 @@
           <div class="breakdown">Migrations: ${migration}${unindexed}</div>`;
       }
 
+      // The ingested databases, named by the sources that feed them. The
+      // selector shows only when there is more than one.
+      function renderDatabaseNames(sources) {
+        const names = [...new Set(sources.map((s) => s.database).filter(Boolean))];
+        const select = $("db-select");
+        const current = [...select.options].map((o) => o.value);
+        if (names.join("\n") === current.join("\n")) return;
+        const selected = select.value;
+        select.innerHTML = names
+          .map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+          .join("");
+        if (names.includes(selected)) select.value = selected;
+        select.hidden = names.length < 2;
+        if (!current.length && $("db-panel").open) loadDatabase();
+      }
+
       let dbLoaded = false;
       async function loadDatabase() {
+        const name = $("db-select").value;
+        if (!name) {
+          $("db-body").innerHTML = '<div class="empty">no ingested database</div>';
+          return;
+        }
         $("db-body").innerHTML = '<div class="empty">loading…</div>';
         try {
-          renderDatabase(await fetchJson("database"));
+          renderDatabase(await fetchJson(`databases/${encodeURIComponent(name)}`));
           dbLoaded = true;
         } catch (e) {
           $("db-body").innerHTML = `<div class="empty">error: ${escapeHtml(e.message)}</div>`;
@@ -829,6 +852,14 @@
 
       $("db-panel").addEventListener("toggle", (e) => {
         if (e.target.open && !dbLoaded) loadDatabase();
+      });
+      $("db-select").addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      $("db-select").addEventListener("change", () => {
+        $("db-panel").open = true;
+        loadDatabase();
       });
       $("db-refresh").addEventListener("click", (e) => {
         e.preventDefault();

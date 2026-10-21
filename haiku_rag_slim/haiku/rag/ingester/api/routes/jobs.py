@@ -35,6 +35,19 @@ async def get_job(job_id: str, state: APIState = Depends(get_state)) -> Job:
 @router.post("/{job_id}/retry", response_model=Job)
 async def retry_job(job_id: str, state: APIState = Depends(get_state)) -> Job:
     """Force a dead or queued job back to queued with attempts=0."""
+    return await retry_served(job_id, state)
+
+
+async def retry_served(job_id: str, state: APIState) -> Job:
+    """Re-queue a job, refusing one whose source this ingester does not serve:
+    no worker would claim it."""
+    job = await state.job_repo.get_job(job_id)
+    if job is not None and job.source_id not in state.source_databases:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"source {job.source_id!r} is not configured, so no worker "
+            f"would claim job {job_id!r}",
+        )
     try:
         return await state.job_repo.retry(job_id)
     except BlockingTombstoneError as exc:

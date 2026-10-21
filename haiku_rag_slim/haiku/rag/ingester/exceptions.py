@@ -54,6 +54,14 @@ class QueueError(IngesterError):
     """The queue cannot be used as configured."""
 
 
+class DuplicateSourceError(IngesterError):
+    """Several configured sources share one source id."""
+
+
+class NothingToIngestError(IngesterError):
+    """The configuration names no database to ingest."""
+
+
 class EmptyListingError(IngesterError):
     """A source listed nothing while URIs it listed before remain known."""
 
