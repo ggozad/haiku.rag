@@ -1,3 +1,46 @@
+import pytest
+from docling_core.types.doc.document import DoclingDocument
+
+from haiku.rag.client import HaikuRAG
+
+
+@pytest.fixture
+async def manual(seeded):
+    config, _ = seeded
+    async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
+        document = await rag.import_document(
+            DoclingDocument(name="manual"),
+            [],
+            uri="test://alpha/manual",
+            title="Field manual",
+        )
+    return document.id
+
+
+async def test_documents_are_paged_and_counted_per_database(client, manual):
+    body = (await client.get("/api/documents", params={"limit": 1})).json()
+    assert sorted(doc["source"] for doc in body["documents"]) == ["alpha", "beta"]
+    assert body["totals"] == {"alpha": 2, "beta": 1}
+    rest = (
+        await client.get(
+            "/api/documents", params={"source": "alpha", "limit": 1, "offset": 1}
+        )
+    ).json()
+    shown = {doc["id"] for doc in body["documents"] + rest["documents"]}
+    assert manual in shown and len(shown) == 3
+
+
+async def test_documents_are_found_by_title_or_uri(client, manual):
+    body = (await client.get("/api/documents", params={"q": "MANUAL"})).json()
+    assert [doc["id"] for doc in body["documents"]] == [manual]
+    assert body["totals"] == {"alpha": 1, "beta": 0}
+
+
+async def test_a_page_larger_than_the_limit_is_refused(client):
+    response = await client.get("/api/documents", params={"limit": 501})
+    assert response.status_code == 400
+
+
 async def test_documents_of_every_database_with_failures_named(client):
     body = (await client.get("/api/documents")).json()
     assert sorted((doc["source"], doc["title"]) for doc in body["documents"]) == [

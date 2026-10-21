@@ -54,7 +54,7 @@ Every inspector view has an address that reopens it:
 | `/api/sessions/{id}` | GET, PATCH, DELETE | Read, rename or scope, delete a session |
 | `/api/sessions/{id}/export` | GET | A session as Markdown |
 | `/api/databases` | GET | Each database with its availability and size |
-| `/api/documents` | GET | Documents of every database, or of `source` |
+| `/api/documents` | GET | A page of each database's documents, or of `source`'s, by `limit` and `offset`, matching `q` in a title or URI, with each database's total |
 | `/api/pictures` | GET | A stored picture, by `source`, `document_id` and `ref` |
 | `/api/visualize/{chunk_ids}` | GET | Page images with chunks drawn, by `source` |
 | `/api/inspect/{source}/…` | GET | Documents, items, outline, chunks, pages, pictures, chunk context and similar chunks, info |

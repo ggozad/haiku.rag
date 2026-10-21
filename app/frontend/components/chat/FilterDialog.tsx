@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { DocumentRef } from "@/lib/chat";
-import { useJson } from "@/lib/useJson";
+import { load } from "@/lib/useJson";
 
 interface ListedDocument {
 	id: string;
@@ -29,6 +29,23 @@ const refOf = (key: string): DocumentRef => {
 };
 const nameOf = (doc: ListedDocument) => doc.title || doc.uri || doc.id;
 
+interface Listing {
+	documents?: ListedDocument[];
+	totals?: Record<string, number>;
+	errors?: Record<string, string>;
+}
+
+interface Further {
+	pages: ListedDocument[][];
+	total?: number;
+	loading?: boolean;
+	error?: string;
+}
+
+const PAGE = 50;
+// Typing waits this long before the server is asked.
+const SETTLE_MS = 250;
+
 export default function FilterDialog({
 	open,
 	onOpenChange,
@@ -41,39 +58,113 @@ export default function FilterDialog({
 	onApply: (selection: DocumentRef[]) => void;
 }) {
 	const [term, setTerm] = useState("");
+	const [query, setQuery] = useState("");
+	// The first page of every database, then each database's further pages.
+	const [first, setFirst] = useState<Listing | null>(null);
+	const [failure, setFailure] = useState<string | null>(null);
+	const [further, setFurther] = useState<Record<string, Further>>({});
+	const requests = useRef(new Set<AbortController>());
 	const [chosen, setChosen] = useState<Set<string>>(new Set());
 
-	// Listed on every open, so new and deleted documents show.
-	const listing = useJson<{
-		documents?: ListedDocument[];
-		errors?: Record<string, string>;
-	}>(open ? "/api/backend/api/documents" : null);
-	const documents = listing.data?.documents ?? [];
-	const errors = listing.error
-		? { backend: listing.error }
-		: (listing.data?.errors ?? {});
-	const loading = listing.loading;
+	useEffect(() => {
+		const timer = setTimeout(() => setQuery(term.trim()), SETTLE_MS);
+		return () => clearTimeout(timer);
+	}, [term]);
+
+	const request = (
+		params: Record<string, string>,
+		on: Parameters<typeof load<Listing>>[2],
+	) => {
+		const search = new URLSearchParams({ ...params, limit: String(PAGE) });
+		if (query) search.set("q", query);
+		const controller = new AbortController();
+		requests.current.add(controller);
+		void load<Listing>(
+			`/api/backend/api/documents?${search}`,
+			controller.signal,
+			{
+				...on,
+				done: () => {
+					requests.current.delete(controller);
+					on.done();
+				},
+			},
+		);
+	};
+
+	// Listed on every open, so new and deleted documents show, and found by
+	// title or URI on the server.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: request reads query
+	useEffect(() => {
+		if (!open) return;
+		setFirst(null);
+		setFailure(null);
+		setFurther({});
+		request(
+			{ offset: "0" },
+			{ data: setFirst, error: setFailure, done: () => {} },
+		);
+		const pending = requests.current;
+		return () => {
+			for (const controller of pending) controller.abort();
+			pending.clear();
+		};
+	}, [open, query]);
+
+	// One database's next page. A failed page is asked for again next time.
+	const showMore = (source: string) => {
+		const pages = further[source]?.pages ?? [];
+		const update = (change: Partial<Further>) =>
+			setFurther((kept) => ({
+				...kept,
+				[source]: { ...(kept[source] ?? { pages: [] }), ...change },
+			}));
+		update({ loading: true, error: undefined });
+		request(
+			{ source, offset: String(PAGE * (pages.length + 1)) },
+			{
+				data: (page) =>
+					update({
+						pages: [...pages, page.documents ?? []],
+						total: page.totals?.[source],
+					}),
+				error: (message) => update({ error: message }),
+				done: () => update({ loading: false }),
+			},
+		);
+	};
 
 	useEffect(() => {
 		if (!open) return;
 		setChosen(new Set(selection.map(keyOf)));
 		setTerm("");
+		setQuery("");
 	}, [open, selection]);
 
-	const grouped = useMemo(() => {
-		const needle = term.trim().toLowerCase();
-		const groups = new Map<string, ListedDocument[]>();
-		for (const doc of documents) {
-			if (needle && !nameOf(doc).toLowerCase().includes(needle)) continue;
-			const group = groups.get(doc.source) ?? [];
-			group.push(doc);
-			groups.set(doc.source, group);
-		}
-		for (const group of groups.values()) {
-			group.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
-		}
-		return groups;
-	}, [documents, term]);
+	const sources = [
+		...new Set((first?.documents ?? []).map((doc) => doc.source)),
+	].map((source) => {
+		const opening = (first?.documents ?? []).filter(
+			(doc) => doc.source === source,
+		);
+		const pages = further[source]?.pages ?? [];
+		// Pages are read at offsets, so a write between two of them can list a
+		// document twice.
+		const docs = [
+			...new Map(
+				[opening, ...pages].flat().map((doc) => [keyOf(doc), doc]),
+			).values(),
+		].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+		const total =
+			further[source]?.total ?? first?.totals?.[source] ?? docs.length;
+		// More while the last page came back full: the total can count
+		// documents shifted by a write past the pages already read.
+		const more =
+			total > docs.length && (pages.at(-1) ?? opening).length === PAGE;
+		return { source, docs, total, more, ...further[source] };
+	});
+	const errors = failure ? { backend: failure } : (first?.errors ?? {});
+	const loading = open && first === null && failure === null;
 
 	const toggle = (key: string) =>
 		setChosen((prev) => {
@@ -114,13 +205,16 @@ export default function FilterDialog({
 					{loading && (
 						<p className="text-sm text-muted-foreground">Loading documents…</p>
 					)}
-					{!loading && grouped.size === 0 && (
+					{!loading && sources.length === 0 && (
 						<p className="text-sm text-muted-foreground">No documents found.</p>
 					)}
-					{[...grouped.entries()].map(([source, docs]) => (
+					{sources.map(({ source, docs, total, more, loading, error }) => (
 						<section key={source} className="space-y-1">
-							<h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-								{source}
+							<h3 className="flex justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								<span>{source}</span>
+								<span className="normal-case tabular-nums">
+									{docs.length} of {total}
+								</span>
 							</h3>
 							{docs.map((doc) => {
 								const key = keyOf(doc);
@@ -139,6 +233,17 @@ export default function FilterDialog({
 									</label>
 								);
 							})}
+							{error && <p className="text-xs text-destructive">{error}</p>}
+							{more && (
+								<Button
+									variant="ghost"
+									size="sm"
+									disabled={loading}
+									onClick={() => showMore(source)}
+								>
+									Show more
+								</Button>
+							)}
 						</section>
 					))}
 				</div>

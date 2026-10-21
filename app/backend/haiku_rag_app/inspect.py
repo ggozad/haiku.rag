@@ -19,7 +19,7 @@ async def _reader(request: Request) -> HaikuRAG:
     return await request.app.state.databases.reader(request.path_params["source"])
 
 
-def _int(request: Request, name: str, default: int, most: int) -> int:
+def query_int(request: Request, name: str, default: int, most: int) -> int:
     raw = request.query_params.get(name)
     if raw is None:
         return default
@@ -64,8 +64,8 @@ def _chunk_row(chunk: Chunk) -> dict[str, Any]:
 
 async def list_documents(request: Request) -> JSONResponse:
     owner = await _reader(request)
-    limit = _int(request, "limit", 50, 500)
-    offset = _int(request, "offset", 0, 10**9)
+    limit = query_int(request, "limit", 50, 500)
+    offset = query_int(request, "offset", 0, 10**9)
     document_filter = _document_filter(request)
     try:
         documents = await owner.list_documents(limit, offset, document_filter)
@@ -169,8 +169,8 @@ async def document_chunks(request: Request) -> JSONResponse:
     owner = await _reader(request)
     document_id = request.path_params["document_id"]
     await _document(owner, document_id)
-    limit = _int(request, "limit", 50, 500)
-    offset = _int(request, "offset", 0, 10**9)
+    limit = query_int(request, "limit", 50, 500)
+    offset = query_int(request, "offset", 0, 10**9)
     chunks = await owner.chunk_repository.get_by_document_id(
         document_id, limit=limit, offset=offset
     )
@@ -259,7 +259,7 @@ async def similar_chunks(request: Request) -> JSONResponse:
     """The chunks a search with this chunk's content returns, itself left out."""
     owner = await _reader(request)
     chunk = await _chunk(owner, request.path_params["chunk_id"])
-    limit = _int(request, "limit", 10, 50)
+    limit = query_int(request, "limit", 10, 50)
     results = await owner.search(chunk.content, limit=limit + 1)
     for result in results:
         result.source = request.path_params["source"]

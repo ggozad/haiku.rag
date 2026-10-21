@@ -22,8 +22,9 @@ from haiku.rag.capabilities.policy import create_capability as create_citation_p
 from haiku.rag.capabilities.rag import RAGState, create_capability
 from haiku.rag.config import AppConfig
 from haiku.rag.utils.models import get_model
-from haiku.rag.utils.sql import build_document_id_filter
+from haiku.rag.utils.sql import build_document_id_filter, title_or_uri_filter
 from haiku_rag_app.images import checked_image
+from haiku_rag_app.inspect import query_int
 from haiku_rag_app.sessions import Sessions
 
 
@@ -253,16 +254,22 @@ async def stream_chat(request: Request) -> Response:
 
 
 async def list_documents(request: Request) -> JSONResponse:
-    """Documents of one database, or of every database with failures named."""
+    """A page of documents of one database, or of each database with failures
+    named, matching `q` in a title or URI, and each database's count of them."""
     databases = request.app.state.databases
     source = request.query_params.get("source")
     names = [source] if source is not None else list(databases.names)
+    limit = query_int(request, "limit", 50, 500)
+    offset = query_int(request, "offset", 0, 10**9)
+    document_filter = title_or_uri_filter(request.query_params.get("q", ""))
     documents: list[dict[str, Any]] = []
+    totals: dict[str, int] = {}
     errors: dict[str, str] = {}
     for name in names:
         try:
             owner = await databases.reader(name)
-            listed = await owner.list_documents()
+            listed = await owner.list_documents(limit, offset, document_filter)
+            totals[name] = await owner.count_documents(document_filter)
         except Exception as error:
             if not isinstance(error, HTTPException):
                 error = HTTPException(503, str(error))
@@ -280,7 +287,7 @@ async def list_documents(request: Request) -> JSONResponse:
             }
             for doc in listed
         )
-    return JSONResponse({"documents": documents, "errors": errors})
+    return JSONResponse({"documents": documents, "totals": totals, "errors": errors})
 
 
 routes = [
