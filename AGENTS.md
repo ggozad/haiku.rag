@@ -471,6 +471,7 @@ Docling-serve polling and retry delays are skipped only during cassette playback
 - No module docstrings at top of .py files
 - Type hints everywhere, Pydantic for validation
 - Minimal comments (only explain WHY when not obvious)
+- Every critical dependency carries an upper bound, and `pydantic-ai-slim` is capped below its next minor release. pydantic-ai changes capability hook semantics in minor releases: 2.54 runs `before_model_request` inside the `wrap_model_request` handler, and `EvidenceCompactionCapability` then compacts nothing. Raise a cap only in a change that runs every suite and, when capability behaviour can move, the evals.
 
 ## Comments and Docstrings
 
