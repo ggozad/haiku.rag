@@ -934,3 +934,82 @@ async def test_a_failed_watch_loop_records_its_error(tmp_path, jobs, sync, monke
         "watchfiles loop failed for local: inotify limit reached"
     ]
     assert poller.last_error == "inotify limit reached"
+
+
+# --- stopping and removal ---
+
+
+class _GatedSource(_StubSource):
+    """Lists one file once `gate` is set, recording that discovery began."""
+
+    def __init__(self, source_id: str):
+        super().__init__(source_id, [])
+        self.listing = asyncio.Event()
+        self.gate = asyncio.Event()
+
+    async def discover(self, since=None, *, known_uris=None):
+        self.discover_calls += 1
+        self.listing.set()
+        await self.gate.wait()
+        yield _event("file:///a.md", source_id=self.source_id)
+
+
+async def test_stop_waits_for_the_sweep_in_progress(jobs, sync, fs_config):
+    source = _GatedSource("src")
+    poller = _periodic(source, fs_config, jobs, sync)
+    sweep = asyncio.create_task(poller._sweep_once())
+    await source.listing.wait()
+
+    stop = asyncio.create_task(poller.stop())
+    await asyncio.sleep(0.05)
+    assert not stop.done()
+
+    source.gate.set()
+    await asyncio.wait_for(stop, timeout=5.0)
+    assert sweep.done() and sweep.result() is True
+
+
+async def test_a_sweep_after_stop_does_not_list(jobs, sync, fs_config):
+    source = _StubSource("src", [[_event("file:///a.md")]])
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    await poller.stop()
+
+    assert await poller._sweep_once() is False
+    assert source.discover_calls == 0
+    assert await jobs.list_jobs(source_id="src") == []
+
+
+def _idle_config(tmp_path, source_id: str) -> FSSourceConfig:
+    return FSSourceConfig(type="fs", id=source_id, root=tmp_path, poll_interval_s=3600)
+
+
+async def test_remove_stops_one_poller_and_keeps_the_others(tmp_path, jobs, sync):
+    manager = PollerManager(
+        configs=[_idle_config(tmp_path, "kept"), _idle_config(tmp_path, "gone")],
+        job_repo=jobs,
+        sync_repo=sync,
+    )
+    await manager.start()
+    try:
+        await manager.remove(["gone"])
+
+        assert [poller.source_id for poller in manager.pollers] == ["kept"]
+        assert manager.live_pollers == 1
+    finally:
+        await manager.stop()
+
+
+async def test_a_poller_added_to_a_started_manager_runs(tmp_path, jobs, sync):
+    manager = PollerManager(
+        configs=[_idle_config(tmp_path, "first")], job_repo=jobs, sync_repo=sync
+    )
+    await manager.start()
+    try:
+        manager.add([manager.build(_idle_config(tmp_path, "second"))])
+
+        assert [poller.source_id for poller in manager.pollers] == ["first", "second"]
+        assert manager.live_pollers == 2
+    finally:
+        await manager.stop()
+    assert manager.live_pollers == 0

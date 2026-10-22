@@ -3,6 +3,7 @@ import logging
 import signal
 from collections.abc import Callable, Collection
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -33,6 +34,9 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.client.scope import DatabaseRef
+    from haiku.rag.ingester.api.server import APIState
+    from haiku.rag.ingester.metadata import MetadataProvider
+    from haiku.rag.ingester.pollers.base import BasePoller
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +84,27 @@ def _manifest_job_key(job: Job) -> tuple[str, str, str, str | None]:
     return (job.source_id, job.uri, job.op.value, job.revision)
 
 
+@dataclass
+class _Database:
+    """A database the app ingests into, with its sources' pollers. `opened`
+    is what `_covering` returned, and `client` is what entering it returned.
+    Closing exits `opened`, which retries a close that failed."""
+
+    ref: "DatabaseRef"
+    opened: "HaikuRAG"
+    client: "HaikuRAG"
+    pollers: "list[BasePoller]"
+    metadata_providers: "dict[str, MetadataProvider]"
+    removing: bool = False
+
+    async def close_client(self) -> None:
+        await self.opened.__aexit__(None, None, None)
+
+    @property
+    def source_ids(self) -> list[str]:
+        return [poller.source_id for poller in self.pollers]
+
+
 class IngesterApp:
     """Top-level lifecycle for the production ingester.
 
@@ -125,6 +150,9 @@ class IngesterApp:
             for source in sources
         ]
         self._configured_source_ids: set[str] = set()
+        self._running: dict[str, _Database] = {}
+        self._ingested: dict[str, DatabaseRef] = {}
+        self._source_databases: dict[str, str] = {}
         queue = config.ingester.queue
         if (
             queue.dburi
@@ -171,18 +199,24 @@ class IngesterApp:
         assert self._jobs is not None and self._sync is not None
         ingester_cfg = self._config.ingester
         self._pollers = await self._build_pollers()
-        source_databases = self._source_databases()
-        async with AsyncExitStack() as stack:
-            try:
-                clients = {
-                    ref.name: await self._open(stack, ref) for ref, _ in self._databases
-                }
-                # Every local database exists once open, so comparing directory
-                # identities catches two names the filesystem treats as one.
-                _refuse_shared_locations([ref for ref, _ in self._databases])
-            except BaseException:
-                await self._pollers.close_sources()
+        pollers = iter(self._pollers.pollers)
+        prepared: list[_Database] = []
+        try:
+            for ref, sources in self._databases:
+                prepared.append(
+                    await self._prepare(ref, [next(pollers) for _ in sources])
+                )
+            # Every local database exists once open, so comparing directory
+            # identities catches two names the filesystem treats as one.
+            _refuse_shared_locations([database.ref for database in prepared])
+        except BaseException:
+            async with AsyncExitStack() as closing:
+                closing.push_async_callback(self._pollers.close_sources)
+                for database in prepared:
+                    closing.push_async_callback(database.close_client)
                 raise
+        unapplied = list(prepared)
+        try:
             cancelled = await self._jobs.cancel_unconfigured(
                 self._configured_source_ids
             )
@@ -192,27 +226,12 @@ class IngesterApp:
                     "configured",
                     cancelled,
                 )
-            metadata_providers = build_providers(
-                [
-                    (poller.source_id, poller.config.metadata_provider)
-                    for poller in self._pollers.pollers
-                ],
-                load_metadata_providers(),
-            )
             self._pool = WorkerPool(
-                clients={
-                    source_id: clients[database]
-                    for source_id, database in source_databases.items()
-                },
+                clients={},
                 job_repo=self._jobs,
                 sync_repo=self._sync,
                 worker_count=ingester_cfg.workers.worker_count,
                 retry_policy=RetryPolicy(**ingester_cfg.workers.retry.model_dump()),
-                source_retry_policies={
-                    poller.source_id: RetryPolicy(**poller.config.retry.model_dump())
-                    for poller in self._pollers.pollers
-                    if poller.config.retry is not None
-                },
                 poll_idle_interval_s=ingester_cfg.workers.poll_idle_interval_s,
                 lease_ttl_s=ingester_cfg.workers.lease_ttl_s,
                 heartbeat_interval_s=ingester_cfg.workers.heartbeat_interval_s,
@@ -222,30 +241,130 @@ class IngesterApp:
                     if ingester_cfg.queue.retention_days is not None
                     else None
                 ),
-                # Same Source instances the pollers discover with —
-                # workers resolve URIs through them so authenticated
-                # HTTP / WebDAV / S3 fetches reuse credentials.
-                sources=self._pollers.sources,
-                metadata_providers=metadata_providers,
             )
-            # Between process lifetimes either database can be restored,
-            # rebuilt or lost on its own, so the two are brought back in
-            # step before any sweep reads sync_state.
-            for ref, _ in self._databases:
-                await reconcile(
-                    clients[ref.name],
-                    self._sync,
-                    [
-                        source_id
-                        for source_id, database in source_databases.items()
-                        if database == ref.name
-                    ],
-                )
+            for database in prepared:
+                await self._apply(database)
+                unapplied.remove(database)
             yield
+        finally:
+            # Every close is attempted, whichever fails.
+            async with AsyncExitStack() as closing:
+                for database in [*unapplied, *self._running.values()]:
+                    # A removal detaches its pollers from the manager, so its
+                    # adapters are closed here.
+                    if database.removing:
+                        closing.push_async_callback(self._close, database)
+                    else:
+                        closing.push_async_callback(database.close_client)
 
-    async def _open(self, stack: AsyncExitStack, ref: "DatabaseRef") -> "HaikuRAG":
-        """A writable client over `ref`, created on first start and closed
-        with `stack`. An error opening it names the database."""
+    async def add_database(
+        self, ref: "DatabaseRef", sources: list[SourceConfig]
+    ) -> None:
+        """Ingest into `ref` from `sources`, whether the app serves or not. A
+        database that fails to open or reconcile leaves the app as it was.
+        The caller checks that no running database has the name, the location
+        or one of the source ids."""
+        assert self._pollers is not None
+        pollers: list[BasePoller] = []
+        try:
+            for source in sources:
+                pollers.append(self._pollers.build(source))
+            database = await self._prepare(ref, pollers)
+        except BaseException:
+            for poller in pollers:
+                await poller.source.aclose()
+            raise
+        try:
+            await self._apply(database)
+        except BaseException:
+            await self._close(database)
+            raise
+
+    async def remove_database(self, name: str) -> None:
+        """Stop ingesting into `name` once its jobs in flight finish, delete
+        its queued jobs and `sync_state`, and close it. Its documents stay.
+
+        Each step is idempotent. A removal that fails leaves the database
+        `removing`, and the next removal of it starts again."""
+        assert (
+            self._pool is not None
+            and self._pollers is not None
+            and self._jobs is not None
+            and self._sync is not None
+        )
+        database = self._running[name]
+        database.removing = True
+        source_ids = database.source_ids
+        for source_id in source_ids:
+            self._source_databases.pop(source_id, None)
+        await self._pool.unserve(source_ids)
+        await self._pollers.remove(source_ids)
+        await self._pool.wait_idle(source_ids)
+        await self._jobs.cancel_sources(source_ids)
+        await self._sync.delete_sources(source_ids)
+        self._pool.remove_sources(source_ids)
+        await self._close(database)
+        del self._running[name]
+        del self._ingested[name]
+
+    async def _prepare(
+        self, ref: "DatabaseRef", pollers: "list[BasePoller]"
+    ) -> _Database:
+        """Open `ref` and build its sources' metadata providers, writing
+        nothing to the queue. An error closes what was opened."""
+        opened, client = await self._open(ref)
+        try:
+            metadata_providers = build_providers(
+                [
+                    (poller.source_id, poller.config.metadata_provider)
+                    for poller in pollers
+                ],
+                load_metadata_providers(),
+            )
+        except BaseException:
+            await opened.__aexit__(None, None, None)
+            raise
+        return _Database(ref, opened, client, pollers, metadata_providers)
+
+    async def _apply(self, database: _Database) -> None:
+        """Reconcile `database` against its sources, then serve them. Between
+        process lifetimes either side can be restored, rebuilt or lost on its
+        own, so they are brought back in step before any sweep reads
+        `sync_state`."""
+        assert (
+            self._pool is not None
+            and self._pollers is not None
+            and self._sync is not None
+        )
+        await reconcile(database.client, self._sync, database.source_ids)
+        self._pool.add_sources(
+            clients={source_id: database.client for source_id in database.source_ids},
+            # The pollers' own adapters: workers fetch through them, so
+            # authenticated HTTP / WebDAV / S3 fetches reuse credentials.
+            sources=[poller.source for poller in database.pollers],
+            source_retry_policies={
+                poller.source_id: RetryPolicy(**poller.config.retry.model_dump())
+                for poller in database.pollers
+                if poller.config.retry is not None
+            },
+            metadata_providers=database.metadata_providers,
+        )
+        self._pollers.add(database.pollers)
+        name = database.ref.name
+        self._running[name] = database
+        self._ingested[name] = database.ref
+        self._source_databases.update(
+            {source_id: name for source_id in database.source_ids}
+        )
+
+    async def _close(self, database: _Database) -> None:
+        for poller in database.pollers:
+            await poller.source.aclose()
+        await database.close_client()
+
+    async def _open(self, ref: "DatabaseRef") -> "tuple[HaikuRAG, HaikuRAG]":
+        """A writable client over `ref`, created on first start, as opened
+        and as entered. An error opening it names the database."""
         from haiku.rag.client import HaikuRAG
         from haiku.rag.client.scope import DatabaseScope
         from haiku.rag.store.exceptions import (
@@ -253,10 +372,9 @@ class IngesterApp:
             MigrationRequiredError,
         )
 
+        opened = HaikuRAG._covering(DatabaseScope((ref,)), self._config, create=True)
         try:
-            return await stack.enter_async_context(
-                HaikuRAG._covering(DatabaseScope((ref,)), self._config, create=True)
-            )
+            return opened, await opened.__aenter__()
         except (ConfigMismatchError, MigrationRequiredError) as error:
             raise type(error)(f"database {ref.name!r}: {error}") from error
 
@@ -297,15 +415,6 @@ class IngesterApp:
                 "sources. Give each source its own id"
             )
         return manager
-
-    def _source_databases(self) -> dict[str, str]:
-        """Source id to the name of the database it is ingested into."""
-        assert self._pollers is not None
-        databases = [ref.name for ref, sources in self._databases for _ in sources]
-        return {
-            poller.source_id: database
-            for poller, database in zip(self._pollers.pollers, databases)
-        }
 
     @asynccontextmanager
     async def _discovery_resources(self):
@@ -359,7 +468,7 @@ class IngesterApp:
         total = 0
         while True:
             counts = await self._jobs.batch_progress_counts_since(
-                started_at, source_ids=self._source_databases()
+                started_at, source_ids=self._source_databases
             )
             queued = counts.get("queued", 0)
             claimed = counts.get("claimed", 0)
@@ -393,7 +502,7 @@ class IngesterApp:
                 break
             await asyncio.sleep(0.1)
         completed = await self._jobs.counts_by_status_since(
-            started_at, source_ids=self._source_databases()
+            started_at, source_ids=self._source_databases
         )
         return BatchReport(
             succeeded=completed.get("succeeded", 0),
@@ -484,7 +593,7 @@ class IngesterApp:
             try:
                 failed_sweeps = await self._pollers.sweep_all()
                 retried = await self._jobs.retry_failed(
-                    retry, source_ids=self._source_databases()
+                    retry, source_ids=self._source_databases
                 )
                 report = await self._drain_batch(
                     started_at, progress_callback=progress_callback
@@ -608,6 +717,25 @@ class IngesterApp:
                 await self._stop_pool()
                 await self._pollers.close_sources()
 
+    def _api_state(self) -> "APIState":
+        """The API's view of the running app: the maps it reads are the app's
+        own, so they follow databases as they are added and removed."""
+        from haiku.rag.ingester.api.server import APIState
+
+        assert (
+            self._jobs is not None and self._sync is not None and self._pool is not None
+        )
+        return APIState(
+            config=self._config,
+            job_repo=self._jobs,
+            sync_repo=self._sync,
+            pool=self._pool,
+            pollers=self._pollers,
+            databases=self._ingested,
+            source_databases=self._source_databases,
+            claim_lock=self._pool.claim_lock,
+        )
+
     async def _maybe_start_api(self, api: bool):
         """Spin up the FastAPI control plane on an asyncio task. Returns
         (task, server) or (None, None) when the API is disabled."""
@@ -617,22 +745,12 @@ class IngesterApp:
 
         import uvicorn
 
-        from haiku.rag.ingester.api.server import APIState, build_app
+        from haiku.rag.ingester.api.server import build_app
 
-        assert self._jobs is not None and self._sync is not None
-        state = APIState(
-            config=self._config,
-            job_repo=self._jobs,
-            sync_repo=self._sync,
-            pool=self._pool,
-            pollers=self._pollers,
-            databases={ref.name: ref for ref, _ in self._databases},
-            source_databases=self._source_databases(),
-        )
         if ingester_cfg.api.auth_token is None:
             logger.warning("API auth_token is unset — control plane is unauthenticated")
         app = build_app(
-            state,
+            self._api_state(),
             auth_token=ingester_cfg.api.auth_token,
             root_path=ingester_cfg.api.root_path,
         )

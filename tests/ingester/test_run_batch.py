@@ -126,29 +126,6 @@ def _manifest(*changes: BatchChange) -> BatchManifest:
     return BatchManifest(generated_at=datetime.now(UTC), changes=list(changes))
 
 
-@pytest.fixture
-def use_client(monkeypatch):
-    """Make IngesterApp's internally-created HaikuRAG resolve to the given
-    mock client. Call again to swap the client for a later run in the same
-    test."""
-
-    def _install(client):
-        """`client` serves every database, or a dict maps a database name to
-        its client."""
-
-        @asynccontextmanager
-        async def _cm(scope):
-            yield client[scope.names[0]] if isinstance(client, dict) else client
-
-        # The app opens each database through `_covering`: the double stands
-        # in for it.
-        stub = MagicMock()
-        stub._covering = lambda scope, *a, **k: _cm(scope)
-        monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
-
-    return _install
-
-
 async def test_run_batch_drains_upserts(tmp_path, use_client):
     (tmp_path / "a.md").write_text("hello")
     (tmp_path / "b.md").write_text("world")

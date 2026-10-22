@@ -1,3 +1,6 @@
+from contextlib import asynccontextmanager
+from unittest.mock import MagicMock
+
 import aiosqlite
 import pytest
 
@@ -32,3 +35,26 @@ def jobs(engine):
 @pytest.fixture
 def sync(engine):
     return SyncStateRepo(engine)
+
+
+@pytest.fixture
+def use_client(monkeypatch):
+    """Make IngesterApp's internally-created HaikuRAG resolve to the given
+    mock client. Call again to swap the client for a later run in the same
+    test."""
+
+    def _install(client):
+        """`client` serves every database, or a dict maps a database name to
+        its client."""
+
+        @asynccontextmanager
+        async def _cm(scope):
+            yield client[scope.names[0]] if isinstance(client, dict) else client
+
+        # The app opens each database through `_covering`: the double stands
+        # in for it.
+        stub = MagicMock()
+        stub._covering = lambda scope, *a, **k: _cm(scope)
+        monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+
+    return _install

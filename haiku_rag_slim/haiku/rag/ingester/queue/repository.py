@@ -491,10 +491,16 @@ class JobRepo:
 
         A claim is deleted too, so this runs only while no process serves
         those sources."""
+        return await self._cancel_live(jobs.c.source_id.notin_(sorted(source_ids)))
+
+    async def cancel_sources(self, source_ids: Collection[str]) -> int:
+        """Delete the queued and claimed jobs of `source_ids`, which no worker
+        may be processing. Returns how many were deleted."""
+        return await self._cancel_live(*_of_sources(source_ids))
+
+    async def _cancel_live(self, *conditions: sa.ColumnElement[bool]) -> int:
         stmt = sa.delete(jobs).where(
-            self._owned,
-            jobs.c.status.in_(["queued", "claimed"]),
-            jobs.c.source_id.notin_(sorted(source_ids)),
+            self._owned, jobs.c.status.in_(["queued", "claimed"]), *conditions
         )
         async with self._engine.begin() as conn:
             result = await conn.execute(stmt)
@@ -928,6 +934,13 @@ class SyncStateRepo:
     async def delete(self, source_id: str, uri: str) -> None:
         stmt = sa.delete(sync_state).where(
             self._owned, sync_state.c.source_id == source_id, sync_state.c.uri == uri
+        )
+        async with self._engine.begin() as conn:
+            await conn.execute(stmt)
+
+    async def delete_sources(self, source_ids: Collection[str]) -> None:
+        stmt = sa.delete(sync_state).where(
+            self._owned, sync_state.c.source_id.in_(sorted(source_ids))
         )
         async with self._engine.begin() as conn:
             await conn.execute(stmt)

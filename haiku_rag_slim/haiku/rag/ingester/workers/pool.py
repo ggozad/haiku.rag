@@ -15,7 +15,7 @@ from haiku.rag.ingester.workers.retry import RetryPolicy, compute_backoff
 from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection, Mapping
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.ingester.metadata import MetadataProvider
@@ -43,7 +43,8 @@ _WORKER_BREAKER_COOLDOWN_S = 60.0
 class WorkerPool:
     """`worker_count` async tasks each pull jobs from the queue and run them
     through `run_job`. `clients` maps a source id to the client that writes
-    its jobs, and only those sources' jobs are claimed. While a worker
+    its jobs, and only served sources' jobs are claimed. `add_sources` and
+    `unserve` change what is served while the pool runs. While a worker
     processes a job it renews the job's lease on a `heartbeat_interval_s`
     cadence; a reaper task resets claims whose lease has gone stale
     (`lease_ttl_s`) so a crashed worker doesn't strand its job, without
@@ -79,7 +80,13 @@ class WorkerPool:
         self._heartbeat_interval_s = heartbeat_interval_s
         self._reaper_interval_s = reaper_interval_s
         self._retention_s = retention_s
-        self._sources: list[Source] = list(sources) if sources else []
+        self._sources: dict[str, Source] = {
+            source.source_id: source for source in sources or ()
+        }
+        self._served: set[str] = set(self._clients)
+        # Claims and `unserve` take it, so once `unserve` returns no claim
+        # names its sources, and every claim that did is in `_executions`.
+        self.claim_lock = asyncio.Lock()
         self._metadata_providers: dict[str, MetadataProvider] = (
             dict(metadata_providers) if metadata_providers else {}
         )
@@ -95,6 +102,11 @@ class WorkerPool:
         # job_id -> claimed_by for jobs currently being processed by this pool;
         # the heartbeat renews exactly these leases.
         self._inflight: dict[str, str] = {}
+        # worker_id -> source_id of every job this pool is executing. A
+        # reclaimed job runs twice, and `_inflight` names only its last claim.
+        self._executions: dict[str, str] = {}
+        # Set whenever an execution ends, for `wait_idle`.
+        self._finished = asyncio.Event()
         # Set whenever _inflight is empty so the heartbeat can leave promptly
         # once stopping instead of sleeping out a full interval.
         self._idle = asyncio.Event()
@@ -115,6 +127,8 @@ class WorkerPool:
         # keep being renewed — our exit must not evict it.
         if self._inflight.get(job_id) == worker_id:
             del self._inflight[job_id]
+        if self._executions.pop(worker_id, None) is not None:
+            self._finished.set()
         if not self._inflight:
             self._idle.set()
 
@@ -155,9 +169,66 @@ class WorkerPool:
         """Served sources whose breaker is closed."""
         return {
             source_id
-            for source_id in self._clients
+            for source_id in self._served
             if not ((breaker := self._breakers.get(source_id)) and breaker.is_open)
         }
+
+    def add_sources(
+        self,
+        *,
+        clients: "Mapping[str, HaikuRAG]",
+        sources: "list[Source]",
+        source_retry_policies: "Mapping[str, RetryPolicy] | None" = None,
+        metadata_providers: "Mapping[str, MetadataProvider] | None" = None,
+    ) -> None:
+        """Serve every source in `clients`, whether the pool runs or not."""
+        self._clients.update(clients)
+        self._sources.update({source.source_id: source for source in sources})
+        self._source_retry.update(source_retry_policies or {})
+        self._metadata_providers.update(metadata_providers or {})
+        self._served.update(clients)
+
+    async def unserve(self, source_ids: "Collection[str]") -> None:
+        """Stop claiming jobs of `source_ids`. Their jobs in flight run on:
+        `wait_idle` waits for them."""
+        async with self.claim_lock:
+            self._served.difference_update(source_ids)
+
+    async def wait_idle(self, source_ids: "Collection[str]") -> None:
+        """Return once no job of `source_ids` is in flight."""
+        while True:
+            self._finished.clear()
+            if not any(s in source_ids for s in self._executions.values()):
+                return
+            await self._finished.wait()
+
+    def remove_sources(self, source_ids: "Collection[str]") -> None:
+        """Forget `source_ids`, which are unserved and idle."""
+        for source_id in source_ids:
+            self._clients.pop(source_id, None)
+            self._sources.pop(source_id, None)
+            self._source_retry.pop(source_id, None)
+            self._metadata_providers.pop(source_id, None)
+            self._breakers.pop(source_id, None)
+
+    async def _claim(
+        self, worker_id: str, *, open_breakers: bool = False
+    ) -> Job | None:
+        """Claim a job of a served source. The sources are read under the
+        lock, so a claim queued behind `unserve` sees its result."""
+        async with self.claim_lock:
+            source_ids = (
+                set(self._served) if open_breakers else self._claimable_source_ids()
+            )
+            job = await self._jobs.claim_next(worker_id, source_ids=source_ids)
+            if job is not None:
+                self._track(job)
+            return job
+
+    def _track(self, job: Job) -> None:
+        assert job.claimed_by is not None, "only claimed jobs are in flight"
+        self._track_inflight(job.id, job.claimed_by)
+        self._executions[job.claimed_by] = job.source_id
 
     async def start(self) -> None:
         if self._workers:
@@ -222,7 +293,7 @@ class WorkerPool:
         coroutine. Used by tests; not by `start()`."""
         processed = 0
         while True:
-            job = await self._jobs.claim_next(worker_id, source_ids=self._clients)
+            job = await self._claim(worker_id, open_breakers=True)
             if job is None:
                 return processed
             await self._process(job)
@@ -230,9 +301,7 @@ class WorkerPool:
 
     async def _worker_loop(self, worker_id: str) -> None:
         while not self._stop.is_set():
-            job = await self._jobs.claim_next(
-                worker_id, source_ids=self._claimable_source_ids()
-            )
+            job = await self._claim(worker_id)
             if job is None:
                 try:
                     async with self._jobs.job_available:
@@ -243,7 +312,12 @@ class WorkerPool:
                 except TimeoutError:
                     pass
                 continue
-            await self._process(job)
+            try:
+                await self._process(job)
+            finally:
+                # The claim tracked the job. `_process` untracks it as well,
+                # unless it fails before its own cleanup.
+                self._untrack_inflight(job.id, worker_id)
 
     async def _reaper_loop(self) -> None:
         while not self._stop.is_set():
@@ -298,7 +372,7 @@ class WorkerPool:
         worker_id = job.claimed_by
         # Track before any await so the heartbeat renews this job's lease for
         # its whole lifetime; untrack on every exit (success, error, cancel).
-        self._track_inflight(job.id, worker_id)
+        self._track(job)
         try:
             await self._run_job_lifecycle(job, worker_id)
         finally:
@@ -361,7 +435,7 @@ class WorkerPool:
             result = await run_job(
                 self._clients[job.source_id],
                 job,
-                sources=self._sources,
+                sources=list(self._sources.values()),
                 metadata_providers=self._metadata_providers,
             )
         except asyncio.CancelledError:

@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -18,8 +19,9 @@ if TYPE_CHECKING:
 class APIState:
     """Everything the API handlers need to read or act on. Pool/pollers are
     optional so the FastAPI app can be tested in isolation. `databases` holds
-    the ingested databases by name, and `source_databases` maps a source id
-    to the name of its database."""
+    the ingested databases by name, and `source_databases` maps a served
+    source id to the name of its database. A retry holds `claim_lock`, the
+    pool's, so it cannot land between a removal's unserve and its delete."""
 
     config: "AppConfig"
     job_repo: "JobRepo"
@@ -28,6 +30,7 @@ class APIState:
     pollers: "PollerManager | None" = None
     databases: "Mapping[str, DatabaseRef]" = field(default_factory=dict)
     source_databases: Mapping[str, str] = field(default_factory=dict)
+    claim_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 def get_state(request: Request) -> APIState:
