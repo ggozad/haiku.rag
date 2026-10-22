@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.100.0] - 2026-10-22
+
 ### Added
 
 - `haiku-ingester serve` reloads `lancedb.databases` and `ingester.databases` from its configuration file on `POST /reload` or `SIGHUP`, adding, removing and replacing databases while the others keep ingesting. `POST /reload` returns a `ReloadReport`, with 500 when a database failed, and answers 409 for a change to any other section, 422 for a file that fails to load.
@@ -3038,7 +3040,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.99.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.100.0...HEAD
+[0.100.0]: https://github.com/ggozad/haiku.rag/compare/0.99.0...0.100.0
 [0.99.0]: https://github.com/ggozad/haiku.rag/compare/0.98.0...0.99.0
 [0.98.0]: https://github.com/ggozad/haiku.rag/compare/0.97.0...0.98.0
 [0.97.0]: https://github.com/ggozad/haiku.rag/compare/0.96.1...0.97.0
