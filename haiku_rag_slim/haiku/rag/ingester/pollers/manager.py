@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -40,11 +40,12 @@ class PollerManager:
         # Build eagerly so `sources` is available before `start()` — any
         # downstream component that holds the configured Source list (e.g.
         # WorkerPool) can do so via plain construction order.
-        self._pollers: list[BasePoller] = [self._build_poller(cfg) for cfg in configs]
-        self._tasks: list[asyncio.Task] = []
+        self._pollers: list[BasePoller] = [self.build(cfg) for cfg in configs]
+        self._tasks: dict[str, asyncio.Task] = {}
         self._started = False
 
-    def _build_poller(self, cfg: SourceConfig) -> BasePoller:
+    def build(self, cfg: SourceConfig) -> BasePoller:
+        """A poller over a new adapter for `cfg`, neither managed nor started."""
         source = build_source(cfg, supported_extensions=self._supported_extensions)
         breaker = CircuitBreaker(cfg.circuit_breaker)
         if isinstance(cfg, FSSourceConfig):
@@ -73,12 +74,35 @@ class PollerManager:
             raise RuntimeError("PollerManager already started")
         self._started = True
         for poller in self._pollers:
-            # Reset the stop signal synchronously *before* scheduling the
-            # task. If a poller is being restarted (stop() set the event
-            # on the previous cycle) clearing inside run() would race with
-            # any concurrent stop() and could deadlock.
-            poller._stop.clear()
-            self._tasks.append(asyncio.create_task(poller.run()))
+            self._run(poller)
+
+    def _run(self, poller: BasePoller) -> None:
+        # Reset the stop signal synchronously *before* scheduling the
+        # task. If a poller is being restarted (stop() set the event
+        # on the previous cycle) clearing inside run() would race with
+        # any concurrent stop() and could deadlock.
+        poller._stop.clear()
+        self._tasks[poller.source_id] = asyncio.create_task(poller.run())
+
+    def add(self, pollers: Sequence[BasePoller]) -> None:
+        """Manage `pollers`, starting them when the manager runs. A poller
+        already managed is left as it is."""
+        for poller in pollers:
+            if poller in self._pollers:
+                continue
+            self._pollers.append(poller)
+            if self._started:
+                self._run(poller)
+
+    async def remove(self, source_ids: Collection[str]) -> None:
+        """Stop the pollers of `source_ids` and stop managing them. Their
+        adapters stay open for the caller to close."""
+        for poller in [p for p in self._pollers if p.source_id in source_ids]:
+            await poller.stop()
+            task = self._tasks.pop(poller.source_id, None)
+            if task is not None:
+                await asyncio.gather(task, return_exceptions=True)
+            self._pollers.remove(poller)
 
     async def sweep_all(self) -> list[str]:
         """Run one discover() sweep on every poller, sequentially. Used by
@@ -117,7 +141,7 @@ class PollerManager:
         for poller in self._pollers:
             await poller.stop()
         if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
+            await asyncio.gather(*self._tasks.values(), return_exceptions=True)
         self._tasks.clear()
         self._started = False
 
@@ -141,4 +165,4 @@ class PollerManager:
     def live_pollers(self) -> int:
         """Poller tasks that are still running. Equal to len(pollers) under
         normal operation; less when a poller has crashed."""
-        return sum(1 for t in self._tasks if not t.done())
+        return sum(1 for t in self._tasks.values() if not t.done())

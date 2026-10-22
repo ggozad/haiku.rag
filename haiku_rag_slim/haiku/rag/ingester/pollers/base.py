@@ -56,6 +56,9 @@ class BasePoller:
         self._sync = sync_repo
         self._breaker = breaker or CircuitBreaker(config.circuit_breaker)
         self._stop = asyncio.Event()
+        # Held for a whole sweep, whether the loop or a refresh request runs
+        # it, so `stop` returns only once no sweep can still list or enqueue.
+        self._sweep_lock = asyncio.Lock()
         self._last_polled_at: datetime | None = None
         self._last_skip_reason: str | None = None
         self._last_error: str | None = None
@@ -104,6 +107,8 @@ class BasePoller:
 
     async def stop(self) -> None:
         self._stop.set()
+        async with self._sweep_lock:
+            pass
 
     async def _stagger_start(self) -> bool:
         """Sleep a random fraction of the interval so pollers sharing an
@@ -117,9 +122,15 @@ class BasePoller:
             return False
 
     async def _sweep_once(self) -> bool:
-        """One discover() sweep. Returns True on success, False if the
-        breaker is open, the source has pending work already queued, or the
-        sweep failed (and was recorded)."""
+        """One discover() sweep. Returns True on success, False if the poller
+        is stopped, the breaker is open, the source has pending work already
+        queued, or the sweep failed (and was recorded)."""
+        async with self._sweep_lock:
+            if self._stop.is_set():
+                return False
+            return await self._sweep()
+
+    async def _sweep(self) -> bool:
         if self._breaker.is_open:
             self._last_skip_reason = "circuit_open"
             logger.debug(

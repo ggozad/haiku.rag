@@ -74,3 +74,15 @@ class EmptyListingError(IngesterError):
         )
         self.source_id = source_id
         self.known = known
+
+
+class ReloadRefusedError(IngesterError):
+    """The running ingester cannot take the configuration file as it is."""
+
+
+class InvalidConfigError(IngesterError):
+    """The configuration file cannot be read, or fails a startup check."""
+
+
+class ReloadCancelledError(IngesterError):
+    """The ingester shut down before the reload finished."""

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `haiku-ingester serve` reloads `lancedb.databases` and `ingester.databases` from its configuration file on `POST /reload` or `SIGHUP`, adding, removing and replacing databases while the others keep ingesting. `POST /reload` returns a `ReloadReport`, with 500 when a database failed, and answers 409 for a change to any other section, 422 for a file that fails to load.
+- `IngesterApp.add_database(ref, sources)` and `IngesterApp.remove_database(name)`.
+- `JobRepo.cancel_sources(source_ids)` and `SyncStateRepo.delete_sources(source_ids)`.
+
+### Changed
+
+- `haiku-ingester serve` starts on an empty `ingester.databases`, deleting every queued and claimed job of its queue namespace. `run-batch` still refuses one.
+- `POST /sources/{id}/refresh` waits for a sweep of the same source in progress.
+- `IngesterApp` raises `NothingToIngestError` from `run_batch`, `run_batch_dry_run` and `run_batch_from_manifest` instead of its constructor.
+
 ## [0.99.0] - 2026-10-21
 
 ### Added

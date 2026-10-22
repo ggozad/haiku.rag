@@ -41,23 +41,24 @@ async def retry_job(job_id: str, state: APIState = Depends(get_state)) -> Job:
 async def retry_served(job_id: str, state: APIState) -> Job:
     """Re-queue a job, refusing one whose source this ingester does not serve:
     no worker would claim it."""
-    job = await state.job_repo.get_job(job_id)
-    if job is not None and job.source_id not in state.source_databases:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"source {job.source_id!r} is not configured, so no worker "
-            f"would claim job {job_id!r}",
-        )
-    try:
-        return await state.job_repo.retry(job_id)
-    except BlockingTombstoneError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="job not found"
-        ) from exc
+    async with state.claim_lock:
+        job = await state.job_repo.get_job(job_id)
+        if job is not None and job.source_id not in state.source_databases:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"source {job.source_id!r} is not configured, so no "
+                f"worker would claim job {job_id!r}",
+            )
+        try:
+            return await state.job_repo.retry(job_id)
+        except BlockingTombstoneError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="job not found"
+            ) from exc
 
 
 @router.delete("/{job_id}", response_model=CancelResponse)

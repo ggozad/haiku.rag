@@ -502,6 +502,24 @@ async def test_cancel_unconfigured_deletes_live_jobs_of_other_sources(jobs):
     assert remaining == {kept.id, dead.id}
 
 
+async def test_cancel_sources_deletes_live_jobs_of_those_sources(jobs):
+    kept = await jobs.enqueue("kept", "u", JobOp.UPSERT)
+    claimed = await jobs.enqueue("gone", "claimed", JobOp.UPSERT)
+    assert await jobs.claim_next("w", source_ids={"gone"}) is not None
+    dead = await jobs.enqueue("gone", "dead", JobOp.UPSERT)
+    assert kept is not None and claimed is not None and dead is not None
+    dead_claim = await jobs.claim_next("w", source_ids={"gone"})
+    assert dead_claim is not None and dead_claim.id == dead.id
+    assert await jobs.mark_dead(dead.id, "boom", "w")
+    queued = await jobs.enqueue("gone", "queued", JobOp.DELETE)
+    assert queued is not None
+
+    assert await jobs.cancel_sources({"gone"}) == 2
+
+    remaining = {job.id for job in await jobs.list_jobs(limit=50)}
+    assert remaining == {kept.id, dead.id}
+
+
 async def test_claim_next_skips_future_scheduled(conn, jobs):
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     # Push scheduled_at into the future.
@@ -1204,6 +1222,17 @@ async def test_sync_state_delete_removes_entry(sync):
     assert await sync.get_revision_snapshot("s") == {}
 
 
+async def test_sync_state_delete_sources_removes_their_rows(sync):
+    await sync.upsert("gone", "u1", revision="abc", content_hash="m1")
+    await sync.upsert("gone", "u2")
+    await sync.upsert("kept", "u1", revision="def", content_hash="m2")
+
+    await sync.delete_sources({"gone"})
+
+    assert await sync.list_known_uris("gone") == set()
+    assert await sync.get_revision_snapshot("kept") == {"u1": "def"}
+
+
 async def test_sync_state_snapshot_scoped_per_source(sync):
     await sync.upsert("s1", "u", revision="abc", content_hash="m")
     await sync.upsert("s2", "u", revision="def", content_hash="m")
@@ -1874,6 +1903,13 @@ async def test_cancel_refuses_foreign_jobs(own, foreign):
     assert await foreign.get_job(theirs.id) is not None
 
 
+async def test_cancel_sources_ignores_foreign_jobs(own, foreign):
+    theirs = await foreign.enqueue("s", "u", JobOp.UPSERT)
+    assert theirs is not None
+    assert await own.cancel_sources({"s"}) == 0
+    assert await foreign.get_job(theirs.id) is not None
+
+
 async def test_list_jobs_hides_foreign_jobs(own, foreign):
     assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
     mine = await own.enqueue("s", "u2", JobOp.UPSERT)
@@ -1992,6 +2028,12 @@ async def test_invalidate_ignores_foreign_rows(own_sync, foreign_sync):
 async def test_sync_delete_ignores_foreign_rows(own_sync, foreign_sync):
     await foreign_sync.upsert("s", "u")
     await own_sync.delete("s", "u")
+    assert await foreign_sync.get_row("s", "u") is not None
+
+
+async def test_sync_delete_sources_ignores_foreign_rows(own_sync, foreign_sync):
+    await foreign_sync.upsert("s", "u")
+    await own_sync.delete_sources({"s"})
     assert await foreign_sync.get_row("s", "u") is not None
 
 

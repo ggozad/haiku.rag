@@ -82,6 +82,9 @@ def main(
     from haiku.rag.telemetry import configure as configure_telemetry
 
     _load_config_with_override(config)
+    # The file read again on a reload, through any symlink as it is then.
+    found = config if config is not None else find_config_file(None)
+    ctx.obj = found.absolute() if found is not None else None
     configure_cli_logging()
     configure_telemetry(service_name="haiku-ingester")
     if ctx.invoked_subcommand not in _LONG_RUNNING:
@@ -261,6 +264,7 @@ def _load_manifest(path: Path) -> BatchManifest:
 
 @_cli.command("serve")
 def serve(
+    ctx: typer.Context,
     host: str | None = typer.Option(
         None,
         "--host",
@@ -285,17 +289,23 @@ def serve(
     ),
 ) -> None:
     """Run the production ingester: pollers + workers (and the HTTP API
-    unless --no-api is set). Blocks until SIGINT/SIGTERM."""
+    unless --no-api is set). Blocks until SIGINT/SIGTERM. SIGHUP reloads the
+    databases from the configuration file."""
     from haiku.rag.ingester.app import IngesterApp
 
     app_config = get_config()
-    if host is not None:
-        app_config.ingester.api.host = host
-    if port is not None:
-        app_config.ingester.api.port = port
-    if root_path is not None:
-        app_config.ingester.api.root_path = root_path
-    app = IngesterApp(config=app_config)
+    overrides = {
+        field: value
+        for field, value in {
+            "host": host,
+            "port": port,
+            "root_path": root_path,
+        }.items()
+        if value is not None
+    }
+    for field, value in overrides.items():
+        setattr(app_config.ingester.api, field, value)
+    app = IngesterApp(config=app_config, config_path=ctx.obj, api_overrides=overrides)
     asyncio.run(app.serve(api=not no_api))
 
 

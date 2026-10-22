@@ -1528,3 +1528,175 @@ async def test_fatal_error_terminates_when_mark_dead_raises(
         await pool.drain_once()
 
     assert terminated is True
+
+
+# --- serving sources at run time ---
+
+
+def _gated_client(gate: asyncio.Event) -> AsyncMock:
+    client = _ingesting_client()
+    ingest = client._ingest_observed.side_effect
+
+    async def _slow(uri, **kwargs):
+        await gate.wait()
+        return ingest(uri, **kwargs)
+
+    client._ingest_observed.side_effect = _slow
+    return client
+
+
+async def test_unserve_waits_for_a_claim_in_progress(jobs, sync, monkeypatch):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed, release = asyncio.Event(), asyncio.Event()
+    claim_next = jobs.claim_next
+
+    async def _paused(worker_id, *, source_ids=None):
+        result = await claim_next(worker_id, source_ids=source_ids)
+        if result is not None:
+            claimed.set()
+            await release.wait()
+        return result
+
+    monkeypatch.setattr(jobs, "claim_next", _paused)
+    gate = asyncio.Event()
+    pool = _pool(_gated_client(gate), jobs, sync, worker_count=1)
+    await pool.start()
+    try:
+        await claimed.wait()
+        unserve = asyncio.create_task(pool.unserve(["src"]))
+        await asyncio.sleep(0.05)
+        assert not unserve.done()
+
+        release.set()
+        await asyncio.wait_for(unserve, timeout=5.0)
+        assert job.id in pool._inflight
+
+        idle = asyncio.create_task(pool.wait_idle(["src"]))
+        await asyncio.sleep(0.05)
+        assert not idle.done()
+        gate.set()
+        await asyncio.wait_for(idle, timeout=5.0)
+    finally:
+        gate.set()
+        release.set()
+        await pool.stop()
+    done = await jobs.get_job(job.id)
+    assert done is not None and done.status is JobStatus.SUCCEEDED
+
+
+async def test_wait_idle_waits_for_an_execution_that_lost_its_claim(jobs, sync):
+    """A reclaimed job runs twice. The reclaiming execution finishing first
+    leaves the first one running, and `wait_idle` waits for it."""
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    gate = asyncio.Event()
+    client = _ingesting_client()
+    ingest = client._ingest_observed.side_effect
+    calls = 0
+
+    async def _first_waits(uri, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await gate.wait()
+        return ingest(uri, **kwargs)
+
+    client._ingest_observed.side_effect = _first_waits
+    pool = _pool(client, jobs, sync, worker_count=2)
+    first = await pool._claim(pool._worker_id(0))
+    assert first is not None
+    stale = asyncio.create_task(pool._process(first))
+    try:
+        await asyncio.sleep(0.05)
+        assert await jobs.reap_stale(0) == 1
+        second = await pool._claim(pool._worker_id(1))
+        assert second is not None and second.id == first.id
+        await pool._process(second)
+
+        idle = asyncio.create_task(pool.wait_idle(["src"]))
+        await asyncio.sleep(0.05)
+        assert not idle.done()
+        gate.set()
+        await asyncio.wait_for(idle, timeout=5.0)
+    finally:
+        gate.set()
+        await stale
+
+
+async def test_a_claim_queued_behind_unserve_skips_the_unserved_source(jobs, sync):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    pool = _pool(_ingesting_client(), jobs, sync, worker_count=1)
+    async with pool.claim_lock:
+        unserve = asyncio.create_task(pool.unserve(["src"]))
+        await asyncio.sleep(0)
+        await pool.start()
+        await asyncio.sleep(0.05)
+    try:
+        await asyncio.wait_for(unserve, timeout=5.0)
+        await asyncio.sleep(0.2)
+    finally:
+        await pool.stop()
+    left = await jobs.get_job(job.id)
+    assert left is not None and left.status is JobStatus.QUEUED
+
+
+async def test_an_unserved_source_is_not_claimed(jobs, sync):
+    pool = _pool(_ingesting_client(), jobs, sync, source_ids=("kept", "gone"))
+    await pool.unserve(["gone"])
+    gone = await jobs.enqueue("gone", "g", JobOp.UPSERT)
+    assert gone is not None
+    assert await jobs.enqueue("kept", "k", JobOp.UPSERT) is not None
+
+    assert await pool.drain_once() == 1
+
+    left = await jobs.get_job(gone.id)
+    assert left is not None and left.status is JobStatus.QUEUED
+
+
+async def test_wait_idle_ignores_other_sources_jobs(jobs, sync):
+    gate = asyncio.Event()
+    assert await jobs.enqueue("kept", "k", JobOp.UPSERT) is not None
+    pool = _pool(_gated_client(gate), jobs, sync, source_ids=("kept", "gone"))
+    await pool.start()
+    try:
+        await _until(lambda: bool(pool._inflight))
+        await asyncio.wait_for(pool.wait_idle(["gone"]), timeout=1.0)
+    finally:
+        gate.set()
+        await pool.stop()
+
+
+async def test_a_source_added_to_a_running_pool_is_served(jobs, sync):
+    first, second = _ingesting_client(), _ingesting_client()
+    pool = _pool(first, jobs, sync, source_ids=("first",))
+    await pool.start()
+    try:
+        pool.add_sources(clients={"second": second}, sources=[])
+        assert await jobs.enqueue("second", "s", JobOp.UPSERT) is not None
+        await _until(lambda: second._ingest_observed.await_count == 1)
+    finally:
+        await pool.stop()
+    assert first._ingest_observed.await_count == 0
+
+
+async def test_a_removed_source_leaves_no_open_breaker(jobs, sync):
+    pool = _pool(_ingesting_client(), jobs, sync, source_ids=("kept", "gone"))
+    breaker = pool._breaker_for("gone")
+    for _ in range(5):
+        breaker.record_failure()
+    assert pool.breaker_open
+
+    await pool.unserve(["gone"])
+    pool.remove_sources(["gone"])
+
+    assert not pool.breaker_open
+
+
+async def _until(predicate, timeout: float = 5.0) -> None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not predicate():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("condition not reached within timeout")
+        await asyncio.sleep(0.02)
