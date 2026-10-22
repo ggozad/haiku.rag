@@ -1,7 +1,15 @@
 import math
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    ToolCallPart,
+    UserPromptPart,
+)
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_evals.evaluators import EvaluatorContext
 
 from evaluations.evaluators import REFUSAL_RUBRIC, RefusalJudge
@@ -153,16 +161,40 @@ def _evaluator_ctx(inputs: object, metadata: dict | None = None) -> EvaluatorCon
     )
 
 
+class RecordingJudgeModel(FunctionModel):
+    """A judge model that passes every case and records the prompts it was sent."""
+
+    def __init__(self) -> None:
+        super().__init__(self._grade)
+        self.prompts: list[str] = []
+
+    def _grade(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        request = messages[-1]
+        assert isinstance(request, ModelRequest)
+        part = request.parts[-1]
+        assert isinstance(part, UserPromptPart) and isinstance(part.content, str)
+        self.prompts.append(part.content)
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {"reason": "ok", "pass": True, "score": 1.0},
+                )
+            ]
+        )
+
+
 class TestTranscriptLLMJudge:
     async def test_conversation_inputs_judged_as_transcript(self) -> None:
         from evaluations.config import ConversationInput, Turn
         from evaluations.evaluators import TranscriptLLMJudge
 
+        model = RecordingJudgeModel()
         judge = TranscriptLLMJudge(
             rubric="rubric",
             include_input=True,
             include_expected_output=True,
-            model="test",
+            model=model,
         )
         conversation = ConversationInput(
             turns=[
@@ -171,72 +203,53 @@ class TestTranscriptLLMJudge:
                 Turn(speaker="user", text="q2"),
             ]
         )
-        grading = MagicMock(score=None, pass_=True, reason="ok")
-        with patch(
-            "pydantic_evals.evaluators.llm_as_a_judge.judge_input_output_expected",
-            new_callable=AsyncMock,
-            return_value=grading,
-        ) as judge_call:
-            await judge.evaluate(_evaluator_ctx(conversation))
+        await judge.evaluate(_evaluator_ctx(conversation))
 
-        assert judge_call.await_args is not None
-        assert judge_call.await_args.args[0] == "user: q1\nagent: a1\nuser: q2"
+        assert len(model.prompts) == 1
+        assert "<Input>\nuser: q1\nagent: a1\nuser: q2\n</Input>" in model.prompts[0]
 
     async def test_string_inputs_pass_through(self) -> None:
         from evaluations.evaluators import TranscriptLLMJudge
 
+        model = RecordingJudgeModel()
         judge = TranscriptLLMJudge(
             rubric="rubric",
             include_input=True,
             include_expected_output=True,
-            model="test",
+            model=model,
         )
-        grading = MagicMock(score=None, pass_=True, reason="ok")
-        with patch(
-            "pydantic_evals.evaluators.llm_as_a_judge.judge_input_output_expected",
-            new_callable=AsyncMock,
-            return_value=grading,
-        ) as judge_call:
-            await judge.evaluate(_evaluator_ctx("plain question"))
+        await judge.evaluate(_evaluator_ctx("plain question"))
 
-        assert judge_call.await_args is not None
-        assert judge_call.await_args.args[0] == "plain question"
+        assert len(model.prompts) == 1
+        assert "<Input>\nplain question\n</Input>" in model.prompts[0]
 
 
 class TestRefusalJudge:
-    def _judge(self) -> RefusalJudge:
+    def _judge(self, model: RecordingJudgeModel) -> RefusalJudge:
         return RefusalJudge(
             rubric=REFUSAL_RUBRIC,
-            model="test",
+            model=model,
             assertion={"evaluation_name": "refused", "include_reason": False},
         )
 
     @pytest.mark.parametrize("label", ["ANSWERABLE", "UNANSWERABLE"])
     async def test_judges_eligible_labels(self, label: str) -> None:
-        grading = MagicMock(score=None, pass_=True, reason=None)
-        with patch(
-            "pydantic_evals.evaluators.llm_as_a_judge.judge_output",
-            new_callable=AsyncMock,
-            return_value=grading,
-        ) as judge_call:
-            result = await self._judge().evaluate(
-                _evaluator_ctx("q", metadata={"answerability": label})
-            )
+        model = RecordingJudgeModel()
+        result = await self._judge(model).evaluate(
+            _evaluator_ctx("q", metadata={"answerability": label})
+        )
 
-        judge_call.assert_awaited_once()
+        assert len(model.prompts) == 1
         assert result == {"refused": True}
 
     @pytest.mark.parametrize(
         "metadata", [{"answerability": "PARTIAL"}, {"answerability": None}, {}, None]
     )
     async def test_ineligible_turns_skip_the_judge(self, metadata) -> None:
-        with patch(
-            "pydantic_evals.evaluators.llm_as_a_judge.judge_output",
-            new_callable=AsyncMock,
-        ) as judge_call:
-            result = await self._judge().evaluate(_evaluator_ctx("q", metadata))
+        model = RecordingJudgeModel()
+        result = await self._judge(model).evaluate(_evaluator_ctx("q", metadata))
 
-        judge_call.assert_not_awaited()
+        assert model.prompts == []
         assert result == {}
 
 

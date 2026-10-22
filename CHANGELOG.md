@@ -15,6 +15,7 @@
 - `haiku-ingester serve` starts on an empty `ingester.databases`, deleting every queued and claimed job of its queue namespace. `run-batch` still refuses one.
 - `POST /sources/{id}/refresh` waits for a sweep of the same source in progress.
 - `IngesterApp` raises `NothingToIngestError` from `run_batch`, `run_batch_dry_run` and `run_batch_from_manifest` instead of its constructor.
+- `pydantic-ai-slim` requires `>=2.53.0,<2.54.0`.
 
 ## [0.99.0] - 2026-10-21
 
