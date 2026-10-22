@@ -1,22 +1,28 @@
 import asyncio
 import logging
 import signal
-from collections.abc import Callable, Collection
+import sys
+from collections.abc import Callable, Collection, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 from sqlalchemy.engine import make_url
 
-from haiku.rag.config import AppConfig, SourceConfig
+from haiku.rag.config import AppConfig, SourceConfig, load_yaml_config
 from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
 from haiku.rag.ingester.exceptions import (
     DuplicateSourceError,
+    InvalidConfigError,
     NothingToIngestError,
     QueueError,
+    ReloadCancelledError,
+    ReloadRefusedError,
 )
 from haiku.rag.ingester.metadata import build_providers, load_metadata_providers
 from haiku.rag.ingester.pollers.base import max_attempts
@@ -76,6 +82,36 @@ class BatchProgress(BaseModel):
 BatchProgressCallback = Callable[[BatchProgress], None]
 
 
+class DatabaseChange(BaseModel):
+    """What a reload did to one database."""
+
+    database: str
+    change: Literal["added", "removed", "failed"]
+    error: str | None = None
+
+
+class ReloadReport(BaseModel):
+    """A reload's changes. `failed` means nothing was added or removed,
+    `partial` that some changes were applied before one failed."""
+
+    outcome: Literal["applied", "failed", "partial"] = "applied"
+    databases: list[DatabaseChange] = []
+
+    def record(self, database: str, change: Literal["added", "removed"]) -> None:
+        self.databases.append(DatabaseChange(database=database, change=change))
+
+    def fail(self, database: str, error: BaseException) -> None:
+        self.databases.append(
+            DatabaseChange(
+                database=database,
+                change="failed",
+                error=str(error) or type(error).__name__,
+            )
+        )
+        changed = any(change.change != "failed" for change in self.databases)
+        self.outcome = "partial" if changed else "failed"
+
+
 def _manifest_change_key(change: BatchChange) -> tuple[str, str, str, str | None]:
     return (change.source_id, change.uri, change.op.value, change.revision)
 
@@ -97,8 +133,14 @@ class _Database:
     metadata_providers: "dict[str, MetadataProvider]"
     removing: bool = False
 
-    async def close_client(self) -> None:
-        await self.opened.__aexit__(None, None, None)
+    async def close_client(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc: BaseException | None = None,
+        tb: TracebackType | None = None,
+    ) -> None:
+        """Close the client, telling its hooks which exception is unwound."""
+        await self.opened.__aexit__(exc_type, exc, tb)
 
     @property
     def source_ids(self) -> list[str]:
@@ -112,32 +154,37 @@ class IngesterApp:
     WorkerPool, and a HaikuRAG client for the worker pool to ingest through.
     """
 
-    def __init__(self, *, config: AppConfig, database_name: str | None = None):
+    def __init__(
+        self,
+        *,
+        config: AppConfig,
+        database_name: str | None = None,
+        config_path: Path | None = None,
+        api_overrides: "Mapping[str, Any] | None" = None,
+    ):
         """The ingester over every database `ingester.databases` names, or
-        over the one `database_name` selects, fed by its configured sources."""
-        from haiku.rag.client.scope import DatabaseScope
+        over the one `database_name` selects, fed by its configured sources.
+
+        `config_path` is the file `config` was read from, and `api_overrides`
+        the `ingester.api` fields set over it: a reload reads the file again
+        and sets them again. It excludes `database_name`."""
         from haiku.rag.store.exceptions import UnknownDatabaseError
 
-        self._config = config
-        ingested = config.ingester.databases
-        if not ingested:
-            raise NothingToIngestError(
-                "ingester.databases names no database. Map each database to "
-                "the sources it is ingested from"
+        if database_name is not None and config_path is not None:
+            raise ValueError(
+                "database_name and config_path are exclusive: a reload applies "
+                "every database the file names"
             )
+        self._config = config
+        self._config_path = config_path
+        self._api_overrides = dict(api_overrides or {})
+        ingested = config.ingester.databases
         if database_name is not None and database_name not in ingested:
             raise UnknownDatabaseError(
                 f"unknown database {database_name!r}: ingester.databases names "
                 f"{', '.join(ingested) or 'none'}"
             )
-        databases = [
-            (
-                DatabaseScope.resolve(config, database_name=name).databases[0],
-                entry.sources,
-            )
-            for name, entry in ingested.items()
-        ]
-        _refuse_shared_locations([ref for ref, _ in databases])
+        databases = _ingested_databases(config)
         self._databases: list[tuple[DatabaseRef, list[SourceConfig]]] = [
             (ref, sources)
             for ref, sources in databases
@@ -169,6 +216,21 @@ class IngesterApp:
         self._sync: SyncStateRepo | None = None
         self._pool: WorkerPool | None = None
         self._pollers: PollerManager | None = None
+        self._api: APIState | None = None
+        self._reload_lock = asyncio.Lock()
+        self._reloads: set[asyncio.Task] = set()
+        self._signal_reload_queued = False
+        self._stopping = False
+        # A reload's prepared additions, each kept until it is applied or
+        # closed: the next reload and shutdown close what is left.
+        self._prepared: list[_Database] = []
+
+    def _require_databases(self) -> None:
+        if not self._databases:
+            raise NothingToIngestError(
+                "ingester.databases names no database. Map each database to "
+                "the sources it is ingested from"
+            )
 
     @asynccontextmanager
     async def _resources(self):
@@ -213,14 +275,21 @@ class IngesterApp:
             async with AsyncExitStack() as closing:
                 closing.push_async_callback(self._pollers.close_sources)
                 for database in prepared:
-                    closing.push_async_callback(database.close_client)
+                    closing.push_async_exit(database.close_client)
                 raise
         unapplied = list(prepared)
         try:
             cancelled = await self._jobs.cancel_unconfigured(
                 self._configured_source_ids
             )
-            if cancelled:
+            if not self._databases:
+                logger.warning(
+                    "ingester.databases names no database: nothing is ingested "
+                    "until a reload adds one. Deleted %d queued or claimed "
+                    "job(s) of this queue namespace",
+                    cancelled,
+                )
+            elif cancelled:
                 logger.info(
                     "Deleted %d queued or claimed job(s) of sources no longer "
                     "configured",
@@ -246,16 +315,26 @@ class IngesterApp:
                 await self._apply(database)
                 unapplied.remove(database)
             yield
-        finally:
-            # Every close is attempted, whichever fails.
-            async with AsyncExitStack() as closing:
-                for database in [*unapplied, *self._running.values()]:
-                    # A removal detaches its pollers from the manager, so its
-                    # adapters are closed here.
-                    if database.removing:
-                        closing.push_async_callback(self._close, database)
-                    else:
-                        closing.push_async_callback(database.close_client)
+        except BaseException:
+            async with self._closing(unapplied):
+                raise
+        async with self._closing(unapplied):
+            pass
+
+    def _closing(self, unapplied: list[_Database]) -> AsyncExitStack:
+        """Closes every database on exit, whichever close fails, passing on
+        the exception it exits with."""
+        closing = AsyncExitStack()
+        for database in self._prepared:
+            closing.push_async_exit(partial(self._close, database))
+        for database in [*unapplied, *self._running.values()]:
+            # A removal detaches its pollers from the manager, so its
+            # adapters are closed here.
+            if database.removing:
+                closing.push_async_exit(partial(self._close, database))
+            else:
+                closing.push_async_exit(database.close_client)
+        return closing
 
     async def add_database(
         self, ref: "DatabaseRef", sources: list[SourceConfig]
@@ -264,20 +343,30 @@ class IngesterApp:
         database that fails to open or reconcile leaves the app as it was.
         The caller checks that no running database has the name, the location
         or one of the source ids."""
+        database = await self._prepare_addition(ref, sources)
+        await self._apply_addition(database)
+
+    async def _prepare_addition(
+        self, ref: "DatabaseRef", sources: list[SourceConfig]
+    ) -> _Database:
+        """Build the adapters of `sources` and open `ref`."""
         assert self._pollers is not None
         pollers: list[BasePoller] = []
         try:
             for source in sources:
                 pollers.append(self._pollers.build(source))
-            database = await self._prepare(ref, pollers)
+            return await self._prepare(ref, pollers)
         except BaseException:
             for poller in pollers:
                 await poller.source.aclose()
             raise
+
+    async def _apply_addition(self, database: _Database) -> None:
+        """Apply a prepared database, closing it if that fails."""
         try:
             await self._apply(database)
         except BaseException:
-            await self._close(database)
+            await self._close(database, *sys.exc_info())
             raise
 
     async def remove_database(self, name: str) -> None:
@@ -322,7 +411,7 @@ class IngesterApp:
                 load_metadata_providers(),
             )
         except BaseException:
-            await opened.__aexit__(None, None, None)
+            await opened.__aexit__(*sys.exc_info())
             raise
         return _Database(ref, opened, client, pollers, metadata_providers)
 
@@ -357,10 +446,16 @@ class IngesterApp:
             {source_id: name for source_id in database.source_ids}
         )
 
-    async def _close(self, database: _Database) -> None:
+    async def _close(
+        self,
+        database: _Database,
+        exc_type: type[BaseException] | None = None,
+        exc: BaseException | None = None,
+        tb: TracebackType | None = None,
+    ) -> None:
         for poller in database.pollers:
             await poller.source.aclose()
-        await database.close_client()
+        await database.close_client(exc_type, exc, tb)
 
     async def _open(self, ref: "DatabaseRef") -> "tuple[HaikuRAG, HaikuRAG]":
         """A writable client over `ref`, created on first start, as opened
@@ -383,7 +478,6 @@ class IngesterApp:
         the id of every configured source, selected or not, and raises
         DuplicateSourceError when two share one."""
         from haiku.rag.converters import get_converter
-        from haiku.rag.ingester.pollers.factory import build_source
 
         assert self._jobs is not None and self._sync is not None
         supported_extensions = get_converter(self._config).supported_extensions
@@ -395,26 +489,28 @@ class IngesterApp:
             default_max_attempts=self._config.ingester.workers.retry.max_attempts,
         )
         ids = [poller.source_id for poller in manager.pollers]
-        # An unselected source's id is known only once its adapter is built.
         try:
-            for config in self._unselected_sources:
-                source = build_source(config, supported_extensions=supported_extensions)
-                ids.append(source.source_id)
-                await source.aclose()
+            ids.extend(await self._source_ids(self._unselected_sources))
+            _refuse_duplicate_ids(ids)
         except BaseException:
             await manager.close_sources()
             raise
         self._configured_source_ids = set(ids)
-        duplicates = sorted(
-            {source_id for source_id in ids if ids.count(source_id) > 1}
-        )
-        if duplicates:
-            await manager.close_sources()
-            raise DuplicateSourceError(
-                f"source id(s) {', '.join(duplicates)} name several configured "
-                "sources. Give each source its own id"
-            )
         return manager
+
+    async def _source_ids(self, sources: list[SourceConfig]) -> list[str]:
+        """The ids of `sources`. An id is known only once its adapter is
+        built, so each is built and closed."""
+        from haiku.rag.converters import get_converter
+        from haiku.rag.ingester.pollers.factory import build_source
+
+        supported_extensions = get_converter(self._config).supported_extensions
+        ids = []
+        for config in sources:
+            source = build_source(config, supported_extensions=supported_extensions)
+            ids.append(source.source_id)
+            await source.aclose()
+        return ids
 
     @asynccontextmanager
     async def _discovery_resources(self):
@@ -546,9 +642,17 @@ class IngesterApp:
 
             stop_event = asyncio.Event()
             loop = asyncio.get_running_loop()
-            for sig in (signal.SIGINT, signal.SIGTERM):
+            handlers: dict[int, Callable[[], None]] = {
+                signal.SIGINT: stop_event.set,
+                signal.SIGTERM: stop_event.set,
+            }
+            if sys.platform != "win32":
+                handlers[signal.SIGHUP] = self._reload_on_signal
+            installed = []
+            for sig, handler in handlers.items():
                 try:
-                    loop.add_signal_handler(sig, stop_event.set)
+                    loop.add_signal_handler(sig, handler)
+                    installed.append(sig)
                 except NotImplementedError:  # pragma: no cover - Windows only
                     # Windows; signal handlers unavailable in asyncio.
                     pass
@@ -557,6 +661,14 @@ class IngesterApp:
                 await stop_event.wait()
             finally:
                 logger.info("Shutting down ingester")
+                for sig in installed:
+                    loop.remove_signal_handler(sig)
+                # Cancelled first: a reload waiting on a removal's drain holds
+                # the API's shutdown, and with it the pool's.
+                self._stopping = True
+                for task in list(self._reloads):
+                    task.cancel()
+                await asyncio.gather(*self._reloads, return_exceptions=True)
                 if api_server is not None:
                     api_server.should_exit = True
                 if api_task is not None:
@@ -579,6 +691,7 @@ class IngesterApp:
         `retry` re-queues the latest failure of each URI in those statuses
         after the sweep: before it, the re-queued jobs would make each
         poller skip its source as one with pending work."""
+        self._require_databases()
         async with self._resources():
             assert (
                 self._pollers is not None
@@ -608,6 +721,7 @@ class IngesterApp:
     async def run_batch_dry_run(self) -> BatchDryRunReport:
         """Run one discover() sweep across every configured source and return
         the jobs that would be enqueued, without mutating jobs or sync_state."""
+        self._require_databases()
         async with self._discovery_resources():
             assert self._pollers is not None
             manifest, failed_sweeps = await self._pollers.dry_run_manifest()
@@ -623,6 +737,7 @@ class IngesterApp:
         discovery sweep."""
         if manifest.version != 1:  # pragma: no cover
             raise ValueError(f"Unsupported manifest version: {manifest.version}")
+        self._require_databases()
         async with self._resources():
             assert (
                 self._pollers is not None
@@ -717,6 +832,182 @@ class IngesterApp:
                 await self._stop_pool()
                 await self._pollers.close_sources()
 
+    async def reload(self) -> ReloadReport:
+        """Read the configuration file again and add, remove or replace the
+        databases that changed. Reloads run one at a time, and a caller that
+        stops waiting does not stop the reload: only shutdown cancels it."""
+        task = self._start_reload()
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise ReloadCancelledError(
+                    "the ingester shut down before the reload finished"
+                ) from None
+            raise
+
+    def _start_reload(self, on_start: Callable[[], None] | None = None) -> asyncio.Task:
+        if self._stopping:
+            raise ReloadCancelledError("the ingester is shutting down")
+
+        async def _serialized() -> ReloadReport:
+            async with self._reload_lock:
+                if on_start is not None:
+                    on_start()
+                return await self._reload()
+
+        task = asyncio.create_task(_serialized())
+        self._reloads.add(task)
+        task.add_done_callback(self._reloads.discard)
+        return task
+
+    def _reload_on_signal(self) -> None:
+        """Queue a reload, unless one queued by a signal has not started."""
+        if self._signal_reload_queued:
+            return
+        self._signal_reload_queued = True
+        task = self._start_reload(on_start=self._signal_reload_started)
+        task.add_done_callback(_log_signal_reload)
+
+    def _signal_reload_started(self) -> None:
+        self._signal_reload_queued = False
+
+    async def _close_prepared(
+        self, report: ReloadReport, failure: BaseException | None = None
+    ) -> bool:
+        """Close the prepared additions, telling their hooks the `failure`
+        that ends the reload, and reporting those that fail. True when none is
+        left."""
+        exc_info = (
+            (type(failure), failure, failure.__traceback__)
+            if failure is not None
+            else (None, None, None)
+        )
+        for database in list(self._prepared):
+            try:
+                await self._close(database, *exc_info)
+            except Exception as error:
+                report.fail(database.ref.name, error)
+            else:
+                self._prepared.remove(database)
+        return not self._prepared
+
+    async def _reload(self) -> ReloadReport:
+        config, wanted = await self._read_configuration()
+        report = ReloadReport()
+        if not await self._close_prepared(report):
+            return report
+        for name in [name for name, db in self._running.items() if db.removing]:
+            try:
+                await self.remove_database(name)
+            except Exception as error:
+                report.fail(name, error)
+                return report
+            report.record(name, "removed")
+        removals = [
+            name
+            for name, database in self._running.items()
+            if name not in wanted
+            or _placement(wanted[name][0]) != _placement(database.ref)
+            or wanted[name][1] != [poller.config for poller in database.pollers]
+        ]
+        additions = [
+            (ref, sources)
+            for name, (ref, sources) in wanted.items()
+            if name not in self._running or name in removals
+        ]
+        served = {
+            _location_identity(database.ref.location)
+            for database in self._running.values()
+        }
+        failure: BaseException | None = None
+        try:
+            # Additions sharing a running database's location are prepared
+            # after the removals: a database has one writer.
+            for ordered in (
+                [
+                    a
+                    for a in additions
+                    if _location_identity(a[0].location) not in served
+                ],
+                [a for a in additions if _location_identity(a[0].location) in served],
+            ):
+                for ref, sources in ordered:
+                    try:
+                        self._prepared.append(
+                            await self._prepare_addition(ref, sources)
+                        )
+                        # Every local database exists once open, so comparing
+                        # directory identities catches two names for one.
+                        _refuse_shared_locations(
+                            [d.ref for d in [*self._running.values(), *self._prepared]]
+                        )
+                    except Exception as error:
+                        report.fail(ref.name, error)
+                        failure = error
+                        return report
+                for name in removals:
+                    try:
+                        await self.remove_database(name)
+                    except Exception as error:
+                        report.fail(name, error)
+                        failure = error
+                        return report
+                    report.record(name, "removed")
+                removals = []
+            for database in list(self._prepared):
+                try:
+                    await self._apply(database)
+                except Exception as error:
+                    report.fail(database.ref.name, error)
+                    failure = error
+                    return report
+                self._prepared.remove(database)
+                report.record(database.ref.name, "added")
+        except BaseException as error:
+            failure = error
+            raise
+        finally:
+            await self._close_prepared(report, failure)
+        self._config = config
+        self._databases = list(wanted.values())
+        if self._api is not None:
+            self._api.config = config
+        return report
+
+    async def _read_configuration(
+        self,
+    ) -> "tuple[AppConfig, dict[str, tuple[DatabaseRef, list[SourceConfig]]]]":
+        """The configuration file with the API overrides set again, and the
+        databases it ingests. Raises when the running ingester cannot take it."""
+        if self._config_path is None:
+            raise ReloadRefusedError(
+                "serve was started without a configuration file, so there is "
+                "nothing to reload"
+            )
+        try:
+            config = AppConfig.model_validate(load_yaml_config(self._config_path))
+            for field, value in self._api_overrides.items():
+                setattr(config.ingester.api, field, value)
+        except Exception as error:
+            raise InvalidConfigError(f"{self._config_path}: {error}") from error
+        changed = _changed_sections(self._config, config)
+        if changed:
+            raise ReloadRefusedError(
+                f"{', '.join(changed)} changed, and only lancedb.databases and "
+                "ingester.databases are reloaded. Restart to apply the rest"
+            )
+        try:
+            wanted = _ingested_databases(config)
+            _refuse_duplicate_ids(
+                await self._source_ids(
+                    [source for _, sources in wanted for source in sources]
+                )
+            )
+        except Exception as error:
+            raise InvalidConfigError(str(error)) from error
+        return config, {ref.name: (ref, sources) for ref, sources in wanted}
+
     def _api_state(self) -> "APIState":
         """The API's view of the running app: the maps it reads are the app's
         own, so they follow databases as they are added and removed."""
@@ -725,16 +1016,19 @@ class IngesterApp:
         assert (
             self._jobs is not None and self._sync is not None and self._pool is not None
         )
-        return APIState(
-            config=self._config,
-            job_repo=self._jobs,
-            sync_repo=self._sync,
-            pool=self._pool,
-            pollers=self._pollers,
-            databases=self._ingested,
-            source_databases=self._source_databases,
-            claim_lock=self._pool.claim_lock,
-        )
+        if self._api is None:
+            self._api = APIState(
+                config=self._config,
+                job_repo=self._jobs,
+                sync_repo=self._sync,
+                pool=self._pool,
+                pollers=self._pollers,
+                databases=self._ingested,
+                source_databases=self._source_databases,
+                claim_lock=self._pool.claim_lock,
+                reload=self.reload,
+            )
+        return self._api
 
     async def _maybe_start_api(self, api: bool):
         """Spin up the FastAPI control plane on an asyncio task. Returns
@@ -771,6 +1065,78 @@ class IngesterApp:
             ingester_cfg.api.root_path,
         )
         return asyncio.create_task(server.serve()), server
+
+
+def _ingested_databases(
+    config: AppConfig,
+) -> "list[tuple[DatabaseRef, list[SourceConfig]]]":
+    """Each database named in `ingester.databases`, placed, with its sources.
+    Raises when two sit at one location."""
+    from haiku.rag.client.scope import DatabaseScope
+
+    databases = [
+        (
+            DatabaseScope.resolve(config, database_name=name).databases[0],
+            entry.sources,
+        )
+        for name, entry in config.ingester.databases.items()
+    ]
+    _refuse_shared_locations([ref for ref, _ in databases])
+    return databases
+
+
+def _refuse_duplicate_ids(ids: list[str]) -> None:
+    duplicates = sorted({source_id for source_id in ids if ids.count(source_id) > 1})
+    if duplicates:
+        raise DuplicateSourceError(
+            f"source id(s) {', '.join(duplicates)} name several configured "
+            "sources. Give each source its own id"
+        )
+
+
+def _placement(ref: "DatabaseRef") -> tuple[str | tuple[int, int], str | None]:
+    return _location_identity(ref.location), ref.tag
+
+
+def _changed_sections(running: AppConfig, read: AppConfig) -> list[str]:
+    """The sections of `read` that differ from `running`, besides the two
+    database maps, named to their second level."""
+    unloaded = {"lancedb": {"databases"}, "ingester": {"databases"}}
+    before = running.model_dump(mode="json", exclude=unloaded)
+    after = read.model_dump(mode="json", exclude=unloaded)
+    changed = []
+    for section, value in before.items():
+        if value == after[section]:
+            continue
+        if isinstance(value, dict):
+            changed.extend(
+                f"{section}.{key}" for key in value if value[key] != after[section][key]
+            )
+        else:
+            changed.append(section)
+    return changed
+
+
+def _log_signal_reload(task: asyncio.Task) -> None:
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        logger.error("Reload on SIGHUP failed: %s", error)
+        return
+    report: ReloadReport = task.result()
+    for change in report.databases:
+        if change.change == "failed":
+            logger.error(
+                "Reload on SIGHUP failed for database %r: %s",
+                change.database,
+                change.error,
+            )
+        else:
+            logger.info(
+                "Reload on SIGHUP %s database %r", change.change, change.database
+            )
+    logger.info("Reload on SIGHUP: %s", report.outcome)
 
 
 def _refuse_shared_locations(refs: "list[DatabaseRef]") -> None:

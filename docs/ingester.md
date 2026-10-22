@@ -63,9 +63,9 @@ haiku-ingester run-batch                     # one sweep over both, then exit
 haiku-ingester run-batch --db-name wiki      # wiki's sources only
 ```
 
-The ingester writes every database a key names, each through its own client, and leaves the other entries to readers, such as `papers-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. A configuration carrying `ingester.sources` fails at load. `serve` and `run-batch` refuse to start when `ingester.databases` names no database.
+The ingester writes every database a key names, each through its own client, and leaves the other entries to readers, such as `papers-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. A configuration carrying `ingester.sources` fails at load. `run-batch` refuses to start when `ingester.databases` names no database. `serve` starts, ingests nothing until a [reload](#reloading-databases) adds a database, and deletes every queued and claimed job of its queue namespace, as it does for any source it does not configure.
 
-One process serves every database, so they start and stop together. If a database fails to open, startup fails for all of them: for example when it needs a migration, when its recorded embedder differs from the configuration, or when its store is unreachable. Remove its key to ingest the others. If a conversion stalls, the process exits (see [Run it under a supervisor](#run-it-under-a-supervisor)), and every database waits for the restart. If a database's writes fail while the ingester runs, only that database's sources pause, since each source has its own worker circuit breaker. If databases must not stop together, run one ingester per database, each with its own queue or namespace.
+One process serves every database. A [reload](#reloading-databases) adds or removes one while the others keep ingesting, but they start and stop together. If a database fails to open, startup fails for all of them: for example when it needs a migration, when its recorded embedder differs from the configuration, or when its store is unreachable. Remove its key to ingest the others. If a conversion stalls, the process exits (see [Run it under a supervisor](#run-it-under-a-supervisor)), and every database waits for the restart. If a database's writes fail while the ingester runs, only that database's sources pause, since each source has its own worker circuit breaker. If databases must not stop together, run one ingester per database, each with its own queue or namespace.
 
 Source ids are unique across every database: startup fails when two sources share an id, given or derived from their target. Two keys whose databases sit at one location fail startup too, a path and its `file://` URI included, and two names a case-insensitive filesystem treats as one directory, since a database has one writer. Each open database holds its own embedder client.
 
@@ -73,7 +73,7 @@ Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `
 
 ### Removing or moving a source
 
-To retire a source, remove it from the configuration, and delete its documents by hand if they should go. Its queued and claimed jobs are deleted when `serve`, `run-batch` or a manifest replay next starts, never by `--dry-run`. Its finished jobs stay until `retention_days` prunes them. This relies on one ingester per queue namespace (see [Postgres](#postgres)).
+To retire a source, remove it from the configuration, and delete its documents by hand if they should go. Its queued and claimed jobs are deleted when `serve`, `run-batch` or a manifest replay next starts, never by `--dry-run`, or when a reload removes its database. Its finished jobs stay until `retention_days` prunes them. This relies on one ingester per queue namespace (see [Postgres](#postgres)).
 
 A source moved under another key keeps its id and its queue record. At the next start, reconciliation finds its documents missing from the new database and ingests them again there. The old database keeps its copies until they are deleted by hand.
 
@@ -370,7 +370,35 @@ haiku-ingester serve --port 9000              # API port
 
 `--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--config`/`-c` names the configuration file.
 
-The service runs until `SIGINT` or `SIGTERM`, then stops the API server, the pollers and the workers, in that order.
+The service runs until `SIGINT` or `SIGTERM`, then cancels any reload, and stops the API server, the pollers and the workers, in that order. `SIGHUP` [reloads the databases](#reloading-databases).
+
+### Reloading databases
+
+`POST /reload` and `SIGHUP` read the configuration file again and apply what changed in `lancedb.databases` and `ingester.databases`:
+
+- A database in the file and not running is added: opened, created if missing, reconciled, then swept.
+- A running database missing from the file is removed.
+- A database whose location or sources changed is removed, then added.
+
+To remove a database, a reload stops claiming its jobs, stops its pollers once any sweep in progress ends, waits for its jobs in flight, deletes its queued and claimed jobs and its `sync_state` rows, and closes it. Its documents stay. The wait has no limit, so a removal lasts as long as the longest job in flight. The other databases keep ingesting throughout. A database added back is swept as new: every document is queued again, and one already stored at the same revision is not converted again.
+
+The file is the one named by `--config`, or found by the default lookup, at startup. Each reload follows a symlink at that path to its current target, as on a Kubernetes ConfigMap mount. `--host`, `--port` and `--root-path` override the file again on each reload. A reload refuses a change to any other section with 409 and names the sections, which need a restart. A file that fails to load or fails a startup check, such as two sources sharing an id, answers 422. Without a configuration file, a reload answers 409. Nothing changes in any of these cases.
+
+Reloads run one at a time, and the response comes once the change is applied. It answers 200 when everything applied, and 500 with the same body when a database failed:
+
+```json
+{
+  "outcome": "partial",
+  "databases": [
+    {"database": "legacy", "change": "removed", "error": null},
+    {"database": "renamed", "change": "failed", "error": "database 'renamed': ..."}
+  ]
+}
+```
+
+`outcome` is `applied`, `failed` when a database failed and the reload added or removed none, or `partial`. Additions are opened before any removal starts, except an addition at the location of a removed database, such as a rename. A failure while opening them changes nothing. A failure after removals start stops the reload: the changes already applied stay, and the next reload applies the rest. A database whose removal failed is removed first by the next reload. `/config` shows the configuration of the last reload that applied everything, and `/sources` shows what runs.
+
+A client that disconnects does not stop a reload. Shutdown does: a reload in progress and those waiting answer 503, and the next start reads the file. Under `SIGHUP` the outcome is logged, and signals arriving during a reload queue one more. Write the file atomically, through a temporary file in the same directory and a rename, so that a reload never reads half of it.
 
 ### Run it under a supervisor
 
@@ -398,7 +426,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `GET` | `/` | Browser dashboard. Unauthenticated. Its script sends the token on its own requests |
 | `GET` | `/health` | Queue counts, live workers and pollers, worker breaker state. `status` is `degraded` when a worker or poller is down or the worker breaker is open. Unauthenticated |
 | `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason, and the error and time of the last failed discovery, cleared by the next successful sweep |
-| `POST` | `/sources/{id}/refresh` | Run a sweep now. Skipped (`refreshed: false`) while the source has queued or claimed jobs or its breaker is open |
+| `POST` | `/sources/{id}/refresh` | Run a sweep now, after any sweep of the source in progress. Skipped (`refreshed: false`) while the source has queued or claimed jobs, its breaker is open or a reload is removing it |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |
 | `POST` | `/jobs/{id}/retry` | Reset a dead, rejected or queued job to queued with zero attempts. Returns the live job instead when one exists for the same URI, and 409 for a job whose source is not configured |
@@ -408,6 +436,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `GET` | `/stats` | Throughput over 5 minutes, 30 minutes and 1 hour, worker occupancy, oldest queued age, per-source dead and backlog counts |
 | `GET` | `/databases/{name}` | The report `haiku-rag info` prints, for one ingested database. 404 for any other name |
 | `GET` | `/config` | The effective configuration, defaults filled in and secrets redacted, as YAML text in a JSON `yaml` field |
+| `POST` | `/reload` | Read the configuration file again and apply its changes to the databases. 500 when a database failed (see [Reloading databases](#reloading-databases)) |
 | `GET` | `/providers` | Reachability of each `providers.docling_serve.base_url` entry (`/health`, 2 s timeout) |
 
 OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds. A source whose last discovery failed is marked `sweep failed`, with the error on hover. With more than one database, the sources table names each source's database, and the database panel selects the database it reports on.
@@ -685,6 +714,9 @@ curl -H "Authorization: Bearer $TOKEN" -X POST \
 # Retry a dead job
 curl -H "Authorization: Bearer $TOKEN" -X POST \
     http://localhost:8765/jobs/<id>/retry
+
+# Apply the configuration file's database changes
+curl -H "Authorization: Bearer $TOKEN" -X POST http://localhost:8765/reload
 ```
 
 ### Reading the queue from Python

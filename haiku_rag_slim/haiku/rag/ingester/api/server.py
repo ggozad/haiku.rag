@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -10,6 +10,7 @@ from haiku.rag.ingester.api.auth import require_auth
 if TYPE_CHECKING:
     from haiku.rag.client.scope import DatabaseRef
     from haiku.rag.config import AppConfig
+    from haiku.rag.ingester.app import ReloadReport
     from haiku.rag.ingester.pollers.manager import PollerManager
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
     from haiku.rag.ingester.workers.pool import WorkerPool
@@ -21,7 +22,8 @@ class APIState:
     optional so the FastAPI app can be tested in isolation. `databases` holds
     the ingested databases by name, and `source_databases` maps a served
     source id to the name of its database. A retry holds `claim_lock`, the
-    pool's, so it cannot land between a removal's unserve and its delete."""
+    pool's, so it cannot land between a removal's unserve and its delete.
+    `reload` is the running app's."""
 
     config: "AppConfig"
     job_repo: "JobRepo"
@@ -31,6 +33,7 @@ class APIState:
     databases: "Mapping[str, DatabaseRef]" = field(default_factory=dict)
     source_databases: Mapping[str, str] = field(default_factory=dict)
     claim_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    reload: "Callable[[], Awaitable[ReloadReport]] | None" = None
 
 
 def get_state(request: Request) -> APIState:
@@ -60,6 +63,7 @@ def build_app(
         health,
         jobs,
         providers,
+        reload,
         sources,
         stats,
     )
@@ -86,5 +90,6 @@ def build_app(
     app.include_router(providers.router, dependencies=auth_dep)
     app.include_router(database.router, dependencies=auth_dep)
     app.include_router(config_route.router, dependencies=auth_dep)
+    app.include_router(reload.router, dependencies=auth_dep)
 
     return app

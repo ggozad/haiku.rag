@@ -35,6 +35,7 @@ from haiku.rag.store.exceptions import (
     UnknownDatabaseError,
 )
 from tests.conftest import TRACEPARENT, current_trace
+from tests.platform import requires_symlinks
 
 runner = CliRunner()
 
@@ -474,6 +475,59 @@ def test_serve_passes_root_path(monkeypatch):
     assert captured["config"].ingester.api.root_path == "/ingester"
 
 
+def _captured_app(monkeypatch) -> dict:
+    captured = {}
+
+    def _capture(**kwargs):
+        captured.update(kwargs)
+        return AsyncMock()
+
+    monkeypatch.setattr("haiku.rag.ingester.app.IngesterApp", _capture)
+    return captured
+
+
+def test_serve_records_the_configuration_file_it_was_given(tmp_path, monkeypatch):
+    path = tmp_path / "custom.yaml"
+    path.write_text("{}", encoding="utf-8")
+    captured = _captured_app(monkeypatch)
+
+    result = runner.invoke(cli, ["--config", str(path), "serve", "--no-api"])
+
+    assert result.exit_code == 0
+    assert captured["config_path"] == path
+    assert captured["api_overrides"] == {}
+
+
+@requires_symlinks
+def test_serve_records_a_symlinked_configuration_file_as_the_link(
+    tmp_path, monkeypatch
+):
+    target = tmp_path / "v1.yaml"
+    target.write_text("{}", encoding="utf-8")
+    link = tmp_path / "haiku.rag.yaml"
+    link.symlink_to(target)
+    monkeypatch.chdir(tmp_path)
+    captured = _captured_app(monkeypatch)
+
+    result = runner.invoke(cli, ["--config", "haiku.rag.yaml", "serve", "--no-api"])
+
+    assert result.exit_code == 0
+    assert captured["config_path"] == link
+
+
+def test_serve_records_the_configuration_file_it_found(tmp_path, monkeypatch):
+    (tmp_path / "haiku.rag.yaml").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
+    captured = _captured_app(monkeypatch)
+
+    result = runner.invoke(cli, ["serve", "--no-api", "--port", "9999"])
+
+    assert result.exit_code == 0
+    assert captured["config_path"] == tmp_path / "haiku.rag.yaml"
+    assert captured["api_overrides"] == {"port": 9999}
+
+
 # --- queue init / migrate ---
 
 
@@ -704,7 +758,7 @@ class TestPlacingTheIngesterDatabases:
 
         assert list(self._placed(self._app(config))) == ["wiki"]
 
-    def test_without_ingested_databases_startup_is_refused(self, tmp_path):
+    async def test_without_ingested_databases_a_batch_is_refused(self, tmp_path):
         from haiku.rag.ingester.exceptions import NothingToIngestError
 
         config = AppConfig(
@@ -715,9 +769,16 @@ class TestPlacingTheIngesterDatabases:
                 }
             )
         )
+        app = self._app(config)
 
+        assert self._placed(app) == {}
+        for batch in (app.run_batch, app.run_batch_dry_run):
+            with pytest.raises(NothingToIngestError, match="ingester.databases"):
+                await batch()
         with pytest.raises(NothingToIngestError, match="ingester.databases"):
-            self._app(config)
+            await app.run_batch_from_manifest(
+                BatchManifest(generated_at=datetime.now(UTC))
+            )
 
     def test_two_ingested_databases_at_one_location_are_refused(self, tmp_path):
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
