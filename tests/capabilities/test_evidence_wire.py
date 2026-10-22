@@ -592,7 +592,7 @@ async def test_the_capsule_is_built_once_per_request_and_again_for_the_next(
         deps=deps, model=TestModel(), usage=RunUsage(), run_id="run-1", run_step=1
     )
     # A host carrying state, which is what compaction requires of one.
-    run_rag = replace(await rag.for_run(ctx), state_carried=True)
+    run_rag = replace(await rag.for_run(ctx), state_carried=True, question_open=True)
     run_compactor = await compactor.for_run(ctx)
     cast(Any, run_rag.state).evidence.begin_question(4)
     ctx = replace(ctx, capabilities={"rag": run_rag, "compaction": run_compactor})

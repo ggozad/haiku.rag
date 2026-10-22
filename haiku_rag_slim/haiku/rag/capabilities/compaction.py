@@ -17,6 +17,7 @@ from pydantic_ai.models import ModelRequestContext
 from haiku.rag.capabilities.evidence import (
     DiscoveredEvidence,
     discover_evidence,
+    open_questions,
     question_in_progress,
 )
 from haiku.rag.capabilities.rag import RAGCapability
@@ -374,6 +375,8 @@ class EvidenceCompactionCapability(AbstractCapability[Any]):
         of what was retrieved and break the message counts that question identities
         and epochs are derived from.
         """
+        # pydantic-ai runs before_model_request inside the handler, after this point.
+        open_questions(ctx)
         evidence = discover_evidence(ctx)
         boundary = question_in_progress(evidence)
         owned_tools = frozenset().union(*(found.tool_names for found in evidence))

@@ -349,8 +349,7 @@ class RAGCapability(AbstractCapability[Any]):
         self, ctx: RunContext[Any], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         self.epoch = len(ctx.messages)
-        if not self.question_open:
-            self._open_question(ctx.messages)
+        self.open_question(ctx.messages)
         if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
             if isinstance(current_request, ModelRequest):
@@ -573,12 +572,15 @@ class RAGCapability(AbstractCapability[Any]):
         finally:
             self._sync_state()
 
-    def _open_question(self, messages: list[ModelMessage]) -> None:
+    def open_question(self, messages: list[ModelMessage]) -> None:
         """Start a new question, identified by the index of its opening request.
 
-        pydantic-ai normalizes the history after ``for_run``, so the indices that
-        epochs count exist only from the first model request.
+        Does nothing while a question is open. pydantic-ai normalizes the history
+        after ``for_run``, so the indices that epochs count exist only from the
+        first model request.
         """
+        if self.question_open:
+            return
         assert self.state is not None
         self.state.begin_invocation()
         self.evidence_record().begin_question(

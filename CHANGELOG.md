@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `RAGCapability.open_question(messages)` and `haiku.rag.capabilities.evidence.open_questions(ctx)`.
+
+### Changed
+
+- `pydantic-ai-slim` requires `>=2.54.0,<2.60.0`.
+
 ## [0.100.0] - 2026-10-22
 
 ### Added

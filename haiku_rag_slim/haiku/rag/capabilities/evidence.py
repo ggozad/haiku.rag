@@ -51,6 +51,19 @@ def discover_evidence(ctx: RunContext[Any]) -> list[DiscoveredEvidence]:
     return sorted(discovered, key=lambda evidence: evidence.capability)
 
 
+def open_questions(ctx: RunContext[Any]) -> None:
+    """Open the current question on every active evidence capability.
+
+    A deferred capability the model has not loaded is skipped: its ``after_run``
+    never runs, so a question opened on it would stay in progress.
+    """
+    for capability_id, capability in ctx.capabilities.items():
+        if capability_id in ctx.active_capability_ids and isinstance(
+            capability, RAGCapability
+        ):
+            capability.open_question(ctx.messages)
+
+
 def question_in_progress(evidence: list[DiscoveredEvidence]) -> int:
     """The identity every evidence capability agrees this question has.
 
@@ -63,5 +76,6 @@ def question_in_progress(evidence: list[DiscoveredEvidence]) -> int:
 __all__ = [
     "DiscoveredEvidence",
     "discover_evidence",
+    "open_questions",
     "question_in_progress",
 ]
