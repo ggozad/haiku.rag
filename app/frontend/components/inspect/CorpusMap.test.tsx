@@ -357,8 +357,11 @@ describe("CorpusMap", () => {
 				current = finished("g2");
 				await vi.advanceTimersByTimeAsync(30_000);
 				await waitFor(() => expect(reads()).toBe(3));
-				press(map, [bx, by]);
-				await screen.findByText("Document b");
+				// The new map renders after its read, so press until it has.
+				await waitFor(() => {
+					press(map, [bx, by]);
+					expect(screen.getByText("Document b")).toBeTruthy();
+				});
 			} finally {
 				vi.useRealTimers();
 			}
