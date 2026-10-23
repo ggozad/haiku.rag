@@ -9,7 +9,7 @@ dependencies = [
     "pydantic-ai-slim[ag-ui,anthropic,openai]>=2.54.0,<2.60.0",
     "python-dotenv>=1.2.1",
     "haiku.rag-slim>=0.100.0",
-    "logfire[pydantic-ai]>=3.17.0",
+    "logfire>=3.17.0",
     "aiosqlite>=0.20",
     "scikit-learn>=1.8.0",
 ]
