@@ -43,7 +43,7 @@ dependencies = [
     "jinja2>=3.1.0",
     "fastmcp>=4.0.2,<5.0.0",
     "lancedb==0.39.0",
-    "opentelemetry-api>=1.44.0",
+    "opentelemetry-api>=1.45.1",
     "pylance==12.0.0",
     "pathspec>=1.0.4",
     "pillow>=13.0.0,<14.0.0",
@@ -72,6 +72,7 @@ Changelog = "https://ggozad.github.io/haiku.rag/changelog/"
 # Document processing
 docling = [
     "docling==2.142.0",
+    "transformers>=5.17.0,<6.0.0",
     # The layout and table-structure models, and the PDF parser, decide item
     # segmentation. Pinned to what docling-serve v1.38.0 ships, read out of the
     # image: docling-slim only floors these, so a resolver lands elsewhere.
@@ -86,8 +87,8 @@ voyageai = ["pydantic-ai-slim[voyageai]"]
 # Rerankers
 cohere = ["cohere>=5.21.1"]
 zeroentropy = ["zeroentropy>=0.1.0a11"]
-jina = ["transformers>=4.40.0,<6.0.0", "torch>=2.0.0"]
-cross-encoder = ["sentence-transformers>=4.0.0,<6.0.0", "transformers>=4.56.0,<6.0.0"]
+jina = ["transformers>=5.17.0,<6.0.0", "torch>=2.0.0"]
+cross-encoder = ["sentence-transformers>=4.0.0,<6.0.0", "transformers>=5.17.0,<6.0.0"]
 # Production ingester (queue, workers, API)
 ingester = [
     "fastapi>=0.125",

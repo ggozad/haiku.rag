@@ -9,10 +9,14 @@
 
 ### Security
 
+- Require `opentelemetry-api>=1.45.1` and lock virtualenv to 21.14.13.
+- `docling`, `jina` and `cross-encoder` extras require Transformers `>=5.17.0,<6.0.0`.
+- Web frontend requires Next.js `^16.4.2`.
 - Require Pillow `>=13.0.0,<14.0.0` (GHSA-4rr5-89j8-mwwm, GHSA-gg2r-wvfm-q9rx, GHSA-fc9g-5qg7-mf45, GHSA-cp9v-662q-vvx9, GHSA-j4m9-6w36-pw47).
 
 ### Changed
 
+- Logfire 5.2.0 and OpenTelemetry 1.45.1; remove the backend’s unused `logfire[pydantic-ai]` extra.
 - `pydantic-ai-slim` requires `>=2.54.0,<2.60.0`.
 - `docling` 2.142.0, `docling-core` 2.104.0, `docling-parse` 7.23.0 and `docling-ibm-models` 4.0.4, paired with `docling-serve` v1.38.0.
 - Default PDF parsing uses `threaded_docling_parse`; `docling_parse` selects the same backend through a deprecated alias.
