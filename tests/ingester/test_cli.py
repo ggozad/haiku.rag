@@ -3,7 +3,7 @@ IngesterApp / open_queue patched out so no real ingestion runs."""
 
 import subprocess
 import sys
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
@@ -534,7 +534,7 @@ def test_serve_records_the_configuration_file_it_found(tmp_path, monkeypatch):
 def _schema_version(path) -> int:
     import sqlite3
 
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db:
         return db.execute("SELECT version FROM schema_version").fetchone()[0]
 
 
@@ -600,7 +600,7 @@ def test_queue_migrate_refuses_a_newer_schema(tmp_path, monkeypatch, capsys):
     assert runner.invoke(cli, ["queue", "init", "--queue", str(db_path)]).exit_code == 0
     import sqlite3
 
-    with sqlite3.connect(db_path) as db:
+    with closing(sqlite3.connect(db_path)) as db, db:
         db.execute("UPDATE schema_version SET version = 99")
     monkeypatch.setattr(
         sys, "argv", ["haiku-ingester", "queue", "migrate", "--queue", str(db_path)]
