@@ -60,7 +60,7 @@ processing:
 
 ### Local and remote conversion
 
-`docling-local` runs docling in-process and needs the `docling` extra. `docling-serve` sends documents to a [docling-serve](../remote-processing.md) service, including a round-robin list of instances with failover. Conversion options apply to both converters, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which only `docling-local` reads.
+`docling-local` runs docling in-process and needs the `docling` extra. `docling-serve` sends documents to a [docling-serve](../remote-processing.md) service, including a round-robin list of instances with failover. Conversion options apply to both converters, except `fetch_remote_images`, `fetch_headers`, `fetch_headers_allowed_origins` and `infer_furniture`, which only `docling-local` reads.
 
 ### Text encodings
 
@@ -92,7 +92,7 @@ The leak is not bounded by slicing. Under `docling-local` it grows inside the `h
 
 ### Conversion options
 
-The `conversion_options` section allows fine-grained control over document conversion. Both converters read these options, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which apply to `docling-local` only.
+The `conversion_options` section allows fine-grained control over document conversion. Both converters read these options, except `fetch_remote_images`, `fetch_headers`, `fetch_headers_allowed_origins` and `infer_furniture`, which apply to `docling-local` only.
 
 #### PDF parsing
 
@@ -159,7 +159,8 @@ processing:
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
 - **fetch_remote_images**: When `true` (default), HTML image tags and native Markdown images (`![alt](url)`) have their URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
-- **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only. Headers go only to the source document's origin, including on redirects. Image hosts on other origins receive no configured headers and may reject requests that require a User-Agent. Local HTML files without an HTTP source URI send no configured headers.
+- **fetch_headers**: HTTP headers sent with HTML image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only. Headers go only to the source document's origin unless `fetch_headers_allowed_origins` is configured.
+- **fetch_headers_allowed_origins**: Origins permitted to receive `fetch_headers` during HTML image fetching, including redirects. Default: `[]`, meaning only the source document's origin; local files without an HTTP source URI send no configured headers. A non-empty list replaces that default: include the source origin too if it should receive headers. Each entry must be an HTTP(S) origin (scheme, host and optional port), without credentials, a path, query or fragment. This controls header forwarding, not which image hosts can be fetched. `docling-local` only; Markdown and `docling-serve` do not support these headers.
 - **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
 #### External image fetching
@@ -175,7 +176,17 @@ For HTML and Markdown inputs, docling fetches images referenced by URL when `fet
 
 Per-image failures (404, timeout, oversized, unreadable) leave that picture as a placeholder with `picture_data=NULL`. The rest of the document still ingests.
 
-Image hosts that require a User-Agent can reject requests from a page on another origin, since `fetch_headers` is not forwarded to them. This affects Wikipedia's Wikimedia images: an article can ingest successfully with no image bytes. Changing `fetch_headers` does not restore headers on those cross-origin requests.
+Image hosts that require a User-Agent can reject requests from a page on another origin. For Wikipedia's Wikimedia images, allow the image origins explicitly:
+
+```yaml
+processing:
+  conversion_options:
+    fetch_headers_allowed_origins:
+      - https://upload.wikimedia.org
+      - https://thumb.wikimedia.org
+```
+
+Every configured header is sent to allowed origins. Only list hosts trusted to receive all of `fetch_headers`; redirects to unlisted origins receive none of those headers. Without this setting, a Wikipedia article can ingest successfully with no image bytes.
 
 **Markdown HTML blocks:** docling 2.142.0 with docling-core 2.104.0 converts embedded HTML blocks to literal text in both local and remote conversion. An `<img>` block yields no picture, and a `data:` image URI remains in the text, including its base64 payload. Use native Markdown image syntax (`![alt](url)`) for image references.
 

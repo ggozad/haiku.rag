@@ -269,6 +269,7 @@ class DoclingLocalConverter(DocumentConverter):
                     enable_remote_fetch=fetch,
                     source_uri=source_url,
                     headers=headers,
+                    headers_allowed_origins=opts.fetch_headers_allowed_origins or None,
                     infer_furniture=opts.infer_furniture,
                 ),
             ),

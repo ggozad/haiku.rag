@@ -1101,6 +1101,20 @@ class TestDoclingLocalConverter:
         assert headers["User-Agent"] == "mine/1.0"
         assert headers["Referer"] == "https://example.com/"
 
+    @pytest.mark.parametrize(
+        "origins,expected",
+        [([], None), (["https://cdn.example.com"], ["https://cdn.example.com"])],
+    )
+    def test_fetch_headers_allowed_origins(self, config, origins, expected):
+        from docling.datamodel.backend_options import HTMLBackendOptions
+        from docling.datamodel.base_models import InputFormat
+
+        config.processing.conversion_options.fetch_headers_allowed_origins = origins
+        options = DoclingLocalConverter(config)._build_format_options()
+        html = options[InputFormat.HTML].backend_options
+        assert isinstance(html, HTMLBackendOptions)
+        assert html.headers_allowed_origins == expected
+
     def test_build_format_options_threads_source_uri(self, config):
         """`_build_format_options(source_uri=...)` plumbs the URI into the
         HTML and Markdown backend options so docling can resolve relative
