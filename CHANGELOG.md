@@ -9,6 +9,7 @@
 
 ### Security
 
+- Web frontend requires Next.js `^16.4.2`.
 - Require Pillow `>=13.0.0,<14.0.0` (GHSA-4rr5-89j8-mwwm, GHSA-gg2r-wvfm-q9rx, GHSA-fc9g-5qg7-mf45, GHSA-cp9v-662q-vvx9, GHSA-j4m9-6w36-pw47).
 
 ### Changed
