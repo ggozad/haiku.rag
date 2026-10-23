@@ -13,6 +13,50 @@ from haiku.rag.config.loader import (
 )
 
 
+def test_fetch_headers_allowed_origins_default():
+    assert AppConfig().processing.conversion_options.fetch_headers_allowed_origins == []
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "cdn.example.com",
+        "ftp://cdn.example.com",
+        "https://",
+        "https://cdn.example.com/images",
+        "https://user:password@cdn.example.com",
+        "https://cdn.example.com?token=secret",
+        "https://cdn.example.com#fragment",
+        "https://cdn.example.com:invalid",
+    ],
+)
+def test_fetch_headers_allowed_origins_rejects_non_origins(origin):
+    with pytest.raises(ValidationError, match="Expected an HTTP.*origin"):
+        AppConfig.model_validate(
+            {
+                "processing": {
+                    "conversion_options": {"fetch_headers_allowed_origins": [origin]}
+                }
+            }
+        )
+
+
+def test_fetch_headers_allowed_origins_accepts_origins():
+    origins = [
+        "https://cdn.example.com",
+        "http://cdn.example.com:8080",
+        "https://[::1]/",
+    ]
+    config = AppConfig.model_validate(
+        {
+            "processing": {
+                "conversion_options": {"fetch_headers_allowed_origins": origins}
+            }
+        }
+    )
+    assert config.processing.conversion_options.fetch_headers_allowed_origins == origins
+
+
 def test_load_yaml_config(tmp_path):
     """Test loading a YAML config file."""
     config_file = tmp_path / "test.yaml"

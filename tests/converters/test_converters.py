@@ -897,6 +897,30 @@ class TestDoclingLocalConverter:
             "All <img> with valid data: URIs should have decoded bytes"
         )
 
+    async def test_convert_text_html_keeps_integer_image(self, config):
+        """A 32-bit integer picture (Pillow mode `I`) is stored clipped to 16 bits."""
+        from io import BytesIO
+
+        from PIL import Image
+
+        image = Image.new("I", (2, 1))
+        image.putdata([0, 70000])
+        buffer = BytesIO()
+        image.save(buffer, format="TIFF")
+        tiff_b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+        html = (
+            f'<html><body><img src="data:image/tiff;base64,{tiff_b64}"/></body></html>'
+        )
+        converter = DoclingLocalConverter(config)
+
+        doc = await converter.convert_text(html, format="html")
+
+        [picture] = doc.pictures
+        assert picture.image is not None
+        stored = picture.image.pil_image
+        assert stored is not None
+        assert [stored.getpixel((x, 0)) for x in range(2)] == [0, 65535]
+
     async def test_convert_text_html_no_fetch_when_disabled(self, config):
         """`fetch_remote_images=False` produces placeholder pictures with no
         bytes — even for inline `data:` URIs (docling's `fetch_images` gates
@@ -917,15 +941,13 @@ class TestDoclingLocalConverter:
                 "fetch_remote_images=False must leave picture.image=None"
             )
 
+    @pytest.mark.xfail(
+        strict=True,
+        raises=AssertionError,
+        reason="docling-core 2.104 escapes Markdown HTML blocks as code (core PR #894)",
+    )
     async def test_convert_text_md_html_block_fetches_data_uri_image(self, config):
-        """Markdown with an embedded `<img>` HTML block produces picture bytes
-        — proves the MarkdownBackendOptions wiring delegates to the HTML
-        backend with our `fetch_images` / `enable_remote_fetch` settings.
-
-        Note: docling's md backend does NOT fetch images from native
-        `![alt](url)` syntax — only from embedded HTML blocks. That's an
-        upstream limitation, not something this PR can address.
-        """
+        """Markdown HTML image blocks produce picture bytes."""
         png_b64 = (
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
             "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -974,6 +996,7 @@ class TestDoclingLocalConverter:
     @pytest.mark.parametrize(
         ("configured", "expected"),
         [
+            (None, "ThreadedDoclingParseDocumentBackend"),
             ("threaded_docling_parse", "ThreadedDoclingParseDocumentBackend"),
             ("docling_parse", "DoclingParseDocumentBackend"),
             ("pypdfium2", "PyPdfiumDocumentBackend"),
@@ -988,7 +1011,8 @@ class TestDoclingLocalConverter:
         """
         from docling.datamodel.base_models import InputFormat
 
-        config.processing.conversion_options.pdf_backend = configured
+        if configured is not None:
+            config.processing.conversion_options.pdf_backend = configured
         options = DoclingLocalConverter(config)._build_format_options()
 
         assert options[InputFormat.PDF].backend.__name__ == expected
@@ -1076,6 +1100,20 @@ class TestDoclingLocalConverter:
         headers = html_bo.headers or {}
         assert headers["User-Agent"] == "mine/1.0"
         assert headers["Referer"] == "https://example.com/"
+
+    @pytest.mark.parametrize(
+        "origins,expected",
+        [([], None), (["https://cdn.example.com"], ["https://cdn.example.com"])],
+    )
+    def test_fetch_headers_allowed_origins(self, config, origins, expected):
+        from docling.datamodel.backend_options import HTMLBackendOptions
+        from docling.datamodel.base_models import InputFormat
+
+        config.processing.conversion_options.fetch_headers_allowed_origins = origins
+        options = DoclingLocalConverter(config)._build_format_options()
+        html = options[InputFormat.HTML].backend_options
+        assert isinstance(html, HTMLBackendOptions)
+        assert html.headers_allowed_origins == expected
 
     def test_build_format_options_threads_source_uri(self, config):
         """`_build_format_options(source_uri=...)` plumbs the URI into the
@@ -1230,6 +1268,9 @@ class TestDoclingLocalConverter:
 
     @pytest.mark.slow
     @pytest.mark.usefixtures("docling_local_models")
+    @pytest.mark.filterwarnings(
+        "error:^DoclingParseDocumentBackend is deprecated:DeprecationWarning"
+    )
     async def test_convert_pdf_with_picture_images(
         self, config, doclaynet_first_page_pdf
     ):
@@ -1870,6 +1911,17 @@ class TestSharedDoclingConverter:
 
         assert docling_calls.constructions == 1
 
+    @pytest.mark.filterwarnings("error::DeprecationWarning")
+    @pytest.mark.parametrize("force_ocr", [False, True])
+    async def test_conversion_with_ocr_mode_has_no_deprecation_warning(
+        self, config, csv_file, force_ocr
+    ):
+        config.processing.conversion_options.force_ocr = force_ocr
+
+        doc = await DoclingLocalConverter(config).convert_file(csv_file)
+
+        assert doc.tables[0].data.grid[1][0].text == "1"
+
     async def test_each_pdf_backend_gets_its_own_converter(
         self, config, csv_file, docling_calls
     ):
@@ -1992,16 +2044,24 @@ class TestDoclingServeConverter:
         """Test converter initialization."""
         assert converter.client.base_url == "http://localhost:5001"
 
-    def test_conversion_data_sends_the_configured_pdf_backend(self, config):
-        """The request names the backend.
-
-        docling-serve applies its own default to a request that omits
-        `pdf_backend`.
-        """
-        config.processing.conversion_options.pdf_backend = "docling_parse"
+    @pytest.mark.parametrize(
+        ("configured", "expected"),
+        [
+            (None, "docling_parse"),
+            ("threaded_docling_parse", "docling_parse"),
+            ("docling_parse", "docling_parse"),
+            ("pypdfium2", "pypdfium2"),
+        ],
+    )
+    def test_conversion_data_sends_the_configured_pdf_backend(
+        self, config, configured, expected
+    ):
+        """The request names the configured backend in docling-serve's API."""
+        if configured is not None:
+            config.processing.conversion_options.pdf_backend = configured
         data = DoclingServeConverter(config)._build_conversion_data()
 
-        assert data["pdf_backend"] == "docling_parse"
+        assert data["pdf_backend"] == expected
 
     def test_supported_extensions(self, converter):
         """Test that converter reports correct supported extensions."""

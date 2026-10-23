@@ -1,13 +1,13 @@
 # Remote processing
 
-haiku.rag can send conversion and chunking to [docling-serve](https://github.com/docling-project/docling-serve), a REST service running docling, instead of running docling in-process. It moves docling's memory and CPU out of the haiku.rag process, and lets `haiku.rag-slim` run without the `docling` extra. haiku.rag is tested against docling-serve 1.33.0.
+haiku.rag can send conversion and chunking to [docling-serve](https://github.com/docling-project/docling-serve), a REST service running docling, instead of running docling in-process. It moves docling's memory and CPU out of the haiku.rag process, and lets `haiku.rag-slim` run without the `docling` extra. haiku.rag is tested against docling-serve 1.38.0.
 
 ## Running docling-serve
 
 `examples/docker/docker-compose.yml` runs two docling-serve replicas beside the ingester and the MCP server. To run one by hand:
 
 ```bash
-docker run -p 5001:5001 quay.io/docling-project/docling-serve:v1.33.0
+docker run -p 5001:5001 quay.io/docling-project/docling-serve:v1.38.0
 ```
 
 `-e DOCLING_SERVE_ENABLE_UI=true` adds its web UI, for debugging.
@@ -26,7 +26,7 @@ providers:
     timeout: 300  # seconds per HTTP call: submit, poll, result
 ```
 
-`timeout` bounds each HTTP call, not the whole conversion. The [processing options](configuration/processing.md) apply as they do locally, except `fetch_remote_images`, `fetch_headers` and `infer_furniture`, which docling-serve ignores. With `chunker: docling-serve`, the OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) are sent to the chunking API too. `do_ocr: false` there avoids OCR model downloads in a read-only container.
+`timeout` bounds each HTTP call, not the whole conversion. The [processing options](configuration/processing.md) apply as they do locally, except `fetch_remote_images`, `fetch_headers`, `fetch_headers_allowed_origins` and `infer_furniture`, which docling-serve ignores. With `chunker: docling-serve`, the OCR options (`do_ocr`, `force_ocr`, `ocr_engine`, `ocr_lang`) are sent to the chunking API too. `do_ocr: false` there avoids OCR model downloads in a read-only container.
 
 ## Several instances
 

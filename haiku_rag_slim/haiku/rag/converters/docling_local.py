@@ -269,6 +269,7 @@ class DoclingLocalConverter(DocumentConverter):
                     enable_remote_fetch=fetch,
                     source_uri=source_url,
                     headers=headers,
+                    headers_allowed_origins=opts.fetch_headers_allowed_origins or None,
                     infer_furniture=opts.infer_furniture,
                 ),
             ),
@@ -313,7 +314,9 @@ class DoclingLocalConverter(DocumentConverter):
         key = hashlib.md5(
             b"\0".join(
                 (
-                    pipeline_options.model_dump_json(serialize_as_any=True).encode(),
+                    pipeline_options.model_dump_json(
+                        serialize_as_any=True, exclude_computed_fields=True
+                    ).encode(),
                     self.config.processing.conversion_options.pdf_backend.encode(),
                 )
             ),

@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -276,13 +277,9 @@ class ConversionOptions(ConfigModel):
     table_mode: Literal["fast", "accurate"] = "accurate"
     table_cell_matching: bool = True
 
-    # The parsers segment items differently, so the local and serve converters
-    # diverge unless both are told the same one. `threaded_docling_parse` is
-    # docling's own default and is not ours: on some documents its page
-    # producer never delivers, and `standard_pdf_pipeline.get_batch` waits on
-    # an unclosed queue with no timeout, so the conversion never returns.
+    # Local and serve conversion must select the same PDF parser.
     pdf_backend: Literal["threaded_docling_parse", "docling_parse", "pypdfium2"] = (
-        "docling_parse"
+        "threaded_docling_parse"
     )
 
     # Image options
@@ -297,6 +294,31 @@ class ConversionOptions(ConfigModel):
     fetch_headers: dict[str, str] = Field(
         default_factory=lambda: {"User-Agent": DEFAULT_FETCH_USER_AGENT}
     )
+    fetch_headers_allowed_origins: list[str] = Field(default_factory=list)
+
+    @field_validator("fetch_headers_allowed_origins")
+    @classmethod
+    def validate_fetch_headers_allowed_origins(cls, origins: list[str]) -> list[str]:
+        for origin in origins:
+            try:
+                parsed = urlsplit(origin)
+                valid = (
+                    parsed.scheme in {"http", "https"}
+                    and bool(parsed.hostname)
+                    and parsed.username is None
+                    and parsed.password is None
+                    and parsed.path in {"", "/"}
+                    and not parsed.query
+                    and not parsed.fragment
+                    and (parsed.port is None or parsed.port > 0)
+                )
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError(
+                    "Expected an HTTP(S) origin such as https://cdn.example.com"
+                )
+        return origins
 
     # docling's rule that HTML content before the first heading is page
     # furniture, left out of the document. docling-local only.
