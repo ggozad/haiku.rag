@@ -1,17 +1,17 @@
 interactions:
 - request:
-    body: "--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition:
-      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition:
-      form-data; name=\"ocr_engine\"\r\n\r\nauto\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data;
-      name=\"do_table_structure\"\r\n\r\ntrue\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data; name=\"pdf_backend\"\r\n\r\ndocling_parse\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition:
-      form-data; name=\"table_mode\"\r\n\r\naccurate\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data;
-      name=\"table_cell_matching\"\r\n\r\ntrue\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data; name=\"images_scale\"\r\n\r\n2.0\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition:
-      form-data; name=\"image_export_mode\"\r\n\r\nreferenced\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition:
-      form-data; name=\"include_images\"\r\n\r\ntrue\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data;
-      name=\"include_page_images\"\r\n\r\ntrue\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data; name=\"do_picture_description\"\r\n\r\nfalse\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition:
-      form-data; name=\"target_type\"\r\n\r\nzip\r\n--f9398271433b4c029120848a36ce3766\r\nContent-Disposition: form-data;
-      name=\"files\"; filename=\"tmpnvz5glnp.md\"\r\nContent-Type: text/markdown\r\n\r\n```python\ndef test():\n    return
-      42\n```\r\n--f9398271433b4c029120848a36ce3766--\r\n"
+    body: "--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition:
+      form-data; name=\"do_ocr\"\r\n\r\ntrue\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition:
+      form-data; name=\"ocr_engine\"\r\n\r\nauto\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data;
+      name=\"do_table_structure\"\r\n\r\ntrue\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data; name=\"pdf_backend\"\r\n\r\ndocling_parse\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition:
+      form-data; name=\"table_mode\"\r\n\r\naccurate\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data;
+      name=\"table_cell_matching\"\r\n\r\ntrue\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data; name=\"images_scale\"\r\n\r\n2.0\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition:
+      form-data; name=\"image_export_mode\"\r\n\r\nreferenced\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition:
+      form-data; name=\"include_images\"\r\n\r\ntrue\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data;
+      name=\"include_page_images\"\r\n\r\ntrue\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data; name=\"do_picture_description\"\r\n\r\nfalse\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition:
+      form-data; name=\"target_type\"\r\n\r\nzip\r\n--ac0c3e611d84e07937a45406dc18e976\r\nContent-Disposition: form-data;
+      name=\"files\"; filename=\"tmp5fbh8u68.md\"\r\nContent-Type: text/markdown\r\n\r\n```python\ndef test():\n    return
+      42\n```\r\n--ac0c3e611d84e07937a45406dc18e976--\r\n"
     headers:
       accept:
       - '*/*'
@@ -22,7 +22,7 @@ interactions:
       content-length:
       - '1616'
       content-type:
-      - multipart/form-data; boundary=f9398271433b4c029120848a36ce3766
+      - multipart/form-data; boundary=ac0c3e611d84e07937a45406dc18e976
       host:
       - localhost:5001
     method: POST
@@ -33,10 +33,12 @@ interactions:
       - '167'
       content-type:
       - application/json
+      vary:
+      - Origin
     parsed_body:
       error_message: null
       failure: null
-      task_id: 462fe8b7-30eb-4aec-b144-861cd6d721ff
+      task_id: 5c0f1c9c-1e60-4fa7-81de-481cbb929e26
       task_meta: null
       task_position: 1
       task_status: pending
@@ -56,17 +58,19 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/status/poll/462fe8b7-30eb-4aec-b144-861cd6d721ff
+    uri: http://localhost:5001/v1/status/poll/5c0f1c9c-1e60-4fa7-81de-481cbb929e26
   response:
     headers:
       content-length:
       - '170'
       content-type:
       - application/json
+      vary:
+      - Origin
     parsed_body:
       error_message: null
       failure: null
-      task_id: 462fe8b7-30eb-4aec-b144-861cd6d721ff
+      task_id: 5c0f1c9c-1e60-4fa7-81de-481cbb929e26
       task_meta: null
       task_position: null
       task_status: started
@@ -86,17 +90,19 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/status/poll/462fe8b7-30eb-4aec-b144-861cd6d721ff
+    uri: http://localhost:5001/v1/status/poll/5c0f1c9c-1e60-4fa7-81de-481cbb929e26
   response:
     headers:
       content-length:
       - '170'
       content-type:
       - application/json
+      vary:
+      - Origin
     parsed_body:
       error_message: null
       failure: null
-      task_id: 462fe8b7-30eb-4aec-b144-861cd6d721ff
+      task_id: 5c0f1c9c-1e60-4fa7-81de-481cbb929e26
       task_meta: null
       task_position: null
       task_status: success
@@ -116,21 +122,21 @@ interactions:
       host:
       - localhost:5001
     method: GET
-    uri: http://localhost:5001/v1/result/462fe8b7-30eb-4aec-b144-861cd6d721ff
+    uri: http://localhost:5001/v1/result/5c0f1c9c-1e60-4fa7-81de-481cbb929e26
   response:
     body:
       string: !!binary |
-        UEsDBBQAAAAAAINmSV0AAAAAAAAAAAAAAAAKAAAAYXJ0aWZhY3RzL1BLAwQUAAAACACDZkldAeAK
-        HZcBAAAnBAAAEAAAAHRtcG52ejVnbG5wLmpzb26dU11PgzAUfd+vIOiDJsvG1Dm3Z3+A72pIgQs0
-        61faguLCf7ctdGPIojEhaXrvOb3n9JTDLAhClZZAUcwQhXAXhM88JZgVZqkoMB3OLaYGqTBntr9a
-        rKJF1JU9R1PB6q91QZjoGlziAlv4wezMnmIKuhEdGD71kiK5z/gHc3ADSDBDsolLpEqD2UbR03az
-        3tzfR49r821WUY/LMYGJqQuahQbQuuF5JRnWlYTTfAUkjyXklna1PAH6U9MSk0yCFfz67mucaeM/
-        JqgBaXk/WF5HLDnXsa8SlACx5YopASnOMQy0JTxrLslyvQlFrhL0HNe9PnLsZaplFPa91q0XLQwn
-        /Ed9IXkl1PGWXJTqKNELHNnyEue+LZC0D2s37chp9HaOnImEfjE4NJPyDAbzJa/Pz7HP1eIyyAMN
-        St/c7t6Y7UgwgbPg4e7Etnb+ik2R0Oa3UefTjFUwVlIY1XMTBON6XLbijUNWVKhwib00ujT/4swH
-        3mUhcGof5zAdlJDhfg9NXCNSQYw10EEj55KOa8IMs9tDO2u/AVBLAQIUAxQAAAAAAINmSV0AAAAA
-        AAAAAAAAAAAKAAAAAAAAAAAAEADtQQAAAABhcnRpZmFjdHMvUEsBAhQDFAAAAAgAg2ZJXQHgCh2X
-        AQAAJwQAABAAAAAAAAAAAAAAAKSBKAAAAHRtcG52ejVnbG5wLmpzb25QSwUGAAAAAAIAAgB2AAAA
+        UEsDBBQAAAAAAAMxV10AAAAAAAAAAAAAAAAKAAAAYXJ0aWZhY3RzL1BLAwQUAAAACAADMVddxOag
+        rZcBAAAnBAAAEAAAAHRtcDVmYmg4dTY4Lmpzb26dU8tugzAQvOcrEO2hlaKENM3z3A/ova2QgTVY
+        8QPZJi2K+PfaBieEErWqhGR5d8Y74zGnSRCEKi2AoZgjBuE+CF9ESgnPzVIx4DqcWswRpCKC2/5i
+        tohmUVv2HM3KFU6KbbXetg0hSU4s/GR2Zs8IA12XLRi+9JwhecjEJ3dwA0gIR7KOC6QKg9lF0Xa3
+        WW2Wy2i9Mt9mEXU4TCiMTJ2xLDSAxg3HleREVxIu8xVQHEvAlnY3vwC6U9OC0EyCFfz24WuCa+M/
+        pqgGaXk/WF5HLIXQsa9SlAC15YqrElKCCfS0JSKrb8lyvRFFrhJ0HNe9P3PsZap5FHa9xq03LfQn
+        /Ed9LkVVqvMtuSjVWaIXOLDlJU59u0TSPqz9uCOn0ds5c0YS+sVg30wqMujNl+J4fY59rhaXAQ40
+        KP3wuH/ntiPBBM6D56cL29r5KzZFpTa/jbqeZqyCsZLCoI5NEFzoYdmKNw55XqHcJfZa68L8ixMf
+        eJtFSVL7OPvpoIT29weo4yOiFcREA+s1sJBsWCvNMLs9NZPmG1BLAQIUAxQAAAAAAAMxV10AAAAA
+        AAAAAAAAAAAKAAAAAAAAAAAAEADtQQAAAABhcnRpZmFjdHMvUEsBAhQDFAAAAAgAAzFXXcTmoK2X
+        AQAAJwQAABAAAAAAAAAAAAAAAKSBKAAAAHRtcDVmYmg4dTY4Lmpzb25QSwUGAAAAAAIAAgB2AAAA
         7QEAAAAA
     headers:
       content-disposition:
@@ -139,6 +145,8 @@ interactions:
       - '633'
       content-type:
       - application/zip
+      vary:
+      - Origin
     status:
       code: 200
       message: OK

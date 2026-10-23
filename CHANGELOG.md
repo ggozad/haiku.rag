@@ -6,9 +6,22 @@
 
 - `RAGCapability.open_question(messages)` and `haiku.rag.capabilities.evidence.open_questions(ctx)`.
 
+### Security
+
+- Require Pillow `>=13.0.0,<14.0.0` (GHSA-4rr5-89j8-mwwm, GHSA-gg2r-wvfm-q9rx, GHSA-fc9g-5qg7-mf45, GHSA-cp9v-662q-vvx9, GHSA-j4m9-6w36-pw47).
+
 ### Changed
 
 - `pydantic-ai-slim` requires `>=2.54.0,<2.60.0`.
+- `docling` 2.142.0, `docling-core` 2.104.0, `docling-parse` 7.23.0 and `docling-ibm-models` 4.0.4, paired with `docling-serve` v1.38.0.
+- Default PDF parsing uses `threaded_docling_parse`; `docling_parse` selects the same backend through a deprecated alias.
+- `conversion_options.fetch_headers` applies only to the HTML source document's origin; image hosts on other origins receive no configured headers.
+
+### Known issues
+
+- Markdown HTML blocks convert to literal text with both converters; `<img>` blocks yield no pictures and retain base64 data URIs in text.
+- Wikipedia HTML ingestion can lose all image bytes when Wikimedia rejects requests without a User-Agent.
+
 
 ## [0.100.0] - 2026-10-22
 

@@ -99,13 +99,13 @@ The `conversion_options` section allows fine-grained control over document conve
 ```yaml
 processing:
   conversion_options:
-    pdf_backend: docling_parse   # docling_parse, threaded_docling_parse, pypdfium2
+    pdf_backend: threaded_docling_parse   # threaded_docling_parse, docling_parse, pypdfium2
 ```
 
 - **pdf_backend**: The parser docling uses to read a PDF. Both converters receive it. The parsers segment a document differently, so a change brings different items, chunk boundaries and chunk ids on the next ingest.
-  - `docling_parse` (default): serialized page parsing
-  - `threaded_docling_parse`: concurrent page parsing, and docling's own default. On some documents the conversion never returns. Over ten arXiv papers against `docling_parse`: one table undetected, 7% fewer table cells, 9% faster.
-  - `pypdfium2`: faster and simpler, less layout detail. Over the same ten papers: 7% fewer words and 28% fewer table cells.
+  - `threaded_docling_parse` (default): concurrent page parsing with docling-parse. Both local conversion and docling-serve use this implementation; the serve API calls it `docling_parse`.
+  - `docling_parse`: deprecated alias for the same threaded parser; it does not select serialized page parsing.
+  - `pypdfium2`: PDFium-based parsing with different text extraction and segmentation.
 
 #### OCR settings
 
@@ -158,8 +158,8 @@ processing:
 
 - **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
 - **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
-- **fetch_remote_images**: When `true` (default), HTML and Markdown inputs have their external `<img src="https://...">` URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
-- **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only. They go to every host an ingested document names, so they must not carry a credential.
+- **fetch_remote_images**: When `true` (default), HTML image tags and native Markdown images (`![alt](url)`) have their URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
+- **fetch_headers**: HTTP headers sent with those image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only. Headers go only to the source document's origin, including on redirects. Image hosts on other origins receive no configured headers and may reject requests that require a User-Agent. Local HTML files without an HTTP source URI send no configured headers.
 - **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
 #### External image fetching
@@ -167,13 +167,17 @@ processing:
 For HTML and Markdown inputs, docling fetches images referenced by URL when `fetch_remote_images: true`. Pictures end up in `document_items.picture_data` alongside the ones extracted from PDF/DOCX/PPTX. Inherited from docling:
 
 - **SSRF guard**: hostnames must resolve to a global IP. Loopback, private (RFC1918), link-local, reserved, multicast, and unspecified addresses are rejected.
-- **Size cap**: 20 MB per image (sent as a `Range` header), enforced again when streaming the response body.
+- **Size cap**: 20 MiB per image, checked against `Content-Length` and enforced while streaming the response body.
 - **Timeouts**: 5 s connect, 30 s read.
 - **SVGs are skipped** (PIL cannot rasterize them).
 - **`data:` URIs** are decoded inline (no network).
 - **`file://` URIs** are *not* fetched. `enable_local_fetch` stays off to keep the SSRF surface narrow for arbitrary HTML/MD content.
 
 Per-image failures (404, timeout, oversized, unreadable) leave that picture as a placeholder with `picture_data=NULL`. The rest of the document still ingests.
+
+Image hosts that require a User-Agent can reject requests from a page on another origin, since `fetch_headers` is not forwarded to them. This affects Wikipedia's Wikimedia images: an article can ingest successfully with no image bytes. Changing `fetch_headers` does not restore headers on those cross-origin requests.
+
+**Markdown HTML blocks:** docling 2.142.0 with docling-core 2.104.0 converts embedded HTML blocks to literal text in both local and remote conversion. An `<img>` block yields no picture, and a `data:` image URI remains in the text, including its base64 payload. Use native Markdown image syntax (`![alt](url)`) for image references.
 
 **Scope of conversion options across formats:**
 
@@ -182,7 +186,7 @@ Per-image failures (404, timeout, oversized, unreadable) leave that picture as a
 | `.pdf` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ | ✅ |
-| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`<img>` HTML blocks only, not `![alt](url)`) | n/a |
+| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`![alt](url)`; HTML blocks have the limitation above) | n/a |
 | `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a | n/a |
 | `.epub` | n/a | n/a | n/a (pictures carry no image data) | n/a | n/a |
 | Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |

@@ -103,7 +103,11 @@ class DoclingServeConverter(DocumentConverter):
             "force_ocr": str(opts.force_ocr).lower(),
             "ocr_engine": opts.ocr_engine,
             "do_table_structure": str(opts.do_table_structure).lower(),
-            "pdf_backend": opts.pdf_backend,
+            "pdf_backend": (
+                "docling_parse"
+                if opts.pdf_backend == "threaded_docling_parse"
+                else opts.pdf_backend
+            ),
             "table_mode": opts.table_mode,
             "table_cell_matching": str(opts.table_cell_matching).lower(),
             "images_scale": str(opts.images_scale),

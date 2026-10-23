@@ -276,13 +276,9 @@ class ConversionOptions(ConfigModel):
     table_mode: Literal["fast", "accurate"] = "accurate"
     table_cell_matching: bool = True
 
-    # The parsers segment items differently, so the local and serve converters
-    # diverge unless both are told the same one. `threaded_docling_parse` is
-    # docling's own default and is not ours: on some documents its page
-    # producer never delivers, and `standard_pdf_pipeline.get_batch` waits on
-    # an unclosed queue with no timeout, so the conversion never returns.
+    # Local and serve conversion must select the same PDF parser.
     pdf_backend: Literal["threaded_docling_parse", "docling_parse", "pypdfium2"] = (
-        "docling_parse"
+        "threaded_docling_parse"
     )
 
     # Image options

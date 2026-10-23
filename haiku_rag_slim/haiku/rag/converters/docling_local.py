@@ -313,7 +313,9 @@ class DoclingLocalConverter(DocumentConverter):
         key = hashlib.md5(
             b"\0".join(
                 (
-                    pipeline_options.model_dump_json(serialize_as_any=True).encode(),
+                    pipeline_options.model_dump_json(
+                        serialize_as_any=True, exclude_computed_fields=True
+                    ).encode(),
                     self.config.processing.conversion_options.pdf_backend.encode(),
                 )
             ),
