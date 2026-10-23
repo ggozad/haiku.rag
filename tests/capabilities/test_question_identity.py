@@ -222,9 +222,10 @@ async def test_the_identity_is_the_index_of_the_opening_request(temp_db_path, sh
     assert evidence["latest_evidence_epoch"] == identity + 1
 
 
+@pytest.mark.parametrize("compacted", [False, True])
 @pytest.mark.parametrize("shape", ["prompt", "question in history"])
 async def test_a_capability_loaded_mid_question_takes_the_request_after_the_load(
-    temp_db_path, shape
+    temp_db_path, shape, compacted
 ):
     deps, sent = await run_shape(
         temp_db_path,
@@ -233,6 +234,7 @@ async def test_a_capability_loaded_mid_question_takes_the_request_after_the_load
             [ToolCallPart("load_capability", {"id": "haiku-rag"}, "call-0")],
             *UNCITED_AFTER_A_SEARCH,
         ],
+        extra=[create_compaction()] if compacted else (),
         deferred=True,
     )
 
@@ -248,6 +250,49 @@ async def test_a_capability_loaded_mid_question_takes_the_request_after_the_load
     assert question == loaded
     assert redirects(sent[-1]) == 1
     assert deps.state["citation_policy"]["violations"] == [question]
+
+
+async def test_a_capability_never_loaded_leaves_no_question_for_the_next_run(
+    temp_db_path,
+):
+    """With the compactor, a question the deferred capability never saw is not
+    carried over, and the run that loads it opens at the request after the load."""
+    sent: list[list[ModelMessage]] = []
+    agent = Agent(
+        scripted(
+            [
+                [TextPart("hello back")],
+                [ToolCallPart("load_capability", {"id": "haiku-rag"}, "call-0")],
+                [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+                [ToolCallPart("cite", {"chunk_ids": ["supervisor"]}, "call-2")],
+                [TextPart("a grounded answer")],
+            ],
+            sent,
+        ),
+        deps_type=Deps,
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig(), defer_loading=True),
+            create_compaction(),
+        ],
+    )
+    deps = Deps()
+    with patch.object(RAGCapability, "_search", stub_search):
+        first = await agent.run("hi", deps=deps)
+        assert deps.state.get("rag", {}).get("evidence", {}).get("in_progress") in (
+            None,
+            False,
+        )
+        await agent.run("a question", deps=deps, message_history=first.all_messages())
+
+    loaded = next(
+        index
+        for index, message in enumerate(sent[-1])
+        if any(
+            isinstance(part, ToolReturnPart) and part.tool_name == "load_capability"
+            for part in message.parts
+        )
+    )
+    assert deps.state["rag"]["evidence"]["question"] == loaded
 
 
 @pytest.mark.parametrize(
@@ -416,6 +461,29 @@ async def test_stored_agui_state_continues_with_a_new_question(temp_db_path):
     assert question > stored["state"]["rag"]["evidence"]["question"]
     assert redirects(sent[-1]) == 1
     assert deps.state["citation_policy"]["violations"] == [question]
+
+
+async def test_a_streamed_new_question_compacts_the_stored_one(temp_db_path):
+    stored = STORED["completed"]
+
+    _, sent = await run_agui(
+        temp_db_path,
+        [
+            *stored["messages"],
+            {"id": "u2", "role": "user", "content": "and who supervises them?"},
+        ],
+        stored["state"],
+        [[TextPart("an answer")], [TextPart("still an answer")]],
+    )
+
+    returns = [
+        part.content
+        for message in sent[0]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    ]
+    assert "EVIDENCE" not in returns
+    assert any("[chunk-1]" in content for content in returns)
 
 
 async def test_stored_agui_state_resumes_an_interrupted_question(temp_db_path):
