@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.101.0] - 2026-10-23
+
 ### Added
 
 - `RAGCapability.open_question(messages)` and `haiku.rag.capabilities.evidence.open_questions(ctx)`.
@@ -3066,7 +3068,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.100.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.101.0...HEAD
+[0.101.0]: https://github.com/ggozad/haiku.rag/compare/0.100.0...0.101.0
 [0.100.0]: https://github.com/ggozad/haiku.rag/compare/0.99.0...0.100.0
 [0.99.0]: https://github.com/ggozad/haiku.rag/compare/0.98.0...0.99.0
 [0.98.0]: https://github.com/ggozad/haiku.rag/compare/0.97.0...0.98.0
