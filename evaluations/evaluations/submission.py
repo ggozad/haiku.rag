@@ -72,3 +72,23 @@ def build_submission_rows(
             }
         )
     return rows
+
+
+def enterprise_rag_answers(
+    results: Iterable[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """EnterpriseRAG-Bench `answers.jsonl` rows from per-case result rows.
+
+    A case with neither answer nor citations (an aborted run) keeps its row, and
+    Onyx's scorer reports it as skipped.
+    """
+    return [
+        {
+            "question_id": row["key"],
+            "answer": row.get("answer") or "",
+            "document_ids": list(
+                dict.fromkeys((row.get("attributes") or {}).get("cited_uris") or [])
+            ),
+        }
+        for row in results
+    ]

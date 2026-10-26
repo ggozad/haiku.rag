@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `enterprise_rag` evaluation dataset (EnterpriseRAG-Bench, `onyx-dot-app/EnterpriseRAG-Bench`) and its reference config `evaluations/configs/enterprise_rag.yaml`, with Recall@10 retrieval, citation MAP and answerability labels (`info_not_found` is `UNANSWERABLE`). Gmail threads stored as a Python list `repr` are decoded into text. `evaluations/scripts/build_erb_submission.py` writes the input of Onyx's leaderboard scorer (`answers.jsonl`) from a results file.
+- `AnswerFactsJudge` evaluator: `answer_completeness` from one judge call per `answer_facts` entry, using EnterpriseRAG-Bench's fact validator prompt. QA runs print mean completeness and mean `erb_score`, and result rows gain `answer_completeness`.
+
 ## [0.101.0] - 2026-10-23
 
 ### Added

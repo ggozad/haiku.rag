@@ -22,6 +22,7 @@ from evaluations.evaluators import (
     ANSWER_EQUIVALENCE_RUBRIC,
     REFUSAL_ELIGIBLE_LABELS,
     REFUSAL_RUBRIC,
+    AnswerFactsJudge,
     ConversationEvaluator,
     RefusalJudge,
     TranscriptLLMJudge,
@@ -171,20 +172,43 @@ def _refusal_metrics(report_cases) -> tuple[float, float, int, int] | None:
     return precision, recall, unanswerable, len(refusals)
 
 
-def _filter_qa_corpus(corpus, case_ids: set[str] | None):
-    """Keep only rows whose ``id`` is in ``case_ids`` (failure-subset reruns).
+def _facts_metrics(report_cases) -> tuple[float, float, int] | None:
+    """Mean completeness and mean erb_score (completeness if correct, else 0).
+
+    Uses cases with both an `answer_completeness` score and an
+    `answer_equivalent` verdict. Returns (completeness, erb_score, case_count),
+    or None when there are none.
+    """
+    judged = [
+        (
+            float(case.scores["answer_completeness"].value),
+            bool(case.assertions["answer_equivalent"].value),
+        )
+        for case in report_cases
+        if "answer_completeness" in case.scores
+        and "answer_equivalent" in case.assertions
+    ]
+    if not judged:
+        return None
+    completeness = sum(c for c, _ in judged) / len(judged)
+    erb_score = sum(c for c, correct in judged if correct) / len(judged)
+    return completeness, erb_score, len(judged)
+
+
+def _filter_qa_corpus(corpus, case_ids: set[str] | None, id_key: str = "id"):
+    """Keep only rows whose ``id_key`` field is in ``case_ids`` (failure-subset reruns).
 
     Returns the corpus unchanged when ``case_ids`` is None; matching nothing
     raises.
     """
     if case_ids is None:
         return corpus
-    filtered = corpus.filter(lambda row: row.get("id") in case_ids)
+    filtered = corpus.filter(lambda row: row.get(id_key) in case_ids)
     if len(filtered) == 0:
         raise ValueError(
             f"--filter-ids matched none of the {len(corpus)} cases. "
             "Check that the ids belong to this dataset and that its rows are "
-            "keyed by `id`."
+            f"keyed by `{id_key}`."
         )
     return filtered
 
@@ -211,7 +235,7 @@ async def _prepare_qa_run(
 ) -> _QARun:
     """Shared setup for the QA runners: cases, models, name and metadata."""
     corpus = spec.qa_loader()
-    corpus = _filter_qa_corpus(corpus, case_ids)
+    corpus = _filter_qa_corpus(corpus, case_ids, spec.case_id_key)
     if limit is not None:
         corpus = corpus.select(range(min(limit, len(corpus))))
 
@@ -348,6 +372,7 @@ async def run_qa_benchmark(
         evaluators = [answer_judge]
     if citation_evaluator is not None:
         evaluators.append(citation_evaluator)
+    evaluators.append(AnswerFactsJudge(model=get_model(judge_config, config)))
     # RefusalJudge scores only cases whose metadata carries an answerability
     # label; on unlabeled datasets it returns no score without a judge call.
     evaluators.append(
@@ -483,6 +508,12 @@ async def run_qa_benchmark(
             f"UNANSWERABLE turns: {unanswerable} | refusals: {refusals} "
             "(PARTIAL excluded)"
         )
+
+    if (facts := _facts_metrics(report.cases)) is not None:
+        completeness, erb_score, judged = facts
+        console.print("\n=== Answer facts ===", style="bold cyan")
+        console.print(f"Mean completeness: {completeness:.4f}")
+        console.print(f"Mean erb_score: {erb_score:.4f} ({judged} cases)")
 
     _print_failures(failures, show_question=True)
 

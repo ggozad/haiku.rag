@@ -1,10 +1,56 @@
 # Benchmarks
 
-haiku.rag is evaluated on OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, FRAMES and MTRAG. Retrieval, QA accuracy and citation retrieval are scored end to end through the RAG capability, see [Methodology](#methodology).
+haiku.rag is evaluated on EnterpriseRAG-Bench, OpenRAG Bench (ORB), T²-RAGBench, HotpotQA, FRAMES and MTRAG. Retrieval, QA accuracy and citation retrieval are scored end to end through the RAG capability, see [Methodology](#methodology).
 
 Each footnote names the haiku.rag version and the judge a row was measured with. Rows are not re-run when either changes, so compare rows that share both. Rows before v0.87.0 ran the capability architecture that release replaced.
 
-No benchmark database has a vector index, so every number reflects exact brute-force kNN. For the effect of an index, see [Vector indexing](configuration/storage.md#vector-indexing).
+Only the EnterpriseRAG-Bench database has a vector index. Every other number reflects exact brute-force kNN. For the effect of an index, see [Vector indexing](configuration/storage.md#vector-indexing).
+
+## EnterpriseRAG-Bench
+
+[EnterpriseRAG-Bench](https://github.com/onyx-dot-app/EnterpriseRAG-Bench) is Onyx's benchmark of one synthetic company's internal knowledge: 511,962 documents across Slack, Gmail, Jira, Confluence, Google Drive, Linear, HubSpot, Fireflies and GitHub, and 500 questions in 10 types, including near-duplicate documents whose facts conflict and questions with no answer in the corpus. Each question has a gold answer, a list of answer facts and its gold documents.
+
+Its headline score is the mean over questions of correctness × completeness: completeness is the fraction of answer facts supported by the answer, and counts only when the answer is judged correct. Our runs report it as `erb_score`, with completeness judged by Onyx's own fact prompt (`AnswerFactsJudge`).
+
+#### Retrieval (Recall@10)
+
+| Embedding Model | Reranker | Queries | Recall@10 |
+|-----------------|----------|--------:|----------:|
+| `google/embeddinggemma-2` | `nvidia/llama-nemotron-rerank-vl-1b-v2` | 470 | 0.7837 |
+
+*v0.101.0, the stack of the QA rows below: the reranker scores 200 candidates (`search.rerank_pool_factor` 20). 30 questions have no gold documents and are not scored.*
+
+#### QA accuracy, completeness and citation retrieval
+
+| Capability model | Cases | QA accuracy | Mean completeness | Mean `erb_score` | Mean `cited_map` |
+|------------------|------:|-------------|-------------------|------------------|------------------|
+| `Qwen3.8-27B-NVFP4` | 500 | 0.860 | 0.847 | 0.816 | 0.743 |
+| `Muse-Glimmer-30B-NVFP4-W4A4` | 500 | 0.778 | 0.781 | 0.745 | 0.670 |
+| `gemma-4-26B-A4B-it-FP8-Dynamic` | 500 | 0.642 | 0.667 | 0.588 | 0.489 |
+
+*v0.101.0, `google/embeddinggemma-2` (768, question-answering prefixes, served through sentence-transformers in fp32) with `nvidia/llama-nemotron-rerank-vl-1b-v2`, `search.limit` 10, `sandbox.code_timeout` 120, all judged by `Qwen3.8-27B` at `reasoning_effort: low`. Aborted cases count as failures, and completeness, `erb_score` and `cited_map` count them as 0. Qwen3.8: `max_tokens` 32768, `reasoning_effort: low`, 3 aborts, median 21 s per case, self-judged. Muse-Glimmer: `max_tokens` 16384, `reasoning_strength: high`, 48 aborts (29 past its 131,072-token context, 19 on tool calls that kept failing validation), median 39 s. Over the 452 cases it finished, its accuracy is 0.861, level with Qwen3.8. Gemma 4: `max_tokens` 8192, no thinking, 6 aborts, median 6 s, about one search per question against 2.6 for Qwen3.8. The database has an IVF_PQ vector index.*
+
+#### Leaderboard
+
+The leaderboard scores answers with Onyx's scorer (`metrics_based_eval`) judged by GPT-5.4. Its headline is the same correctness × completeness as `erb_score`, with completeness from the same fact prompt, but correctness comes from Onyx's own prompt, citation markers are stripped before judging, and questions without an answer are skipped. To score a run, convert its per-case results file into Onyx's `answers.jsonl` and score it from a checkout of [their repository](https://github.com/onyx-dot-app/EnterpriseRAG-Bench). The rows above ran `configs/enterprise_rag.yaml`, and the Muse-Glimmer and Gemma 4 rows change only its `qa.model` block:
+
+```bash
+cd evaluations
+evaluations download enterprise_rag
+evaluations run enterprise_rag --skip-db --config configs/enterprise_rag.yaml
+uv run python scripts/build_erb_submission.py \
+    ~/.local/share/haiku.rag/evaluations/results/<name>.<trace>.jsonl \
+    ../EnterpriseRAG-Bench/answers.jsonl \
+    --uuid-index ../EnterpriseRAG-Bench/generated_data/uuid_index.json
+
+cd ../EnterpriseRAG-Bench
+LLM_PROVIDER=openai LLM_MODEL_NAME=gpt-5.4 LLM_API_KEY=... \
+    python -m src.scripts.answer_evaluation.metrics_based_eval \
+    --answers-file answers.jsonl --results-file results.json \
+    --updated-questions-file questions_updated.jsonl --parallelism 16 </dev/null
+```
+
+The scorer judges with OpenAI's Responses API. To judge with a local model, set `OPENAI_BASE_URL` to a server that serves that API (vLLM does) and name its model in `LLM_MODEL_NAME` and `CHEAP_LLM_MODEL_NAME`. It reuses an existing `--updated-questions-file`, so give each run its own. A cited document missing from its index opens an interactive prompt, which `</dev/null` turns into an error. `build_erb_submission.py --uuid-index` checks for that first.
 
 ## OpenRAG Bench (ORB)
 
@@ -213,6 +259,7 @@ uv run evaluations download all
 | `hotpotqa`: HotpotQA, `qwen3-embedding:4b` | ~1.2 GB |
 | `frames`: FRAMES, `nvidia/llama-nemotron-embed-vl-1b-v2` | ~7.2 GB |
 | `mtrag_clapnq`: MTRAG ClapNQ, `qwen3-embedding:4b`, shared by the `_rewrite`, `_live` and `_live_uncompacted` keys | ~2.8 GB |
+| `enterprise_rag`: EnterpriseRAG-Bench, `google/embeddinggemma-2`, with an IVF_PQ vector index | ~18 GB |
 
 The hosted `frames` and `orb_multimodal_nemotron` databases are the corpora behind the current FRAMES and ORB rows.
 

@@ -15,6 +15,7 @@ wheels/
 evaluations/evaluations/data/
 evaluations/scripts/*
 !evaluations/scripts/build_t2_submission.py
+!evaluations/scripts/build_erb_submission.py
 tests/data/
 .pytest_cache/
 .ruff_cache/
