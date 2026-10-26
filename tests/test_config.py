@@ -804,7 +804,11 @@ def test_get_config_initialises_lazily_then_reuses(monkeypatch):
 
 # Every YAML config shipped in the repo has to load. These are what users copy.
 _EXAMPLE_CONFIGS = sorted(
-    (Path(__file__).resolve().parent.parent).glob("**/*.yaml.example")
+    path
+    for directory in ("examples", "app")
+    for path in (Path(__file__).resolve().parent.parent / directory).rglob(
+        "*.yaml.example"
+    )
 )
 
 
