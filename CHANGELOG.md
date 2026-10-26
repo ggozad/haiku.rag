@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.101.1] - 2026-10-26
+
 ### Fixed
 
 - `S3Source.fetch` reads the revision and size from the same GET response as the object body.
@@ -3079,7 +3081,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.101.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.101.1...HEAD
+[0.101.1]: https://github.com/ggozad/haiku.rag/compare/0.101.0...0.101.1
 [0.101.0]: https://github.com/ggozad/haiku.rag/compare/0.100.0...0.101.0
 [0.100.0]: https://github.com/ggozad/haiku.rag/compare/0.99.0...0.100.0
 [0.99.0]: https://github.com/ggozad/haiku.rag/compare/0.98.0...0.99.0
