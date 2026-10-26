@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Security
+
+- Lock filelock to 4.2.1, setuptools to 84.1.0, Undici to 7.30.1 and fast-uri to 3.1.9.
+
 ### Fixed
 
 - Benchmark documentation renders all sections after the EnterpriseRAG leaderboard instructions.
