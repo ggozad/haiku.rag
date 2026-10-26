@@ -51,8 +51,6 @@ Continuous ingestion from configured sources runs as a separate service, with th
 haiku-ingester serve
 ```
 
-Source discovery accepts supported file extensions regardless of case, including `.PDF` and `.Txt`.
-
 ## Python API
 
 ```python
