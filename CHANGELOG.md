@@ -5,6 +5,7 @@
 ### Fixed
 
 - `S3Source.fetch` reads the revision and size from the same GET response as the object body.
+- Source discovery and filesystem watch events accept uppercase and mixed-case file extensions.
 
 ### Added
 
