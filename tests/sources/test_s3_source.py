@@ -44,8 +44,9 @@ def _meta(path: str, etag: str = "abc") -> dict:
     return {"path": path, "e_tag": f'"{etag}"', "size": 0, "last_modified": None}
 
 
-def _get_result(data: bytes) -> MagicMock:
+def _get_result(data: bytes, etag: str | None = '"abc123"') -> MagicMock:
     result = MagicMock()
+    result.meta = {"e_tag": etag, "size": len(data)}
     result.bytes_async = AsyncMock(return_value=data)
     return result
 
@@ -93,7 +94,7 @@ async def test_head_returns_none_when_no_etag(fake_obstore_io):
 async def test_fetch_returns_bytes_md5_etag(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     body = b"S3 hosted content"
-    head_async.return_value = {"e_tag": '"abc123"'}
+    head_async.return_value = {"e_tag": '"different-revision"'}
     get_async.return_value = _get_result(body)
 
     src = S3Source(uri="s3://bucket/")
@@ -105,14 +106,15 @@ async def test_fetch_returns_bytes_md5_etag(fake_obstore_io):
     assert result.content_type == "text/plain"
     assert result.revision == "abc123"
     assert result.extra_metadata == {}
-    head_async.assert_awaited_once()
+    head_async.assert_not_awaited()
     get_async.assert_awaited_once()
 
 
-async def test_fetch_handles_missing_etag(fake_obstore_io):
+@pytest.mark.parametrize("etag", [None, "", '""'])
+async def test_fetch_handles_missing_etag(fake_obstore_io, etag):
     head_async, get_async = fake_obstore_io
-    head_async.return_value = {}
-    get_async.return_value = _get_result(b"x")
+    head_async.return_value = {"e_tag": '"different-revision"'}
+    get_async.return_value = _get_result(b"x", etag)
 
     src = S3Source(uri="s3://bucket/")
     result = await src.fetch("s3://bucket/file.txt")
@@ -226,12 +228,16 @@ async def test_discover_emits_upsert_for_unknown_key_without_etag(fake_s3_listin
 
 async def test_fetch_rejects_file_exceeding_max_size(fake_obstore_io):
     head_async, get_async = fake_obstore_io
-    head_async.return_value = {"e_tag": '"abc"', "size": 5000}
+    head_async.return_value = {"e_tag": '"abc"', "size": 5}
+    response = _get_result(b"x" * 5000)
+    get_async.return_value = response
 
     src = S3Source(uri="s3://bucket/", max_file_size=1000)
-    with pytest.raises(FileTooLargeError):
+    with pytest.raises(
+        FileTooLargeError, match="file size 5000 bytes exceeds limit of 1000 bytes"
+    ):
         await src.fetch("s3://bucket/file.txt")
-    get_async.assert_not_awaited()
+    response.bytes_async.assert_not_awaited()
 
 
 async def test_fetch_allows_file_within_max_size(fake_obstore_io):
