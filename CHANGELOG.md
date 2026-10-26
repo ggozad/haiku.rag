@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Benchmark documentation renders all sections after the EnterpriseRAG leaderboard instructions.
+
 ## [0.101.1] - 2026-10-26
 
 ### Fixed

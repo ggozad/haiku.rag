@@ -47,10 +47,10 @@ cd ../EnterpriseRAG-Bench
 LLM_PROVIDER=openai LLM_MODEL_NAME=gpt-5.4 LLM_API_KEY=... \
     python -m src.scripts.answer_evaluation.metrics_based_eval \
     --answers-file answers.jsonl --results-file results.json \
-    --updated-questions-file questions_updated.jsonl --parallelism 16 </dev/null
+    --updated-questions-file questions_updated.jsonl --parallelism 16 < /dev/null
 ```
 
-The scorer judges with OpenAI's Responses API. To judge with a local model, set `OPENAI_BASE_URL` to a server that serves that API (vLLM does) and name its model in `LLM_MODEL_NAME` and `CHEAP_LLM_MODEL_NAME`. It reuses an existing `--updated-questions-file`, so give each run its own. A cited document missing from its index opens an interactive prompt, which `</dev/null` turns into an error. `build_erb_submission.py --uuid-index` checks for that first.
+The scorer judges with OpenAI's Responses API. To judge with a local model, set `OPENAI_BASE_URL` to a server that serves that API (vLLM does) and name its model in `LLM_MODEL_NAME` and `CHEAP_LLM_MODEL_NAME`. It reuses an existing `--updated-questions-file`, so give each run its own. A cited document missing from its index opens an interactive prompt, which `< /dev/null` turns into an error. `build_erb_submission.py --uuid-index` checks for that first.
 
 ## OpenRAG Bench (ORB)
 
