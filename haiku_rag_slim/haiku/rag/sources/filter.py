@@ -39,7 +39,7 @@ class FileFilter(DefaultFilter):
         return super().__call__(change, path)
 
     def include_file(self, path: str) -> bool:
-        if not path.endswith(self.extensions):
+        if not path.lower().endswith(self.extensions):
             return False
 
         if self.include_spec and not self.include_spec.match_file(path):
