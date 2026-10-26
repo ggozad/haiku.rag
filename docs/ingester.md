@@ -119,7 +119,7 @@ ingester:
             allow_http: "true"
 ```
 
-Each sweep lists the prefix and fetches only keys whose ETag differs from the document's stored `metadata["source_revision"]`. When the fetched bytes match the stored MD5, as after a multipart re-upload, only the revision is updated and nothing is re-chunked.
+Each sweep lists the prefix and fetches only keys whose ETag differs from the document's stored `metadata["source_revision"]`. The stored revision comes from the GET response that supplies the object's bytes. When the fetched bytes match the stored MD5, as after a multipart re-upload, only the revision is updated and nothing is re-chunked.
 
 `storage_options` takes the same keys as `lancedb.storage_options`, so credentials written for the database work here too.
 
@@ -181,7 +181,7 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
           max_file_size: 104857600        # 100 MB
 ```
 
-FS and S3 sources know the size before downloading, so the limit always applies. HTTP and WebDAV rely on the `Content-Length` header, and a response without one, such as a chunked response, is fetched in full.
+FS sources check the file size before reading. S3 sources check the GET response's size before reading its body. HTTP and WebDAV rely on the `Content-Length` header, and a response without one, such as a chunked response, is fetched in full.
 
 ### Metadata providers
 

@@ -87,13 +87,9 @@ class S3Source:
         bucket, key = _parse_s3_object_uri(uri)
         store = make_s3_store(bucket, self.storage_options)
 
-        head = await obstore.head_async(store, key)
-        etag = (head.get("e_tag") or "").strip('"').strip() or None
-        size = head.get("size") or head.get("content_length")
-        if size is not None:
-            check_file_size(int(size), self._max_file_size, uri)
-
         resp = await obstore.get_async(store, key)
+        etag = (resp.meta.get("e_tag") or "").strip('"').strip() or None
+        check_file_size(resp.meta["size"], self._max_file_size, uri)
         body = await resp.bytes_async()
         # obstore returns a Bytes view; convert to plain bytes so the rest of
         # the pipeline (hashing, tempfile write) doesn't have to know.

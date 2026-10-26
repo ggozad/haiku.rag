@@ -27,8 +27,9 @@ def _meta(etag: str) -> dict:
     return {"e_tag": etag, "path": "ignored", "size": 0, "last_modified": None}
 
 
-def _get_result(data: bytes) -> MagicMock:
+def _get_result(data: bytes, etag: str = '"abc123"') -> MagicMock:
     result = MagicMock()
+    result.meta = {"e_tag": etag, "size": len(data)}
     result.bytes_async = AsyncMock(return_value=data)
     return result
 
@@ -79,7 +80,7 @@ async def test_create_document_from_s3_new(fake_obstore_io, temp_db_path):
     assert doc.metadata["source_revision"] == "abc123"  # quotes stripped
     assert doc.metadata["md5"]  # real content MD5
     assert doc.metadata["md5"] != "abc123"
-    head_async.assert_awaited_once()
+    head_async.assert_not_awaited()
     get_async.assert_awaited_once()
 
 
@@ -101,7 +102,7 @@ async def test_create_document_from_s3_skips_when_etag_unchanged(
         second = await client.create_document_from_source("s3://my-bucket/file.txt")
 
     assert second.id == first.id
-    assert head_async.await_count == 2
+    assert head_async.await_count == 1
     get_async.assert_not_awaited()
 
 
@@ -125,7 +126,7 @@ async def test_create_document_from_s3_etag_changed_md5_same_skips_rechunk(
 
         # Same bytes, different ETag (multipart re-upload).
         head_async.return_value = _meta('"def456-2"')
-        get_async.return_value = _get_result(text)
+        get_async.return_value = _get_result(text, '"def456-2"')
 
         second = await client.create_document_from_source("s3://my-bucket/file.txt")
 
@@ -148,7 +149,7 @@ async def test_create_document_from_s3_etag_changed_md5_changed_rechunks(
         first = await client.create_document_from_source("s3://my-bucket/file.txt")
 
         head_async.return_value = _meta('"new999"')
-        get_async.return_value = _get_result(b"different text now")
+        get_async.return_value = _get_result(b"different text now", '"new999"')
 
         second = await client.create_document_from_source("s3://my-bucket/file.txt")
 
@@ -169,8 +170,8 @@ async def test_create_document_from_s3_rejects_invalid_uri(
 async def test_create_document_from_s3_rejects_unsupported_extension(
     fake_obstore_io, temp_db_path
 ):
-    head_async, _ = fake_obstore_io
-    head_async.return_value = _meta('"abc"')
+    _, get_async = fake_obstore_io
+    get_async.return_value = _get_result(b"unsupported content")
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         with pytest.raises(ValueError, match="Unsupported content type"):
@@ -182,7 +183,7 @@ async def test_create_document_from_s3_uri_override(fake_obstore_io, temp_db_pat
     """`uri=` kwarg overrides the s3:// URL as the stored document identifier."""
     head_async, get_async = fake_obstore_io
     head_async.return_value = _meta('"abc"')
-    get_async.return_value = _get_result(b"override target content")
+    get_async.return_value = _get_result(b"override target content", '"abc"')
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document_from_source(
