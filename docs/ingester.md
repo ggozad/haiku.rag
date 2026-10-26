@@ -311,6 +311,8 @@ ingester:
 
 `worker_count` workers each process one job at a time, so it is also the most jobs in flight. A job failing with a transient error is retried with exponential backoff and jitter up to `max_attempts`, then moves to the dead-letter queue. A permanent error skips retries: an unsupported extension, an HTTP 4xx other than 408 and 429, an object-store credential or configuration error.
 
+A DELETE job skipped because the resource is back at the source completes successfully and preserves its sync state and earlier dead or rejected jobs. Discovery can still detect a later removal. If the document belongs to another source or has no owner, the worker leaves it indexed and removes only the requesting source's sync state and failed jobs for that URI.
+
 A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. A slow job keeps renewing and is never reaped while it runs.
 
 - `lease_ttl_s` bounds how long a crashed worker's job waits before another worker takes it. It need not exceed job duration.

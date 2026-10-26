@@ -6,6 +6,7 @@
 
 - `S3Source.fetch` reads the revision and size from the same GET response as the object body.
 - Source discovery and filesystem watch events accept uppercase and mixed-case file extensions.
+- Ingester DELETE jobs skipped for restored resources preserve the URI's sync state and dead or rejected jobs (#747).
 
 ### Added
 

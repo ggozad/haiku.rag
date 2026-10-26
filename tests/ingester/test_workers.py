@@ -6,10 +6,14 @@ from unittest.mock import AsyncMock
 import pytest
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.config import FSSourceConfig, get_config
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
+from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
+from haiku.rag.sources.base import SourceEventKind
+from haiku.rag.sources.fs import FSSource
 from haiku.rag.store.models.document import Document
 from tests.conftest import capture_logs
 
@@ -201,7 +205,7 @@ async def test_drain_delete_op_removes_sync_state(client, jobs, sync):
     assert snapshot == {}
 
 
-async def test_skipped_delete_removes_sync_state(client, jobs, sync):
+async def test_delete_retires_foreign_document_sync_state(client, jobs, sync):
     await sync.upsert("src", "s3://b/k.md", revision="e1", content_hash="m1")
     client.get_document_by_uri.return_value = Document(
         id="doc-1", content="", uri="s3://b/k.md", metadata={"source_id": "other"}
@@ -209,7 +213,7 @@ async def test_skipped_delete_removes_sync_state(client, jobs, sync):
     job = await jobs.enqueue("src", "s3://b/k.md", JobOp.DELETE)
     assert job is not None
 
-    with capture_logs(_PIPELINE_LOGGER, logging.WARNING):
+    with capture_logs(_PIPELINE_LOGGER, logging.WARNING) as records:
         await _pool(client, jobs, sync).drain_once()
 
     refreshed = await jobs.get_job(job.id)
@@ -217,6 +221,107 @@ async def test_skipped_delete_removes_sync_state(client, jobs, sync):
     assert refreshed.status is JobStatus.SUCCEEDED
     client.delete_document.assert_not_awaited()
     assert await sync.list_known_uris("src") == set()
+    assert len(records) == 1
+    assert "it belongs to source 'other'" in records[0].getMessage()
+
+
+@pytest.mark.parametrize("owner", ["other", None])
+async def test_sweeps_retire_documents_not_owned_by_source(
+    jobs, sync, tmp_path, temp_db_path, owner
+):
+    from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.store.models.chunk import Chunk
+
+    root = (tmp_path / "source").resolve()
+    root.mkdir()
+    kept = root / "kept.md"
+    kept.write_text("kept", encoding="utf-8")
+    uri = (root / "gone.md").as_uri()
+    source = FSSource(root=root, source_id="src")
+    await sync.upsert("src", kept.as_uri(), revision=await source.head(kept.as_uri()))
+    await sync.upsert("src", uri, revision="e1", ingested=True)
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        document = await rag.import_document(
+            DoclingDocument(name="d"),
+            [
+                Chunk(
+                    content="body",
+                    embedding=[0.1] * get_config().embeddings.model.vector_dim,
+                    order=0,
+                )
+            ],
+            uri=uri,
+            title="d",
+        )
+        assert document.id is not None
+        if owner is not None:
+            await rag.set_document_source([document.id], owner)
+        poller = PeriodicPoller(
+            source=source,
+            config=FSSourceConfig(type="fs", id="src", root=root, delete_orphans=True),
+            job_repo=jobs,
+            sync_repo=sync,
+        )
+        pool = _pool(rag, jobs, sync, sources=[source])
+
+        assert await poller._sweep_once()
+        with capture_logs(_PIPELINE_LOGGER, logging.WARNING) as records:
+            assert await pool.drain_once() == 1
+        assert len(records) == 1
+        assert "Not deleting" in records[0].getMessage()
+        assert await sync.get_row("src", uri) is None
+        assert await poller._sweep_once()
+        assert await pool.drain_once() == 0
+        retained = await rag.get_document_by_id(document.id)
+        assert retained is not None
+        assert retained.metadata.get("source_id") == owner
+
+
+@pytest.mark.parametrize("status", [JobStatus.DEAD, JobStatus.REJECTED])
+async def test_restored_file_preserves_sync_state_and_failures(
+    client, jobs, sync, tmp_path, status
+):
+    path = tmp_path / "restored.md"
+    path.write_text("restored", encoding="utf-8")
+    source = FSSource(root=tmp_path, source_id="src")
+    uri = path.as_uri()
+    await sync.upsert("src", uri, revision="e1", content_hash="m1", ingested=True)
+    before = await sync.get_row("src", uri)
+    failed = await jobs.enqueue("src", uri, JobOp.DELETE)
+    assert failed is not None
+    claimed = await jobs.claim_next("prev-worker")
+    assert claimed is not None
+    if status is JobStatus.DEAD:
+        await jobs.mark_dead(claimed.id, "failure", "prev-worker")
+    else:
+        await jobs.mark_rejected(claimed.id, "failure", "prev-worker")
+    job = await jobs.enqueue("src", uri, JobOp.DELETE)
+    assert job is not None
+
+    await _pool(client, jobs, sync, sources=[source]).drain_once()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.SUCCEEDED
+    assert await sync.get_row("src", uri) == before
+    retained = await jobs.get_job(failed.id)
+    assert retained is not None
+    assert retained.status is status
+    assert retained.last_error == "failure"
+    client.delete_document.assert_not_awaited()
+
+    path.unlink()
+    events = [
+        event
+        async for event in source.discover(
+            await sync.get_revision_snapshot("src"),
+            known_uris=await sync.list_known_uris("src"),
+        )
+    ]
+    assert [(event.uri, event.kind) for event in events] == [
+        (uri, SourceEventKind.DELETE)
+    ]
 
 
 async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, sync):

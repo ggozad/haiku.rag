@@ -44,6 +44,7 @@ class JobResult(BaseModel):
     revision: str | None = None
     content_hash: str | None = None
     deleted: bool = False
+    resource_restored: bool = False
 
 
 def _is_transient_status(status: int) -> bool:
@@ -217,7 +218,7 @@ async def run_job(
                     except Exception:
                         restored = False
                     if restored:
-                        return JobResult(deleted=False)
+                        return JobResult(resource_restored=True)
                 doc = await client.get_document_by_uri(job.uri)
                 if doc is None or doc.id is None:
                     return JobResult(deleted=True)

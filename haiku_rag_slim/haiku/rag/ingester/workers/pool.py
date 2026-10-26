@@ -543,11 +543,9 @@ class WorkerPool:
                 job.source_id,
             )
         try:
-            if job.op is JobOp.DELETE:
+            if job.op is JobOp.DELETE and not result.resource_restored:
                 await self._sync.delete(job.source_id, job.uri)
-                # A successful DELETE resolves any earlier UPSERT failures for
-                # the same (source_id, uri): the document is gone, the original
-                # error is no longer actionable, the DLQ entry is visual noise.
+                # Retiring a source's URI resolves its earlier ingestion failures.
                 pruned = await self._jobs.prune_unsuccessful(job.source_id, job.uri)
                 if pruned:
                     logger.info(
@@ -555,7 +553,7 @@ class WorkerPool:
                         pruned,
                         job.uri,
                     )
-            else:
+            elif job.op is JobOp.UPSERT:
                 await self._sync.upsert(
                     job.source_id,
                     job.uri,
