@@ -16,10 +16,11 @@ class ConfigModel(BaseModel):
     """Base for every configuration section.
 
     Unknown keys are rejected so a typo or a setting that has been renamed or
-    removed fails at load instead of being silently ignored.
+    removed fails at load instead of being silently ignored. Errors omit the
+    rejected value, which may be an expanded secret.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class ModelConfig(ConfigModel):

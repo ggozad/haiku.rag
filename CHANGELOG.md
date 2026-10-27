@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Configuration strings support `${file:path}` references to UTF-8 secret files (#749).
+
 ### Security
 
 - Lock filelock to 4.2.1, setuptools to 84.1.0, Undici to 7.30.1 and fast-uri to 3.1.9.
@@ -10,6 +14,8 @@
 
 - Example configuration tests only discover files under `examples/` and `app/`.
 - Benchmark documentation renders all sections after the EnterpriseRAG leaderboard instructions.
+- `settings` masks URL userinfo containing an unencoded `/` or `#`.
+- Configuration validation errors omit the rejected value.
 
 ## [0.101.1] - 2026-10-26
 
