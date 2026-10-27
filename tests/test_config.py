@@ -514,22 +514,32 @@ def test_redact_secrets_masks_credentials_embedded_in_urls():
 
     data = {
         "dburi": "postgresql+asyncpg://ingest:PGSECRET@db.internal:5432/queue",
+        "queue": "postgresql+asyncpg://ingest:PG/SE#CRET@db.internal/queue",
         "urls": [
             "https://alice:DAVPASS@cloud.example/a.pdf",
             "https://TOKEN@host.example/b",
             "https://plain.example/c",
             "https://u:PW@[unparseable/d",
+            "https://example.com/users/alice@example.org/document",
+            "https://example.com/a?user=alice@example.org",
+            "https://alice:prefix@SECRET@cloud.example/a.pdf",
+            "https://example.com:8443/users/alice@example.org/document",
         ],
         "databases": {"remote": "s3://bucket/path"},
     }
 
     assert redact_secrets(data) == {
         "dburi": "postgresql+asyncpg://***@db.internal:5432/queue",
+        "queue": "postgresql+asyncpg://***@db.internal/queue",
         "urls": [
             "https://***@cloud.example/a.pdf",
             "https://***@host.example/b",
             "https://plain.example/c",
-            "***",
+            "https://***@[unparseable/d",
+            "https://example.com/users/alice@example.org/document",
+            "https://example.com/a?user=alice@example.org",
+            "https://***@cloud.example/a.pdf",
+            "https://example.com:8443/users/alice@example.org/document",
         ],
         "databases": {"remote": "s3://bucket/path"},
     }
@@ -1127,3 +1137,123 @@ def test_generated_config_carries_thinking_not_the_old_key():
     model = generate_default_config()["qa"]["model"]
     assert model["thinking"] is True
     assert "enable_thinking" not in model
+
+
+@pytest.mark.parametrize("ending", ["", "\n", "\r\n", "\n\n"])
+def test_expand_file_contents(tmp_path, ending):
+    secret = tmp_path / "token"
+    secret.write_bytes(("  κλειδί: # ${UNSET} $$\r\nsecond line  " + ending).encode())
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text(f"ingester:\n  api:\n    auth_token: ${{file:{secret}}}\n")
+
+    config = load_yaml_config(config_file)
+
+    assert config["ingester"]["api"]["auth_token"] == (
+        "  κλειδί: # ${UNSET} $$\r\nsecond line  "
+    )
+
+
+def test_expand_file_relative_to_config(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "password").write_text("p%40ss\n")
+    config_file = config_dir / "test.yaml"
+    config_file.write_text("""
+ingester:
+  queue:
+    dburi: postgresql+asyncpg://${HAIKU_TEST_USER}:${file:password}@db/name
+values:
+  - ${file:password}/${file:password}
+""")
+    monkeypatch.setenv("HAIKU_TEST_USER", "user")
+    monkeypatch.chdir(tmp_path)
+
+    config = load_yaml_config(Path("config/test.yaml"))
+
+    assert config["ingester"]["queue"]["dburi"] == (
+        "postgresql+asyncpg://user:p%40ss@db/name"
+    )
+    assert config["values"] == ["p%40ss/p%40ss"]
+
+
+def test_expand_file_escape_and_keys(tmp_path):
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("'${file:missing}': $${file:missing}\n")
+
+    assert load_yaml_config(config_file) == {"${file:missing}": "${file:missing}"}
+
+
+@pytest.mark.parametrize("contents", [b"", b"\n\r\n", b"private\xffvalue"])
+def test_expand_file_invalid_contents(tmp_path, contents):
+    secret = tmp_path / "token"
+    secret.write_bytes(contents)
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("token: ${file:token}\n")
+
+    with pytest.raises(ValueError) as exc:
+        load_yaml_config(config_file)
+
+    reason = "is not UTF-8 text" if b"\xff" in contents else "is empty"
+    assert str(exc.value) == f"Config file reference {str(secret)!r} {reason}."
+
+
+@pytest.mark.parametrize("target", ["missing", "directory", ""])
+def test_expand_file_unreadable(tmp_path, target):
+    (tmp_path / "directory").mkdir()
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text(f"token: ${{file:{target}}}\n")
+    path = tmp_path / target
+    with pytest.raises(OSError) as read_error:
+        path.read_bytes()
+
+    with pytest.raises(ValueError) as exc:
+        load_yaml_config(config_file)
+
+    assert str(exc.value) == (
+        f"Config file reference {str(path)!r} cannot be read: "
+        f"{read_error.value.strerror}."
+    )
+
+
+def test_expand_file_reads_each_config_load(tmp_path):
+    secret = tmp_path / "token"
+    secret.write_text("first")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("token: ${file:token}\n")
+    assert load_yaml_config(config_file)["token"] == "first"
+
+    secret.write_text("second")
+
+    assert load_yaml_config(config_file)["token"] == "second"
+
+
+@pytest.mark.parametrize("value", [None, "from-env"])
+def test_expand_env_var_named_file(tmp_path, monkeypatch, value):
+    if value is None:
+        monkeypatch.delenv("file", raising=False)
+    else:
+        monkeypatch.setenv("file", value)
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text("environment: ${file:-default}\n")
+
+    assert load_yaml_config(config_file)["environment"] == (value or "default")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "ingester:\n  api:\n    auth_tokn: ${file:token}\n",
+        "ingester:\n  api:\n    port: ${file:token}\n",
+        "ingester:\n  databases:\n    papers:\n      sources:\n"
+        "        - type: ftp\n          password: ${file:token}\n",
+    ],
+)
+def test_validation_errors_hide_config_values(tmp_path, body):
+    (tmp_path / "token").write_text("S3NTINEL")
+    config_file = tmp_path / "test.yaml"
+    config_file.write_text(body)
+
+    with pytest.raises(ValidationError) as exc:
+        AppConfig.model_validate(load_yaml_config(config_file))
+
+    assert "S3NTINEL" not in str(exc.value)

@@ -44,6 +44,26 @@ ingester:
 
 Substitution happens after the YAML is parsed, so a value containing `:`, `@`, or `#` fills the string verbatim and never changes the document structure.
 
+## File-based secrets
+
+Use `${file:path}` in any string value to read a mounted secret:
+
+```yaml
+ingester:
+  queue:
+    dburi: postgresql+asyncpg://haiku:${file:/run/secrets/db_password}@db:5432/haiku_rag
+  api:
+    auth_token: ${file:/run/secrets/ingester_token}
+```
+
+Paths may be absolute or relative to the YAML configuration file's directory. `${file:-x}` is the environment variable `file` with default `x`, so write a relative path starting with `-` as `${file:./-x}`. Files must contain UTF-8 text. Trailing `\r` and `\n` characters are removed. Spaces and internal line endings are preserved. Missing, unreadable, invalid UTF-8 and empty files fail configuration loading with an error naming the path.
+
+File contents are substituted literally after YAML parsing, without expanding references inside them. `$${file:path}` produces the literal `${file:path}`. Files are read on each configuration load and are not watched for changes. An ingester reload rereads them, but it refuses a changed value outside `lancedb.databases` and `ingester.databases`, so a rotated queue password or API token needs a restart.
+
+Interpolation does not URL-encode values. A password embedded in a connection URL must already be percent-encoded where required. Alternatively, store the complete connection URL in a file and use `dburi: ${file:/run/secrets/dburi}`.
+
+## Environment
+
 `environment` defaults to `production`. In the CLI, any value other than `development` silences Python warnings and Logfire console output.
 
 ## Minimal configuration

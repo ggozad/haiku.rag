@@ -4,13 +4,14 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 import yaml
 
 logger = logging.getLogger(__name__)
 
-_ENV_VAR_PATTERN = re.compile(r"\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+_INTERPOLATION_PATTERN = re.compile(
+    r"\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}|\$\{file:(?P<file>[^}]*)\}"
+)
 
 
 class MissingEnvVarError(ValueError):
@@ -21,6 +22,22 @@ def _expand_str(value: str, reserved: Mapping[str, str]) -> str:
     def replace(match: re.Match[str]) -> str:
         if match.group(0) == "$$":
             return "$"
+        if (file_name := match.group("file")) is not None:
+            path = Path(reserved.get("HAIKU_RAG_CONFIG_DIR", ".")) / file_name
+            try:
+                contents = path.read_bytes().decode("utf-8").rstrip("\r\n")
+            except OSError as error:
+                raise ValueError(
+                    f"Config file reference {str(path)!r} cannot be read: "
+                    f"{error.strerror}."
+                ) from None
+            except UnicodeError:
+                raise ValueError(
+                    f"Config file reference {str(path)!r} is not UTF-8 text."
+                ) from None
+            if not contents:
+                raise ValueError(f"Config file reference {str(path)!r} is empty.")
+            return contents
         name, default = match.group(1), match.group(2)
         if name in reserved:
             return reserved[name]
@@ -33,13 +50,13 @@ def _expand_str(value: str, reserved: Mapping[str, str]) -> str:
             f"Set it, or use ${{{name}:-default}} to provide a fallback."
         )
 
-    return _ENV_VAR_PATTERN.sub(replace, value)
+    return _INTERPOLATION_PATTERN.sub(replace, value)
 
 
 def expand_env_vars(data: Any, reserved: Mapping[str, str] | None = None) -> Any:
-    """Recursively expand ${VAR} / ${VAR:-default} references in string values.
+    """Expand environment and ${file:path} references in string values.
     Keys and non-string scalars are left untouched; $$ collapses to a literal $.
-    A name in `reserved` takes its value from there, never from the environment."""
+    Reserved values override the environment; HAIKU_RAG_CONFIG_DIR roots file paths."""
     reserved = reserved or {}
     if isinstance(data, dict):
         return {key: expand_env_vars(value, reserved) for key, value in data.items()}
@@ -87,7 +104,7 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
 
 
 def load_yaml_config(path: Path) -> dict:
-    """Load and parse a YAML config file, expanding ${VAR} references."""
+    """Load YAML with environment and file references expanded."""
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return expand_env_vars(
@@ -108,6 +125,8 @@ _SECRET_KEY_FRAGMENTS = ("password", "passwd", "secret", "credential")
 # Found inside innocent names (max_tokens, keywords), so matched as whole words.
 _SECRET_KEY_WORDS = frozenset({"key", "apikey", "token"})
 _HEADER_KEYS = frozenset({"headers", "fetch_headers"})
+# SQLAlchemy's userinfo: a password runs to the first `@` and may hold `/` or `#`.
+_SQLALCHEMY_USERINFO = re.compile(r"[^:/@]*(?::[^@]*)?@")
 
 
 def _is_secret_key(key: str) -> bool:
@@ -124,16 +143,18 @@ def _mask(value: Any) -> str | None:
 
 def _mask_userinfo(value: str) -> str:
     """`value` with any URL userinfo replaced by `***`."""
-    if "://" not in value:
+    scheme, separator, rest = value.partition("://")
+    if not separator:
         return value
-    try:
-        parts = urlsplit(value)
-    except ValueError:
-        return "***"
-    if "@" not in parts.netloc:
-        return value
-    host = parts.netloc.rsplit("@", 1)[1]
-    return urlunsplit(parts._replace(netloc=f"***@{host}"))
+    # urllib and HTTPX end userinfo at the authority's last `@`. Outside HTTP,
+    # mask to the later end of either reading, so neither parser's password shows.
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
+    end = authority.rfind("@") + 1
+    if scheme.lower() not in ("http", "https") and (
+        match := _SQLALCHEMY_USERINFO.match(rest)
+    ):
+        end = max(end, match.end())
+    return f"{scheme}://***@{rest[end:]}" if end else value
 
 
 def redact_secrets(data: Any) -> Any:
