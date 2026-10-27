@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from functools import cache
 from typing import TYPE_CHECKING, cast
 
@@ -112,7 +113,20 @@ class DoclingLocalChunker(DocumentChunker):
         Runs the underlying HybridChunker/HierarchicalChunker and extracts
         structured metadata from each DocChunk.
         """
-        raw_chunks = list(self.chunker.chunk(document))
+        try:
+            raw_chunks = list(self.chunker.chunk(document))
+        finally:
+            # Temporary, until docling-core stops memoizing
+            # (docling-project/docling-core#930): HybridChunker
+            # memoizes a new semchunk token counter, with an unbounded cache,
+            # for every oversized text item, and semchunk keeps each one in
+            # this private module global for the process lifetime. Skipped
+            # when semchunk is not loaded or no longer has the global.
+            counters = getattr(
+                sys.modules.get("semchunk.semchunk"), "_memoized_token_counters", None
+            )
+            if counters is not None:
+                counters.clear()
         result: list[Chunk] = []
 
         for chunk in raw_chunks:
