@@ -16,6 +16,7 @@
 - Benchmark documentation renders all sections after the EnterpriseRAG leaderboard instructions.
 - `settings` masks URL userinfo containing an unencoded `/` or `#`.
 - Configuration validation errors omit the rejected value.
+- `docling-local` hybrid chunking no longer retains a semchunk token counter per oversized text item, which slowed long ingests and rebuilds (#724).
 
 ## [0.101.1] - 2026-10-26
 

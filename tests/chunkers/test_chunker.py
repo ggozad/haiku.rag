@@ -1,3 +1,4 @@
+import sys
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -126,6 +127,36 @@ def test_tokenizer_cached_across_chunker_instances():
     info = _get_tokenizer.cache_info()
     assert info.misses == 1
     assert info.hits == 2
+
+
+async def test_local_chunker_retains_no_token_counters():
+    """Splitting an oversized paragraph leaves no semchunk token counter behind."""
+    from semchunk import semchunk
+
+    paragraph = " ".join(
+        f"Sentence {i} about the quarterly report." for i in range(300)
+    )
+    converter = get_converter(get_config())
+    doc = await converter.convert_text(f"# Title\n\n{paragraph}", name="test.md")
+
+    chunks = await DoclingLocalChunker().chunk(doc)
+
+    assert len(chunks) > 1
+    assert semchunk._memoized_token_counters == {}
+
+
+async def test_local_chunker_hierarchical_without_semchunk(monkeypatch):
+    """Hierarchical chunking works when semchunk is not installed."""
+    monkeypatch.setitem(sys.modules, "semchunk", None)
+    monkeypatch.delitem(sys.modules, "semchunk.semchunk", raising=False)
+    config = AppConfig()
+    config.processing.chunker_type = "hierarchical"
+    converter = get_converter(config)
+    doc = await converter.convert_text("# Title\n\nSome text.", name="test.md")
+
+    chunks = await DoclingLocalChunker(config).chunk(doc)
+
+    assert [chunk.content for chunk in chunks] == ["Some text."]
 
 
 async def test_local_chunker_hierarchical(qa_corpus: list[dict[str, str]]):
