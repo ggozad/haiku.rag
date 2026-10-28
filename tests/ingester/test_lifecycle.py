@@ -75,7 +75,10 @@ async def _serving(app: IngesterApp):
     app._config.ingester.workers.shutdown_grace_s = 0.2
     task = asyncio.create_task(app.serve(api=False))
     try:
-        await _wait_until(lambda: app._pool is not None and app._pool.live_workers > 0)
+        await _wait_until(
+            lambda: app._pool is not None and app._pool.live_workers > 0,
+            serving=task,
+        )
         yield task
     finally:
         task.cancel()
