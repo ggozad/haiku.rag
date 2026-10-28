@@ -4,6 +4,7 @@ They stub the client and record the console: each test pins what the app asks
 the client for and what it renders, without a database or a model.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -418,31 +419,65 @@ async def test_vacuum_confirms(app, client):
     assert "Vacuum completed successfully" in out(app)
 
 
+async def test_create_index_leaves_lancedb_cloud_alone(app, client):
+    config = AppConfig(lancedb=LanceDBConfig(databases={"x": "db://x"}))
+    app._scope = for_path(config=config)
+
+    await app.create_index()
+
+    client.create_vector_index.assert_not_awaited()
+    assert "LanceDB Cloud manages its own vector index" in out(app)
+
+
 async def test_create_index_refuses_a_small_table(app, client):
     client.store.chunks_table.count_rows = AsyncMock(return_value=10)
 
     await app.create_index()
 
+    client.create_vector_index.assert_not_awaited()
     assert "Need at least 256 chunks" in out(app)
 
 
 async def test_create_index_creates_one(app, client):
     client.store.chunks_table.count_rows = AsyncMock(return_value=512)
-    client.store.chunks_table.list_indices = AsyncMock(return_value=[])
+    client.store.chunks_table.list_indices = AsyncMock(
+        return_value=[SimpleNamespace(name="content_fts_idx", columns=["content_fts"])]
+    )
+    client.create_vector_index = AsyncMock(return_value=True)
 
     await app.create_index()
 
-    client.store._ensure_vector_index.assert_awaited_once()
+    client.create_vector_index.assert_awaited_once_with()
+    assert "Creating vector index" in out(app)
     assert "Vector index created successfully" in out(app)
 
 
 async def test_create_index_rebuilds_an_existing_one(app, client):
     client.store.chunks_table.count_rows = AsyncMock(return_value=512)
-    client.store.chunks_table.list_indices = AsyncMock(return_value=["vector_idx"])
+    client.store.chunks_table.list_indices = AsyncMock(
+        return_value=[SimpleNamespace(name="vector_idx", columns=["vector"])]
+    )
+    client.create_vector_index = AsyncMock(return_value=True)
 
     await app.create_index()
 
     assert "Rebuilding existing vector index" in out(app)
+    assert "Vector index created successfully" in out(app)
+
+
+async def test_create_index_reports_a_build_that_found_too_few_chunks(app, client):
+    """A delete between the count and the build leaves too few chunks."""
+    client.store.chunks_table.count_rows = AsyncMock(return_value=256)
+    client.store.chunks_table.list_indices = AsyncMock(return_value=[])
+    client.create_vector_index = AsyncMock(return_value=False)
+
+    await app.create_index()
+
+    assert (
+        "Warning: No vector index built: the table fell below 256 chunks during "
+        "the build" in out(app)
+    )
+    assert "created successfully" not in out(app)
 
 
 def test_show_settings_hides_secrets(tmp_path):
