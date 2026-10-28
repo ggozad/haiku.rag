@@ -311,7 +311,93 @@ async def test_a_skipped_addition_is_retried_by_the_next_reload(tmp_path, monkey
         assert report.outcome == "applied"
         assert _changes(report) == {("wiki", "added")}
         assert app._failed == {}
+        async with _api(app) as api:
+            health = (await api.get("/health")).json()
+        assert health["failed_databases"] == []
+        assert health["status"] == "ok"
         await _wait_until(lambda: _ingested(clients["wiki"]) == ["wiki.md"])
+
+
+async def test_a_running_database_is_not_listed_when_a_reload_stops(
+    tmp_path, monkeypatch
+):
+    clients = defaultdict(_mock_client)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing(set(), clients))
+    path = tmp_path / "haiku.rag.yaml"
+    legacy, wiki = _fs(tmp_path, "legacy"), _fs(tmp_path, "wiki")
+    _write(
+        path,
+        _settings(
+            tmp_path,
+            {
+                "legacy": ("legacy.lancedb", [legacy]),
+                "wiki": ("wiki.lancedb", [wiki]),
+            },
+        ),
+    )
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing({"wiki"}, clients))
+        assert app._jobs is not None
+
+        async def _fails(source_ids):
+            raise RuntimeError("queue unreachable")
+
+        monkeypatch.setattr(app._jobs, "cancel_sources", _fails)
+        _write(
+            path,
+            _settings(tmp_path, {"wiki": ("wiki-moved.lancedb", [wiki])}),
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+        ]
+
+        assert [(c.database, c.change) for c in report.databases] == [
+            ("wiki", "failed"),
+            ("legacy", "failed"),
+        ]
+        assert list(app._running) == ["legacy", "wiki"]
+        health = (await api.get("/health")).json()
+        assert health["failed_databases"] == []
+
+
+async def test_a_failed_addition_is_not_listed_when_a_reload_stops(
+    tmp_path, monkeypatch
+):
+    clients = defaultdict(_mock_client)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing({"wiki"}, clients))
+    path = tmp_path / "haiku.rag.yaml"
+    legacy = _fs(tmp_path, "legacy")
+    _write(path, _settings(tmp_path, {"legacy": ("legacy.lancedb", [legacy])}))
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        assert app._jobs is not None
+
+        async def _fails(source_ids):
+            raise RuntimeError("queue unreachable")
+
+        monkeypatch.setattr(app._jobs, "cancel_sources", _fails)
+        _write(
+            path,
+            _settings(tmp_path, {"wiki": ("wiki.lancedb", [_fs(tmp_path, "wiki")])}),
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+        ]
+
+        assert [(c.database, c.change) for c in report.databases] == [
+            ("wiki", "failed"),
+            ("legacy", "failed"),
+        ]
+        assert "wiki" not in app._config.ingester.databases
+        health = (await api.get("/health")).json()
+        assert health["failed_databases"] == []
 
 
 async def test_a_skipped_database_removed_from_the_file_is_forgotten(

@@ -58,6 +58,22 @@ async def test_health_ok_with_counts(state, jobs):
     assert body["poller_count"] == 0
     assert body["workers_alive"] == 0
     assert body["pollers_alive"] == 0
+    assert body["failed_databases"] == []
+
+
+async def test_health_degraded_while_a_configured_database_is_not_running(jobs, sync):
+    failed = {"wiki": "database 'wiki': Database requires migration"}
+    state = APIState(
+        config=AppConfig(), job_repo=jobs, sync_repo=sync, failed_databases=failed
+    )
+
+    async with _client(state) as client:
+        body = (await client.get("/health")).json()
+
+    assert body["status"] == "degraded"
+    assert body["failed_databases"] == [
+        {"database": "wiki", "error": "database 'wiki': Database requires migration"}
+    ]
 
 
 async def test_health_degraded_when_worker_died(jobs, sync):

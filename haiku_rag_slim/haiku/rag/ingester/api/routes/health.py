@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 
 from haiku.rag.ingester.api.schemas import HealthResponse
 from haiku.rag.ingester.api.server import APIState, get_state
+from haiku.rag.ingester.app import failed_databases
 
 router = APIRouter()
 
@@ -12,7 +13,8 @@ async def health(state: APIState = Depends(get_state)) -> HealthResponse:
     balancers and uptime monitors can hit it without a token.
 
     `status="degraded"` when at least one configured worker or poller task
-    has died (workers_alive < worker_count or pollers_alive < poller_count).
+    has died (workers_alive < worker_count or pollers_alive < poller_count),
+    or a configured database is not running.
     The DB query alone can't catch that — workers might be all dead and the
     queue would still report counts cheerfully — so this branch is what
     actually distinguishes "alive" from "alive but doing nothing useful".
@@ -28,8 +30,12 @@ async def health(state: APIState = Depends(get_state)) -> HealthResponse:
     breaker_failures = (
         state.pool.breaker_consecutive_failures if state.pool is not None else 0
     )
+    failed = failed_databases(state.failed_databases)
     degraded = (
-        workers_alive < worker_count or pollers_alive < poller_count or breaker_open
+        workers_alive < worker_count
+        or pollers_alive < poller_count
+        or breaker_open
+        or bool(failed)
     )
     return HealthResponse(
         status="degraded" if degraded else "ok",
@@ -40,4 +46,5 @@ async def health(state: APIState = Depends(get_state)) -> HealthResponse:
         pollers_alive=pollers_alive,
         worker_breaker_open=breaker_open,
         worker_breaker_consecutive_failures=breaker_failures,
+        failed_databases=failed,
     )

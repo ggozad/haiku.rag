@@ -666,6 +666,15 @@ async def test_a_database_failing_to_open_at_startup_is_skipped(
             }
             assert [p.source_id for p in _pollers(app).pollers] == ["papers"]
             assert closed == ["wiki"]
+            async with _api(app) as api:
+                health = (await api.get("/health")).json()
+            assert health["status"] == "degraded"
+            assert health["failed_databases"] == [
+                {
+                    "database": "wiki",
+                    "error": "database 'wiki': Database requires migration",
+                }
+            ]
 
     assert [record.getMessage() for record in records] == [
         "Database 'wiki' failed to start and is skipped: database 'wiki': "

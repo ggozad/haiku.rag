@@ -140,6 +140,12 @@ async def _close_each(closes: "list[Callable[[], Awaitable[object]]]") -> None:
         raise failures[0]
 
 
+def failed_databases(failed: Mapping[str, str]) -> list[FailedDatabase]:
+    return [
+        FailedDatabase(database=name, error=error) for name, error in failed.items()
+    ]
+
+
 def _message(error: BaseException) -> str:
     return str(error) or type(error).__name__
 
@@ -396,12 +402,6 @@ class IngesterApp:
         return NoDatabaseStartedError(
             f"every configured database failed to start: {failures}"
         )
-
-    def _failed_databases(self) -> list[FailedDatabase]:
-        return [
-            FailedDatabase(database=name, error=error)
-            for name, error in self._failed.items()
-        ]
 
     async def _discard(self, database: _Database, error: BaseException) -> None:
         """Record `database` as failed with `error` and close it, logging a
@@ -801,7 +801,7 @@ class IngesterApp:
                 )
                 report.failed_sweeps = failed_sweeps
                 report.retried = retried
-                report.failed_databases = self._failed_databases()
+                report.failed_databases = failed_databases(self._failed)
                 return report
             finally:
                 await self._stop_pool()
@@ -917,7 +917,7 @@ class IngesterApp:
                 report = await self._drain_batch(
                     started_at, progress_callback=progress_callback
                 )
-                report.failed_databases = self._failed_databases()
+                report.failed_databases = failed_databases(self._failed)
                 return report
             finally:
                 await self._stop_pool()
@@ -1012,6 +1012,7 @@ class IngesterApp:
             for database in self._running.values()
         }
         failure: BaseException | None = None
+        completed = False
         try:
             # Additions sharing a running database's location are prepared
             # after the removals: a database has one writer.
@@ -1067,15 +1068,19 @@ class IngesterApp:
                     continue
                 self._prepared.remove(database)
                 report.record(database.ref.name, "added")
+            completed = True
         except BaseException as error:
             failure = error
             raise
         finally:
             await self._close_prepared(report, failure)
+            configured = wanted if completed else self._config.ingester.databases
+            for name in [
+                n for n in self._failed if n in self._running or n not in configured
+            ]:
+                del self._failed[name]
         self._config = config
         self._databases = list(wanted.values())
-        for name in [n for n in self._failed if n not in wanted or n in self._running]:
-            del self._failed[name]
         if self._api is not None:
             self._api.config = config
         return report
@@ -1129,6 +1134,7 @@ class IngesterApp:
                 pool=self._pool,
                 pollers=self._pollers,
                 databases=self._ingested,
+                failed_databases=self._failed,
                 source_databases=self._source_databases,
                 claim_lock=self._pool.claim_lock,
                 reload=self.reload,

@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from haiku.rag.ingester.app import FailedDatabase
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -18,6 +20,8 @@ class HealthResponse(BaseModel):
     # have paused worker claims. status="degraded" while open.
     worker_breaker_open: bool = False
     worker_breaker_consecutive_failures: int = 0
+    # Configured databases that are not running. status="degraded" while any.
+    failed_databases: list[FailedDatabase] = []
 
 
 class ProviderEndpoint(BaseModel):
