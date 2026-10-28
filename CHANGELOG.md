@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.102.0] - 2026-10-28
+
 ### Added
 
 - `/health` lists each configured database that is not running in `failed_databases` and reports `degraded` while any is listed (#754).
@@ -3118,7 +3120,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.101.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.102.0...HEAD
+[0.102.0]: https://github.com/ggozad/haiku.rag/compare/0.101.2...0.102.0
 [0.101.2]: https://github.com/ggozad/haiku.rag/compare/0.101.1...0.101.2
 [0.101.1]: https://github.com/ggozad/haiku.rag/compare/0.101.0...0.101.1
 [0.101.0]: https://github.com/ggozad/haiku.rag/compare/0.100.0...0.101.0
