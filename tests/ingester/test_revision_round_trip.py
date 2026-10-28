@@ -12,6 +12,7 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.sources.base import FetchResult, SourceEventKind
 from haiku.rag.sources.fs import FSSource
+from haiku.rag.store.models.document import Document
 
 
 @pytest.fixture(scope="module")
@@ -130,16 +131,13 @@ async def test_provider_backed_unchanged_revision_keeps_head_short_circuit(
             raise AssertionError("provider must not run on unchanged HEAD")
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        first = await client.create_document(
-            "hello",
-            uri=stored_uri,
-            metadata={
-                "md5": content_hash,
-                "source_revision": revision,
-                "content_type": "text/markdown",
-                "classification": "secret",
-            },
+        first = await client.create_document_from_source(
+            file_path, metadata={"classification": "secret"}
         )
+        assert isinstance(first, Document)
+        assert first.uri == stored_uri
+        assert first.metadata["md5"] == content_hash
+        assert first.metadata["source_revision"] == revision
 
         fetch_calls: list[str] = []
         original_fetch = FSSource.fetch

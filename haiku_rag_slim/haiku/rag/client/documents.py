@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import mimetypes
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -75,14 +76,13 @@ ID_LOOKUP_BATCH = 500
 # sync_state, source_id records which configured source ingested the document
 # and drives orphan reconciliation, parent_uri links an attachment to the
 # document it was extracted from and drives cascade deletes. Stripped from
-# provider output before it is merged into the document, so only the pipeline
-# sets them.
-_RESERVED_METADATA_KEYS = frozenset(
+# caller, provider and hook metadata, so only the pipeline sets them.
+_INGESTION_OWNED_KEYS = frozenset(
     {"content_type", "md5", "source_revision", "source_id", "parent_uri"}
 )
 
-# Keys no caller sets, and no write path drops once stored.
-_INGESTION_OWNED_KEYS = ("source_id", "parent_uri")
+# Ingestion-owned keys that no write path drops once stored.
+_LINEAGE_KEYS = ("source_id", "parent_uri")
 
 # Keys the revision and MD5 short-circuits trust. Written to a document that
 # can have attachments only once its attachments have reconciled.
@@ -532,15 +532,19 @@ async def _refresh_doc_metadata(
 
 def _caller_metadata(metadata: dict | None) -> dict:
     """Caller-supplied metadata without the keys only ingestion sets."""
-    return {k: v for k, v in (metadata or {}).items() if k not in _INGESTION_OWNED_KEYS}
+    return _storable(metadata or {})
 
 
-def _keep_ingestion_keys(metadata: dict, previous_metadata: dict | None) -> dict:
-    """``metadata`` with each stored ingestion-owned key it lacks restored."""
+def _keep_ingestion_keys(
+    metadata: dict,
+    previous_metadata: dict | None,
+    keys: Collection[str] = _LINEAGE_KEYS,
+) -> dict:
+    """``metadata`` with each stored key of ``keys`` it lacks restored."""
     previous = previous_metadata or {}
     kept = {
         key: previous[key]
-        for key in _INGESTION_OWNED_KEYS
+        for key in keys
         if previous.get(key) is not None and metadata.get(key) is None
     }
     return {**metadata, **kept}
@@ -575,7 +579,7 @@ async def _provider_metadata(
 
 
 def _storable(metadata: dict) -> dict:
-    return {k: v for k, v in metadata.items() if k not in _RESERVED_METADATA_KEYS}
+    return {k: v for k, v in metadata.items() if k not in _INGESTION_OWNED_KEYS}
 
 
 async def _before_ingest(
@@ -1254,7 +1258,7 @@ async def update_document(
         existing_doc.title = title
     if metadata is not None:
         existing_doc.metadata = _keep_ingestion_keys(
-            _caller_metadata(metadata), existing_doc.metadata
+            _caller_metadata(metadata), existing_doc.metadata, _INGESTION_OWNED_KEYS
         )
     if uri is not None:
         existing_doc.uri = uri

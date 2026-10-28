@@ -1161,7 +1161,7 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
             [Chunk(content="Body text", embedding=[0.1] * dim, order=0)],
             uri="mem://meta-bloat",
             title="Original",
-            metadata={"source_revision": "rev-0"},
+            metadata={"identifier": "rev-0"},
         )
         assert created.id is not None
 
@@ -1171,7 +1171,7 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
         for i in range(1, 6):
             await client.update_document(
                 created.id,
-                metadata={"source_revision": f"rev-{i}"},
+                metadata={"identifier": f"rev-{i}"},
                 title=f"Title {i}",
             )
 
@@ -1183,7 +1183,7 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
         # Reads still hydrate content and the mutable attributes together.
         fetched = await client.get_document_by_id(created.id)
         assert fetched is not None
-        assert fetched.metadata["source_revision"] == "rev-5"
+        assert fetched.metadata["identifier"] == "rev-5"
         assert fetched.title == "Title 5"
         assert fetched.content == "Body text"
 
