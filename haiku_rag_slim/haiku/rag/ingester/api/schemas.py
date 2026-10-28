@@ -93,4 +93,5 @@ class StatsResponse(BaseModel):
     workers: WorkerStats
     oldest_queued_age_s: float | None
     dlq_by_source: dict[str, int]
+    rejected_by_source: dict[str, int]
     queue_depth_by_source: dict[str, int]

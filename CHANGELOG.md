@@ -7,6 +7,7 @@
 - `/health` lists each configured database that is not running in `failed_databases` and reports `degraded` while any is listed (#754).
 - `HaikuRAG.create_vector_index()` and `Store.create_vector_index()` build or retrain the vector index and return whether they built one (#753).
 - `init` and `migrate` record `schema_version`, and `doctor` checks it (#752).
+- The ingester's `/stats` reports `rejected_by_source`, and its dashboard and the app's sources panel show it (#762).
 
 ### Changed
 

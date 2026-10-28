@@ -13,8 +13,9 @@ router = APIRouter(tags=["stats"])
 @router.get("/stats", response_model=StatsResponse)
 async def stats(state: APIState = Depends(get_state)) -> StatsResponse:
     """Dashboard summary: rolling throughput, worker occupancy, backlog age,
-    and per-source DLQ / queue depth. Each field is a single SQL aggregation
-    against the queue file — cheap to call every few seconds."""
+    and per-source dead, rejected and queue depth counts. Each field is a
+    single SQL aggregation against the queue file — cheap to call every few
+    seconds."""
     jobs = state.job_repo
 
     counts = await jobs.counts_by_status()
@@ -34,5 +35,6 @@ async def stats(state: APIState = Depends(get_state)) -> StatsResponse:
         ),
         oldest_queued_age_s=await jobs.oldest_queued_age_seconds(),
         dlq_by_source=await jobs.counts_by_source("dead"),
+        rejected_by_source=await jobs.counts_by_source("rejected"),
         queue_depth_by_source=await jobs.counts_by_source("queued", "claimed"),
     )
