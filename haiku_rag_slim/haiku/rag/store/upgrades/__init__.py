@@ -36,6 +36,11 @@ def get_pending_upgrades(from_version: str) -> list[Upgrade]:
     return [s for s in sorted_steps if v_from < parse(s.version)]
 
 
+def latest_schema_version() -> str:
+    """The version of the newest upgrade step: the schema this release writes."""
+    return max((u.version for u in upgrades), key=parse)
+
+
 async def run_pending_upgrades(store: "Store", from_version: str) -> list[str]:
     """Run upgrades where from_version < step.version.
 

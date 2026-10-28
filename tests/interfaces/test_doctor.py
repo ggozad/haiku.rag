@@ -47,6 +47,7 @@ from haiku.rag.store.schema import (
     SettingsRecord,
     create_chunk_model,
 )
+from haiku.rag.store.upgrades import latest_schema_version
 
 runner = CliRunner()
 
@@ -84,6 +85,7 @@ async def _build_db(
     vector_dim: int = VECTOR_DIM,
     stored_vector_dim: int | None = None,
     fts_index: str | None = "covering",
+    schema_version: str | None = None,
 ):
     """Create a consistent single-document database without touching an embedder.
 
@@ -91,6 +93,7 @@ async def _build_db(
     chunks table actually uses, to exercise the vector-dimension check.
     ``fts_index`` places the chunks FTS index: "covering" builds it over the
     rows, "empty" builds it before them, None never builds it.
+    ``schema_version`` is recorded only when given.
     """
     from lancedb.index import FTS
 
@@ -110,6 +113,9 @@ async def _build_db(
                 settings=json.dumps(
                     {
                         "version": version,
+                        **(
+                            {"schema_version": schema_version} if schema_version else {}
+                        ),
                         "embeddings": {
                             "model": {
                                 "provider": provider,
@@ -601,6 +607,25 @@ async def test_pending_migration_fails(temp_db_path):
     report = await run_doctor(_config(), temp_db_path, {})
     assert _result(report, "pending_migrations").severity is Severity.FAIL
     assert report.failed
+
+
+@pytest.mark.parametrize("schema_version", [None, latest_schema_version()])
+async def test_a_known_schema_passes(temp_db_path, schema_version):
+    await _build_db(temp_db_path, schema_version=schema_version)
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "schema_version").severity is Severity.OK
+
+
+async def test_a_newer_schema_fails_alone(temp_db_path):
+    """Doctor runs no content check against a schema newer than this release."""
+    await _build_db(temp_db_path, schema_version="100.0.0")
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "schema_version")
+    assert result.severity is Severity.FAIL
+    assert "100.0.0" in result.message
+    assert result.remediation == "Upgrade haiku.rag."
+    names = {r.name for r in report.results}
+    assert not names & {"pending_migrations", "embedding_drift", "vector_index"}
 
 
 async def test_missing_api_key_fails(temp_db_path):

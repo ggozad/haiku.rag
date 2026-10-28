@@ -16,11 +16,17 @@ from haiku.rag.config.models import (
     EmbeddingModelConfig,
     ModelConfig,
 )
-from haiku.rag.store.engine import Store, connect_lancedb, embedder_drift
+from haiku.rag.store.engine import (
+    Store,
+    connect_lancedb,
+    embedder_drift,
+    newer_schema,
+    upgrade_required_message,
+)
 from haiku.rag.store.info import get_database_stats
 from haiku.rag.store.repositories.settings import EMBEDDER_DRIFT_ADVICE
 from haiku.rag.store.schema import REQUIRED_TABLES, index_specs
-from haiku.rag.store.upgrades import get_pending_upgrades
+from haiku.rag.store.upgrades import get_pending_upgrades, latest_schema_version
 
 # Cap how many offending ids we collect per check; doctor is a summary, not a dump.
 _SAMPLE_LIMIT = 5
@@ -776,6 +782,22 @@ def _check_pending_migrations(stored_version: str) -> CheckResult:
     )
 
 
+def _check_schema_version(stored: dict) -> CheckResult:
+    newer = newer_schema(stored)
+    if newer is not None:
+        return CheckResult(
+            name="schema_version",
+            severity=Severity.FAIL,
+            message=upgrade_required_message(newer),
+            remediation="Upgrade haiku.rag.",
+        )
+    return CheckResult(
+        name="schema_version",
+        severity=Severity.OK,
+        message=f"This release supports the schema (up to {latest_schema_version()}).",
+    )
+
+
 async def run_db_checks(
     store: Store,
     config: AppConfig,
@@ -788,7 +810,9 @@ async def run_db_checks(
     Assumes all required tables exist (the caller short-circuits otherwise).
     """
     notify = on_progress or (lambda _label: None)
-    results: list[CheckResult] = []
+    results = [_check_schema_version(store.stored_settings)]
+    if results[0].severity is Severity.FAIL:
+        return results
 
     notify("Reading document records")
     doc_ids = set(await _column_values(store.documents_table, "id"))

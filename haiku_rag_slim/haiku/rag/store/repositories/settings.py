@@ -47,10 +47,11 @@ class SettingsRepository:
         )
 
         if existing:
-            # Preserve existing version if present to avoid interfering with upgrade flow
+            # Preserve the existing versions to avoid interfering with upgrade flow
             existing_settings = json.loads(existing[0].settings)
-            if "version" in existing_settings:
-                recorded["version"] = existing_settings["version"]
+            for key in ("version", "schema_version"):
+                if key in existing_settings:
+                    recorded[key] = existing_settings[key]
 
             if existing_settings != recorded:
                 await self.store.settings_table.update(

@@ -1,9 +1,15 @@
+import json
+import logging
 from importlib import metadata
 
 import pytest
 
-from haiku.rag.store.engine import Store
-from haiku.rag.store.exceptions import MigrationRequiredError
+from haiku.rag.config import AppConfig
+from haiku.rag.store.engine import Store, connect_lancedb, read_settings
+from haiku.rag.store.engine import logger as engine_logger
+from haiku.rag.store.exceptions import MigrationRequiredError, UpgradeRequiredError
+from haiku.rag.store.upgrades import latest_schema_version
+from tests.conftest import capture_logs
 
 
 class TestMigrationRequiredError:
@@ -199,3 +205,98 @@ class TestGetPendingUpgrades:
 
         pending = get_pending_upgrades("100.0.0")
         assert pending == []
+
+
+async def _stamp_schema(store: Store, schema_version: str | None) -> None:
+    """Write `schema_version` into the settings row; None removes it."""
+    settings = await read_settings(store.settings_table)
+    settings.pop("schema_version", None)
+    if schema_version is not None:
+        settings["schema_version"] = schema_version
+    await store.settings_table.update(
+        {"settings": json.dumps(settings)}, where="id = 'settings'"
+    )
+
+
+class TestSchemaVersion:
+    async def test_init_records_the_newest_upgrade_step(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            stored = await read_settings(store.settings_table)
+        assert stored["schema_version"] == latest_schema_version()
+
+    async def test_migrate_records_it_with_nothing_pending(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await _stamp_schema(store, None)
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            assert await store.migrate() == []
+            stored = await read_settings(store.settings_table)
+        assert stored["schema_version"] == latest_schema_version()
+
+    async def test_recording_the_embedder_keeps_it(self, temp_db_path):
+        from haiku.rag.store.repositories.settings import SettingsRepository
+
+        async with Store(temp_db_path, create=True) as store:
+            await _stamp_schema(store, "0.1.0")
+            await SettingsRepository(store).save_current_settings()
+            await store.set_haiku_version("0.92.0")
+            stored = await read_settings(store.settings_table)
+        assert stored["schema_version"] == "0.1.0"
+
+    async def test_writable_open_of_a_newer_schema_raises(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await _stamp_schema(store, "100.0.0")
+
+        with pytest.raises(UpgradeRequiredError) as raised:
+            async with Store(temp_db_path):
+                pass
+        assert "100.0.0" in str(raised.value)
+        assert latest_schema_version() in str(raised.value)
+
+    @pytest.mark.parametrize("skip_migration_check", [False, True])
+    async def test_read_only_open_of_a_newer_schema_warns(
+        self, temp_db_path, skip_migration_check
+    ):
+        async with Store(temp_db_path, create=True) as store:
+            await _stamp_schema(store, "100.0.0")
+
+        with capture_logs(engine_logger, logging.WARNING) as records:
+            async with Store(
+                temp_db_path,
+                read_only=True,
+                skip_migration_check=skip_migration_check,
+            ):
+                pass
+        assert any("100.0.0" in record.getMessage() for record in records)
+
+    async def test_open_without_a_schema_version_is_writable(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await _stamp_schema(store, None)
+
+        async with Store(temp_db_path) as store:
+            assert not store.is_read_only
+
+    async def test_migrate_refuses_a_newer_schema(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await _stamp_schema(store, "100.0.0")
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            with pytest.raises(UpgradeRequiredError):
+                await store.migrate()
+            stored = await read_settings(store.settings_table)
+        assert stored["schema_version"] == "100.0.0"
+
+    async def test_no_open_creates_a_table_in_a_newer_schema(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await _stamp_schema(store, "100.0.0")
+            await store.db.drop_table("document_items")
+
+        with pytest.raises(UpgradeRequiredError):
+            async with Store(temp_db_path, skip_migration_check=True):
+                pass
+
+        db = await connect_lancedb(temp_db_path, AppConfig())
+        try:
+            assert "document_items" not in (await db.list_tables()).tables
+        finally:
+            db.close()

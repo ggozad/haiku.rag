@@ -19,6 +19,7 @@ from haiku.rag.store.exceptions import (
     MigrationRequiredError,
     TagError,
     UnknownDatabaseError,
+    UpgradeRequiredError,
 )
 from tests.conftest import TRACEPARENT, current_trace, for_path
 
@@ -572,6 +573,15 @@ class TestCliMigrationError:
             with pytest.raises(SystemExit) as exc_info:
                 cli_wrapper()
             assert exc_info.value.code == 1
+
+    def test_catches_upgrade_required_error(self, capsys):
+        with patch("haiku.rag.cli._cli") as mock_cli:
+            mock_cli.side_effect = UpgradeRequiredError("Upgrade haiku.rag.")
+
+            with pytest.raises(SystemExit) as exc_info:
+                cli_wrapper()
+        assert exc_info.value.code == 1
+        assert capsys.readouterr().err.startswith("Error: Upgrade haiku.rag.")
 
 
 class TestTagCommands:

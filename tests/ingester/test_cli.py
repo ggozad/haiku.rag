@@ -33,6 +33,7 @@ from haiku.rag.store.exceptions import (
     ReadOnlyError,
     SourceUnavailableError,
     UnknownDatabaseError,
+    UpgradeRequiredError,
 )
 from tests.conftest import TRACEPARENT, current_trace
 from tests.platform import requires_symlinks
@@ -670,6 +671,7 @@ def test_cli_entry_point(monkeypatch):
         AmbiguousDatabaseError("names a set"),
         ConfigMismatchError("embedder drifted"),
         MigrationRequiredError("need migration"),
+        UpgradeRequiredError("need a newer release"),
         ReadOnlyError("read-only"),
         SourceUnavailableError("papers would not open"),
         UnknownDatabaseError("no such database"),

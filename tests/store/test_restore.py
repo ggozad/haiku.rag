@@ -1,12 +1,15 @@
+import json
 import re
 
 import pytest
 from lancedb.table import AsyncTable, AsyncTags
 
 from haiku.rag.store import ReadOnlyError
-from haiku.rag.store.engine import RESTORE_TABLE_ORDER, Store
+from haiku.rag.store.engine import RESTORE_TABLE_ORDER, Store, read_settings
+from haiku.rag.store.exceptions import UpgradeRequiredError
 from haiku.rag.store.models import Document
 from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.upgrades import latest_schema_version
 
 SAFETY_TAG_PATTERN = r"before-restore-\d{8}T\d{6}Z"
 
@@ -448,3 +451,41 @@ async def test_wait_protected_reraises_when_recovery_itself_is_cancelled():
     # already-cancelled task, and the timeout turns that into a clean failure.
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(outer, timeout=5)
+
+
+async def _stamp_schema(store: Store, schema_version: str) -> None:
+    settings = await read_settings(store.settings_table)
+    await store.settings_table.update(
+        {"settings": json.dumps({**settings, "schema_version": schema_version})},
+        where="id = 'settings'",
+    )
+
+
+async def test_restore_refuses_a_tag_stamped_by_a_newer_schema(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _stamp_schema(store, "100.0.0")
+        await store.create_tag("newer")
+        await _stamp_schema(store, latest_schema_version())
+        versions = await store.current_table_versions()
+
+        with pytest.raises(UpgradeRequiredError, match="100.0.0"):
+            await store.restore_tag("newer")
+
+        assert await store.current_table_versions() == versions
+        assert set(await store.list_tags()) == {"newer"}
+
+
+async def test_restore_of_a_supported_tag_over_a_newer_schema(temp_db_path):
+    """The rollback path: an older release restores its own tag after a newer
+    release stamped the live database."""
+    async with Store(temp_db_path, create=True) as store:
+        await DocumentRepository(store).create(Document(content="First document"))
+        await store.create_tag("supported")
+        await _stamp_schema(store, "100.0.0")
+        await DocumentRepository(store).create(Document(content="Second document"))
+
+    async with Store(temp_db_path, skip_migration_check=True) as store:
+        await store.restore_tag("supported")
+
+    async with Store(temp_db_path) as store:
+        assert await _doc_contents(store) == {"First document"}
