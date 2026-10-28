@@ -427,7 +427,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 |---|---|---|
 | `GET` | `/` | Browser dashboard. Unauthenticated. Its script sends the token on its own requests |
 | `GET` | `/health` | Queue counts, live workers and pollers, worker breaker state, and `failed_databases`: each configured database that is not running, as `{"database", "error"}`. `status` is `degraded` when a worker or poller is down, the worker breaker is open or a configured database is not running. Unauthenticated |
-| `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason, and the error and time of the last failed discovery, cleared by the next successful sweep |
+| `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason, and the error and time of the last failed discovery, cleared by the next successful sweep. `last_polled_at` is when the last successful sweep started: every file that matches the source's filters and changed before it has been listed, unless it was removed during the sweep |
 | `POST` | `/sources/{id}/refresh` | Run a sweep now, after any sweep of the source in progress. Skipped (`refreshed: false`) while the source has queued or claimed jobs, its breaker is open or a reload is removing it |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |

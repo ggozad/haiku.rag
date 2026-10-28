@@ -151,6 +151,7 @@ class BasePoller:
                 )
                 return False
             try:
+                started = datetime.now(UTC)
                 revisions = await self._sync.get_revision_snapshot(self.source_id)
                 known = await self._sync.list_known_uris(self.source_id)
                 counts = {
@@ -177,7 +178,7 @@ class BasePoller:
                     await self._handle_event(event, sync_batch)
                 await self._sync.batch_upsert(sync_batch)
                 self._breaker.record_success()
-                self._last_polled_at = datetime.now(UTC)
+                self._last_polled_at = started
                 self._last_skip_reason = None
                 self._clear_error()
                 span.set_attribute("upsert", counts[SourceEventKind.UPSERT])
@@ -230,6 +231,7 @@ class BasePoller:
                 )
                 return False, summary, changes
             try:
+                started = datetime.now(UTC)
                 revisions = await self._sync.get_revision_snapshot(self.source_id)
                 known = await self._sync.list_known_uris(self.source_id)
                 async for event in self.source.discover(
@@ -267,7 +269,7 @@ class BasePoller:
                     deletes=summary.delete_count,
                 )
                 self._breaker.record_success()
-                self._last_polled_at = datetime.now(UTC)
+                self._last_polled_at = started
                 self._last_skip_reason = None
                 self._clear_error()
                 span.set_attribute("upsert", summary.upsert_count)
