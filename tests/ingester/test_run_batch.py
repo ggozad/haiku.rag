@@ -879,12 +879,27 @@ async def test_run_batch_aborts_when_all_workers_die(
     assert "All workers have died" in caplog.text
 
 
-async def _wait_until(predicate, *, timeout: float = 5.0):
+async def _wait_until(
+    predicate, *, timeout: float = 5.0, serving: asyncio.Task | None = None
+):
+    """Wait for `predicate`, raising the error of a `serving` task that ended."""
     deadline = asyncio.get_running_loop().time() + timeout
     while not predicate():
+        if serving is not None and serving.done():
+            serving.result()
         if asyncio.get_running_loop().time() > deadline:
             raise AssertionError("condition not reached within timeout")
         await asyncio.sleep(0.02)
+
+
+async def test_waiting_on_a_serve_that_failed_raises_its_error():
+    async def failing_serve():
+        raise RuntimeError("queue unavailable")
+
+    serving = asyncio.create_task(failing_serve())
+
+    with pytest.raises(RuntimeError, match="queue unavailable"):
+        await _wait_until(lambda: False, serving=serving)
 
 
 @pytest.mark.parametrize("api", [True, False])
@@ -905,7 +920,8 @@ async def test_serve_starts_workers_pollers_and_shuts_down(tmp_path, use_client,
                 and app._pool.live_workers > 0
                 and app._pollers is not None
                 and app._pollers.live_pollers > 0
-            )
+            ),
+            serving=task,
         )
     finally:
         task.cancel()
@@ -996,7 +1012,10 @@ async def test_serve_closes_sources_after_pool_stops(tmp_path, use_client, monke
 
     task = asyncio.create_task(app.serve(api=False))
     try:
-        await _wait_until(lambda: app._pool is not None and app._pool.live_workers > 0)
+        await _wait_until(
+            lambda: app._pool is not None and app._pool.live_workers > 0,
+            serving=task,
+        )
     finally:
         task.cancel()
     with pytest.raises(asyncio.CancelledError):

@@ -30,6 +30,7 @@ from haiku.rag.store.schema import (
     IncompleteRebuildRecord,
     create_chunk_model,
     ensure_indexes,
+    has_vector_index,
 )
 
 if TYPE_CHECKING:
@@ -315,10 +316,7 @@ async def _has_vector_index(session: SingleDatabaseSession) -> bool:
     """Whether the chunks table exists and carries a vector index."""
     if "chunks" not in (await session.store.db.list_tables()).tables:
         return False
-    return any(
-        "vector" in index.columns
-        for index in await session.store.chunks_table.list_indices()
-    )
+    return await has_vector_index(session.store.chunks_table)
 
 
 async def _incomplete_rebuild(

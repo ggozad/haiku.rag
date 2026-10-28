@@ -1138,6 +1138,16 @@ class HaikuRAG:
         """
         await self._single_session("vacuum").store.vacuum(retention_seconds)
 
+    async def create_vector_index(self) -> bool:
+        """Create or retrain the vector index. Returns whether it built one.
+
+        Writes through this client wait for the whole build. See
+        `Store.create_vector_index`.
+        """
+        return await self._single_session(
+            "create_vector_index"
+        ).store.create_vector_index()
+
     async def aclose(self) -> None:
         """Release everything this client opened, whatever it covers.
 

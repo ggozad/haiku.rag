@@ -18,8 +18,10 @@ from rich.progress import (
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.mcp import _covering as _mcp_server_covering
+from haiku.rag.store.engine import ConnectionMode
 from haiku.rag.store.models.chunk import SearchType
 from haiku.rag.store.models.document import Document
+from haiku.rag.store.schema import has_vector_index
 
 if TYPE_CHECKING:
     from haiku.rag.client.scope import DatabaseRef, DatabaseScope
@@ -788,6 +790,10 @@ class HaikuRAGApp:
 
     async def create_index(self):
         """Create vector index on the chunks table."""
+        if ConnectionMode.of(self._location) == ConnectionMode.CLOUD:
+            self.console.print("LanceDB Cloud manages its own vector index.")
+            return
+
         async with HaikuRAG._covering(
             self.scope, self.config, skip_validation=True, read_only=self.read_only
         ) as client:
@@ -800,17 +806,19 @@ class HaikuRAGApp:
                 )
                 return
 
-            indices = await client.store.chunks_table.list_indices()
-            has_vector_index = any("vector" in str(idx).lower() for idx in indices)
-
-            if has_vector_index:
+            if await has_vector_index(client.store.chunks_table):
                 self.console.print(
                     "[yellow]Rebuilding existing vector index...[/yellow]"
                 )
             else:
                 self.console.print("[bold]Creating vector index...[/bold]")
 
-            await client.store._ensure_vector_index()
+            if not await client.create_vector_index():
+                self.console.print(
+                    "[yellow]Warning: No vector index built: the table fell "
+                    "below 256 chunks during the build[/yellow]"
+                )
+                return
             self.console.print(
                 "[bold green]Vector index created successfully.[/bold green]"
             )

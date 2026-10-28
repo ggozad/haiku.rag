@@ -377,8 +377,8 @@ class Store:
         self._skip_migration_check = skip_migration_check
         self._vacuum_lock = asyncio.Lock()
         self._write_lock = asyncio.Lock()
-        # Held by rebuild_database for its whole run; tag operations check it
-        # and fail fast instead of snapshotting a half-rebuilt database.
+        # Held by rebuild_database and create_vector_index for their whole run.
+        # Tag operations fail fast while it is held.
         self._rebuild_lock = asyncio.Lock()
         self._is_new_db = False
 
@@ -518,10 +518,11 @@ class Store:
             raise ReadOnlyError("Cannot modify database in read-only mode")
 
     def _assert_not_rebuilding(self) -> None:
-        """Raise if a rebuild is in progress in this process."""
+        """Raise if a rebuild or vector index build is in progress in this process."""
         if self._rebuild_lock.locked():
             raise ValueError(
-                "Rebuild in progress; tag operations are unavailable until it completes"
+                "Rebuild or vector index build in progress; tag operations are "
+                "unavailable until it completes"
             )
 
     async def rebuild_indexes(self) -> dict[str, list[str]]:
@@ -666,8 +667,23 @@ class Store:
     def _connection_mode(self) -> ConnectionMode:
         return ConnectionMode.of(self._location)
 
-    async def _ensure_vector_index(self) -> None:
-        """Create or rebuild vector index on chunks table.
+    async def create_vector_index(self) -> bool:
+        """Create or retrain the IVF_PQ index on the chunks table.
+
+        Returns whether it built one: never below 256 chunks or on LanceDB
+        Cloud, which indexes on its own. Holds the rebuild and write locks for
+        the whole build, so every write through this store waits for it, for
+        minutes on a large table. Another store or process is not excluded.
+
+        Raises:
+            ReadOnlyError: If the store is in read-only mode.
+        """
+        self._assert_writable()
+        async with self._rebuild_lock, self._write_lock:
+            return await self._ensure_vector_index()
+
+    async def _ensure_vector_index(self) -> bool:
+        """Create or rebuild vector index on chunks table. Returns whether it built one.
 
         Cloud deployments auto-create indexes, so we skip for those.
         For self-hosted, creates an IVF_PQ index. If an index exists,
@@ -675,7 +691,7 @@ class Store:
         Note: Index creation requires sufficient training data.
         """
         if self._connection_mode == ConnectionMode.CLOUD:
-            return
+            return False
 
         # Check if table has enough data (indexes require training data)
         row_count = await self.chunks_table.count_rows()
@@ -683,7 +699,7 @@ class Store:
             logger.debug(
                 f"Skipping vector index creation: need at least 256 rows, have {row_count}"
             )
-            return
+            return False
 
         # Create or replace index (replace=True is the default)
         logger.info("Creating vector index on chunks table...")
@@ -702,6 +718,7 @@ class Store:
         )
 
         logger.info("Vector index created successfully")
+        return True
 
     async def _validate_configuration(
         self, stored_settings: dict | None = None

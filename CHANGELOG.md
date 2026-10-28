@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `HaikuRAG.create_vector_index()` and `Store.create_vector_index()` build or retrain the vector index and return whether they built one (#753).
+
+### Fixed
+
+- `create-index` on LanceDB Cloud reports that Cloud manages the vector index instead of a successful build.
+
 ## [0.101.2] - 2026-10-27
 
 ### Added

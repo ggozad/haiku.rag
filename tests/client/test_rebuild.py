@@ -1248,7 +1248,9 @@ async def test_rebuild_blocks_tag_operations(temp_db_path, monkeypatch):
         await anext(rebuild)
 
         assert client.store._rebuild_lock.locked()
-        with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
+        with pytest.raises(
+            ValueError, match="Rebuild or vector index build in progress"
+        ):
             await client.store.create_tag("mid-rebuild")
 
         async for _ in rebuild:

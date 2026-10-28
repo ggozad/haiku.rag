@@ -470,6 +470,14 @@ await client.vacuum()
 
 This compacts tables and removes historical versions to reduce disk usage. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
 
+Build or retrain the IVF_PQ vector index, as `haiku-rag create-index` does:
+
+```python
+built = await client.create_vector_index()
+```
+
+It returns `False` without building below 256 chunks and on LanceDB Cloud, which indexes on its own. Every write through the client waits for the whole build, minutes on a large table. See [Vector indexing](configuration/storage.md#vector-indexing).
+
 ### Tags
 
 Tag the current database state and restore it later, for example after an ingestion run. A tag covers all five tables and is created from a single version snapshot. Create tags with other writers stopped: the snapshot is coordinated within one process only, and a writer in another process can commit between the per-table reads.

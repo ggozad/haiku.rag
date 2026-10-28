@@ -1182,7 +1182,10 @@ async def test_a_reload_requested_during_shutdown_is_refused(
 
     monkeypatch.setattr(app, "remove_database", _slow_removal)
     serving = asyncio.create_task(app.serve(api=False))
-    await _wait_until(lambda: app._pool is not None and app._pool.live_workers > 0)
+    await _wait_until(
+        lambda: app._pool is not None and app._pool.live_workers > 0,
+        serving=serving,
+    )
     _write(path, _settings(tmp_path, {}))
     first = asyncio.create_task(app.reload())
     await asyncio.wait_for(removing.wait(), timeout=5.0)
