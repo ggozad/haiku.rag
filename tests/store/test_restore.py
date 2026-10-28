@@ -290,7 +290,9 @@ async def test_restore_rejected_during_rebuild(temp_db_path):
         await store.create_tag("release-1")
 
         async with store._rebuild_lock:
-            with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
+            with pytest.raises(
+                ValueError, match="Rebuild or vector index build in progress"
+            ):
                 await store.restore_tag("release-1")
 
 

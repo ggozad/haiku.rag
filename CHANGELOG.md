@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `HaikuRAG.create_vector_index()` and `Store.create_vector_index()` build or retrain the vector index and return whether they built one (#753).
+
 ## [0.101.2] - 2026-10-27
 
 ### Added

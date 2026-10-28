@@ -530,6 +530,8 @@ class TestOperationsThatNeedOneDatabase:
                 await rag.create_document("orphan")
             with pytest.raises(AmbiguousDatabaseError, match="clients_for"):
                 await rag.vacuum()
+            with pytest.raises(AmbiguousDatabaseError, match="clients_for"):
+                await rag.create_vector_index()
             with pytest.raises(AmbiguousDatabaseError, match="close"):
                 rag.close()
 

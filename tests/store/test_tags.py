@@ -419,9 +419,13 @@ async def test_tag_operations_rejected_during_rebuild(temp_db_path):
         await store.create_tag("keep")
 
         async with store._rebuild_lock:
-            with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
+            with pytest.raises(
+                ValueError, match="Rebuild or vector index build in progress"
+            ):
                 await store.create_tag("release-1")
-            with pytest.raises(ValueError, match="[Rr]ebuild in progress"):
+            with pytest.raises(
+                ValueError, match="Rebuild or vector index build in progress"
+            ):
                 await store.delete_tag("keep")
 
         await store.create_tag("release-1")
