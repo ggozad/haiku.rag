@@ -433,6 +433,15 @@
               dlqEntries.map(([k, v]) => `<span>${escapeHtml(k)}: ${v}</span>`).join(""),
           );
         }
+        const rejectedEntries = Object.entries(stats.rejected_by_source || {});
+        if (rejectedEntries.length) {
+          parts.push(
+            "Rejected by source: " +
+              rejectedEntries
+                .map(([k, v]) => `<span>${escapeHtml(k)}: ${v}</span>`)
+                .join(""),
+          );
+        }
         const depthEntries = Object.entries(depth);
         if (depthEntries.length) {
           parts.push(

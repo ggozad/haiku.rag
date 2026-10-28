@@ -63,6 +63,7 @@ const answers: Record<string, unknown> = {
 		workers: { busy: 1, total: 2 },
 		oldest_queued_age_s: 90,
 		dlq_by_source: { docs: 1 },
+		rejected_by_source: { docs: 3 },
 		queue_depth_by_source: { docs: 4 },
 	},
 	"jobs?status=claimed&limit=20": [job("running", "claimed")],
@@ -124,6 +125,21 @@ describe("IngestionPage", () => {
 		expect(screen.getByText("conversion failed")).toBeTruthy();
 		expect(screen.getByText("file:///docs/done.md")).toBeTruthy();
 		expect(screen.getByText("4s")).toBeTruthy();
+	});
+
+	it("shows each source's queued, dead and rejected counts", async () => {
+		render(<IngestionPage />);
+		await screen.findByText("filesystem");
+		const headers = screen
+			.getAllByRole("columnheader")
+			.map((header) => header.textContent);
+		const row = screen.getByRole("row", { name: /^docs/ });
+		const cells = within(row)
+			.getAllByRole("cell")
+			.map((cell) => cell.textContent);
+		expect(cells[headers.indexOf("Queued")]).toBe("4");
+		expect(cells[headers.indexOf("Dead")]).toBe("1");
+		expect(cells[headers.indexOf("Rejected")]).toBe("3");
 	});
 
 	it("names each source's database and its failed discovery", async () => {

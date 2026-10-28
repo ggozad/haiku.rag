@@ -342,13 +342,59 @@ async def test_circuit_breaker_pauses_sweeps_after_failures(fs_config, jobs, syn
     assert source.discover_calls == before
 
 
-async def test_sweep_records_last_polled_at_on_success(fs_config, jobs, sync):
-    source = _StubSource("src", [[]])
+class _TimedSource(_StubSource):
+    """Records when each listing ran."""
+
+    def __init__(self, source_id: str):
+        super().__init__(source_id, [])
+        self.listed_at: list[datetime] = []
+
+    async def discover(self, since=None, *, known_uris=None):
+        self.listed_at.append(datetime.now(UTC))
+        async for event in super().discover(since, known_uris=known_uris):
+            yield event
+
+
+async def test_sweep_records_last_polled_at_as_its_start(fs_config, jobs, sync):
+    source = _TimedSource("src")
     poller = _periodic(source, fs_config, jobs, sync)
     assert poller.last_polled_at is None
-    await poller._sweep_once()
-    assert poller.last_polled_at is not None
-    assert poller.last_polled_at.tzinfo is not None
+
+    before = datetime.now(UTC)
+    assert await poller._sweep_once() is True
+    polled = poller.last_polled_at
+    assert polled is not None
+    assert before <= polled <= source.listed_at[0]
+
+
+async def test_failed_or_skipped_sweep_keeps_last_polled_at(fs_config, jobs, sync):
+    source = _TimedSource("src")
+    poller = _periodic(source, fs_config, jobs, sync)
+    assert await poller._sweep_once() is True
+    polled = poller.last_polled_at
+
+    source.fail_with = RuntimeError("upstream down")
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        assert await poller._sweep_once() is False
+    assert poller.last_polled_at == polled
+
+    source.fail_with = None
+    assert await jobs.enqueue("src", "file:///a.md", JobOp.UPSERT)
+    assert await poller._sweep_once() is False
+    assert poller.last_skip_reason == "pending_work"
+    assert poller.last_polled_at == polled
+
+
+async def test_dry_run_records_last_polled_at_as_its_start(fs_config, jobs, sync):
+    source = _TimedSource("src")
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    before = datetime.now(UTC)
+    ok, _, _ = await poller._dry_run_once()
+    assert ok is True
+    polled = poller.last_polled_at
+    assert polled is not None
+    assert before <= polled <= source.listed_at[0]
 
 
 async def test_per_source_retry_policy_overrides_default(jobs, sync, tmp_path):

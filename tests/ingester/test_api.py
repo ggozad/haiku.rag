@@ -511,6 +511,7 @@ async def test_stats_returns_shape_on_empty_queue(state):
     assert body["workers"] == {"busy": 0, "total": 0}
     assert body["oldest_queued_age_s"] is None
     assert body["dlq_by_source"] == {}
+    assert body["rejected_by_source"] == {}
     assert body["queue_depth_by_source"] == {}
 
 
@@ -526,6 +527,10 @@ async def test_stats_aggregates_real_queue(state, jobs):
     dead = await jobs.claim_next("w")
     assert dead is not None
     await jobs.mark_dead(dead.id, "boom", "w")
+    assert await jobs.enqueue("s2", "u4", JobOp.UPSERT)
+    rejected = await jobs.claim_next("w")
+    assert rejected is not None and rejected.source_id == "s2"
+    await jobs.mark_rejected(rejected.id, "refused", "w")
 
     async with _client(state) as client:
         resp = await client.get("/stats")
@@ -538,6 +543,7 @@ async def test_stats_aggregates_real_queue(state, jobs):
     assert body["queue_depth_by_source"] == {"s2": 1}
     # The dead job was claim_next-ed from s1.
     assert body["dlq_by_source"] == {"s1": 1}
+    assert body["rejected_by_source"] == {"s2": 1}
 
 
 async def test_stats_requires_auth(state):

@@ -15,7 +15,7 @@ import { formatRelativeTime } from "@/lib/format";
 import { ingestedDatabases } from "@/lib/ingestion";
 import type { Source, Stats } from "./types";
 
-// The configured sources, their queue and dead-letter counts, and Refresh.
+// The configured sources, their queued, dead and rejected counts, and Refresh.
 // The database column shows when the ingester writes more than one.
 export default function SourcesPanel({
 	sources,
@@ -38,6 +38,7 @@ export default function SourcesPanel({
 						<TableHead>Last polled</TableHead>
 						<TableHead>Queued</TableHead>
 						<TableHead>Dead</TableHead>
+						<TableHead>Rejected</TableHead>
 						<TableHead>State</TableHead>
 						<TableHead />
 					</TableRow>
@@ -58,6 +59,9 @@ export default function SourcesPanel({
 							</TableCell>
 							<TableCell className="tabular-nums">
 								{stats?.dlq_by_source[source.source_id] ?? 0}
+							</TableCell>
+							<TableCell className="tabular-nums">
+								{stats?.rejected_by_source[source.source_id] ?? 0}
 							</TableCell>
 							<TableCell className="space-x-1">
 								{source.circuit_breaker_open && (
@@ -101,7 +105,7 @@ export default function SourcesPanel({
 					{sources.length === 0 && (
 						<TableRow>
 							<TableCell
-								colSpan={showDatabase ? 8 : 7}
+								colSpan={showDatabase ? 9 : 8}
 								className="text-muted-foreground"
 							>
 								No sources are configured.

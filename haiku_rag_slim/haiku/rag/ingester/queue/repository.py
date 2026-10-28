@@ -650,7 +650,7 @@ class JobRepo:
 
     async def counts_by_source(self, *statuses: str) -> dict[str, int]:
         """source_id → count of jobs in any of the given statuses. Drives the
-        dashboard's per-source DLQ and backlog summaries."""
+        dashboard's per-source DLQ, rejected and backlog summaries."""
         if not statuses:
             return {}
         query = (

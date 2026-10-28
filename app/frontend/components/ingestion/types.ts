@@ -19,6 +19,7 @@ export interface Stats {
 	workers: { busy: number; total: number };
 	oldest_queued_age_s: number | null;
 	dlq_by_source: Record<string, number>;
+	rejected_by_source: Record<string, number>;
 	queue_depth_by_source: Record<string, number>;
 }
 
