@@ -101,21 +101,27 @@ class DatabaseChange(BaseModel):
 
 
 class ReloadReport(BaseModel):
-    """A reload's changes. `failed` means nothing was added or removed,
-    `partial` that some changes were applied before one failed."""
+    """A reload's changes. `failed` means a database failed and nothing was
+    added or removed, `partial` that some changes were applied and some
+    failed."""
 
     outcome: Literal["applied", "failed", "partial"] = "applied"
     databases: list[DatabaseChange] = []
 
     def record(self, database: str, change: Literal["added", "removed"]) -> None:
-        self.databases.append(DatabaseChange(database=database, change=change))
+        self._append(DatabaseChange(database=database, change=change))
 
     def fail(self, database: str, error: BaseException) -> None:
-        self.databases.append(
+        self._append(
             DatabaseChange(database=database, change="failed", error=_message(error))
         )
+
+    def _append(self, change: DatabaseChange) -> None:
+        self.databases.append(change)
+        failed = any(change.change == "failed" for change in self.databases)
         changed = any(change.change != "failed" for change in self.databases)
-        self.outcome = "partial" if changed else "failed"
+        if failed:
+            self.outcome = "partial" if changed else "failed"
 
 
 async def _close_each(closes: "list[Callable[[], Awaitable[object]]]") -> None:
@@ -1019,18 +1025,29 @@ class IngesterApp:
             ):
                 for ref, sources in ordered:
                     try:
-                        self._prepared.append(
-                            await self._prepare_addition(ref, sources)
-                        )
+                        database = await self._prepare_addition(ref, sources)
+                    except Exception as error:
+                        report.fail(ref.name, error)
+                        self._fail(ref.name, error)
+                        continue
+                    try:
                         # Every local database exists once open, so comparing
                         # directory identities catches two names for one.
                         _refuse_shared_locations(
-                            [d.ref for d in [*self._running.values(), *self._prepared]]
+                            [
+                                d.ref
+                                for d in [
+                                    *self._running.values(),
+                                    *self._prepared,
+                                    database,
+                                ]
+                            ]
                         )
                     except Exception as error:
                         report.fail(ref.name, error)
-                        failure = error
-                        return report
+                        await self._discard(database, error)
+                        continue
+                    self._prepared.append(database)
                 for name in removals:
                     try:
                         await self.remove_database(name)
@@ -1044,9 +1061,10 @@ class IngesterApp:
                 try:
                     await self._apply(database)
                 except Exception as error:
+                    self._prepared.remove(database)
                     report.fail(database.ref.name, error)
-                    failure = error
-                    return report
+                    await self._discard(database, error)
+                    continue
                 self._prepared.remove(database)
                 report.record(database.ref.name, "added")
         except BaseException as error:
@@ -1056,6 +1074,8 @@ class IngesterApp:
             await self._close_prepared(report, failure)
         self._config = config
         self._databases = list(wanted.values())
+        for name in [n for n in self._failed if n not in wanted or n in self._running]:
+            del self._failed[name]
         if self._api is not None:
             self._api.config = config
         return report

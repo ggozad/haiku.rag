@@ -9,7 +9,7 @@
 
 ### Changed
 
-- `haiku-ingester serve` and `run-batch` skip a database that fails to open, start its hooks, build its metadata providers or reconcile, and start the others. Startup raises `NoDatabaseStartedError` when every configured database fails. `run-batch` exits non-zero naming each skipped database (#754).
+- `haiku-ingester serve`, `run-batch` and reload skip a database that fails to start and run the others, and startup raises `NoDatabaseStartedError` only when every database fails. Callers of `IngesterApp.serve()` and `run_batch()` read `BatchReport.failed_databases` or `/health` `failed_databases` (#754).
 - `create_document`, `import_document`, `import_documents` and `create_document_from_source` drop a caller's `content_type`, `md5` and `source_revision` metadata (#760).
 - A writable open, `migrate` and `tag restore` raise `UpgradeRequiredError` for a newer `schema_version`, and a read-only open warns. Catch it beside `MigrationRequiredError` (#752).
 
