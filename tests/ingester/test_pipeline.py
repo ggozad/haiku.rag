@@ -23,6 +23,7 @@ from haiku.rag.sources.base import FetchResult, FileTooLargeError, Source
 from haiku.rag.sources.fs import FSSource
 from haiku.rag.store.models.document import Document
 from tests.conftest import capture_logs
+from tests.platform import converts_pdf_locally
 
 _PIPELINE_LOGGER = logging.getLogger("haiku.rag.ingester.workers.pipeline")
 
@@ -791,6 +792,7 @@ async def test_manifest_replay_still_revalidates_before_ingesting():
     assert kwargs["observed_revision"] == "etag-2"
 
 
+@converts_pdf_locally
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")
 async def test_upsert_calls_the_provider_for_pdf_attachments(tmp_path, temp_db_path):
@@ -947,6 +949,7 @@ async def test_a_rejected_document_is_a_permanent_failure(temp_db_path, tmp_path
     assert str(raised.value) == f"{path.as_uri()} rejected: draft"
 
 
+@converts_pdf_locally
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")
 async def test_a_rejected_attachment_leaves_its_parent_job_succeeding(

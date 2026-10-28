@@ -7,6 +7,7 @@ from docling_core.types.doc.labels import DocItemLabel
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+from tests.platform import converts_pdf_locally
 
 
 @pytest.mark.vcr()
@@ -35,6 +36,7 @@ async def test_client_visualize_chunk_no_bounding_boxes(temp_db_path):
         assert images == []
 
 
+@converts_pdf_locally
 @pytest.mark.vcr()
 async def test_client_visualize_chunk_with_pdf(temp_db_path, doclaynet_first_page_pdf):
     from PIL.Image import Image as PILImage

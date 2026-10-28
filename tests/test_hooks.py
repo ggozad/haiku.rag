@@ -12,6 +12,7 @@ from haiku.rag.config.models import AppConfig, HookConfig
 from haiku.rag.hooks import ENTRY_POINT_GROUP, Hook, build_hooks
 from haiku.rag.store.models.chunk import Chunk
 from tests.client.test_client import _docling_doc, _import
+from tests.platform import converts_pdf_locally
 
 
 class RecordingHook(Hook):
@@ -988,6 +989,7 @@ async def test_before_ingest_output_short_circuits_unchanged_bytes(
     assert [event[0] for event in recording.events] == ["ingest"]
 
 
+@converts_pdf_locally
 @pytest.mark.asyncio
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")

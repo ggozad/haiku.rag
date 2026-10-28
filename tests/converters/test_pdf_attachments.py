@@ -22,6 +22,7 @@ from tests.conftest import (
     fake_ingest_fetch_result,
     writing,
 )
+from tests.platform import converts_pdf_locally
 
 
 async def _make_parent(
@@ -644,6 +645,7 @@ def _md5(data: bytes) -> str:
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
 
 
+@converts_pdf_locally
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")
 async def test_provider_called_for_each_attachment_with_parent_source_id(
@@ -711,6 +713,7 @@ async def test_provider_reserved_keys_do_not_reach_a_child(temp_db_path):
     assert "source_revision" not in child.metadata
 
 
+@converts_pdf_locally
 @pytest.mark.usefixtures("docling_local_models")
 async def test_provider_called_for_nested_attachments_up_to_cap(temp_db_path):
     l3 = build_pdf([("leaf.txt", b"deepest")])
@@ -772,6 +775,7 @@ async def test_provider_not_called_for_an_unsupported_attachment(temp_db_path):
     assert provider.calls == []
 
 
+@converts_pdf_locally
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")
 async def test_retry_ingests_an_attachment_whose_provider_failed(
@@ -809,6 +813,7 @@ async def test_retry_ingests_an_attachment_whose_provider_failed(
     assert retried.metadata["md5"] == _md5(pdf_path.read_bytes())
 
 
+@converts_pdf_locally
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")
 async def test_retry_ingests_a_grandchild_whose_provider_failed(tmp_path, temp_db_path):
