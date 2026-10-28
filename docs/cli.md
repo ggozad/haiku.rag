@@ -132,6 +132,7 @@ haiku-rag doctor [--db /path/to/your.lancedb] [--duplicates-out groups.yaml] [--
 Checks the database and prints a pass, warn or fail report. It makes no changes, prints the command that fixes each failure (`rebuild`, `create-index`, `vacuum`, `migrate`, `rebuild --embed-only`, `rebuild --reindex`), and exits 1 when any check fails or the database is missing. The checks:
 
 - required tables are present, and `documents` and `document_meta` correspond one to one
+- this release supports the database schema. A `schema_version` newer than the release's schema fails, and no further database check runs
 - chunks and document items reference documents that exist
 - documents with text produced chunks. Empty and heading- or furniture-only documents are not flagged, and image-only documents are flagged according to whether the embedder indexes images
 - chunked documents have document items, and chunk `doc_item_refs` resolve to them
@@ -175,6 +176,14 @@ Migration completed successfully.
 ```
 
 Back up the database first. `migrate` exits 1 on failure.
+
+`init` and `migrate` record the schema the release writes as `schema_version`. A release refuses to write to a database whose `schema_version` is newer than its own schema, and a read-only open warns:
+
+```
+Error: Database schema 0.95.0 was written by a newer haiku.rag release. haiku.rag 0.101.2 knows schemas up to 0.91.0. Upgrade haiku.rag.
+```
+
+`tag restore` of a tag that needs no migration and carries a supported `schema_version` works over such a database.
 
 ### download-models
 

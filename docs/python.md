@@ -33,7 +33,7 @@ async with HaikuRAG("path/to/database.lancedb", read_only=True) as client:
     Read-only mode blocks every write, and downgrades an embedding provider or name mismatch to a warning (see [Operational constraints](configuration/storage.md#operational-constraints)).
 
 !!! warning "Database Migrations"
-    When upgrading haiku.rag to a version with schema changes, opening an existing database will raise `MigrationRequiredError`. Run `haiku-rag migrate` to apply pending migrations before using the database. See [migrate](cli.md#migrate) for details.
+    When upgrading haiku.rag to a version with schema changes, opening an existing database will raise `MigrationRequiredError`. Run `haiku-rag migrate` to apply pending migrations before using the database. A writable open of a database whose `schema_version` is newer than the release's schema raises `UpgradeRequiredError`, and a read-only open warns. See [migrate](cli.md#migrate) for details.
 
 ## Document management
 
