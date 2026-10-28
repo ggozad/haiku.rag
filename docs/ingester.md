@@ -65,7 +65,7 @@ haiku-ingester run-batch --db-name wiki      # wiki's sources only
 
 The ingester writes every database a key names, each through its own client, and leaves the other entries to readers, such as `papers-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. A configuration carrying `ingester.sources` fails at load. `run-batch` refuses to start when `ingester.databases` names no database. `serve` starts, ingests nothing until a [reload](#reloading-databases) adds a database, and deletes every queued and claimed job of its queue namespace, as it does for any source it does not configure.
 
-One process serves every database. A [reload](#reloading-databases) adds or removes one while the others keep ingesting, but they start and stop together. If a database fails to open, startup fails for all of them: for example when it needs a migration, when its recorded embedder differs from the configuration, or when its store is unreachable. Remove its key to ingest the others. If a conversion stalls, the process exits (see [Run it under a supervisor](#run-it-under-a-supervisor)), and every database waits for the restart. If a database's writes fail while the ingester runs, only that database's sources pause, since each source has its own worker circuit breaker. If databases must not stop together, run one ingester per database, each with its own queue or namespace.
+One process serves every database. A [reload](#reloading-databases) adds or removes one while the others keep ingesting. A database that fails to start is logged at ERROR and skipped, and the others start: for example when it needs a migration, when its recorded embedder differs from the configuration, when its store is unreachable, when a hook's lifespan raises, when a source names an unregistered metadata provider, or when reconciliation fails. The next reload retries it. Startup fails when every configured database fails, and deletes no job then. Invalid configuration, an unreachable queue, two sources sharing an id and two databases at one location still fail startup. If a conversion stalls, the process exits (see [Run it under a supervisor](#run-it-under-a-supervisor)), and every database waits for the restart. If a database's writes fail while the ingester runs, only that database's sources pause, since each source has its own worker circuit breaker. If databases must not stop together, run one ingester per database, each with its own queue or namespace.
 
 Source ids are unique across every database: startup fails when two sources share an id, given or derived from their target. Two keys whose databases sit at one location fail startup too, a path and its `file://` URI included, and two names a case-insensitive filesystem treats as one directory, since a database has one writer. Each open database holds its own embedder client.
 
@@ -485,7 +485,7 @@ haiku-ingester run-batch --db-name papers    # one of them
 
 `--db-name` sweeps that database's sources and drains their jobs only. `--retry` and `--dry-run` follow the selection, and the other databases' queued jobs stay queued. `--manifest` takes a manifest from a dry run with the same `--db-name`, and refuses one naming another database's sources. It is still a writer of that database, so it must not run while `serve` writes it.
 
-It exits non-zero when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
+It ingests the databases that started and exits non-zero naming each skipped one, as it does when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 
 `--retry dead`, `--retry rejected` or `--retry all` re-queues failed jobs after the sweep, and the batch drains them with the rest. A dead or rejected job records its source revision, so a sweep does not queue the unchanged file again:
 
@@ -508,7 +508,7 @@ haiku-ingester run-batch --dry-run --output manifest-20260622.yaml
 haiku-ingester run-batch --manifest manifest-20260622.yaml
 ```
 
-Replay refuses a source with queued or claimed jobs. An upsert with a revision is checked against the source before fetching, and one that changed since the dry run dead-letters, leaving the newer version to the next dry run. A source that reports no revisions cannot prove at replay that the bytes are the ones the dry run saw.
+Replay refuses a source with queued or claimed jobs, and a change of a database that failed to start. An upsert with a revision is checked against the source before fetching, and one that changed since the dry run dead-letters, leaving the newer version to the next dry run. A source that reports no revisions cannot prove at replay that the bytes are the ones the dry run saw.
 
 ### Which source a document came from
 

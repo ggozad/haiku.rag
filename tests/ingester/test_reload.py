@@ -442,9 +442,9 @@ async def test_two_new_names_for_one_directory_are_refused_once_opened(
         assert app._running == {}
 
 
-def _unwinding_hooks(monkeypatch) -> list[str]:
+def _unwinding_hooks(monkeypatch, *others) -> list[str]:
     """Configure a hook whose lifespan records the exception each client
-    closes on, or "clean"."""
+    closes on, or "clean", beside the entry points `others`."""
     from haiku.rag.hooks import Hook
 
     seen: list[str] = []
@@ -465,7 +465,9 @@ def _unwinding_hooks(monkeypatch) -> list[str]:
         def load(self):
             return _Recording
 
-    monkeypatch.setattr("haiku.rag.hooks.entry_points", lambda group: [_EntryPoint()])
+    monkeypatch.setattr(
+        "haiku.rag.hooks.entry_points", lambda group: [_EntryPoint(), *others]
+    )
     return seen
 
 
@@ -488,22 +490,78 @@ async def test_hooks_see_the_exception_that_ends_ingestion(tmp_path, monkeypatch
     assert seen == ["ValueError"]
 
 
-async def test_hooks_see_the_exception_that_fails_startup(tmp_path, monkeypatch):
+async def test_hooks_see_the_exception_that_skips_a_database_at_startup(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.ingester.reconcile import reconcile
+
     seen = _unwinding_hooks(monkeypatch)
-    wiki = {**_fs(tmp_path, "wiki"), "metadata_provider": "missing"}
     app = _hooked(
         tmp_path,
         {
             "papers": ("papers", [_fs(tmp_path, "papers")]),
-            "wiki": ("wiki", [wiki]),
+            "wiki": ("wiki", [_fs(tmp_path, "wiki")]),
         },
     )
 
-    with pytest.raises(ValueError, match="missing"):
-        async with app._resources():
-            pass
+    async def _fails_for_wiki(rag, sync, source_ids):
+        if "wiki" in source_ids:
+            raise RuntimeError("store unreachable")
+        return await reconcile(rag, sync, source_ids)
 
-    assert seen == ["ValueError", "ValueError"]
+    monkeypatch.setattr("haiku.rag.ingester.app.reconcile", _fails_for_wiki)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with app._resources():
+            assert seen == ["RuntimeError"]
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: store unreachable"
+    ]
+
+    assert seen == ["RuntimeError", "clean"]
+
+
+async def test_a_hook_failing_to_start_skips_its_database_at_startup(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.hooks import Hook
+
+    class _Refusing(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            if client.source == "wiki":
+                raise RuntimeError("hook refused wiki")
+            yield
+
+    class _RefusingEntryPoint:
+        name = "refusing"
+
+        def load(self):
+            return _Refusing
+
+    seen = _unwinding_hooks(monkeypatch, _RefusingEntryPoint())
+    settings = _settings(
+        tmp_path,
+        {
+            "papers": ("papers", [_fs(tmp_path, "papers")]),
+            "wiki": ("wiki", [_fs(tmp_path, "wiki")]),
+        },
+    )
+    settings["hooks"] = ["recording", "refusing"]
+    path = tmp_path / "haiku.rag.yaml"
+    _write(path, settings)
+    app = _app(path)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with app._resources():
+            assert list(app._running) == ["papers"]
+            assert app._failed == {"wiki": "hook refused wiki"}
+            assert seen == ["RuntimeError"]
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: hook refused wiki"
+    ]
+
+    assert seen == ["RuntimeError", "clean"]
 
 
 async def test_hooks_see_the_exception_that_fails_a_reload(tmp_path, monkeypatch):

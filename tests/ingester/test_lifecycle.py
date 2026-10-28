@@ -1,7 +1,10 @@
 import asyncio
 import contextlib
+import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from functools import partial
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import httpx
@@ -20,6 +23,7 @@ from haiku.rag.ingester.reconcile import reconcile
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.sources.base import SourceEvent, SourceEventKind
 from haiku.rag.store.exceptions import MigrationRequiredError, UpgradeRequiredError
+from tests.conftest import capture_logs
 from tests.ingester.test_run_batch import (
     _ingested,
     _jobs_of,
@@ -506,12 +510,18 @@ async def test_a_failed_client_close_is_retried_by_the_next_removal(
         assert "papers" not in app._running
 
 
-async def test_a_database_with_an_unknown_metadata_provider_is_closed_on_add(
+async def test_a_database_with_an_unknown_metadata_provider_is_never_opened_on_add(
     tmp_path, monkeypatch
 ):
-    papers, wiki = _Opened(_mock_client()), _Opened(_mock_client())
+    opened = []
+    papers = _Opened(_mock_client())
+
+    def _covering(scope, *a, **k):
+        opened.append(scope.names[0])
+        return papers
+
     stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: wiki if scope.names == ("wiki",) else papers
+    stub._covering = _covering
     monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
     config = _papers_only(tmp_path)
     app = IngesterApp(config=config)
@@ -522,7 +532,7 @@ async def test_a_database_with_an_unknown_metadata_provider_is_closed_on_add(
         with pytest.raises(ValueError, match="missing"):
             await app.add_database(ref, sources)
 
-        assert wiki.closes == 1
+        assert opened == ["papers"]
         assert list(app._running) == ["papers"]
 
 
@@ -598,28 +608,335 @@ async def test_a_shutdown_closes_the_sources_of_an_interrupted_removal(
     assert closed == ["papers"]
 
 
-async def test_an_unreadable_database_fails_startup_with_the_queue_unchanged(
-    tmp_path, monkeypatch
-):
-    from haiku.rag.store.exceptions import MigrationRequiredError
+def _opening(opened: dict, refused: dict[str, type[Exception]] | None = None):
+    """A `_covering` double opening each database through `opened`, and
+    raising `refused[name]` for the names it holds."""
 
     @asynccontextmanager
-    async def _open(scope):
-        if scope.names == ("wiki",):
-            raise MigrationRequiredError("Database requires migration")
-        yield _mock_client()
+    async def _refuse(error):
+        raise error("Database requires migration")
+        yield
+
+    def _covering(scope, *a, **k):
+        name = scope.names[0]
+        if refused and name in refused:
+            return _refuse(refused[name])
+        return opened[name]
 
     stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: _open(scope)
+    stub._covering = _covering
+    return stub
+
+
+def _reconcile_failing(names: set[str]):
+    async def _reconcile(rag, sync, source_ids):
+        if names & set(source_ids):
+            raise RuntimeError("store unreachable")
+        return await reconcile(rag, sync, source_ids)
+
+    return _reconcile
+
+
+_APP_LOGGER = logging.getLogger("haiku.rag.ingester.app")
+
+
+@pytest.mark.parametrize("error", [MigrationRequiredError, UpgradeRequiredError])
+async def test_a_database_failing_to_open_at_startup_is_skipped(
+    tmp_path, monkeypatch, error
+):
+    papers = _mock_client()
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        _opening({"papers": _Opened(papers)}, refused={"wiki": error}),
+    )
+    closed = []
+    monkeypatch.setattr(
+        "haiku.rag.sources.fs.FSSource.aclose",
+        lambda self: _record(closed, self.source_id),
+    )
+    app = IngesterApp(config=_two_databases(tmp_path))
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with _serving(app):
+            await _wait_until(lambda: _ingested(papers) == ["papers.md"])
+
+            assert list(app._running) == ["papers"]
+            assert app._failed == {
+                "wiki": "database 'wiki': Database requires migration"
+            }
+            assert [p.source_id for p in _pollers(app).pollers] == ["papers"]
+            assert closed == ["wiki"]
+
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: database 'wiki': "
+        "Database requires migration"
+    ]
+
+
+async def test_a_database_failing_to_reconcile_at_startup_is_skipped(
+    tmp_path, monkeypatch
+):
+    papers, wiki = _Opened(_mock_client()), _Opened(_mock_client())
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG", _opening({"papers": papers, "wiki": wiki})
+    )
+    monkeypatch.setattr(
+        "haiku.rag.ingester.app.reconcile", _reconcile_failing({"wiki"})
+    )
+    app = IngesterApp(config=_two_databases(tmp_path))
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with _serving(app):
+            await _wait_until(lambda: _ingested(papers.client) == ["papers.md"])
+
+            assert list(app._running) == ["papers"]
+            assert app._failed == {"wiki": "store unreachable"}
+            assert [p.source_id for p in _pollers(app).pollers] == ["papers"]
+            assert wiki.closes == 1
+            assert _ingested(wiki.client) == []
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: store unreachable"
+    ]
+
+
+async def test_a_skipped_database_failing_to_close_is_logged_and_dropped(
+    tmp_path, monkeypatch
+):
+    papers, wiki = _Opened(_mock_client()), _FailsToCloseOnce(_mock_client())
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG", _opening({"papers": papers, "wiki": wiki})
+    )
+    monkeypatch.setattr(
+        "haiku.rag.ingester.app.reconcile", _reconcile_failing({"wiki"})
+    )
+    app = IngesterApp(config=_two_databases(tmp_path))
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with _serving(app):
+            await _wait_until(lambda: _ingested(papers.client) == ["papers.md"])
+
+            assert app._failed == {"wiki": "store unreachable"}
+
+    assert wiki.closes == 1
+    assert papers.closes == 1
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: store unreachable",
+        "Database 'wiki' failed to close: close failed",
+    ]
+
+
+async def test_a_database_with_an_unknown_metadata_provider_is_never_opened(
+    tmp_path, monkeypatch
+):
+    opened = []
+    papers = _Opened(_mock_client())
+
+    def _covering(scope, *a, **k):
+        opened.append(scope.names[0])
+        return papers
+
+    stub = MagicMock()
+    stub._covering = _covering
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    config = _two_databases(tmp_path)
+    config.ingester.databases["wiki"].sources[0].metadata_provider = "missing"
+    app = IngesterApp(config=config)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with _serving(app):
+            assert opened == ["papers"]
+            assert "unknown metadata provider 'missing'" in app._failed["wiki"]
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: Source 'wiki' references unknown metadata provider 'missing'; no entry point registered under 'haiku.rag.metadata_providers'."
+    ]
+
+
+async def test_every_adapter_of_a_skipped_database_is_closed(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        _opening(
+            {"papers": _Opened(_mock_client())},
+            refused={"wiki": MigrationRequiredError},
+        ),
+    )
+    config = _two_databases(tmp_path)
+    (tmp_path / "drafts").mkdir()
+    config.ingester.databases["wiki"].sources.append(
+        FSSourceConfig(
+            type="fs", id="drafts", root=tmp_path / "drafts", poll_interval_s=3600.0
+        )
+    )
+    closed = []
+
+    async def _aclose(self):
+        closed.append(self.source_id)
+        if self.source_id == "wiki":
+            raise RuntimeError("adapter close failed")
+
+    monkeypatch.setattr("haiku.rag.sources.fs.FSSource.aclose", _aclose)
+    app = IngesterApp(config=config)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with _serving(app):
+            assert sorted(closed) == ["drafts", "wiki"]
+
+    assert "Database 'wiki' failed to close: adapter close failed" in [
+        record.getMessage() for record in records
+    ]
+
+
+def _closing_database(config, tmp_path, opened, *failures: BaseException | None):
+    """A database whose adapters fail to close with `failures`, in order."""
+    from haiku.rag.ingester.app import _Database
+
+    async def _aclose(failure):
+        if failure is not None:
+            raise failure
+
+    pollers = [
+        SimpleNamespace(source=SimpleNamespace(aclose=partial(_aclose, failure)))
+        for failure in failures
+    ]
+    ref, _ = _wiki(config, tmp_path)
+    return _Database(ref, opened, opened.client, pollers, {})  # ty: ignore[invalid-argument-type]
+
+
+async def test_closing_a_database_runs_every_close_and_raises_the_first_failure(
+    tmp_path,
+):
+    config = _papers_only(tmp_path)
+    opened = _FailsToCloseOnce(_mock_client())
+    database = _closing_database(
+        config, tmp_path, opened, RuntimeError("first"), None, RuntimeError("second")
+    )
+
+    with pytest.raises(RuntimeError, match="first"):
+        await IngesterApp(config=config)._close(database)
+
+    assert opened.closes == 1
+
+
+async def test_closing_a_database_raises_a_cancellation_over_a_failure(tmp_path):
+    config = _papers_only(tmp_path)
+    opened = _FailsToCloseOnce(_mock_client())
+    database = _closing_database(config, tmp_path, opened, asyncio.CancelledError())
+    app = IngesterApp(config=config)
+
+    with pytest.raises(asyncio.CancelledError):
+        await app._discard(database, RuntimeError("store unreachable"))
+
+    assert opened.closes == 1
+
+
+@pytest.mark.parametrize("step", ["open", "reconcile"])
+async def test_startup_fails_when_every_database_fails_and_deletes_no_job(
+    tmp_path, monkeypatch, step
+):
+    from haiku.rag.ingester.exceptions import NoDatabaseStartedError
+
+    if step == "open":
+        stub = _opening(
+            {},
+            refused={"papers": MigrationRequiredError, "wiki": MigrationRequiredError},
+        )
+    else:
+        stub = _opening(
+            {"papers": _Opened(_mock_client()), "wiki": _Opened(_mock_client())}
+        )
+        monkeypatch.setattr(
+            "haiku.rag.ingester.app.reconcile",
+            _reconcile_failing({"papers", "wiki"}),
+        )
     monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
     config = _two_databases(tmp_path)
     await _seed_unconfigured_jobs(config)
 
-    with pytest.raises(MigrationRequiredError, match="database 'wiki'"):
-        await IngesterApp(config=config).run_batch()
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        with pytest.raises(NoDatabaseStartedError) as raised:
+            await IngesterApp(config=config).run_batch()
+    assert [record.getMessage() for record in records] == [
+        f"Database {name!r} failed to start and is skipped: "
+        + (
+            f"database {name!r}: Database requires migration"
+            if step == "open"
+            else "store unreachable"
+        )
+        for name in ("papers", "wiki")
+    ]
 
+    assert "'papers': " in str(raised.value) and "'wiki': " in str(raised.value)
     assert await _jobs_of(config, "removed") == {
         "claimed": JobStatus.CLAIMED,
         "dead": JobStatus.DEAD,
         "queued": JobStatus.QUEUED,
     }
+
+
+async def test_run_batch_ingests_the_databases_that_started(tmp_path, monkeypatch):
+    from haiku.rag.ingester.app import FailedDatabase
+
+    papers = _mock_client()
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        _opening({"papers": _Opened(papers)}, refused={"wiki": MigrationRequiredError}),
+    )
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        report = await IngesterApp(config=_two_databases(tmp_path)).run_batch()
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+    ]
+
+    assert report.succeeded == 1
+    assert _ingested(papers) == ["papers.md"]
+    assert report.failed_databases == [
+        FailedDatabase(
+            database="wiki", error="database 'wiki': Database requires migration"
+        )
+    ]
+
+
+async def test_a_manifest_replay_refuses_a_change_of_a_skipped_database(
+    tmp_path, monkeypatch
+):
+    config = _two_databases(tmp_path)
+    manifest = (await IngesterApp(config=config).run_batch_dry_run()).manifest
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        _opening(
+            {"papers": _Opened(_mock_client())},
+            refused={"wiki": MigrationRequiredError},
+        ),
+    )
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        with pytest.raises(ValueError, match="does not ingest: wiki"):
+            await IngesterApp(config=config).run_batch_from_manifest(manifest)
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+    ]
+
+
+async def test_a_manifest_replay_without_changes_of_a_skipped_database_reports_it(
+    tmp_path, use_client, monkeypatch
+):
+    papers, wiki = _mock_client(), _mock_client()
+    use_client({"papers": papers, "wiki": wiki})
+    config = _two_databases(tmp_path)
+    await IngesterApp(config=config).run_batch()
+    (tmp_path / "papers" / "more.md").write_text("more")
+    manifest = (await IngesterApp(config=config).run_batch_dry_run()).manifest
+    assert {change.source_id for change in manifest.changes} == {"papers"}
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        _opening({"papers": _Opened(papers)}, refused={"wiki": MigrationRequiredError}),
+    )
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        report = await IngesterApp(config=config).run_batch_from_manifest(manifest)
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+    ]
+
+    assert report.succeeded == 1
+    assert [failed.database for failed in report.failed_databases] == ["wiki"]
