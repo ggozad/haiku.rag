@@ -6,8 +6,13 @@
 
 - `HaikuRAG.create_vector_index()` and `Store.create_vector_index()` build or retrain the vector index and return whether they built one (#753).
 
+### Changed
+
+- `create_document`, `import_document`, `import_documents` and `create_document_from_source` drop a caller's `content_type`, `md5` and `source_revision` metadata (#760).
+
 ### Fixed
 
+- `update_document(metadata=...)` keeps the stored `content_type`, `md5` and `source_revision` and ignores a caller's value for them (#760).
 - `create-index` on LanceDB Cloud reports that Cloud manages the vector index instead of a successful build.
 
 ## [0.101.2] - 2026-10-27

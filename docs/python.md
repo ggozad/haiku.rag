@@ -189,6 +189,7 @@ await client.update_document(document_id=doc.id, chunks=custom_chunks)
 ```
 
 - Updates to only `metadata` or `title` skip re-chunking
+- `metadata` replaces the stored metadata, except the keys ingestion owns: `content_type`, `md5`, `source_revision`, `source_id` and `parent_uri`. `update_document` keeps their stored values and ignores a caller's. `create_document`, `import_document`, `import_documents` and `create_document_from_source` drop a caller's value for them.
 - Updates to `content` trigger re-chunking and re-embedding
 - Custom `chunks` with embeddings are stored as-is. Missing embeddings are generated automatically
 
