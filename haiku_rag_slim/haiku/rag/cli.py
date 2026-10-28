@@ -30,6 +30,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     SourceUnavailableError,
     TagError,
     UnknownDatabaseError,
+    UpgradeRequiredError,
 )
 from haiku.rag.store.models.chunk import SearchType  # noqa: E402
 from haiku.rag.utils.packages import is_up_to_date  # noqa: E402
@@ -60,6 +61,7 @@ def cli():
         UnknownDatabaseError,
         SourceUnavailableError,
         TagError,
+        UpgradeRequiredError,
     ) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)

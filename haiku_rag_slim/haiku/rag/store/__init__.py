@@ -7,6 +7,7 @@ from .exceptions import (
     SourceUnavailableError,
     TagError,
     UnknownDatabaseError,
+    UpgradeRequiredError,
 )
 from .models import Chunk, Document
 
@@ -21,4 +22,5 @@ __all__ = [
     "SourceUnavailableError",
     "TagError",
     "UnknownDatabaseError",
+    "UpgradeRequiredError",
 ]

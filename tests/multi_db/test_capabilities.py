@@ -623,3 +623,27 @@ class TestActionableFailures:
         assert "haiku-rag migrate" in str(raised.value)
         assert "alpha" in str(raised.value)
         assert str(tmp_path) not in str(raised.value)
+
+    async def test_an_upgrade_error_is_named(self, tmp_path):
+        import json
+
+        from haiku.rag.store.engine import read_settings
+        from haiku.rag.store.exceptions import UpgradeRequiredError
+
+        config = _config(tmp_path, ["alpha"])
+        await _seed(config, "alpha", ["alpha document about cats"])
+
+        async with HaikuRAG(config=config, sources=["alpha"]) as rag:
+            table = rag.store.settings_table
+            settings = await read_settings(table)
+            await table.update(
+                {"settings": json.dumps({**settings, "schema_version": "100.0.0"})},
+                where="id = 'settings'",
+            )
+
+        with pytest.raises(UpgradeRequiredError) as raised:
+            async with HaikuRAG(config=config, sources=["alpha"]):
+                pass
+
+        assert str(raised.value).startswith("database 'alpha': ")
+        assert str(tmp_path) not in str(raised.value)

@@ -5,10 +5,12 @@
 ### Added
 
 - `HaikuRAG.create_vector_index()` and `Store.create_vector_index()` build or retrain the vector index and return whether they built one (#753).
+- `init` and `migrate` record `schema_version`, and `doctor` checks it (#752).
 
 ### Changed
 
 - `create_document`, `import_document`, `import_documents` and `create_document_from_source` drop a caller's `content_type`, `md5` and `source_revision` metadata (#760).
+- A writable open, `migrate` and `tag restore` raise `UpgradeRequiredError` for a newer `schema_version`, and a read-only open warns. Catch it beside `MigrationRequiredError` (#752).
 
 ### Fixed
 

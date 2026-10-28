@@ -19,6 +19,7 @@ from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.reconcile import reconcile
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.sources.base import SourceEvent, SourceEventKind
+from haiku.rag.store.exceptions import MigrationRequiredError, UpgradeRequiredError
 from tests.ingester.test_run_batch import (
     _ingested,
     _jobs_of,
@@ -336,17 +337,16 @@ async def test_a_readded_database_rediscovers_its_source(tmp_path, use_client):
     }
 
 
+@pytest.mark.parametrize("error", [MigrationRequiredError, UpgradeRequiredError])
 async def test_a_database_failing_to_open_on_add_leaves_the_app_as_it_was(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, error
 ):
-    from haiku.rag.store.exceptions import MigrationRequiredError
-
     papers = _mock_client()
 
     @asynccontextmanager
     async def _open(scope):
         if scope.names == ("wiki",):
-            raise MigrationRequiredError("Database requires migration")
+            raise error("Database cannot be opened by this release")
         yield papers
 
     stub = MagicMock()
@@ -356,7 +356,7 @@ async def test_a_database_failing_to_open_on_add_leaves_the_app_as_it_was(
     app = IngesterApp(config=config)
 
     async with _serving(app):
-        with pytest.raises(MigrationRequiredError, match="database 'wiki'"):
+        with pytest.raises(error, match="database 'wiki'"):
             await app.add_database(*_wiki(config, tmp_path))
 
         assert list(app._running) == ["papers"]

@@ -19,7 +19,12 @@ from packaging.version import parse
 
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.embeddings import get_embedder
-from haiku.rag.store.exceptions import MigrationRequiredError, ReadOnlyError, TagError
+from haiku.rag.store.exceptions import (
+    MigrationRequiredError,
+    ReadOnlyError,
+    TagError,
+    UpgradeRequiredError,
+)
 from haiku.rag.store.schema import (
     INCOMPLETE_REBUILD_TABLE,
     REQUIRED_TABLES,
@@ -146,11 +151,12 @@ _PREFIX_KEYS = ("query_prefix", "document_prefix")
 
 
 def recorded_settings(settings: dict) -> dict:
-    """What a database records of `settings`: its version and embedder identity.
+    """What a database records of `settings`: its versions and embedder identity.
     An empty prefix is not recorded."""
     recorded: dict = {}
-    if "version" in settings:
-        recorded["version"] = settings["version"]
+    for key in ("version", "schema_version"):
+        if key in settings:
+            recorded[key] = settings[key]
     model = settings.get("embeddings", {}).get("model", {})
     if model:
         recorded["embeddings"] = {
@@ -297,6 +303,33 @@ def require_current_tag(name: str, db_version: str) -> None:
         )
 
 
+def newer_schema(settings: dict) -> str | None:
+    """The recorded `schema_version` when it is newer than this release's."""
+    from haiku.rag.store.upgrades import latest_schema_version
+
+    stored = settings.get("schema_version")
+    if stored is None or parse(stored) <= parse(latest_schema_version()):
+        return None
+    return stored
+
+
+def upgrade_required_message(schema_version: str) -> str:
+    from haiku.rag.store.upgrades import latest_schema_version
+
+    return (
+        f"Database schema {schema_version} was written by a newer haiku.rag "
+        f"release. haiku.rag {metadata.version('haiku.rag-slim')} knows schemas "
+        f"up to {latest_schema_version()}. Upgrade haiku.rag."
+    )
+
+
+def require_known_schema(settings: dict) -> None:
+    """Raise `UpgradeRequiredError` when a newer release wrote `settings`."""
+    newer = newer_schema(settings)
+    if newer is not None:
+        raise UpgradeRequiredError(upgrade_required_message(newer))
+
+
 async def read_settings(table: lancedb.AsyncTable) -> dict:
     """The settings blob in `table`, or {} if it is absent or not a JSON object.
 
@@ -439,6 +472,8 @@ class Store:
         chunk_vector_dim = stored_vector_dim or self.embedder._vector_dim
         self.ChunkRecord: type[ChunkRecordBase] = create_chunk_model(chunk_vector_dim)
 
+        self._check_schema_version(existing_tables)
+
         # Initialize tables (creates them if they don't exist). For an existing
         # DB this raises MigrationRequiredError up front when migrations are
         # pending, before creating any newly-introduced table.
@@ -462,6 +497,23 @@ class Store:
         # The record describes the live chunks table, not a tagged one.
         if self._tag is None and INCOMPLETE_REBUILD_TABLE in existing_tables:
             await self._warn_incomplete_rebuild()
+
+    def _check_schema_version(self, existing_tables: list[str]) -> None:
+        """Refuse writes to a schema written by a newer release. Reading it warns.
+
+        `migrate` and `restore_tag` open with `skip_migration_check` and check
+        for themselves. No open creates a missing table in such a schema.
+        """
+        newer = newer_schema(self.stored_settings)
+        if newer is None:
+            return
+        message = upgrade_required_message(newer)
+        if set(REQUIRED_TABLES) - set(existing_tables):
+            raise UpgradeRequiredError(message)
+        if self._read_only:
+            logger.warning(message)
+        elif not self._skip_migration_check:
+            raise UpgradeRequiredError(message)
 
     async def _require_complete_tag(
         self, name: str, existing_tables: list[str]
@@ -803,7 +855,12 @@ class Store:
 
     async def _set_initial_version(self):
         """Set the initial version for a new database."""
-        await self.set_haiku_version(metadata.version("haiku.rag-slim"))
+        from haiku.rag.store.upgrades import latest_schema_version
+
+        await self._write_settings(
+            version=metadata.version("haiku.rag-slim"),
+            schema_version=latest_schema_version(),
+        )
 
     async def _check_migrations(self, db_version: str) -> None:
         """Raise if migrations are pending. Opening never writes the version.
@@ -835,20 +892,28 @@ class Store:
 
         Raises:
             ReadOnlyError: If the store is in read-only mode.
+            UpgradeRequiredError: If a newer release wrote the schema.
         """
         self._assert_writable()
 
-        from haiku.rag.store.upgrades import run_pending_upgrades
+        from haiku.rag.store.upgrades import (
+            latest_schema_version,
+            run_pending_upgrades,
+        )
+
+        require_known_schema(await read_settings(self.settings_table))
 
         db_version = await self.get_haiku_version()
         current_version = metadata.version("haiku.rag-slim")
 
         applied = await run_pending_upgrades(self, db_version)
 
-        # Advance the schema marker only forward — never downgrade a database
-        # opened with an older build than last stamped it.
-        if parse(current_version) > parse(db_version):
-            await self.set_haiku_version(current_version)
+        # The release marker only moves forward: a newer build may have
+        # stamped a schema-compatible database last.
+        await self._write_settings(
+            version=max(current_version, db_version, key=parse),
+            schema_version=latest_schema_version(),
+        )
 
         return applied
 
@@ -872,6 +937,10 @@ class Store:
         Raises:
             ReadOnlyError: If the store is in read-only mode.
         """
+        await self._write_settings(version=version)
+
+    async def _write_settings(self, **fields: str) -> None:
+        """Write `fields` into the settings row in one update."""
         self._assert_writable()
         settings_records = await query_to_pydantic(
             self.settings_table.query().limit(1), SettingsRecord
@@ -883,7 +952,7 @@ class Store:
                 if settings_records[0].settings
                 else {}
             )
-            updated = recorded_settings({**current, "version": version})
+            updated = recorded_settings({**current, **fields})
             if updated != current:
                 await self.settings_table.update(
                     {"settings": json.dumps(updated)},
@@ -891,7 +960,7 @@ class Store:
                 )
         else:
             settings_data = recorded_settings(self._config.model_dump(mode="json"))
-            settings_data["version"] = version
+            settings_data.update(fields)
             await self.settings_table.add(
                 [SettingsRecord(id="settings", settings=json.dumps(settings_data))]
             )
@@ -1069,9 +1138,13 @@ class Store:
         Reads through its own `settings` handle, so `settings_table` stays live.
         """
         info = _restorable_tag(await self.list_tags(), name)
+        return (await self._tag_settings(info)).get("version", "0.0.0")
+
+    async def _tag_settings(self, info: TagInfo) -> dict:
+        """The settings blob at a tag, read through its own handle."""
         settings = await self.db.open_table("settings")
         await settings.checkout(info.tables["settings"])
-        return (await read_settings(settings)).get("version", "0.0.0")
+        return await read_settings(settings)
 
     async def delete_tag(self, name: str) -> None:
         """Delete the tag from every table that has it.
@@ -1144,6 +1217,7 @@ class Store:
             RuntimeError: If the safety tag could not be created (no table
                 changed), or a table restore failed (the error states whether
                 rollback succeeded).
+            UpgradeRequiredError: If a newer release wrote the tag's schema.
         """
         self._assert_writable()
         self._assert_not_rebuilding()
@@ -1151,6 +1225,7 @@ class Store:
         async with self._rebuild_lock, self._write_lock:
             tags = await self.list_tags()
             info = _restorable_tag(tags, name)
+            require_known_schema(await self._tag_settings(info))
 
             snapshot = await self.current_table_versions()
             safety_tag = _safety_tag_name(set(tags))

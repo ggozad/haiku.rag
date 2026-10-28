@@ -465,12 +465,17 @@ class IngesterApp:
         from haiku.rag.store.exceptions import (
             ConfigMismatchError,
             MigrationRequiredError,
+            UpgradeRequiredError,
         )
 
         opened = HaikuRAG._covering(DatabaseScope((ref,)), self._config, create=True)
         try:
             return opened, await opened.__aenter__()
-        except (ConfigMismatchError, MigrationRequiredError) as error:
+        except (
+            ConfigMismatchError,
+            MigrationRequiredError,
+            UpgradeRequiredError,
+        ) as error:
             raise type(error)(f"database {ref.name!r}: {error}") from error
 
     async def _build_pollers(self) -> PollerManager:

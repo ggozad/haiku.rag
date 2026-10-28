@@ -35,7 +35,7 @@ def _recorded(model) -> dict:
     }
 
 
-async def test_a_new_database_records_its_version_and_embedder_only(temp_db_path):
+async def test_a_new_database_records_its_versions_and_embedder_only(temp_db_path):
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository
 
@@ -43,7 +43,7 @@ async def test_a_new_database_records_its_version_and_embedder_only(temp_db_path
     async with Store(temp_db_path, config=config, create=True) as store:
         stored = await SettingsRepository(store).get_current_settings()
 
-    assert set(stored) == {"version", "embeddings"}
+    assert set(stored) == {"version", "schema_version", "embeddings"}
     assert stored["embeddings"] == {"model": _recorded(config.embeddings.model)}
     for secret in ("LANCE-KEY", "S3-KEY", "DOCLING-KEY", "EMBED-KEY", "PW"):
         assert secret not in json.dumps(stored)

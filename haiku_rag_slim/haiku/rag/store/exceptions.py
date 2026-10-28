@@ -16,6 +16,10 @@ class MigrationRequiredError(Exception):
     pass
 
 
+class UpgradeRequiredError(Exception):
+    """The database schema is newer than this release supports."""
+
+
 class TagError(ValueError):
     """A tag that cannot be read: missing from a table, or selected where the
     live database is needed."""

@@ -50,6 +50,7 @@ from haiku.rag.store.exceptions import (  # noqa: E402
     SourceUnavailableError,
     TagError,
     UnknownDatabaseError,
+    UpgradeRequiredError,
 )
 
 if TYPE_CHECKING:
@@ -107,6 +108,7 @@ def cli() -> None:
         SourceUnavailableError,
         TagError,
         UnknownDatabaseError,
+        UpgradeRequiredError,
     ) as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)

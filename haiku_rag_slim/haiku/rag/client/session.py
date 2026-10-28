@@ -14,6 +14,7 @@ from haiku.rag.store.exceptions import (
     SourceUnavailableError,
     TagError,
     UnknownDatabaseError,
+    UpgradeRequiredError,
 )
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
@@ -38,6 +39,7 @@ _NAMEABLE_FAILURES = (
     ConfigMismatchError,
     ReadOnlyError,
     TagError,
+    UpgradeRequiredError,
 )
 
 
