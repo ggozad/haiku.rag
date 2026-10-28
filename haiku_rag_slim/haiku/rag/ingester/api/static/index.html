@@ -670,6 +670,9 @@
             const fails = health.worker_breaker_consecutive_failures;
             detail += ` · <span class="badge bad" data-tip="${fails} consecutive transient job failures; worker claims paused until cooldown elapses">WORKER BREAKER OPEN</span>`;
           }
+          for (const failed of health.failed_databases) {
+            detail += ` · <span class="badge bad" data-tip="${escapeHtml(failed.error)}">${escapeHtml(failed.database)} NOT RUNNING</span>`;
+          }
           $("health-detail").innerHTML = detail;
           renderChips(health.queue_counts);
           renderStats(stats);
@@ -745,7 +748,7 @@
         });
         document.addEventListener("mouseout", (e) => {
           if (!current) return;
-          const next = e.relatedTarget && e.relatedTarget.closest?.("[data-tip]");
+          const next = e.relatedTarget?.closest?.("[data-tip]");
           if (next === current) return;
           tip.classList.remove("visible");
           current = null;

@@ -236,11 +236,52 @@ async def test_a_reload_under_api_overrides_applies_a_database_change(
     assert _changes(report) == {("wiki", "added")}
 
 
-async def test_a_reload_with_an_unreadable_addition_changes_nothing(
+async def test_a_reload_skips_an_unreadable_addition_and_adds_the_rest(
     tmp_path, monkeypatch
 ):
     clients = defaultdict(_mock_client)
     monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing({"broken"}, clients))
+    path = tmp_path / "haiku.rag.yaml"
+    papers = _fs(tmp_path, "papers")
+    _write(path, _settings(tmp_path, {"papers": ("papers.lancedb", [papers])}))
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        _write(
+            path,
+            _settings(
+                tmp_path,
+                {
+                    "papers": ("papers.lancedb", [papers]),
+                    "broken": ("broken.lancedb", [_fs(tmp_path, "broken")]),
+                    "good": ("good.lancedb", [_fs(tmp_path, "good")]),
+                },
+            ),
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+
+        assert report.outcome == "partial"
+        assert [(c.database, c.change) for c in report.databases] == [
+            ("broken", "failed"),
+            ("good", "added"),
+        ]
+        assert "database 'broken'" in (report.databases[0].error or "")
+        assert list(app._running) == ["papers", "good"]
+        assert sorted(_pool(app)._served) == ["good", "papers"]
+        assert [p.source_id for p in _pollers(app).pollers] == ["papers", "good"]
+        assert list(app._failed) == ["broken"]
+        assert "broken:" in (await api.get("/config")).json()["yaml"]
+        assert [record.getMessage() for record in records] == [
+            "Database 'broken' failed to start and is skipped: database 'broken': "
+            "Database requires migration"
+        ]
+
+
+async def test_a_skipped_addition_is_retried_by_the_next_reload(tmp_path, monkeypatch):
+    clients = defaultdict(_mock_client)
+    refused = {"wiki"}
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing(refused, clients))
     path = tmp_path / "haiku.rag.yaml"
     papers = _fs(tmp_path, "papers")
     _write(path, _settings(tmp_path, {"papers": ("papers.lancedb", [papers])}))
@@ -253,22 +294,148 @@ async def test_a_reload_with_an_unreadable_addition_changes_nothing(
                 tmp_path,
                 {
                     "papers": ("papers.lancedb", [papers]),
-                    "good": ("good.lancedb", [_fs(tmp_path, "good")]),
-                    "broken": ("broken.lancedb", [_fs(tmp_path, "broken")]),
+                    "wiki": ("wiki.lancedb", [_fs(tmp_path, "wiki")]),
                 },
             ),
         )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            assert (await app.reload()).outcome == "failed"
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+        ]
+        assert list(app._failed) == ["wiki"]
+
+        refused.clear()
         report = await app.reload()
 
-        assert report.outcome == "failed"
-        assert _changes(report) == {("broken", "failed")}
-        assert "database 'broken'" in (report.databases[0].error or "")
-        assert list(app._running) == ["papers"]
-        assert sorted(_pool(app)._served) == ["papers"]
-        assert [p.source_id for p in _pollers(app).pollers] == ["papers"]
+        assert report.outcome == "applied"
+        assert _changes(report) == {("wiki", "added")}
+        assert app._failed == {}
+        async with _api(app) as api:
+            health = (await api.get("/health")).json()
+        assert health["failed_databases"] == []
+        assert health["status"] == "ok"
+        await _wait_until(lambda: _ingested(clients["wiki"]) == ["wiki.md"])
 
 
-async def test_a_reload_failing_after_removals_began_applies_the_rest_next_time(
+async def test_a_running_database_is_not_listed_when_a_reload_stops(
+    tmp_path, monkeypatch
+):
+    clients = defaultdict(_mock_client)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing(set(), clients))
+    path = tmp_path / "haiku.rag.yaml"
+    legacy, wiki = _fs(tmp_path, "legacy"), _fs(tmp_path, "wiki")
+    _write(
+        path,
+        _settings(
+            tmp_path,
+            {
+                "legacy": ("legacy.lancedb", [legacy]),
+                "wiki": ("wiki.lancedb", [wiki]),
+            },
+        ),
+    )
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing({"wiki"}, clients))
+        assert app._jobs is not None
+
+        async def _fails(source_ids):
+            raise RuntimeError("queue unreachable")
+
+        monkeypatch.setattr(app._jobs, "cancel_sources", _fails)
+        _write(
+            path,
+            _settings(tmp_path, {"wiki": ("wiki-moved.lancedb", [wiki])}),
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+        ]
+
+        assert [(c.database, c.change) for c in report.databases] == [
+            ("wiki", "failed"),
+            ("legacy", "failed"),
+        ]
+        assert list(app._running) == ["legacy", "wiki"]
+        health = (await api.get("/health")).json()
+        assert health["failed_databases"] == []
+
+
+async def test_a_failed_addition_is_not_listed_when_a_reload_stops(
+    tmp_path, monkeypatch
+):
+    clients = defaultdict(_mock_client)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing({"wiki"}, clients))
+    path = tmp_path / "haiku.rag.yaml"
+    legacy = _fs(tmp_path, "legacy")
+    _write(path, _settings(tmp_path, {"legacy": ("legacy.lancedb", [legacy])}))
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        assert app._jobs is not None
+
+        async def _fails(source_ids):
+            raise RuntimeError("queue unreachable")
+
+        monkeypatch.setattr(app._jobs, "cancel_sources", _fails)
+        _write(
+            path,
+            _settings(tmp_path, {"wiki": ("wiki.lancedb", [_fs(tmp_path, "wiki")])}),
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+        ]
+
+        assert [(c.database, c.change) for c in report.databases] == [
+            ("wiki", "failed"),
+            ("legacy", "failed"),
+        ]
+        assert "wiki" not in app._config.ingester.databases
+        health = (await api.get("/health")).json()
+        assert health["failed_databases"] == []
+
+
+async def test_a_skipped_database_removed_from_the_file_is_forgotten(
+    tmp_path, monkeypatch
+):
+    clients = defaultdict(_mock_client)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", _refusing({"wiki"}, clients))
+    path = tmp_path / "haiku.rag.yaml"
+    papers = _fs(tmp_path, "papers")
+    wiki = _fs(tmp_path, "wiki")
+    _write(
+        path,
+        _settings(
+            tmp_path,
+            {
+                "papers": ("papers.lancedb", [papers]),
+                "wiki": ("wiki.lancedb", [wiki]),
+            },
+        ),
+    )
+    app = _app(path)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with _serving(app):
+            assert list(app._failed) == ["wiki"]
+            _write(path, _settings(tmp_path, {"papers": ("papers.lancedb", [papers])}))
+
+            report = await app.reload()
+
+            assert report.outcome == "applied"
+            assert report.databases == []
+            assert app._failed == {}
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+    ]
+
+
+async def test_a_replacement_failing_to_open_is_retried_by_the_next_reload(
     tmp_path, monkeypatch
 ):
     clients = defaultdict(_mock_client)
@@ -308,7 +475,8 @@ async def test_a_reload_failing_after_removals_began_applies_the_rest_next_time(
             ("legacy", "removed"),
             ("renamed", "failed"),
         }
-        assert "legacy:" in (await api.get("/config")).json()["yaml"]
+        assert "renamed:" in (await api.get("/config")).json()["yaml"]
+        assert list(app._failed) == ["renamed"]
         sources = (await api.get("/sources")).json()
         assert [(s["source_id"], s["database"]) for s in sources] == [
             ("papers", "papers")
@@ -323,7 +491,7 @@ async def test_a_reload_failing_after_removals_began_applies_the_rest_next_time(
         assert {(c["database"], c["change"]) for c in second["databases"]} == {
             ("renamed", "added")
         }
-        assert "renamed:" in (await api.get("/config")).json()["yaml"]
+        assert app._failed == {}
 
 
 async def test_a_removal_left_removing_is_completed_first_by_the_next_reload(
@@ -372,16 +540,78 @@ async def test_a_removal_left_removing_is_completed_first_by_the_next_reload(
 async def test_an_addition_failing_to_reconcile_is_reported(
     tmp_path, clients, monkeypatch
 ):
+    from haiku.rag.ingester.reconcile import reconcile
+
     path = tmp_path / "haiku.rag.yaml"
     papers = _fs(tmp_path, "papers")
     _write(path, _settings(tmp_path, {"papers": ("papers.lancedb", [papers])}))
     app = _app(path)
 
-    async def _fails(rag, sync, source_ids):
-        raise RuntimeError("store unreachable")
+    async def _fails_for_wiki(rag, sync, source_ids):
+        if "wiki" in source_ids:
+            raise RuntimeError("store unreachable")
+        return await reconcile(rag, sync, source_ids)
 
     async with _serving(app):
-        monkeypatch.setattr("haiku.rag.ingester.app.reconcile", _fails)
+        monkeypatch.setattr("haiku.rag.ingester.app.reconcile", _fails_for_wiki)
+        _write(
+            path,
+            _settings(
+                tmp_path,
+                {
+                    "papers": ("papers.lancedb", [papers]),
+                    "wiki": ("wiki.lancedb", [_fs(tmp_path, "wiki")]),
+                    "docs": ("docs.lancedb", [_fs(tmp_path, "docs")]),
+                },
+            ),
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: store unreachable"
+        ]
+
+        assert report.outcome == "partial"
+        assert [(c.database, c.change, c.error) for c in report.databases] == [
+            ("wiki", "failed", "store unreachable"),
+            ("docs", "added", None),
+        ]
+        assert list(app._running) == ["papers", "docs"]
+        assert app._failed == {"wiki": "store unreachable"}
+
+
+async def test_a_failed_addition_failing_to_close_does_not_block_the_next_reload(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.ingester.reconcile import reconcile
+    from tests.ingester.test_lifecycle import _FailsToCloseOnce
+
+    clients = defaultdict(_mock_client)
+    wiki = _FailsToCloseOnce(clients["wiki"])
+
+    @asynccontextmanager
+    async def _plain(scope):
+        yield clients[scope.names[0]]
+
+    stub = MagicMock()
+    stub._covering = lambda scope, *a, **k: (
+        wiki if scope.names == ("wiki",) else _plain(scope)
+    )
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    failing = {"wiki"}
+
+    async def _fails_for_wiki(rag, sync, source_ids):
+        if failing & set(source_ids):
+            raise RuntimeError("store unreachable")
+        return await reconcile(rag, sync, source_ids)
+
+    path = tmp_path / "haiku.rag.yaml"
+    papers = _fs(tmp_path, "papers")
+    _write(path, _settings(tmp_path, {"papers": ("papers.lancedb", [papers])}))
+    app = _app(path)
+
+    async with _serving(app):
+        monkeypatch.setattr("haiku.rag.ingester.app.reconcile", _fails_for_wiki)
         _write(
             path,
             _settings(
@@ -392,11 +622,51 @@ async def test_an_addition_failing_to_reconcile_is_reported(
                 },
             ),
         )
-        report = await app.reload()
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            first = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: store unreachable",
+            "Database 'wiki' failed to close: close failed",
+        ]
 
-        assert report.outcome == "failed"
-        assert report.databases[0].error == "store unreachable"
+        assert [(c.database, c.error) for c in first.databases] == [
+            ("wiki", "store unreachable")
+        ]
+        assert app._prepared == []
+
+        failing.clear()
+        second = await app.reload()
+
+        assert second.outcome == "applied"
+        assert _changes(second) == {("wiki", "added")}
+        assert wiki.closes == 1
+        assert list(app._running) == ["papers", "wiki"]
+
+
+async def test_two_keys_at_one_configured_location_are_refused_whole(tmp_path, clients):
+    path = tmp_path / "haiku.rag.yaml"
+    papers = _fs(tmp_path, "papers")
+    _write(path, _settings(tmp_path, {"papers": ("papers.lancedb", [papers])}))
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        _write(
+            path,
+            _settings(
+                tmp_path,
+                {
+                    "papers": ("papers.lancedb", [papers]),
+                    "one": ("shared.lancedb", [_fs(tmp_path, "one")]),
+                    "two": ("shared.lancedb", [_fs(tmp_path, "two")]),
+                },
+            ),
+        )
+        resp = await api.post("/reload")
+
+        assert resp.status_code == 422
+        assert "at one location" in resp.json()["detail"]
         assert list(app._running) == ["papers"]
+        assert app._failed == {}
 
 
 def _case_insensitive(directory) -> bool:
@@ -404,20 +674,89 @@ def _case_insensitive(directory) -> bool:
     return (directory / "probe").exists()
 
 
-async def test_two_new_names_for_one_directory_are_refused_once_opened(
+async def test_an_addition_refused_once_opened_is_closed_and_the_rest_added(
     tmp_path, monkeypatch
 ):
+    from haiku.rag.ingester import app as app_module
+    from haiku.rag.store.exceptions import AmbiguousDatabaseError
+    from tests.ingester.test_lifecycle import _Opened
+
+    clients = defaultdict(_mock_client)
+    opened = {name: _Opened(clients[name]) for name in ("one", "two")}
+    stub = MagicMock()
+    stub._covering = lambda scope, *a, **k: opened[scope.names[0]]
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    path = tmp_path / "haiku.rag.yaml"
+    _write(path, _settings(tmp_path, {}))
+    app = _app(path)
+    refuse = app_module._refuse_shared_locations
+    checks = []
+
+    def _refusing_two(refs):
+        """Refuse both names once opened: the second check that sees both."""
+        names = [ref.name for ref in refs]
+        checks.append(names)
+        if names == ["one", "two"] and checks.count(names) == 2:
+            raise AmbiguousDatabaseError("'one' and 'two' at one location")
+        refuse(refs)
+
+    async with _serving(app):
+        monkeypatch.setattr(
+            "haiku.rag.ingester.app._refuse_shared_locations", _refusing_two
+        )
+        _write(
+            path,
+            _settings(
+                tmp_path,
+                {
+                    "one": ("one.lancedb", [_fs(tmp_path, "one")]),
+                    "two": ("two.lancedb", [_fs(tmp_path, "two")]),
+                },
+            ),
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'two' failed to start and is skipped: 'one' and 'two' at one location"
+        ]
+
+        assert [(c.database, c.change) for c in report.databases] == [
+            ("two", "failed"),
+            ("one", "added"),
+        ]
+        assert list(app._running) == ["one"]
+        assert opened["two"].closes == 1
+        assert app._failed == {"two": "'one' and 'two' at one location"}
+
+
+@pytest.mark.parametrize("closes", ["cleanly", "with an error"])
+async def test_a_second_name_for_one_directory_is_skipped_once_opened(
+    tmp_path, monkeypatch, closes
+):
+    from tests.ingester.test_lifecycle import _FailsToCloseOnce, _Opened
+
     if not _case_insensitive(tmp_path):
         pytest.skip("case-sensitive filesystem")
     clients = defaultdict(_mock_client)
+    lower = (_Opened if closes == "cleanly" else _FailsToCloseOnce)(clients["lower"])
 
-    @asynccontextmanager
-    async def _creating(scope):
-        scope.databases[0].location.mkdir(exist_ok=True)
-        yield clients[scope.names[0]]
+    class _Creating(_Opened):
+        def __init__(self, scope, opened):
+            self.scope, self.opened = scope, opened
+
+        async def __aenter__(self):
+            self.scope.databases[0].location.mkdir(exist_ok=True)
+            return await self.opened.__aenter__()
+
+        async def __aexit__(self, *exc_info):
+            return await self.opened.__aexit__(*exc_info)
+
+    def _covering(scope, *a, **k):
+        name = scope.names[0]
+        return _Creating(scope, lower if name == "lower" else _Opened(clients[name]))
 
     stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: _creating(scope)
+    stub._covering = _covering
     monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
     path = tmp_path / "haiku.rag.yaml"
     _write(path, _settings(tmp_path, {}))
@@ -431,20 +770,36 @@ async def test_two_new_names_for_one_directory_are_refused_once_opened(
                 {
                     "upper": ("Shared.lancedb", [_fs(tmp_path, "upper")]),
                     "lower": ("shared.lancedb", [_fs(tmp_path, "lower")]),
+                    "other": ("other.lancedb", [_fs(tmp_path, "other")]),
                 },
             ),
         )
-        report = await app.reload()
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'lower' failed to start and is skipped: ingester.databases "
+            "names 'upper' and 'lower' at one location, and a database has one writer",
+            *(
+                []
+                if closes == "cleanly"
+                else ["Database 'lower' failed to close: close failed"]
+            ),
+        ]
 
-        assert report.outcome == "failed"
-        assert _changes(report) == {("lower", "failed")}
+        assert report.outcome == "partial"
+        assert [(c.database, c.change) for c in report.databases] == [
+            ("lower", "failed"),
+            ("upper", "added"),
+            ("other", "added"),
+        ]
         assert "'upper' and 'lower'" in (report.databases[0].error or "")
-        assert app._running == {}
+        assert list(app._running) == ["upper", "other"]
+        assert lower.closes == 1
 
 
-def _unwinding_hooks(monkeypatch) -> list[str]:
+def _unwinding_hooks(monkeypatch, *others) -> list[str]:
     """Configure a hook whose lifespan records the exception each client
-    closes on, or "clean"."""
+    closes on, or "clean", beside the entry points `others`."""
     from haiku.rag.hooks import Hook
 
     seen: list[str] = []
@@ -465,7 +820,9 @@ def _unwinding_hooks(monkeypatch) -> list[str]:
         def load(self):
             return _Recording
 
-    monkeypatch.setattr("haiku.rag.hooks.entry_points", lambda group: [_EntryPoint()])
+    monkeypatch.setattr(
+        "haiku.rag.hooks.entry_points", lambda group: [_EntryPoint(), *others]
+    )
     return seen
 
 
@@ -488,22 +845,78 @@ async def test_hooks_see_the_exception_that_ends_ingestion(tmp_path, monkeypatch
     assert seen == ["ValueError"]
 
 
-async def test_hooks_see_the_exception_that_fails_startup(tmp_path, monkeypatch):
+async def test_hooks_see_the_exception_that_skips_a_database_at_startup(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.ingester.reconcile import reconcile
+
     seen = _unwinding_hooks(monkeypatch)
-    wiki = {**_fs(tmp_path, "wiki"), "metadata_provider": "missing"}
     app = _hooked(
         tmp_path,
         {
             "papers": ("papers", [_fs(tmp_path, "papers")]),
-            "wiki": ("wiki", [wiki]),
+            "wiki": ("wiki", [_fs(tmp_path, "wiki")]),
         },
     )
 
-    with pytest.raises(ValueError, match="missing"):
-        async with app._resources():
-            pass
+    async def _fails_for_wiki(rag, sync, source_ids):
+        if "wiki" in source_ids:
+            raise RuntimeError("store unreachable")
+        return await reconcile(rag, sync, source_ids)
 
-    assert seen == ["ValueError", "ValueError"]
+    monkeypatch.setattr("haiku.rag.ingester.app.reconcile", _fails_for_wiki)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with app._resources():
+            assert seen == ["RuntimeError"]
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: store unreachable"
+    ]
+
+    assert seen == ["RuntimeError", "clean"]
+
+
+async def test_a_hook_failing_to_start_skips_its_database_at_startup(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.hooks import Hook
+
+    class _Refusing(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            if client.source == "wiki":
+                raise RuntimeError("hook refused wiki")
+            yield
+
+    class _RefusingEntryPoint:
+        name = "refusing"
+
+        def load(self):
+            return _Refusing
+
+    seen = _unwinding_hooks(monkeypatch, _RefusingEntryPoint())
+    settings = _settings(
+        tmp_path,
+        {
+            "papers": ("papers", [_fs(tmp_path, "papers")]),
+            "wiki": ("wiki", [_fs(tmp_path, "wiki")]),
+        },
+    )
+    settings["hooks"] = ["recording", "refusing"]
+    path = tmp_path / "haiku.rag.yaml"
+    _write(path, settings)
+    app = _app(path)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with app._resources():
+            assert list(app._running) == ["papers"]
+            assert app._failed == {"wiki": "hook refused wiki"}
+            assert seen == ["RuntimeError"]
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: hook refused wiki"
+    ]
+
+    assert seen == ["RuntimeError", "clean"]
 
 
 async def test_hooks_see_the_exception_that_fails_a_reload(tmp_path, monkeypatch):
@@ -528,62 +941,6 @@ async def test_hooks_see_the_exception_that_fails_a_reload(tmp_path, monkeypatch
 
         assert report.outcome == "failed"
         assert seen == ["RuntimeError"]
-
-
-@pytest.mark.parametrize("retried_by", ["reload", "shutdown"])
-async def test_a_failed_close_is_reported_and_retried(
-    tmp_path, monkeypatch, retried_by
-):
-    from tests.ingester.test_lifecycle import _FailsToCloseOnce
-
-    clients = defaultdict(_mock_client)
-    refused = {"renamed"}
-    opened = {"good": _FailsToCloseOnce(clients["good"])}
-
-    @asynccontextmanager
-    async def _plain(scope):
-        yield clients[scope.names[0]]
-
-    def _covering(scope, *a, **k):
-        name = scope.names[0]
-        if name in refused:
-            return _refusing(refused, clients)._covering(scope)
-        return opened.get(name) or _plain(scope)
-
-    stub = MagicMock()
-    stub._covering = _covering
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
-    path = tmp_path / "haiku.rag.yaml"
-    legacy = _fs(tmp_path, "legacy")
-    _write(path, _settings(tmp_path, {"legacy": ("legacy.lancedb", [legacy])}))
-    app = _app(path)
-
-    async with _serving(app):
-        _write(
-            path,
-            _settings(
-                tmp_path,
-                {
-                    "good": ("good.lancedb", [_fs(tmp_path, "good")]),
-                    "renamed": ("legacy.lancedb", [legacy]),
-                },
-            ),
-        )
-        report = await app.reload()
-        assert opened["good"].closes == 1
-        if retried_by == "reload":
-            _write(path, _settings(tmp_path, {}))
-            await app.reload()
-            assert opened["good"].closes == 2
-
-    assert report.outcome == "partial"
-    assert [(c.database, c.change) for c in report.databases] == [
-        ("legacy", "removed"),
-        ("renamed", "failed"),
-        ("good", "failed"),
-    ]
-    assert report.databases[2].error == "close failed"
-    assert opened["good"].closes == 2
 
 
 class _Closing:
@@ -630,35 +987,66 @@ def _opening(opened: dict, clients: dict, refused: set[str]):
     return stub
 
 
-def _leave_good_unclosed(tmp_path, monkeypatch, good: _Closing):
-    """An app whose last reload left `good` prepared and unclosed."""
+def _with_good(tmp_path, monkeypatch, good: _Closing, *, legacy: bool = True):
+    """An app opening `good` through its double, running `legacy` when asked."""
     clients = defaultdict(_mock_client)
     monkeypatch.setattr(
-        "haiku.rag.client.HaikuRAG",
-        _opening({"good": good}, clients, {"broken"}),
+        "haiku.rag.client.HaikuRAG", _opening({"good": good}, clients, set())
     )
     path = tmp_path / "haiku.rag.yaml"
-    _write(path, _settings(tmp_path, {}))
-    app = _app(path)
-    return app, path
+    running = {"legacy": ("legacy.lancedb", [_fs(tmp_path, "legacy")])}
+    _write(path, _settings(tmp_path, running if legacy else {}))
+    return _app(path), path
+
+
+async def _leave_good_unclosed(app, path, tmp_path, monkeypatch):
+    """Reload to `good` alone, with legacy's removal failing once, so the
+    prepared `good` is closed unapplied."""
+    assert app._jobs is not None
+    cancel_sources = app._jobs.cancel_sources
+    failures = [RuntimeError("queue unreachable")]
+
+    async def _fails_once(source_ids):
+        if failures:
+            raise failures.pop()
+        return await cancel_sources(source_ids)
+
+    monkeypatch.setattr(app._jobs, "cancel_sources", _fails_once)
+    _write(
+        path, _settings(tmp_path, {"good": ("good.lancedb", [_fs(tmp_path, "good")])})
+    )
+    return await app.reload()
+
+
+@pytest.mark.parametrize("retried_by", ["reload", "shutdown"])
+async def test_a_failed_close_is_reported_and_retried(
+    tmp_path, monkeypatch, retried_by
+):
+    good = _Closing(_mock_client(), fail=1)
+    app, path = _with_good(tmp_path, monkeypatch, good)
+
+    async with _serving(app):
+        report = await _leave_good_unclosed(app, path, tmp_path, monkeypatch)
+        assert good.closes == 1
+        if retried_by == "reload":
+            _write(path, _settings(tmp_path, {}))
+            await app.reload()
+            assert good.closes == 2
+
+    assert report.outcome == "failed"
+    assert [(c.database, c.change, c.error) for c in report.databases] == [
+        ("legacy", "failed", "queue unreachable"),
+        ("good", "failed", "close failed"),
+    ]
+    assert good.closes == 2
 
 
 async def test_a_reload_stops_when_a_leftover_close_fails_again(tmp_path, monkeypatch):
     good = _Closing(_mock_client(), fail=2)
-    app, path = _leave_good_unclosed(tmp_path, monkeypatch, good)
+    app, path = _with_good(tmp_path, monkeypatch, good)
 
     async with _serving(app):
-        _write(
-            path,
-            _settings(
-                tmp_path,
-                {
-                    "good": ("good.lancedb", [_fs(tmp_path, "good")]),
-                    "broken": ("broken.lancedb", [_fs(tmp_path, "broken")]),
-                },
-            ),
-        )
-        await app.reload()
+        await _leave_good_unclosed(app, path, tmp_path, monkeypatch)
         _write(
             path,
             _settings(tmp_path, {"other": ("other.lancedb", [_fs(tmp_path, "other")])}),
@@ -667,16 +1055,16 @@ async def test_a_reload_stops_when_a_leftover_close_fails_again(tmp_path, monkey
 
         assert report.outcome == "failed"
         assert _changes(report) == {("good", "failed")}
-        assert app._running == {}
+        assert list(app._running) == ["legacy"]
         assert "other" not in app._config.ingester.databases
     assert good.closes == 3
 
 
-async def test_an_addition_failing_to_apply_and_to_close_is_closed_at_shutdown(
+async def test_an_addition_failing_to_apply_and_to_close_is_logged_and_dropped(
     tmp_path, monkeypatch
 ):
     good = _Closing(_mock_client(), fail=1)
-    app, path = _leave_good_unclosed(tmp_path, monkeypatch, good)
+    app, path = _with_good(tmp_path, monkeypatch, good, legacy=False)
 
     async def _fails(rag, sync, source_ids):
         raise RuntimeError("store unreachable")
@@ -687,32 +1075,25 @@ async def test_an_addition_failing_to_apply_and_to_close_is_closed_at_shutdown(
             path,
             _settings(tmp_path, {"good": ("good.lancedb", [_fs(tmp_path, "good")])}),
         )
-        report = await app.reload()
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'good' failed to start and is skipped: store unreachable",
+            "Database 'good' failed to close: close failed",
+        ]
 
         assert [(c.database, c.error) for c in report.databases] == [
-            ("good", "store unreachable"),
-            ("good", "close failed"),
+            ("good", "store unreachable")
         ]
-        assert good.closes == 1
-    assert good.closes == 2
+    assert good.closes == 1
 
 
 async def test_a_cancelled_close_retry_keeps_the_leftover(tmp_path, monkeypatch):
     good = _Closing(_mock_client(), fail=1, hold=True)
-    app, path = _leave_good_unclosed(tmp_path, monkeypatch, good)
+    app, path = _with_good(tmp_path, monkeypatch, good)
 
     async with _serving(app):
-        _write(
-            path,
-            _settings(
-                tmp_path,
-                {
-                    "good": ("good.lancedb", [_fs(tmp_path, "good")]),
-                    "broken": ("broken.lancedb", [_fs(tmp_path, "broken")]),
-                },
-            ),
-        )
-        await app.reload()
+        await _leave_good_unclosed(app, path, tmp_path, monkeypatch)
         retry = app._start_reload()
         await asyncio.wait_for(good.holding.wait(), timeout=5.0)
         retry.cancel()
@@ -1099,13 +1480,20 @@ async def test_a_failed_reload_under_sighup_is_logged(tmp_path, monkeypatch):
             )
             os.kill(os.getpid(), signal.SIGHUP)
             await _wait_until(
-                lambda: any("broken" in record.getMessage() for record in records)
+                lambda: any(
+                    "Reload on SIGHUP failed" in record.getMessage()
+                    for record in records
+                )
             )
 
-    messages = [record.getMessage() for record in records]
-    assert any(
-        "failed" in message and "database 'broken'" in message for message in messages
-    )
+    error = "database 'broken': Database requires migration"
+    assert [record.getMessage() for record in records] == [
+        "ingester.databases names no database: nothing is ingested until a "
+        "reload adds one. Deleted 0 queued or claimed job(s) of this queue "
+        "namespace",
+        f"Database 'broken' failed to start and is skipped: {error}",
+        f"Reload on SIGHUP failed for database 'broken': {error}",
+    ]
 
 
 @posix_only

@@ -179,6 +179,15 @@ export default function IngestionPage() {
 						{health.pollers_alive}/{health.poller_count} pollers
 					</span>
 				)}
+				{health?.failed_databases.map((failed) => (
+					<Badge
+						key={failed.database}
+						variant="destructive"
+						title={failed.error}
+					>
+						{failed.database} not running
+					</Badge>
+				))}
 				{health?.worker_breaker_open && (
 					<Badge variant="destructive">
 						Worker breaker open after{" "}
@@ -194,6 +203,17 @@ export default function IngestionPage() {
 			{unreachable && (
 				<Alert variant="destructive">
 					<AlertDescription>{unreachable}</AlertDescription>
+				</Alert>
+			)}
+			{health && health.failed_databases.length > 0 && (
+				<Alert variant="destructive">
+					<AlertDescription>
+						{health.failed_databases.map((failed) => (
+							<div key={failed.database}>
+								{failed.database}: {failed.error}
+							</div>
+						))}
+					</AlertDescription>
 				</Alert>
 			)}
 			{notice && (

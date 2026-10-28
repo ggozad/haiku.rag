@@ -43,6 +43,7 @@ const answers: Record<string, unknown> = {
 		pollers_alive: 1,
 		worker_breaker_open: false,
 		worker_breaker_consecutive_failures: 0,
+		failed_databases: [],
 	},
 	sources: [
 		{
@@ -153,11 +154,33 @@ describe("IngestionPage", () => {
 		}
 	});
 
+	it("lists each configured database that is not running, with its error", async () => {
+		const health = answers.health as Record<string, unknown>;
+		answers.health = {
+			...health,
+			status: "degraded",
+			failed_databases: [
+				{ database: "wiki", error: "database 'wiki': requires migration" },
+			],
+		};
+		try {
+			render(<IngestionPage />);
+			expect(await screen.findByText("wiki not running")).toBeTruthy();
+			expect(screen.getByText("degraded")).toBeTruthy();
+			expect(
+				screen.getByText("wiki: database 'wiki': requires migration"),
+			).toBeTruthy();
+		} finally {
+			answers.health = health;
+		}
+	});
+
 	it("leaves out the database column when one database is ingested", async () => {
 		render(<IngestionPage />);
 		await screen.findByText("filesystem");
 		expect(screen.queryByRole("columnheader", { name: "Database" })).toBeNull();
 		expect(screen.queryByText("discovery failed")).toBeNull();
+		expect(screen.queryByText(/not running/)).toBeNull();
 	});
 
 	it("reads a database's info when its panel opens", async () => {

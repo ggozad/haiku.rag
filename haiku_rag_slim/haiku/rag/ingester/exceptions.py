@@ -62,6 +62,10 @@ class NothingToIngestError(IngesterError):
     """The configuration names no database to ingest."""
 
 
+class NoDatabaseStartedError(IngesterError):
+    """Every configured database failed to start."""
+
+
 class EmptyListingError(IngesterError):
     """A source listed nothing while URIs it listed before remain known."""
 

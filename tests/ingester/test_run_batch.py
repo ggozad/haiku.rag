@@ -1137,7 +1137,8 @@ async def test_duplicate_source_ids_are_refused(tmp_path, use_client, explicit):
         await IngesterApp(config=config).run_batch()
 
 
-async def test_a_database_failing_to_open_is_named(tmp_path, monkeypatch):
+async def test_a_lone_database_failing_to_open_is_named(tmp_path, monkeypatch):
+    from haiku.rag.ingester.exceptions import NoDatabaseStartedError
     from haiku.rag.store.exceptions import MigrationRequiredError
 
     @asynccontextmanager
@@ -1150,8 +1151,21 @@ async def test_a_database_failing_to_open_is_named(tmp_path, monkeypatch):
     stub._covering = lambda scope, *a, **k: _open(scope)
     monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
 
-    with pytest.raises(MigrationRequiredError, match="database 'wiki'"):
-        await IngesterApp(config=_two_databases(tmp_path)).run_batch()
+    config = _two_databases(tmp_path)
+    del config.ingester.databases["papers"]
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.ingester.app"), logging.ERROR
+    ) as records:
+        with pytest.raises(
+            NoDatabaseStartedError,
+            match="every configured database failed to start: 'wiki': "
+            "database 'wiki': Database requires migration",
+        ):
+            await IngesterApp(config=config).run_batch()
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: database 'wiki': Database requires migration"
+    ]
 
 
 def _case_insensitive(directory) -> bool:

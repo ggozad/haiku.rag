@@ -33,6 +33,7 @@ from haiku.rag.config import (  # noqa: E402
 from haiku.rag.ingester.batch import BatchManifest  # noqa: E402
 from haiku.rag.ingester.exceptions import (  # noqa: E402
     DuplicateSourceError,
+    NoDatabaseStartedError,
     NothingToIngestError,
     QueueError,
 )
@@ -54,7 +55,11 @@ from haiku.rag.store.exceptions import (  # noqa: E402
 )
 
 if TYPE_CHECKING:
-    from haiku.rag.ingester.app import BatchProgress, BatchProgressCallback
+    from haiku.rag.ingester.app import (
+        BatchProgress,
+        BatchProgressCallback,
+        BatchReport,
+    )
 
 _cli = typer.Typer(
     name="haiku-ingester",
@@ -102,6 +107,7 @@ def cli() -> None:
         DuplicateSourceError,
         ImportError,
         MigrationRequiredError,
+        NoDatabaseStartedError,
         NothingToIngestError,
         QueueError,
         ReadOnlyError,
@@ -257,6 +263,14 @@ def _batch_progress(
 
     with progress:
         yield _update
+
+
+def _echo_failed_databases(report: "BatchReport") -> None:
+    if report.failed_databases:
+        failed = ", ".join(
+            f"{failed.database} ({failed.error})" for failed in report.failed_databases
+        )
+        typer.echo(f"Databases that failed to start: {failed}", err=True)
 
 
 def _load_manifest(path: Path) -> BatchManifest:
@@ -430,7 +444,8 @@ async def _run_batch(
             f"{report.succeeded} succeeded, {report.dead} dead, "
             f"{report.rejected} rejected"
         )
-        if report.dead:
+        _echo_failed_databases(report)
+        if report.dead or report.failed_databases:
             raise typer.Exit(1)
         return
 
@@ -452,5 +467,6 @@ async def _run_batch(
             f"Sources that failed to sweep: {', '.join(report.failed_sweeps)}",
             err=True,
         )
-    if report.dead or report.failed_sweeps:
+    _echo_failed_databases(report)
+    if report.dead or report.failed_sweeps or report.failed_databases:
         raise typer.Exit(1)

@@ -20,8 +20,9 @@ if TYPE_CHECKING:
 class APIState:
     """Everything the API handlers need to read or act on. Pool/pollers are
     optional so the FastAPI app can be tested in isolation. `databases` holds
-    the ingested databases by name, and `source_databases` maps a served
-    source id to the name of its database. A retry holds `claim_lock`, the
+    the ingested databases by name, `failed_databases` the configured ones
+    that failed to start, with their errors, and `source_databases` maps a
+    served source id to the name of its database. A retry holds `claim_lock`, the
     pool's, so it cannot land between a removal's unserve and its delete.
     `reload` is the running app's."""
 
@@ -31,6 +32,7 @@ class APIState:
     pool: "WorkerPool | None" = None
     pollers: "PollerManager | None" = None
     databases: "Mapping[str, DatabaseRef]" = field(default_factory=dict)
+    failed_databases: Mapping[str, str] = field(default_factory=dict)
     source_databases: Mapping[str, str] = field(default_factory=dict)
     claim_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     reload: "Callable[[], Awaitable[ReloadReport]] | None" = None

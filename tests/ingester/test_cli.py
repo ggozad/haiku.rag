@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 
 from haiku.rag.config import AppConfig, QueueConfig
 from haiku.rag.config.models import LanceDBConfig
-from haiku.rag.ingester.app import BatchProgress, BatchReport
+from haiku.rag.ingester.app import BatchProgress, BatchReport, FailedDatabase
 from haiku.rag.ingester.batch import (
     BatchChange,
     BatchDryRunReport,
@@ -23,7 +23,7 @@ from haiku.rag.ingester.batch import (
 from haiku.rag.ingester.cli import _cli as cli
 from haiku.rag.ingester.cli import _resolve_queue_config
 from haiku.rag.ingester.cli import cli as ingester_cli
-from haiku.rag.ingester.exceptions import DuplicateSourceError
+from haiku.rag.ingester.exceptions import DuplicateSourceError, NoDatabaseStartedError
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.store.exceptions import (
@@ -245,6 +245,24 @@ def test_run_batch_exits_nonzero_when_sweep_fails(monkeypatch):
     assert "failed to sweep: docs" in result.output
 
 
+def test_run_batch_exits_nonzero_naming_a_skipped_database(monkeypatch):
+    _fake_app(
+        BatchReport(
+            succeeded=2,
+            failed_databases=[
+                FailedDatabase(database="wiki", error="needs a migration")
+            ],
+        ),
+        monkeypatch,
+    )
+
+    result = runner.invoke(cli, ["run-batch"])
+
+    assert result.exit_code == 1
+    assert "Batch complete: 2 succeeded" in result.output
+    assert "Databases that failed to start: wiki (needs a migration)" in result.output
+
+
 def test_run_batch_dry_run_writes_default_manifest(monkeypatch, tmp_path):
     fake = _fake_dry_run_app(
         BatchDryRunReport(manifest=_manifest()),
@@ -361,6 +379,27 @@ def test_run_batch_manifest_exits_nonzero_when_dead(monkeypatch, tmp_path):
 
     assert result.exit_code == 1
     assert "1 dead" in result.output
+
+
+def test_run_batch_manifest_exits_nonzero_naming_a_skipped_database(
+    monkeypatch, tmp_path
+):
+    manifest_path = tmp_path / "manifest.yaml"
+    _write_manifest(manifest_path)
+    _fake_manifest_app(
+        BatchReport(
+            succeeded=1,
+            failed_databases=[
+                FailedDatabase(database="wiki", error="needs a migration")
+            ],
+        ),
+        monkeypatch,
+    )
+
+    result = runner.invoke(cli, ["run-batch", "--manifest", str(manifest_path)])
+
+    assert result.exit_code == 1
+    assert "Databases that failed to start: wiki (needs a migration)" in result.output
 
 
 def test_run_batch_manifest_reports_validation_error(monkeypatch, tmp_path):
@@ -677,6 +716,7 @@ def test_cli_entry_point(monkeypatch):
         UnknownDatabaseError("no such database"),
         ImportError("docling is not installed"),
         DuplicateSourceError("source id(s) a name several configured sources"),
+        NoDatabaseStartedError("every configured database failed to start"),
     ],
     ids=lambda e: type(e).__name__,
 )

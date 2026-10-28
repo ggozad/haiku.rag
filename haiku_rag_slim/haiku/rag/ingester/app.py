@@ -2,7 +2,7 @@ import asyncio
 import logging
 import signal
 import sys
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Awaitable, Callable, Collection, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -19,6 +19,7 @@ from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManife
 from haiku.rag.ingester.exceptions import (
     DuplicateSourceError,
     InvalidConfigError,
+    NoDatabaseStartedError,
     NothingToIngestError,
     QueueError,
     ReloadCancelledError,
@@ -56,15 +57,24 @@ def _api_access_log_enabled() -> bool:
     return logging.getLogger("haiku.rag").isEnabledFor(logging.DEBUG)
 
 
+class FailedDatabase(BaseModel):
+    """A configured database that is not running, and why."""
+
+    database: str
+    error: str
+
+
 class BatchReport(BaseModel):
     """Outcome of a one-shot batch run: terminal job counts after the queue
-    drained, plus any sources whose discovery sweep did not complete."""
+    drained, plus any sources whose discovery sweep did not complete and any
+    databases that failed to start."""
 
     succeeded: int = 0
     dead: int = 0
     rejected: int = 0
     retried: int = 0
     failed_sweeps: list[str] = []
+    failed_databases: list[FailedDatabase] = []
 
 
 class BatchProgress(BaseModel):
@@ -91,25 +101,53 @@ class DatabaseChange(BaseModel):
 
 
 class ReloadReport(BaseModel):
-    """A reload's changes. `failed` means nothing was added or removed,
-    `partial` that some changes were applied before one failed."""
+    """A reload's changes. `failed` means a database failed and nothing was
+    added or removed, `partial` that some changes were applied and some
+    failed."""
 
     outcome: Literal["applied", "failed", "partial"] = "applied"
     databases: list[DatabaseChange] = []
 
     def record(self, database: str, change: Literal["added", "removed"]) -> None:
-        self.databases.append(DatabaseChange(database=database, change=change))
+        self._append(DatabaseChange(database=database, change=change))
 
     def fail(self, database: str, error: BaseException) -> None:
-        self.databases.append(
-            DatabaseChange(
-                database=database,
-                change="failed",
-                error=str(error) or type(error).__name__,
-            )
+        self._append(
+            DatabaseChange(database=database, change="failed", error=_message(error))
         )
+
+    def _append(self, change: DatabaseChange) -> None:
+        self.databases.append(change)
+        failed = any(change.change == "failed" for change in self.databases)
         changed = any(change.change != "failed" for change in self.databases)
-        self.outcome = "partial" if changed else "failed"
+        if failed:
+            self.outcome = "partial" if changed else "failed"
+
+
+async def _close_each(closes: "list[Callable[[], Awaitable[object]]]") -> None:
+    """Run every close, then raise the first failure, a cancellation or
+    interrupt before any error."""
+    failures: list[BaseException] = []
+    for close in closes:
+        try:
+            await close()
+        except BaseException as failure:
+            failures.append(failure)
+    for failure in failures:
+        if not isinstance(failure, Exception):
+            raise failure
+    if failures:
+        raise failures[0]
+
+
+def failed_databases(failed: Mapping[str, str]) -> list[FailedDatabase]:
+    return [
+        FailedDatabase(database=name, error=error) for name, error in failed.items()
+    ]
+
+
+def _message(error: BaseException) -> str:
+    return str(error) or type(error).__name__
 
 
 def _manifest_change_key(change: BatchChange) -> tuple[str, str, str, str | None]:
@@ -224,6 +262,8 @@ class IngesterApp:
         # A reload's prepared additions, each kept until it is applied or
         # closed: the next reload and shutdown close what is left.
         self._prepared: list[_Database] = []
+        # Configured databases that failed to start, by name, with the error.
+        self._failed: dict[str, str] = {}
 
     def _require_databases(self) -> None:
         if not self._databases:
@@ -265,12 +305,20 @@ class IngesterApp:
         prepared: list[_Database] = []
         try:
             for ref, sources in self._databases:
-                prepared.append(
-                    await self._prepare(ref, [next(pollers) for _ in sources])
-                )
+                database_pollers = [next(pollers) for _ in sources]
+                try:
+                    prepared.append(await self._prepare(ref, database_pollers))
+                except Exception as error:
+                    self._fail(ref.name, error)
+                    await self._pollers.remove(
+                        [poller.source_id for poller in database_pollers]
+                    )
+                    await self._close_adapters(ref.name, database_pollers)
             # Every local database exists once open, so comparing directory
             # identities catches two names the filesystem treats as one.
             _refuse_shared_locations([database.ref for database in prepared])
+            if self._databases and not prepared:
+                raise self._nothing_started()
         except BaseException:
             async with AsyncExitStack() as closing:
                 closing.push_async_callback(self._pollers.close_sources)
@@ -279,22 +327,6 @@ class IngesterApp:
                 raise
         unapplied = list(prepared)
         try:
-            cancelled = await self._jobs.cancel_unconfigured(
-                self._configured_source_ids
-            )
-            if not self._databases:
-                logger.warning(
-                    "ingester.databases names no database: nothing is ingested "
-                    "until a reload adds one. Deleted %d queued or claimed "
-                    "job(s) of this queue namespace",
-                    cancelled,
-                )
-            elif cancelled:
-                logger.info(
-                    "Deleted %d queued or claimed job(s) of sources no longer "
-                    "configured",
-                    cancelled,
-                )
             self._pool = WorkerPool(
                 clients={},
                 job_repo=self._jobs,
@@ -312,8 +344,30 @@ class IngesterApp:
                 ),
             )
             for database in prepared:
-                await self._apply(database)
+                try:
+                    await self._apply(database)
+                except Exception as error:
+                    await self._pollers.remove(database.source_ids)
+                    await self._discard(database, error)
                 unapplied.remove(database)
+            if self._databases and not self._running:
+                raise self._nothing_started()
+            cancelled = await self._jobs.cancel_unconfigured(
+                self._configured_source_ids
+            )
+            if not self._databases:
+                logger.warning(
+                    "ingester.databases names no database: nothing is ingested "
+                    "until a reload adds one. Deleted %d queued or claimed "
+                    "job(s) of this queue namespace",
+                    cancelled,
+                )
+            elif cancelled:
+                logger.info(
+                    "Deleted %d queued or claimed job(s) of sources no longer "
+                    "configured",
+                    cancelled,
+                )
             yield
         except BaseException:
             async with self._closing(unapplied):
@@ -336,6 +390,39 @@ class IngesterApp:
                 closing.push_async_exit(database.close_client)
         return closing
 
+    def _fail(self, name: str, error: BaseException) -> None:
+        """Record that the configured database `name` failed to start."""
+        logger.error("Database %r failed to start and is skipped: %s", name, error)
+        self._failed[name] = _message(error)
+
+    def _nothing_started(self) -> NoDatabaseStartedError:
+        failures = "; ".join(
+            f"{name!r}: {error}" for name, error in self._failed.items()
+        )
+        return NoDatabaseStartedError(
+            f"every configured database failed to start: {failures}"
+        )
+
+    async def _discard(self, database: _Database, error: BaseException) -> None:
+        """Record `database` as failed with `error` and close it, logging a
+        close that fails."""
+        # A failed close leaks the client's handles until restart. The client
+        # never reached the workers, so it cannot write.
+        self._fail(database.ref.name, error)
+        try:
+            await self._close(database, type(error), error, error.__traceback__)
+        except Exception as close_error:
+            logger.error(
+                "Database %r failed to close: %s", database.ref.name, close_error
+            )
+
+    async def _close_adapters(self, name: str, pollers: "list[BasePoller]") -> None:
+        """Close the adapters of `pollers`, logging those that fail."""
+        try:
+            await _close_each([poller.source.aclose for poller in pollers])
+        except Exception as error:
+            logger.error("Database %r failed to close: %s", name, error)
+
     async def add_database(
         self, ref: "DatabaseRef", sources: list[SourceConfig]
     ) -> None:
@@ -357,8 +444,7 @@ class IngesterApp:
                 pollers.append(self._pollers.build(source))
             return await self._prepare(ref, pollers)
         except BaseException:
-            for poller in pollers:
-                await poller.source.aclose()
+            await self._close_adapters(ref.name, pollers)
             raise
 
     async def _apply_addition(self, database: _Database) -> None:
@@ -399,20 +485,13 @@ class IngesterApp:
     async def _prepare(
         self, ref: "DatabaseRef", pollers: "list[BasePoller]"
     ) -> _Database:
-        """Open `ref` and build its sources' metadata providers, writing
-        nothing to the queue. An error closes what was opened."""
+        """Build the metadata providers of `ref`'s sources and open it, writing
+        nothing to the queue."""
+        metadata_providers = build_providers(
+            [(poller.source_id, poller.config.metadata_provider) for poller in pollers],
+            load_metadata_providers(),
+        )
         opened, client = await self._open(ref)
-        try:
-            metadata_providers = build_providers(
-                [
-                    (poller.source_id, poller.config.metadata_provider)
-                    for poller in pollers
-                ],
-                load_metadata_providers(),
-            )
-        except BaseException:
-            await opened.__aexit__(*sys.exc_info())
-            raise
         return _Database(ref, opened, client, pollers, metadata_providers)
 
     async def _apply(self, database: _Database) -> None:
@@ -453,9 +532,13 @@ class IngesterApp:
         exc: BaseException | None = None,
         tb: TracebackType | None = None,
     ) -> None:
-        for poller in database.pollers:
-            await poller.source.aclose()
-        await database.close_client(exc_type, exc, tb)
+        """Close the adapters, then the client, whichever close fails."""
+        await _close_each(
+            [
+                *(poller.source.aclose for poller in database.pollers),
+                partial(database.close_client, exc_type, exc, tb),
+            ]
+        )
 
     async def _open(self, ref: "DatabaseRef") -> "tuple[HaikuRAG, HaikuRAG]":
         """A writable client over `ref`, created on first start, as opened
@@ -631,7 +714,7 @@ class IngesterApp:
                     "Ingester running: %d worker(s), %d database(s), %d "
                     "source(s), %d docling-serve instance(s)",
                     ingester_cfg.workers.worker_count,
-                    len(self._databases),
+                    len(self._running),
                     len(self._pollers.pollers),
                     len(self._config.providers.docling_serve.base_urls),
                 )
@@ -639,7 +722,7 @@ class IngesterApp:
                 logger.info(
                     "Ingester running: %d worker(s), %d database(s), %d source(s)",
                     ingester_cfg.workers.worker_count,
-                    len(self._databases),
+                    len(self._running),
                     len(self._pollers.pollers),
                 )
 
@@ -718,6 +801,7 @@ class IngesterApp:
                 )
                 report.failed_sweeps = failed_sweeps
                 report.retried = retried
+                report.failed_databases = failed_databases(self._failed)
                 return report
             finally:
                 await self._stop_pool()
@@ -830,9 +914,11 @@ class IngesterApp:
             started_at = datetime.now(UTC)
             await self._pool.start()
             try:
-                return await self._drain_batch(
+                report = await self._drain_batch(
                     started_at, progress_callback=progress_callback
                 )
+                report.failed_databases = failed_databases(self._failed)
+                return report
             finally:
                 await self._stop_pool()
                 await self._pollers.close_sources()
@@ -926,6 +1012,7 @@ class IngesterApp:
             for database in self._running.values()
         }
         failure: BaseException | None = None
+        completed = False
         try:
             # Additions sharing a running database's location are prepared
             # after the removals: a database has one writer.
@@ -939,18 +1026,29 @@ class IngesterApp:
             ):
                 for ref, sources in ordered:
                     try:
-                        self._prepared.append(
-                            await self._prepare_addition(ref, sources)
-                        )
+                        database = await self._prepare_addition(ref, sources)
+                    except Exception as error:
+                        report.fail(ref.name, error)
+                        self._fail(ref.name, error)
+                        continue
+                    try:
                         # Every local database exists once open, so comparing
                         # directory identities catches two names for one.
                         _refuse_shared_locations(
-                            [d.ref for d in [*self._running.values(), *self._prepared]]
+                            [
+                                d.ref
+                                for d in [
+                                    *self._running.values(),
+                                    *self._prepared,
+                                    database,
+                                ]
+                            ]
                         )
                     except Exception as error:
                         report.fail(ref.name, error)
-                        failure = error
-                        return report
+                        await self._discard(database, error)
+                        continue
+                    self._prepared.append(database)
                 for name in removals:
                     try:
                         await self.remove_database(name)
@@ -964,16 +1062,23 @@ class IngesterApp:
                 try:
                     await self._apply(database)
                 except Exception as error:
+                    self._prepared.remove(database)
                     report.fail(database.ref.name, error)
-                    failure = error
-                    return report
+                    await self._discard(database, error)
+                    continue
                 self._prepared.remove(database)
                 report.record(database.ref.name, "added")
+            completed = True
         except BaseException as error:
             failure = error
             raise
         finally:
             await self._close_prepared(report, failure)
+            configured = wanted if completed else self._config.ingester.databases
+            for name in [
+                n for n in self._failed if n in self._running or n not in configured
+            ]:
+                del self._failed[name]
         self._config = config
         self._databases = list(wanted.values())
         if self._api is not None:
@@ -1029,6 +1134,7 @@ class IngesterApp:
                 pool=self._pool,
                 pollers=self._pollers,
                 databases=self._ingested,
+                failed_databases=self._failed,
                 source_databases=self._source_databases,
                 claim_lock=self._pool.claim_lock,
                 reload=self.reload,

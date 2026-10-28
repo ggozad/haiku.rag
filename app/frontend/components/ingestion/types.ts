@@ -7,6 +7,7 @@ export interface Health {
 	pollers_alive: number;
 	worker_breaker_open: boolean;
 	worker_breaker_consecutive_failures: number;
+	failed_databases: { database: string; error: string }[];
 }
 
 export interface Stats {
