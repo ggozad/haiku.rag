@@ -25,10 +25,10 @@ Its headline score is the mean over questions of correctness × completeness: co
 | Capability model | Cases | QA accuracy | Mean completeness | Mean `erb_score` | Mean `cited_map` |
 |------------------|------:|-------------|-------------------|------------------|------------------|
 | `Qwen3.8-27B-NVFP4` | 500 | 0.860 | 0.847 | 0.816 | 0.743 |
-| `Muse-Glimmer-30B-NVFP4-W4A4` | 500 | 0.778 | 0.781 | 0.745 | 0.670 |
+| `Muse-Glimmer-30B-NVFP4-W4A4` | 500 | 0.828 | 0.827 | 0.791 | 0.699 |
 | `gemma-4-26B-A4B-it-FP8-Dynamic` | 500 | 0.642 | 0.667 | 0.588 | 0.489 |
 
-*v0.101.0, `google/embeddinggemma-2` (768, question-answering prefixes, served through sentence-transformers in fp32) with `nvidia/llama-nemotron-rerank-vl-1b-v2`, `search.limit` 10, `sandbox.code_timeout` 120, all judged by `Qwen3.8-27B` at `reasoning_effort: low`. Aborted cases count as failures, and completeness, `erb_score` and `cited_map` count them as 0. Qwen3.8: `max_tokens` 32768, `reasoning_effort: low`, 3 aborts, median 21 s per case, self-judged. Muse-Glimmer: `max_tokens` 16384, `reasoning_strength: high`, 48 aborts (29 past its 131,072-token context, 19 on tool calls that kept failing validation), median 39 s. Over the 452 cases it finished, its accuracy is 0.861, level with Qwen3.8. Gemma 4: `max_tokens` 8192, no thinking, 6 aborts, median 6 s, about one search per question against 2.6 for Qwen3.8. The database has an IVF_PQ vector index.*
+*v0.101.0, `google/embeddinggemma-2` (768, question-answering prefixes, served through sentence-transformers in fp32) with `nvidia/llama-nemotron-rerank-vl-1b-v2`, `search.limit` 10, `sandbox.code_timeout` 120, all judged by `Qwen3.8-27B` at `reasoning_effort: low`. Aborted cases count as failures, and completeness, `erb_score` and `cited_map` count them as 0. Qwen3.8: `max_tokens` 32768, `reasoning_effort: low`, 3 aborts, median 21 s per case, self-judged. Muse-Glimmer: `max_tokens` 16384, `reasoning_strength: high`, 14 aborts (6 past its 131,072-token context, 7 on tool calls that kept failing validation, 1 past `max_tokens`), median 37 s. Over the 486 cases it finished, its accuracy is 0.852. Gemma 4: `max_tokens` 8192, no thinking, 6 aborts, median 6 s, about one search per question against 2.6 for Qwen3.8. The database has an IVF_PQ vector index.*
 
 #### Leaderboard
 
