@@ -20,6 +20,7 @@ from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.queue.repository import SyncStateRepo
 from haiku.rag.ingester.reconcile import reconcile
 from haiku.rag.store.models.chunk import Chunk
+from tests.platform import converts_pdf_locally
 
 from ..conftest import capture_logs
 
@@ -481,6 +482,7 @@ async def test_queue_loss_does_not_strand_documents(tmp_path):
     assert await stored_uris() == {first.as_uri()}
 
 
+@converts_pdf_locally
 @pytest.mark.vcr()
 @pytest.mark.usefixtures("docling_local_models")
 async def test_attachments_ingested_under_a_provider_stay_unowned(
