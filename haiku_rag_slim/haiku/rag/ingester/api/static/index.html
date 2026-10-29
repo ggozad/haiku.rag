@@ -506,7 +506,7 @@
               <td>${polledCell}</td>
               <td>${circuitBadge}</td>
               <td class="actions">
-                <button onclick="refreshSource('${escapeHtml(s.source_id)}')">Refresh</button>
+                <button data-source="${escapeHtml(s.source_id)}" onclick="refreshSource(this.dataset.source)">Refresh</button>
                 <button data-source="${escapeHtml(s.source_id)}" onclick="retrySource(this.dataset.source)">Retry failed</button>
               </td>
             </tr>`;
