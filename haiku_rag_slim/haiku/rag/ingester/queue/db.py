@@ -2,7 +2,7 @@ import sqlalchemy as sa
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 metadata = sa.MetaData()
 
@@ -82,6 +82,14 @@ sa.Index(
 sa.Index(
     "idx_jobs_claimable",
     jobs.c.namespace,
+    jobs.c.scheduled_at,
+    sqlite_where=_queued,
+    postgresql_where=_queued,
+)
+sa.Index(
+    "idx_jobs_source_claimable",
+    jobs.c.namespace,
+    jobs.c.source_id,
     jobs.c.scheduled_at,
     sqlite_where=_queued,
     postgresql_where=_queued,

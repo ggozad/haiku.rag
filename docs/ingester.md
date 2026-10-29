@@ -679,6 +679,10 @@ A queue that several ingesters already wrote to needs a mapping from `source_id`
 
 Queue schema 5 adds the `rejected` job status. The migration changes no table, but ingesters sharing a server queue still upgrade together, in the order above. SQLite queues migrate themselves.
 
+##### Upgrading a queue from schema 5
+
+Queue schema 6 adds an index over each source's queued jobs. Server queues migrate with `haiku-ingester queue migrate`, in the order above. SQLite queues migrate themselves.
+
 ### Logs and tracing
 
 The service logs to stderr:
