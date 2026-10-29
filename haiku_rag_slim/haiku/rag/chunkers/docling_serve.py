@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from haiku.rag.chunkers.base import DocumentChunker
 from haiku.rag.config import AppConfig, get_config
+from haiku.rag.converters.docling_serve import convert_options
 from haiku.rag.providers.docling_serve import DoclingServeClient
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 
@@ -63,11 +64,8 @@ class DoclingServeChunker(DocumentChunker):
 
     def _build_chunking_data(self) -> dict[str, str | list[str]]:
         """Build form data for chunking request."""
-        opts = self.config.processing.conversion_options
-        data: dict[str, str | list[str]] = {
-            "convert_do_ocr": str(opts.do_ocr).lower(),
-            "convert_force_ocr": str(opts.force_ocr).lower(),
-            "convert_ocr_engine": opts.ocr_engine,
+        return {
+            **{f"convert_{k}": v for k, v in convert_options(self.config).items()},
             "chunking_max_tokens": str(self.config.processing.chunk_size),
             "chunking_tokenizer": self.config.processing.chunking_tokenizer,
             "chunking_merge_peers": str(
@@ -78,9 +76,6 @@ class DoclingServeChunker(DocumentChunker):
             ).lower(),
             "chunking_include_raw_text": "true",
         }
-        if opts.ocr_lang:
-            data["convert_ocr_lang"] = opts.ocr_lang
-        return data
 
     async def _call_chunk_api(self, document: "DoclingDocument") -> list[dict]:
         """Call docling-serve chunking API and return raw chunk data.
