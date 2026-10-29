@@ -26,6 +26,50 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
 
+def convert_options(config: AppConfig) -> dict[str, str | list[str]]:
+    """Convert options for docling-serve, which keeps one converter per distinct set."""
+    opts = config.processing.conversion_options
+    pic_desc = opts.picture_description
+    pictures = config.processing.pictures
+    runs_vlm = pictures == "description"
+
+    data: dict[str, str | list[str]] = {
+        "do_ocr": str(opts.do_ocr).lower(),
+        "force_ocr": str(opts.force_ocr).lower(),
+        "ocr_engine": opts.ocr_engine,
+        "do_table_structure": str(opts.do_table_structure).lower(),
+        "pdf_backend": (
+            "docling_parse"
+            if opts.pdf_backend == "threaded_docling_parse"
+            else opts.pdf_backend
+        ),
+        "table_mode": opts.table_mode,
+        "table_cell_matching": str(opts.table_cell_matching).lower(),
+        "images_scale": str(opts.images_scale),
+        # docling-serve turns off both include_* flags under "placeholder", its default
+        "image_export_mode": "referenced",
+        "include_images": str(pictures != "none").lower(),
+        "include_page_images": str(opts.generate_page_images).lower(),
+        "do_picture_description": str(runs_vlm).lower(),
+    }
+
+    if opts.ocr_lang:
+        data["ocr_lang"] = opts.ocr_lang
+
+    if runs_vlm:
+        prompt = config.prompts.picture_description
+        picture_description_api = {
+            "url": vlm_api_url(config, pic_desc.model),
+            "headers": vlm_api_headers(pic_desc.model),
+            "params": vlm_api_params(pic_desc.model, pic_desc.max_tokens),
+            "prompt": prompt,
+            "timeout": pic_desc.timeout,
+        }
+        data["picture_description_api"] = json.dumps(picture_description_api)
+
+    return data
+
+
 class DoclingServeConverter(DocumentConverter):
     """Converter that uses docling-serve for document conversion.
 
@@ -92,47 +136,11 @@ class DoclingServeConverter(DocumentConverter):
         rehydrates back into ``data:`` URIs for parity with the local
         converter.
         """
-        opts = self.config.processing.conversion_options
-        pic_desc = opts.picture_description
-        pictures = self.config.processing.pictures
-        runs_vlm = pictures == "description"
-
-        data: dict[str, str | list[str]] = {
+        return {
             "to_formats": "json",
-            "do_ocr": str(opts.do_ocr).lower(),
-            "force_ocr": str(opts.force_ocr).lower(),
-            "ocr_engine": opts.ocr_engine,
-            "do_table_structure": str(opts.do_table_structure).lower(),
-            "pdf_backend": (
-                "docling_parse"
-                if opts.pdf_backend == "threaded_docling_parse"
-                else opts.pdf_backend
-            ),
-            "table_mode": opts.table_mode,
-            "table_cell_matching": str(opts.table_cell_matching).lower(),
-            "images_scale": str(opts.images_scale),
-            "image_export_mode": "referenced",
-            "include_images": str(pictures != "none").lower(),
-            "include_page_images": str(opts.generate_page_images).lower(),
-            "do_picture_description": str(runs_vlm).lower(),
             "target_type": "zip",
+            **convert_options(self.config),
         }
-
-        if opts.ocr_lang:
-            data["ocr_lang"] = opts.ocr_lang
-
-        if runs_vlm:
-            prompt = self.config.prompts.picture_description
-            picture_description_api = {
-                "url": vlm_api_url(self.config, pic_desc.model),
-                "headers": vlm_api_headers(pic_desc.model),
-                "params": vlm_api_params(pic_desc.model, pic_desc.max_tokens),
-                "prompt": prompt,
-                "timeout": pic_desc.timeout,
-            }
-            data["picture_description_api"] = json.dumps(picture_description_api)
-
-        return data
 
     def _parse_zip_to_docling(self, zip_bytes: bytes, name: str) -> "DoclingDocument":
         """Parse a docling-serve ``target_type=zip`` response.

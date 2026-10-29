@@ -500,6 +500,27 @@ class TestDoclingServeChunker:
         # ocr_lang should NOT be present when empty
         assert "convert_ocr_lang" not in data
 
+    @pytest.mark.parametrize("pictures", ["none", "image", "description"])
+    def test_chunking_request_sends_the_conversion_options(self, config, pictures):
+        """Chunk requests carry the conversion request's pipeline options."""
+        from haiku.rag.converters.docling_serve import DoclingServeConverter
+
+        config.processing.pictures = pictures
+        config.processing.conversion_options.table_mode = "fast"
+        config.processing.conversion_options.ocr_lang = ["en"]
+        conversion = DoclingServeConverter(config)._build_conversion_data()
+        chunking = DoclingServeChunker(config)._build_chunking_data()
+
+        output_only = {"to_formats", "target_type"}
+        sent_for_chunking = {
+            k.removeprefix("convert_"): v
+            for k, v in chunking.items()
+            if k.startswith("convert_")
+        }
+        assert sent_for_chunking == {
+            k: v for k, v in conversion.items() if k not in output_only
+        }
+
     @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_connection_error(self, mock_client_class, chunker):
         """Test handling of connection errors."""
