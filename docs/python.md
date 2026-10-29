@@ -459,6 +459,8 @@ docs = await client.import_documents(imports)
 
 Chunks without embeddings are embedded automatically. The import is all-or-nothing: if any document fails, all tables are restored to their pre-batch state.
 
+`import_documents` looks up no URI and always creates new documents, so a URI that is already stored, or repeated in the batch, gets a second document. A caller that wants one document per URI keeps the URIs unique. `import_document` replaces a stored document with the same URI in place, keeping its id.
+
 See [Custom Processing Pipelines](custom-pipelines.md) for building pipelines with `convert()`, `chunk()`, and `embed_chunks()`.
 
 ## Maintenance

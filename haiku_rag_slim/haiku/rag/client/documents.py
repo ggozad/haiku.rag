@@ -483,7 +483,9 @@ async def import_documents(
 
     The batch analog of ``import_document``: writes the documents, chunks, and
     document_items tables once each regardless of how many documents are
-    imported. Chunks without embeddings are embedded automatically.
+    imported. Chunks without embeddings are embedded automatically. Looks
+    up no URI: every import creates a new document, even for a stored or
+    repeated URI.
     """
     if not imports:
         return []
