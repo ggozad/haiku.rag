@@ -71,6 +71,9 @@ async with HaikuRAG("knowledge.lancedb", create=True) as rag:
 ```
 
 To compose your own agent, see [Capabilities](https://ggozad.github.io/haiku.rag/capabilities/).
+The [citation policy](https://ggozad.github.io/haiku.rag/capabilities/policy/)
+supports plain-text and structured answers; structured reminders use the agent's
+output-validation retry budget.
 
 ## MCP server
 

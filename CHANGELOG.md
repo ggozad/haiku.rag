@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Citation policy enforces structured answers after schema validation, using one output retry instead of queued user-message redirects. Invalid output candidates no longer queue duplicate redirects (#783).
+
 ## [0.103.0] - 2026-10-29
 
 ### Added

@@ -1,13 +1,22 @@
+import json
 from dataclasses import dataclass, field
 from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
-from pydantic_ai import Agent, DeferredToolResults
+from pydantic_ai import (
+    Agent,
+    DeferredToolResults,
+    NativeOutput,
+    PromptedOutput,
+    RunContext,
+)
 from pydantic_ai.exceptions import UserError
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.messages import ModelResponse, RetryPromptPart, TextPart, ToolCallPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+from pydantic_ai.output import OutputContext
+from pydantic_ai.usage import RunUsage
 
 from haiku.rag.capabilities.policy import (
     CITATION_REDIRECT_TAG,
@@ -379,12 +388,185 @@ class Answer(BaseModel):
     text: str
 
 
-async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_path):
-    """An output tool call is a `ToolCallPart` too, and it ends the run.
+@pytest.mark.parametrize("output_mode", ["tool", "native", "prompted"])
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_invalid_structured_output_does_not_queue_redirects(
+    temp_db_path, output_mode, streaming
+):
+    rag = create_rag(db_path=temp_db_path, config=AppConfig())
+    turns = iter(
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "search-1")],
+            [ToolCallPart("final_result", {}, "invalid-output")],
+            [ToolCallPart("final_result", {"text": "answer"}, "valid-output")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "cite-1")],
+            [ToolCallPart("final_result", {"text": "answer"}, "final-output")],
+        ]
+    )
+    sent: list[list[Any]] = []
 
-    Treating every tool call as intermediate let a model search, skip citing, emit
-    its structured answer and finish with neither a redirect nor a violation.
-    """
+    async def model(messages, _info):
+        sent.append(list(messages))
+        return ModelResponse(
+            parts=[
+                TextPart(json.dumps(part.args))
+                if output_mode != "tool" and part.tool_name == "final_result"
+                else part
+                for part in next(turns)
+            ]
+        )
+
+    async def stream_model(messages, info):
+        response = await model(messages, info)
+        for index, part in enumerate(response.parts):
+            if isinstance(part, TextPart):
+                yield part.content
+            elif isinstance(part, ToolCallPart):
+                yield {
+                    index: DeltaToolCall(
+                        name=part.tool_name,
+                        json_args=json.dumps(part.args),
+                        tool_call_id=part.tool_call_id,
+                    )
+                }
+
+    async def consume_events(_ctx, events):
+        async for _event in events:
+            pass
+
+    agent = Agent(
+        FunctionModel(model, stream_function=stream_model),
+        deps_type=Deps,
+        output_type={
+            "tool": Answer,
+            "native": NativeOutput(Answer),
+            "prompted": PromptedOutput(Answer),
+        }[output_mode],
+        retries={"output": 2},
+        capabilities=[rag, create_policy()],
+    )
+    deps = Deps()
+
+    with patch.object(RAGCapability, "_search", stub_search):
+        result = await agent.run(
+            "what does the supervisor do?",
+            deps=deps,
+            event_stream_handler=consume_events if streaming else None,
+        )
+
+    redirects = [
+        prompt for prompt in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in prompt
+    ]
+    assert not redirects, f"Expected no queued redirects; received {len(redirects)}"
+    assert result.output == Answer(text="answer")
+    assert deps.state["rag"]["citations"] == ["chunk-1"]
+    assert deps.state["citation_policy"]["violations"] == []
+    retries = [
+        part
+        for message in sent[-1]
+        for part in message.parts
+        if isinstance(part, RetryPromptPart)
+    ]
+    assert len(retries) == 2
+    assert isinstance(retries[0].content, list)
+    assert CITATION_REDIRECT_TAG in retries[1].content
+
+
+@pytest.mark.parametrize("declaration", [None, [], ["chunk-1"]])
+async def test_structured_answers_with_nothing_missing_are_left_alone(
+    temp_db_path, declaration
+):
+    responses = []
+    if declaration is not None:
+        responses.extend(
+            [
+                [ToolCallPart("search", {"query": "supervisor"}, "search-1")],
+                [ToolCallPart("cite", {"chunk_ids": declaration}, "cite-1")],
+            ]
+        )
+    responses.append([ToolCallPart("final_result", {"text": "answer"}, "output-1")])
+    turns = iter(responses)
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        output_type=Answer,
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig()),
+            create_policy(),
+        ],
+    )
+    deps = Deps()
+    with patch.object(RAGCapability, "_search", stub_search):
+        result = await agent.run("what does the supervisor do?", deps=deps)
+
+    assert result.output == Answer(text="answer")
+    assert result.usage.requests == len(responses)
+    assert deps.state["citation_policy"]["violations"] == []
+
+
+async def test_partial_structured_output_does_not_enforce_citations():
+    policy = create_policy()
+    output = Answer(text="partial")
+    ctx = RunContext(
+        deps=Deps(),
+        model=FunctionModel(lambda _messages, _info: ModelResponse(parts=[])),
+        usage=RunUsage(),
+        partial_output=True,
+    )
+    output_context = OutputContext(
+        mode="tool", output_type=Answer, object_def=None, has_function=False
+    )
+    with patch("haiku.rag.capabilities.policy.discover_evidence") as discover:
+        result = await policy.after_output_validate(
+            ctx, output_context=output_context, output=output
+        )
+
+    assert result is output
+    discover.assert_not_called()
+
+
+@pytest.mark.parametrize("deps_type", [Deps, StatelessDeps])
+async def test_structured_answer_with_unavailable_cite_is_not_retried(
+    temp_db_path, deps_type
+):
+    turns = iter(
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "search-1")],
+            [ToolCallPart("final_result", {"text": "answer"}, "output-1")],
+        ]
+    )
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(
+        FunctionModel(model),
+        deps_type=deps_type,
+        output_type=Answer,
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig()),
+            create_policy(),
+        ],
+    )
+    deps = deps_type()
+    with (
+        patch.object(RAGCapability, "_search", stub_search),
+        patch.object(RAGCapability, "cite_available", property(lambda _self: False)),
+    ):
+        result = await agent.run("what does the supervisor do?", deps=deps)
+
+    assert result.output == Answer(text="answer")
+    assert result.usage.requests == 2
+    if isinstance(deps, Deps):
+        assert deps.state["citation_policy"]["violations"] == [0]
+
+
+async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_path):
+    """A structured answer receives one retry before a violation is recorded."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     turns = iter(
         [
@@ -418,9 +600,18 @@ async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_pa
     with patch.object(RAGCapability, "_search", stub_search):
         await agent.run("what does the supervisor do?", deps=deps)
 
-    # The cite tool is available here, so the redirect is what must happen; the
-    # backstop recording a violation would pass an `or` even with detection broken.
-    assert [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
+    retries = [
+        part
+        for message in sent[-1]
+        for part in message.parts
+        if isinstance(part, RetryPromptPart)
+        and isinstance(part.content, str)
+        and CITATION_REDIRECT_TAG in part.content
+    ]
+    assert len(retries) == 1
+    assert retries[0].tool_name == "final_result"
+    assert not [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
+    assert deps.state["citation_policy"]["violations"] == [0]
 
 
 async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_path):

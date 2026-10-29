@@ -2,15 +2,17 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import RunContext
+from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
+    RetryPromptPart,
     ToolCallPart,
     UserPromptPart,
 )
 from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.output import OutputContext
 from pydantic_ai.run import AgentRunResult
 
 from haiku.rag.capabilities.evidence import (
@@ -85,19 +87,8 @@ class CitationPolicyCapability(AbstractCapability[Any]):
         request_context: ModelRequestContext,
         response: ModelResponse,
     ) -> ModelResponse:
-        """Decide once, at the last moment a question can still be redirected.
-
-        A response that ends the question is the last opportunity: one carrying no
-        tool calls, or one whose call is an output tool, which is how a structured
-        answer arrives and which finishes the run just the same. Citing is
-        unconditional, so an undeclared answer is a protocol breach whether the model
-        answered or refused, and this never has to guess which it was.
-
-        Endings this cannot see — a host running ``end_strategy="early"`` can finish
-        on text beside a function call — are caught by ``after_run``, which can still
-        record the outcome even though it can no longer ask for a citation.
-        """
-        if not _ends_the_question(response, request_context):
+        """Ask a completed plain-text answer to declare its grounding once."""
+        if not _ends_with_text(response, request_context):
             return response
         evidence = discover_evidence(ctx)
         question = question_in_progress(evidence)
@@ -114,6 +105,35 @@ class CitationPolicyCapability(AbstractCapability[Any]):
         else:
             self._record_violation(ctx, question)
         return response
+
+    async def after_output_validate(
+        self,
+        ctx: RunContext[Any],
+        *,
+        output_context: OutputContext,
+        output: Any,
+    ) -> Any:
+        """Ask a validated structured answer to declare its grounding once."""
+        if ctx.partial_output:
+            return output
+        evidence = discover_evidence(ctx)
+        question = question_in_progress(evidence)
+        if not _has_evidence_to_declare(evidence):
+            return output
+        records = [found.record for found in evidence]
+        if citation_status(records, question=question) != "missing":
+            return output
+        if _already_asked(ctx.messages, question):
+            return output
+        if any(found.cite_available for found in evidence):
+            raise ModelRetry(
+                "Call the cite tool with the chunk_ids that support your answer, "
+                "or an empty list if nothing supports it. Then submit your answer "
+                "again, preserving its content and the required output format. "
+                f"{CITATION_REDIRECT_TAG}"
+            )
+        self._record_violation(ctx, question)
+        return output
 
     def _record_violation(self, ctx: RunContext[Any], question: int) -> None:
         """Note a question that could not be asked to cite, the tool being gone.
@@ -157,38 +177,20 @@ class CitationPolicyCapability(AbstractCapability[Any]):
             )
 
 
-def _ends_the_question(
+def _ends_with_text(
     response: ModelResponse, request_context: ModelRequestContext
 ) -> bool:
-    """Whether this response finishes the question rather than continuing it.
-
-    An output tool call is a ``ToolCallPart`` like any other, but it carries the
-    final answer and ends the run, so treating every tool call as intermediate let a
-    structured answer finish undeclared.
-    """
-    calls = [part for part in response.parts if isinstance(part, ToolCallPart)]
-    if not calls:
-        return True
-    output_tools = {
-        tool.name for tool in request_context.model_request_parameters.output_tools
-    }
-    return any(call.tool_name in output_tools for call in calls)
+    """Whether this response ends with unstructured text."""
+    return request_context.model_request_parameters.output_mode not in (
+        "native",
+        "prompted",
+    ) and not any(isinstance(part, ToolCallPart) for part in response.parts)
 
 
 def _already_asked(messages: list[ModelMessage], question: int) -> bool:
-    """Whether this question has already been asked to declare its grounding.
-
-    Read from the history rather than remembered on the instance, which a
-    resumption's ``for_run`` would forget — the same question would then be asked
-    twice. It also makes the right call when a redirect was enqueued but the run
-    ended before it reached the model: nothing is in the history, so it is asked
-    again, which is what the model needs.
-
-    Matched on the machine tag rather than the wording, so a question that happens
-    to contain the phrase cannot pass as a redirect we sent.
-    """
+    """Whether this question has a citation reminder in stored message history."""
     return any(
-        isinstance(part, UserPromptPart)
+        isinstance(part, UserPromptPart | RetryPromptPart)
         and isinstance(part.content, str)
         and CITATION_REDIRECT_TAG in part.content
         for message in messages[question:]

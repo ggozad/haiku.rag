@@ -23,6 +23,19 @@ question finishes undeclared anyway, the question is recorded in
 `CitationPolicyState.violations` under the `"citation_policy"` state key, and the model
 is not asked again.
 
+### Structured answers
+
+For structured output, the reminder is an output-validation retry after successful
+schema validation, not a queued user message. It asks the model to register its
+citations and resubmit the answer in the required output format. Invalid schema
+candidates and partial streaming output do not trigger citation reminders.
+
+The reminder consumes the host agent's output-retry budget. For example,
+`retries={"output": 2}` allows one schema-validation retry and one citation retry.
+Exhausting that budget raises Pydantic AI's retry-limit error. An answer that ignores
+the citation reminder and still finishes undeclared is recorded as a violation,
+as for plain-text answers.
+
 ## Which answers are enforced
 
 Every answer in a conversation that has something to declare: either this question
