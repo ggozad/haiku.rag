@@ -26,12 +26,13 @@ class TestSandboxBasics:
         """The modules the instructions and the MCP description promise."""
         result = await sandbox.execute(
             "import json, re, math, pathlib, datetime\n"
-            "import collections, itertools, functools, dataclasses\n"
+            "import collections, itertools, functools, dataclasses, decimal\n"
             "print(collections.Counter('aab').most_common(1),"
-            " list(itertools.islice(itertools.count(), 2)))"
+            " list(itertools.islice(itertools.count(), 2)),"
+            " decimal.Decimal('0.1') + decimal.Decimal('0.2'))"
         )
         assert result.success, result.stderr
-        assert "[('a', 2)] [0, 1]" in result.stdout
+        assert "[('a', 2)] [0, 1] 0.3" in result.stdout
 
     async def test_sleep_returns_at_once(self, sandbox):
         """A program's `time.sleep` does not hold the worker."""

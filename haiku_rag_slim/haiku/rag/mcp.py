@@ -454,8 +454,8 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         pictures) and chunk_meta. `await list_documents()` returns dicts with
         id, title, uri, created_at, source and metadata. Both see the documents
         `filter` and `sources` select. Useful modules include json, re, math,
-        pathlib, datetime, collections, itertools, functools and dataclasses;
-        decimal and statistics do not exist. No generator functions or class
+        pathlib, datetime, collections, itertools, functools, dataclasses and
+        decimal; statistics does not exist. No generator functions or class
         inheritance.
         Files are read-only, there is no network, a call has a time limit named
         in the error when it is hit, and output past a size is truncated.
