@@ -1032,6 +1032,74 @@ async def test_before_ingest_runs_for_each_pdf_attachment(temp_db_path, tmp_path
     assert parent.metadata["team"] == "hook"
 
 
+class DeriveMetadataHook(Hook):
+    async def after_ingest(self, client, event):
+        for doc in event.documents:
+            await client.update_document(
+                doc.id, metadata={**doc.metadata, "derived": doc.uri}
+            )
+
+
+@converts_pdf_locally
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_after_ingest_metadata_update_on_a_pdf_is_kept(temp_db_path, tmp_path):
+    from tests.conftest import build_pdf
+
+    path = tmp_path.resolve() / "parent.pdf"
+    path.write_bytes(build_pdf([("notes.txt", b"The notes.")]))
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [DeriveMetadataHook()]
+        parent = await client.create_document_from_source(path)
+        assert not isinstance(parent, list)
+        assert parent.id is not None
+        stored = await client.get_document_by_id(parent.id)
+
+    assert stored is not None
+    assert stored.metadata["derived"] == parent.uri
+    assert stored.metadata["md5"] == _md5(path.read_bytes())
+    assert "source_revision" in stored.metadata
+
+
+class WriteDuringFetchHook(Hook):
+    def __init__(self, document_id: str):
+        self.document_id = document_id
+
+    async def before_ingest(self, client, request):
+        await client.update_document(self.document_id, metadata={"derived": "x"})
+        return request
+
+
+@pytest.mark.asyncio
+async def test_unchanged_bytes_keep_metadata_written_during_the_fetch(
+    temp_db_path, tmp_path
+):
+    from tests.conftest import writing
+
+    body = b"Unchanged notes."
+    path = tmp_path.resolve() / "notes.md"
+    path.write_bytes(body)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        seed = _import("notes", "Unchanged notes.")
+        doc = await client.import_document(
+            seed.docling_document, seed.chunks, uri=path.as_uri()
+        )
+        doc.metadata = {"md5": _md5(body)}
+        await writing(client).document_repository.update_meta(doc)
+        assert doc.id is not None
+
+        client._hooks = [WriteDuringFetchHook(doc.id)]
+        await client.create_document_from_source(path)
+        stored = await client.get_document_by_id(doc.id)
+
+    assert stored is not None
+    assert stored.metadata["derived"] == "x"
+    assert stored.metadata["md5"] == _md5(body)
+
+
 class RaisingIngestHook(Hook):
     async def before_ingest(self, client, request):
         raise RuntimeError("hook refused")

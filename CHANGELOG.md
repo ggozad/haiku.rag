@@ -23,6 +23,8 @@
 - The `http` source reads the revision from the headers of a GET when HEAD answers 405 or 501 (#757).
 - Under `delete_orphans`, the `http` source deletes the document of a URL that answers 404 on two sweeps with a permanently failed fetch between them (#757).
 - `IngestRequest.uri`, `DocumentRejected.uri` and the `HookError` message carry the URI the document is stored under, for an ingest given an explicit `uri` and for a path or `file://` URI through a symlink (#776).
+- Metadata written to a document while its source ingest runs is kept, including an `after_ingest` hook's metadata-only `update_document` on a PDF with attachment extraction (#778).
+- `update_document` keeps metadata written while it waited for the write lock, `md5` and `source_revision` included (#778).
 
 ## [0.102.0] - 2026-10-28
 
