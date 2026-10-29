@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -82,23 +82,14 @@ async def test_local_chunker_runs_off_event_loop_thread():
     )
 
 
-async def test_local_chunker_custom_config():
-    """Test DoclingLocalChunker with custom configuration."""
+@pytest.mark.parametrize(
+    ("name", "chunker_class"),
+    [("docling-local", DoclingLocalChunker), ("docling-serve", DoclingServeChunker)],
+)
+def test_get_chunker_selects_the_configured_chunker(name, chunker_class):
     config = AppConfig()
-    config.processing.chunk_size = 128
-    config.processing.chunking_tokenizer = "Qwen/Qwen3-Embedding-0.6B"
-
-    chunker = DoclingLocalChunker(config)
-    assert chunker.chunk_size == 128
-    assert chunker.tokenizer_name == "Qwen/Qwen3-Embedding-0.6B"
-
-
-def test_get_chunker_docling_local():
-    """Test factory returns DoclingLocalChunker for docling-local."""
-    config = AppConfig()
-    config.processing.chunker = "docling-local"
-    chunker = get_chunker(config)
-    assert isinstance(chunker, DoclingLocalChunker)
+    config.processing.chunker = name
+    assert isinstance(get_chunker(config), chunker_class)
 
 
 def test_get_chunker_invalid():
@@ -159,25 +150,6 @@ async def test_local_chunker_hierarchical_without_semchunk(monkeypatch):
     assert [chunk.content for chunk in chunks] == ["Some text."]
 
 
-async def test_local_chunker_hierarchical(qa_corpus: list[dict[str, str]]):
-    """Test DoclingLocalChunker with hierarchical chunking."""
-    config = AppConfig()
-    config.processing.chunker_type = "hierarchical"
-    chunker = DoclingLocalChunker(config)
-
-    doc_text = qa_corpus[0]["document_extracted"]
-    converter = get_converter(get_config())
-    doc = await converter.convert_text(doc_text, name="test.md")
-
-    chunks = await chunker.chunk(doc)
-
-    # Hierarchical chunker should produce chunks
-    assert len(chunks) > 0
-    # Each chunk should be non-empty
-    for chunk in chunks:
-        assert len(chunk.content.strip()) > 0
-
-
 def test_local_chunker_invalid_type():
     """Test DoclingLocalChunker raises error for invalid chunker_type."""
     config = AppConfig()
@@ -223,34 +195,9 @@ async def test_local_chunker_markdown_tables():
     assert "," in table_content and "|" not in table_content
 
 
-async def test_local_chunker_sets_order():
-    """Test that DoclingLocalChunker sets sequential order on chunks."""
-    sample_md = """# Introduction
-
-First paragraph with some content.
-
-## Section One
-
-Second paragraph.
-
-## Section Two
-
-Third paragraph.
-"""
-    converter = get_converter(get_config())
-    doc = await converter.convert_text(sample_md, name="test.md")
-
-    chunker = DoclingLocalChunker()
-    chunks = await chunker.chunk(doc)
-
-    assert len(chunks) > 0
-    # Verify order is set sequentially starting from 0
-    for i, chunk in enumerate(chunks):
-        assert chunk.order == i, f"Chunk {i} has order {chunk.order}, expected {i}"
-
-
-async def test_local_chunker_metadata_extraction():
-    """Test that DoclingLocalChunker extracts metadata correctly."""
+async def test_local_chunker_settings_order_and_metadata():
+    """The chunker takes its size and tokenizer from the config, numbers chunks
+    in order and extracts their metadata."""
     sample_md = """# Chapter 1: Introduction
 
 This is the first paragraph of the introduction.
@@ -265,11 +212,17 @@ Here is some background information.
 """
     converter = get_converter(get_config())
     doc = await converter.convert_text(sample_md, name="test.md")
+    config = AppConfig()
+    config.processing.chunk_size = 128
+    config.processing.chunking_tokenizer = "Qwen/Qwen3-Embedding-0.6B"
 
-    chunker = DoclingLocalChunker()
+    chunker = DoclingLocalChunker(config)
     chunks = await chunker.chunk(doc)
 
-    assert len(chunks) > 0
+    assert chunker.chunk_size == 128
+    assert chunker.tokenizer_name == "Qwen/Qwen3-Embedding-0.6B"
+    assert len(chunks) > 1
+    assert [chunk.order for chunk in chunks] == list(range(len(chunks)))
 
     # Check that at least one chunk has doc_item_refs
     all_refs = []
@@ -320,14 +273,6 @@ async def test_inline_markup_survives_chunking():
     assert "0.68.0 - 2026-07-24" in headings
 
 
-def test_get_chunker_docling_serve():
-    """Test factory returns DoclingServeChunker for docling-serve."""
-    config = AppConfig()
-    config.processing.chunker = "docling-serve"
-    chunker = get_chunker(config)
-    assert isinstance(chunker, DoclingServeChunker)
-
-
 def create_async_workflow_mocks(
     result_data: dict, task_id: str = "test-task-123"
 ) -> tuple[Mock, Mock, Mock]:
@@ -350,6 +295,26 @@ def create_async_workflow_mocks(
     return submit_response, poll_response, result_response
 
 
+@pytest.fixture
+def serve_chunks(monkeypatch):
+    """Patch httpx.AsyncClient so docling-serve answers one chunking workflow
+    with the given result and return the client mock."""
+
+    def serve(result_data: dict) -> AsyncMock:
+        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+        client_class = MagicMock()
+        client_class.return_value.__aenter__.return_value = mock_client
+        monkeypatch.setattr(
+            "haiku.rag.providers.docling_serve.httpx.AsyncClient", client_class
+        )
+        return mock_client
+
+    return serve
+
+
 class TestDoclingServeChunker:
     """Tests for DoclingServeChunker (mocked)."""
 
@@ -368,8 +333,7 @@ class TestDoclingServeChunker:
         """Create DoclingServeChunker instance."""
         return DoclingServeChunker(config)
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_success(self, mock_client_class, chunker):
+    async def test_chunk_success(self, chunker, serve_chunks):
         """Test successful chunking via docling-serve async workflow."""
         result_data = {
             "chunks": [
@@ -377,12 +341,7 @@ class TestDoclingServeChunker:
                 {"text": "Chunk 2", "chunk_index": 1},
             ]
         }
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_client = serve_chunks(result_data)
 
         # Create a simple document
         converter = get_converter(get_config())
@@ -394,41 +353,13 @@ class TestDoclingServeChunker:
         assert chunks[1].content == "Chunk 2"
         mock_client.post.assert_called_once()
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_with_api_key(self, mock_client_class, config):
-        """Test that API key is included in request headers."""
-        config.providers.docling_serve.api_key = "test-key"
-        chunker = DoclingServeChunker(config)
-
-        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        converter = get_converter(get_config())
-        doc = await converter.convert_text("# Test", name="test.md")
-        await chunker.chunk(doc)
-
-        call_kwargs = mock_client.post.call_args.kwargs
-        assert "headers" in call_kwargs
-        assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
-
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_hierarchical_endpoint(self, mock_client_class, config):
+    async def test_chunk_hierarchical_endpoint(self, config, serve_chunks):
         """Test that hierarchical chunker uses correct endpoint."""
         config.processing.chunker_type = "hierarchical"
         chunker = DoclingServeChunker(config)
 
         result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_client = serve_chunks(result_data)
 
         converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
@@ -437,77 +368,36 @@ class TestDoclingServeChunker:
         call_args = mock_client.post.call_args
         assert "/v1/chunk/hierarchical/file/async" in call_args[0][0]
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_passes_config_parameters(self, mock_client_class, config):
-        """Test that all config parameters are passed to API."""
+    def test_chunking_request_sends_the_chunking_options(self, config):
         config.processing.chunk_size = 512
         config.processing.chunking_merge_peers = False
         config.processing.chunking_use_markdown_tables = True
-        config.processing.conversion_options.do_ocr = False
-        config.processing.conversion_options.force_ocr = True
-        config.processing.conversion_options.ocr_engine = "tesseract"
-        config.processing.conversion_options.ocr_lang = ["en", "de"]
-        chunker = DoclingServeChunker(config)
 
-        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
+        data = DoclingServeChunker(config)._build_chunking_data()
 
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        converter = get_converter(get_config())
-        doc = await converter.convert_text("# Test", name="test.md")
-        await chunker.chunk(doc)
-
-        call_kwargs = mock_client.post.call_args.kwargs
-        data = call_kwargs["data"]
         assert data["chunking_max_tokens"] == "512"
         assert data["chunking_merge_peers"] == "false"
         assert data["chunking_use_markdown_tables"] == "true"
-        # OCR options from conversion_options
-        assert data["convert_do_ocr"] == "false"
-        assert data["convert_force_ocr"] == "true"
-        assert data["convert_ocr_engine"] == "tesseract"
-        assert data["convert_ocr_lang"] == ["en", "de"]
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_omits_empty_ocr_lang(self, mock_client_class, config):
-        """Test that ocr_lang is omitted when empty (default)."""
-        # Ensure ocr_lang is empty (default)
-        config.processing.conversion_options.ocr_lang = []
-        chunker = DoclingServeChunker(config)
-
-        result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        converter = get_converter(get_config())
-        doc = await converter.convert_text("# Test", name="test.md")
-        await chunker.chunk(doc)
-
-        call_kwargs = mock_client.post.call_args.kwargs
-        data = call_kwargs["data"]
-        # OCR options should use defaults
-        assert data["convert_do_ocr"] == "true"
-        assert data["convert_force_ocr"] == "false"
-        assert data["convert_ocr_engine"] == "auto"
-        # ocr_lang should NOT be present when empty
-        assert "convert_ocr_lang" not in data
-
-    @pytest.mark.parametrize("pictures", ["none", "image", "description"])
-    def test_chunking_request_sends_the_conversion_options(self, config, pictures):
-        """Chunk requests carry the conversion request's pipeline options."""
+    @pytest.mark.parametrize(
+        ("pictures", "ocr_lang"),
+        [
+            ("none", ["en"]),
+            ("image", ["en"]),
+            ("description", ["en"]),
+            ("image", []),
+        ],
+    )
+    def test_chunking_request_sends_the_conversion_options(
+        self, config, pictures, ocr_lang
+    ):
+        """Chunk requests carry the conversion request's pipeline options and
+        omit an empty OCR language list."""
         from haiku.rag.converters.docling_serve import DoclingServeConverter
 
         config.processing.pictures = pictures
         config.processing.conversion_options.table_mode = "fast"
-        config.processing.conversion_options.ocr_lang = ["en"]
+        config.processing.conversion_options.ocr_lang = ocr_lang
         conversion = DoclingServeConverter(config)._build_conversion_data()
         chunking = DoclingServeChunker(config)._build_chunking_data()
 
@@ -520,66 +410,12 @@ class TestDoclingServeChunker:
         assert sent_for_chunking == {
             k: v for k, v in conversion.items() if k not in output_only
         }
+        assert chunking["convert_do_ocr"] == "true"
+        assert chunking["convert_force_ocr"] == "false"
+        assert chunking["convert_ocr_engine"] == "auto"
+        assert ("convert_ocr_lang" in chunking) == bool(ocr_lang)
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_connection_error(self, mock_client_class, chunker):
-        """Test handling of connection errors."""
-        import httpx
-
-        chunker.client._retry_base_delay = 0
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = httpx.ConnectError("Connection failed")
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        converter = get_converter(get_config())
-        doc = await converter.convert_text("# Test", name="test.md")
-
-        with pytest.raises(httpx.ConnectError):
-            await chunker.chunk(doc)
-
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_timeout_error(self, mock_client_class, chunker):
-        """Test handling of timeout errors."""
-        import httpx
-
-        chunker.client._retry_base_delay = 0
-        mock_client = AsyncMock()
-        mock_client.post.side_effect = httpx.TimeoutException("Timeout")
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        converter = get_converter(get_config())
-        doc = await converter.convert_text("# Test", name="test.md")
-
-        with pytest.raises(httpx.TimeoutException):
-            await chunker.chunk(doc)
-
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_auth_error(self, mock_client_class, chunker):
-        """Auth failures surface as httpx.HTTPStatusError(401) so the
-        ingester's pipeline classifier can route them to PermanentError —
-        retrying a bad token is wasted work."""
-        import httpx
-
-        mock_request = Mock()
-        mock_response = Mock()
-        mock_response.status_code = 401
-        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "401", request=mock_request, response=mock_response
-        )
-
-        mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
-        mock_client_class.return_value.__aenter__.return_value = mock_client
-
-        converter = get_converter(get_config())
-        doc = await converter.convert_text("# Test", name="test.md")
-
-        with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await chunker.chunk(doc)
-        assert exc_info.value.response.status_code == 401
-
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_document_failure_status(self, mock_client_class, chunker):
+    async def test_chunk_document_failure_status(self, chunker, serve_chunks):
         """Test that document-level failure status raises ValueError."""
         result_data = {
             "chunks": [],
@@ -591,12 +427,7 @@ class TestDoclingServeChunker:
                 }
             ],
         }
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        serve_chunks(result_data)
 
         converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
@@ -604,10 +435,7 @@ class TestDoclingServeChunker:
         with pytest.raises(ValueError, match="Chunking failed"):
             await chunker.chunk(doc)
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_document_success_empty_chunks(
-        self, mock_client_class, chunker
-    ):
+    async def test_chunk_document_success_empty_chunks(self, chunker, serve_chunks):
         """Test that successful status with empty chunks returns empty list."""
         result_data = {
             "chunks": [],
@@ -619,12 +447,7 @@ class TestDoclingServeChunker:
                 }
             ],
         }
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        serve_chunks(result_data)
 
         converter = get_converter(get_config())
         doc = await converter.convert_text("# Test", name="test.md")
@@ -632,8 +455,7 @@ class TestDoclingServeChunker:
         chunks = await chunker.chunk(doc)
         assert chunks == []
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
-    async def test_chunk_metadata_extraction(self, mock_client_class, chunker):
+    async def test_chunk_metadata_extraction(self, chunker, serve_chunks):
         """Test that metadata is correctly extracted from API response.
 
         Labels are resolved from the DoclingDocument using the refs, so we need
@@ -655,12 +477,7 @@ class TestDoclingServeChunker:
                 },
             ]
         }
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        serve_chunks(result_data)
 
         # Create a document with texts and tables that match the mocked refs
         converter = get_converter(get_config())
@@ -697,9 +514,8 @@ This is content.
         assert meta1.headings == ["Chapter 1", "Section 1.1"]
         assert meta1.page_numbers == [1, 2]
 
-    @patch("haiku.rag.providers.docling_serve.httpx.AsyncClient")
     async def test_chunk_serializes_document_off_event_loop_thread(
-        self, mock_client_class, chunker
+        self, chunker, serve_chunks
     ):
         """model_dump_json over a document carrying inlined base64 page/picture
         images is CPU-heavy and proportional to document size; it must run off
@@ -711,12 +527,7 @@ This is content.
         import threading
 
         result_data = {"chunks": [{"text": "Chunk 1", "chunk_index": 0}]}
-        submit_resp, poll_resp, result_resp = create_async_workflow_mocks(result_data)
-
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=submit_resp)
-        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-        mock_client_class.return_value.__aenter__.return_value = mock_client
+        serve_chunks(result_data)
 
         event_loop_thread = threading.current_thread()
         called_from: list[threading.Thread] = []

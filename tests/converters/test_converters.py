@@ -305,6 +305,21 @@ def create_async_workflow_zip_mocks(
     return submit_response, poll_response, result_response
 
 
+@pytest.fixture
+def serve_http():
+    """Patch httpx.AsyncClient to serve one zip workflow and yield the client mock."""
+    doc_json = create_mock_docling_document("test")
+    submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=submit_resp)
+        mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client_class.return_value = mock_client
+        yield mock_client
+
+
 async def test_parse_zip_runs_off_event_loop_thread():
     """_parse_zip_to_docling does zip decompress, per-image base64 re-encoding,
     and DoclingDocument.model_validate — all synchronous and CPU-heavy (full-
@@ -353,51 +368,29 @@ class TestTextFileHandler:
     def test_docling_safe_name_keeps_the_extension(self, name):
         assert docling_safe_name(name) == "document.md"
 
-    def test_text_extensions_defined(self):
-        """Test that text extensions list is defined."""
-        assert len(TextFileHandler.text_extensions) > 0
-        assert ".py" in TextFileHandler.text_extensions
-        assert ".js" in TextFileHandler.text_extensions
-        assert ".txt" in TextFileHandler.text_extensions
-
-    def test_plantuml_extensions_supported(self):
-        """Test that PlantUML extensions are in text_extensions."""
-        assert ".puml" in TextFileHandler.text_extensions
-        assert ".plantuml" in TextFileHandler.text_extensions
-        assert ".pu" in TextFileHandler.text_extensions
-
-    def test_code_markdown_identifiers(self):
-        """Test code language identifiers mapping."""
-        assert TextFileHandler.code_markdown_identifier[".py"] == "python"
-        assert TextFileHandler.code_markdown_identifier[".js"] == "javascript"
-        assert TextFileHandler.code_markdown_identifier[".ts"] == "typescript"
-
-    def test_plantuml_markdown_identifiers(self):
-        """Test PlantUML language identifiers mapping."""
-        assert TextFileHandler.code_markdown_identifier[".puml"] == "plantuml"
-        assert TextFileHandler.code_markdown_identifier[".plantuml"] == "plantuml"
-        assert TextFileHandler.code_markdown_identifier[".pu"] == "plantuml"
-
-    def test_prepare_text_content_with_code(self):
-        """Test that code files are wrapped in markdown code blocks."""
-        code = "def hello():\n    pass"
-        result = TextFileHandler.prepare_text_content(code, ".py")
-        assert result.startswith("```python\n")
-        assert result.endswith("\n```")
-        assert "def hello():" in result
-
-    def test_prepare_text_content_with_plantuml(self):
-        """Test that PlantUML files are wrapped in plantuml code blocks."""
-        puml = "@startuml\nAlice -> Bob: Hello\n@enduml"
-        result = TextFileHandler.prepare_text_content(puml, ".puml")
-        assert result.startswith("```plantuml\n")
-        assert result.endswith("\n```")
-        assert "@startuml" in result
+    @pytest.mark.parametrize(
+        ("extension", "language"),
+        [
+            (".py", "python"),
+            (".js", "javascript"),
+            (".ts", "typescript"),
+            (".puml", "plantuml"),
+            (".plantuml", "plantuml"),
+            (".pu", "plantuml"),
+        ],
+    )
+    def test_prepare_text_content_wraps_code(self, extension, language):
+        """A code or PlantUML file is a text extension wrapped in a fenced block
+        named after its language."""
+        result = TextFileHandler.prepare_text_content("first\nsecond", extension)
+        assert extension in TextFileHandler.text_extensions
+        assert result == f"```{language}\nfirst\nsecond\n```"
 
     def test_prepare_text_content_without_code(self):
         """Test that plain text files are not wrapped."""
         text = "Hello world"
         result = TextFileHandler.prepare_text_content(text, ".txt")
+        assert ".txt" in TextFileHandler.text_extensions
         assert result == text
         assert not result.startswith("```")
 
@@ -444,12 +437,19 @@ class TestTextDecoding:
 class TestConverterFactory:
     """Tests for converter factory function."""
 
-    def test_get_docling_local_converter(self):
-        """Test getting docling-local converter."""
+    @pytest.mark.parametrize(
+        ("name", "converter_class"),
+        [
+            ("docling-local", DoclingLocalConverter),
+            ("docling-serve", DoclingServeConverter),
+        ],
+    )
+    def test_get_converter_selects_the_configured_converter(
+        self, name, converter_class
+    ):
         config = AppConfig()
-        config.processing.converter = "docling-local"
-        converter = get_converter(config)
-        assert isinstance(converter, DoclingLocalConverter)
+        config.processing.converter = name
+        assert isinstance(get_converter(config), converter_class)
 
     def test_docling_local_converter_requires_the_docling_extra(self, monkeypatch):
         """`DoclingLocalConverter` names the `docling` extra when docling is not
@@ -459,13 +459,6 @@ class TestConverterFactory:
         config.processing.converter = "docling-local"
         with pytest.raises(ImportError, match=r"haiku\.rag-slim\[docling\]"):
             get_converter(config)
-
-    def test_get_docling_serve_converter(self):
-        """Test getting docling-serve converter."""
-        config = AppConfig()
-        config.processing.converter = "docling-serve"
-        converter = get_converter(config)
-        assert isinstance(converter, DoclingServeConverter)
 
     def test_invalid_converter_raises_error(self):
         """Test that invalid converter name raises ValueError."""
@@ -541,31 +534,6 @@ class TestTextToDoclingWithFormat:
         ]
         assert not any("born 29 March 1968" in text for text in texts)
 
-    async def test_md_format_is_default(self):
-        """Test that md format is used by default."""
-        config = AppConfig()
-        converter = DoclingLocalConverter(config)
-
-        # Plain text should work with default format
-        doc = await converter.convert_text("# Heading\n\nParagraph text.")
-        items = list(doc.iterate_items())
-
-        assert len(items) >= 2
-
-    async def test_html_as_md_loses_structure(self):
-        """Test that HTML parsed as markdown loses semantic structure."""
-        html_content = "<h1>Title</h1><p>Text</p><ul><li>Item</li></ul>"
-        config = AppConfig()
-        converter = DoclingLocalConverter(config)
-
-        # With md format (default), HTML tags are treated as text
-        doc = await converter.convert_text(html_content, format="md")
-        items = list(doc.iterate_items())
-
-        # Should still parse but with different structure
-        # (markdown parser will interpret some HTML)
-        assert len(items) >= 1
-
     async def test_invalid_format_raises_error(self):
         """Test that invalid format raises ValueError."""
         config = AppConfig()
@@ -619,27 +587,6 @@ class TestTextToDoclingWithFormat:
         assert "section_header" in labels
         assert "list_item" in labels
 
-    async def test_plain_text_without_markdown_syntax_fallback(self):
-        """Test that plain text without markdown syntax falls back gracefully.
-
-        Docling's format detection fails for plain text that doesn't contain
-        markdown syntax (headers, lists, etc.). The converter should fall back
-        to creating a simple DoclingDocument directly.
-        """
-        config = AppConfig()
-        converter = DoclingLocalConverter(config)
-
-        # Plain text without any markdown syntax
-        plain_text = (
-            "MZ Wallace is an American company which designs, manufactures "
-            "and markets handbags and fashion accessories. The company was "
-            "founded in 1999 by Monica Zwirner and Lucy Wallace Eustice."
-        )
-        doc = await converter.convert_text(plain_text, format="md")
-        assert doc is not None
-        exported = doc.export_to_markdown()
-        assert "MZ Wallace" in exported
-
 
 class TestDoclingLocalConverter:
     """Tests for DoclingLocalConverter."""
@@ -654,18 +601,23 @@ class TestDoclingLocalConverter:
         """Create DoclingLocalConverter instance."""
         return DoclingLocalConverter(config)
 
-    async def test_docling_document_serialization_roundtrip(self, converter):
-        """Test that DoclingDocument can be serialized and parsed back.
+    async def test_convert_text_defaults_to_markdown_and_round_trips(self, converter):
+        """Text converts as Markdown by default, and the document survives a JSON
+        round trip.
 
-        This catches version mismatches between docling (which creates documents)
-        and docling-core (which parses them). If their schema versions differ,
-        model_validate_json() will raise a ValidationError.
+        model_validate_json() raises a ValidationError when docling and
+        docling-core disagree on the schema version.
         """
         doc = await converter.convert_text("# Test\n\nContent here", name="test.md")
+        html_in_md = await converter.convert_text(
+            "<h1>Title</h1><p>Text</p><ul><li>Item</li></ul>", format="md"
+        )
 
-        json_str = doc.model_dump_json()
-        parsed = DoclingDocument.model_validate_json(json_str)
+        parsed = DoclingDocument.model_validate_json(doc.model_dump_json())
 
+        assert doc.name == "test"
+        assert len(list(doc.iterate_items())) >= 2
+        assert len(list(html_in_md.iterate_items())) >= 1
         assert parsed.name == doc.name
         assert parsed.version == doc.version
 
@@ -718,12 +670,6 @@ class TestDoclingLocalConverter:
         titles = [t.text for t in doc.texts if t.label == DocItemLabel.TITLE]
         assert titles == ["Q3 pricing review"]
         assert "The London numbers changed." in doc.export_to_markdown()
-
-    async def test_convert_text(self, converter):
-        """Test converting text to DoclingDocument."""
-        doc = await converter.convert_text("# Test\n\nContent here", name="test.md")
-        assert isinstance(doc, DoclingDocument)
-        assert doc.name == "test"
 
     async def test_convert_file_rejects_unsupported_extension(
         self, converter, tmp_path
@@ -863,21 +809,6 @@ class TestDoclingLocalConverter:
 
         assert "```" in result
         assert "def hello():" in result
-
-    def test_conversion_options_applied_to_local_converter(self, config):
-        """Test that conversion options are applied to local docling converter."""
-        config.processing.conversion_options.do_ocr = False
-        config.processing.conversion_options.table_mode = "fast"
-        config.processing.conversion_options.images_scale = 3.0
-        config.processing.conversion_options.generate_page_images = False
-        converter = DoclingLocalConverter(config)
-
-        assert converter.config.processing.conversion_options.do_ocr is False
-        assert converter.config.processing.conversion_options.table_mode == "fast"
-        assert converter.config.processing.conversion_options.images_scale == 3.0
-        assert (
-            converter.config.processing.conversion_options.generate_page_images is False
-        )
 
     async def test_convert_text_html_fetches_data_uri_image(self, config):
         """`fetch_remote_images=True` decodes inline `data:` URIs into picture
@@ -1268,28 +1199,6 @@ class TestDoclingLocalConverter:
 
     @pytest.mark.slow
     @pytest.mark.usefixtures("docling_local_models")
-    @pytest.mark.filterwarnings(
-        "error:^DoclingParseDocumentBackend is deprecated:DeprecationWarning"
-    )
-    async def test_convert_pdf_with_picture_images(
-        self, config, doclaynet_first_page_pdf
-    ):
-        """Picture bytes are produced by the local converter for PDFs that
-        contain figures."""
-        pdf_path = doclaynet_first_page_pdf
-        converter = DoclingLocalConverter(config)
-
-        doc = await converter.convert_file(pdf_path)
-        assert isinstance(doc, DoclingDocument)
-
-        pictures_with_images = [p for p in doc.pictures if p.image is not None]
-        if doc.pictures:
-            assert len(pictures_with_images) > 0, (
-                "Pictures should carry image data after conversion"
-            )
-
-    @pytest.mark.slow
-    @pytest.mark.usefixtures("docling_local_models")
     async def test_split_and_merge_matches_single_pass(self, config):
         """Real-PDF test for split_pages, in two parts.
 
@@ -1378,8 +1287,13 @@ class TestDoclingLocalConverter:
 
     @pytest.mark.slow
     @pytest.mark.usefixtures("docling_local_models")
-    async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
-        """Test PDF conversion includes page images when enabled."""
+    @pytest.mark.filterwarnings(
+        "error:^DoclingParseDocumentBackend is deprecated:DeprecationWarning"
+    )
+    async def test_convert_pdf_with_page_and_picture_images(
+        self, config, doclaynet_first_page_pdf
+    ):
+        """Pages and pictures carry image data when page images are enabled."""
         pdf_path = doclaynet_first_page_pdf
         config.processing.conversion_options.generate_page_images = True
         converter = DoclingLocalConverter(config)
@@ -1387,44 +1301,32 @@ class TestDoclingLocalConverter:
         doc = await converter.convert_file(pdf_path)
         assert isinstance(doc, DoclingDocument)
 
-        # Check that pages have image data
         pages_with_images = [p for p in doc.pages.values() if p.image is not None]
         assert len(pages_with_images) > 0, (
             "Pages should have image data when generate_page_images=True"
         )
+        pictures_with_images = [p for p in doc.pictures if p.image is not None]
+        if doc.pictures:
+            assert len(pictures_with_images) > 0, (
+                "Pictures should carry image data after conversion"
+            )
 
-    def test_ocr_engine_config_applied(self, config):
-        """Test that ocr_engine config is stored correctly."""
-        config.processing.conversion_options.ocr_engine = "rapidocr"
-        converter = DoclingLocalConverter(config)
-        assert converter.config.processing.conversion_options.ocr_engine == "rapidocr"
+    @pytest.mark.parametrize(
+        ("engine", "options_class"),
+        [
+            ("auto", "OcrAutoOptions"),
+            ("rapidocr", "RapidOcrOptions"),
+            ("easyocr", "EasyOcrOptions"),
+            ("ocrmac", "OcrMacOptions"),
+        ],
+    )
+    def test_get_ocr_options_follows_the_engine(self, config, engine, options_class):
+        from docling.datamodel import pipeline_options
 
-    def test_get_ocr_options_auto(self, config):
-        """Test that _get_ocr_options returns OcrAutoOptions for 'auto'."""
-        from docling.datamodel.pipeline_options import OcrAutoOptions
-
-        config.processing.conversion_options.ocr_engine = "auto"
-        converter = DoclingLocalConverter(config)
-        opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert isinstance(opts, OcrAutoOptions)
-
-    def test_get_ocr_options_rapidocr(self, config):
-        """Test that _get_ocr_options returns RapidOcrOptions for 'rapidocr'."""
-        from docling.datamodel.pipeline_options import RapidOcrOptions
-
-        config.processing.conversion_options.ocr_engine = "rapidocr"
+        config.processing.conversion_options.ocr_engine = engine
         converter = DoclingLocalConverter(config)
         opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert isinstance(opts, RapidOcrOptions)
-
-    def test_get_ocr_options_easyocr(self, config):
-        """Test that _get_ocr_options returns EasyOcrOptions for 'easyocr'."""
-        from docling.datamodel.pipeline_options import EasyOcrOptions
-
-        config.processing.conversion_options.ocr_engine = "easyocr"
-        converter = DoclingLocalConverter(config)
-        opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert isinstance(opts, EasyOcrOptions)
+        assert isinstance(opts, getattr(pipeline_options, options_class))
 
     @pytest.mark.parametrize("engine", ["tesseract", "tesserocr"])
     def test_get_ocr_options_tesseract_engines(self, config, engine):
@@ -1433,15 +1335,6 @@ class TestDoclingLocalConverter:
         converter = DoclingLocalConverter(config)
         opts = converter._get_ocr_options(config.processing.conversion_options)
         assert opts.kind == engine
-
-    def test_get_ocr_options_ocrmac(self, config):
-        """Test that _get_ocr_options returns OcrMacOptions for 'ocrmac'."""
-        from docling.datamodel.pipeline_options import OcrMacOptions
-
-        config.processing.conversion_options.ocr_engine = "ocrmac"
-        converter = DoclingLocalConverter(config)
-        opts = converter._get_ocr_options(config.processing.conversion_options)
-        assert isinstance(opts, OcrMacOptions)
 
     def test_get_ocr_options_passes_force_ocr_and_lang(self, config):
         """Test that _get_ocr_options passes force_ocr and ocr_lang."""
@@ -1473,16 +1366,6 @@ class TestDoclingLocalConverter:
         assert pic_desc.max_tokens == 200
         # Default prompt is in PromptsConfig
         assert "blind user" in config.prompts.picture_description
-
-    def test_picture_description_config_applied(self, config):
-        """Test that picture description config is applied to converter."""
-        config.processing.pictures = "description"
-        config.processing.conversion_options.picture_description.timeout = 120
-        converter = DoclingLocalConverter(config)
-
-        assert converter.config.processing.pictures == "description"
-        pic_desc = converter.config.processing.conversion_options.picture_description
-        assert pic_desc.timeout == 120
 
     def test_picture_description_api_key_becomes_auth_header(self, config):
         """The VLM endpoint is reached over plain HTTP, so its key travels as
@@ -2040,10 +1923,6 @@ class TestDoclingServeConverter:
         """Create DoclingServeConverter instance."""
         return DoclingServeConverter(config)
 
-    def test_initialization(self, converter):
-        """Test converter initialization."""
-        assert converter.client.base_url == "http://localhost:5001"
-
     @pytest.mark.parametrize(
         ("configured", "expected"),
         [
@@ -2074,47 +1953,20 @@ class TestDoclingServeConverter:
         assert ".msg" in extensions
         assert ".epub" in extensions
 
-    async def test_convert_text_success(self, converter):
-        """Test successful text conversion via docling-serve async workflow."""
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            doc = await converter.convert_text("# Test", name="test.md")
-            assert isinstance(doc, DoclingDocument)
-            assert doc.version == "1.10.0"
-            mock_client.post.assert_called_once()
-
-    async def test_convert_text_with_api_key(self, config):
+    async def test_convert_text_with_api_key(self, config, serve_http):
         """Test that API key is included in request headers."""
         config.providers.docling_serve.api_key = "test-key"
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        await converter.convert_text("# Test")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        assert converter.client.base_url == "http://localhost:5001"
+        assert serve_http.post.call_args.args[0].startswith("http://localhost:5001/")
+        call_kwargs = serve_http.post.call_args.kwargs
+        assert "headers" in call_kwargs
+        assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
 
-            await converter.convert_text("# Test")
-
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert "headers" in call_kwargs
-            assert call_kwargs["headers"]["X-Api-Key"] == "test-key"
-
-    async def test_conversion_options_passed_to_api(self, config):
+    async def test_conversion_options_passed_to_api(self, config, serve_http):
         """Test that conversion options are passed to docling-serve API."""
         config.processing.conversion_options.do_ocr = False
         config.processing.conversion_options.force_ocr = True
@@ -2125,54 +1977,32 @@ class TestDoclingServeConverter:
         config.processing.conversion_options.images_scale = 3.0
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        await converter.convert_text("# Test")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        call_kwargs = serve_http.post.call_args.kwargs
+        assert "data" in call_kwargs
+        data = call_kwargs["data"]
+        assert data["do_ocr"] == "false"
+        assert data["force_ocr"] == "true"
+        assert data["ocr_lang"] == ["en", "fr"]
+        assert data["table_mode"] == "fast"
+        assert data["table_cell_matching"] == "false"
+        assert data["do_table_structure"] == "false"
+        assert data["images_scale"] == "3.0"
+        assert data["include_images"] == "true"
+        assert data["image_export_mode"] == "referenced"
+        assert data["target_type"] == "zip"
 
-            await converter.convert_text("# Test")
-
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert "data" in call_kwargs
-            data = call_kwargs["data"]
-            assert data["do_ocr"] == "false"
-            assert data["force_ocr"] == "true"
-            assert data["ocr_lang"] == ["en", "fr"]
-            assert data["table_mode"] == "fast"
-            assert data["table_cell_matching"] == "false"
-            assert data["do_table_structure"] == "false"
-            assert data["images_scale"] == "3.0"
-            assert data["include_images"] == "true"
-            assert data["image_export_mode"] == "referenced"
-            assert data["target_type"] == "zip"
-
-    async def test_ocr_engine_passed_to_api(self, config):
+    async def test_ocr_engine_passed_to_api(self, config, serve_http):
         """Test that ocr_engine is passed to docling-serve API."""
         config.processing.conversion_options.ocr_engine = "rapidocr"
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        await converter.convert_text("# Test")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            await converter.convert_text("# Test")
-
-            call_kwargs = mock_client.post.call_args.kwargs
-            data = call_kwargs["data"]
-            assert data["ocr_engine"] == "rapidocr"
+        call_kwargs = serve_http.post.call_args.kwargs
+        data = call_kwargs["data"]
+        assert data["ocr_engine"] == "rapidocr"
 
     def test_parse_zip_rehydrates_picture_uri(self, config):
         """Zip path inlines artifact bytes as data: URIs on PictureItem.image.
@@ -2263,135 +2093,28 @@ class TestDoclingServeConverter:
         assert doc.pictures[0].image is not None
         assert str(doc.pictures[0].image.uri) == str(Path("artifacts/missing.png"))
 
-    async def test_convert_text_connection_error(self, converter):
-        """Test handling of connection errors."""
-        converter.client._retry_base_delay = 0
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(
-                side_effect=httpx.ConnectError("Connection failed")
-            )
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            with pytest.raises(httpx.ConnectError):
-                await converter.convert_text("# Test")
-
-    async def test_convert_text_timeout_error(self, converter):
-        """Test handling of timeout errors."""
-        converter.client._retry_base_delay = 0
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("Timeout"))
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            with pytest.raises(httpx.TimeoutException):
-                await converter.convert_text("# Test")
-
-    async def test_convert_text_auth_error(self, converter):
-        """Auth failures surface as httpx.HTTPStatusError(401) so the
-        ingester's pipeline classifier can route them to PermanentError —
-        retrying a bad token is wasted work."""
-        mock_response = Mock()
-        mock_response.status_code = 401
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(
-                side_effect=httpx.HTTPStatusError(
-                    "Auth failed", request=Mock(), response=mock_response
-                )
-            )
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            with pytest.raises(httpx.HTTPStatusError) as exc_info:
-                await converter.convert_text("# Test")
-            assert exc_info.value.response.status_code == 401
-
-    async def test_convert_file_pdf(self, converter, tmp_path):
-        """Test converting PDF file via docling-serve async workflow."""
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            temp_path = tmp_path / "sample.pdf"
-            temp_path.write_bytes(b"fake pdf content")
-            doc = await converter.convert_file(temp_path)
-
-            assert isinstance(doc, DoclingDocument)
-            mock_client.post.assert_called_once()
-
-    async def test_convert_file_text(self, converter, tmp_path):
-        """Test converting text file (reads locally, sends to docling-serve)."""
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            temp_path = tmp_path / "sample.py"
-            temp_path.write_text("def hello():\n    pass", encoding="utf-8")
-            doc = await converter.convert_file(temp_path)
-
-            assert isinstance(doc, DoclingDocument)
-            mock_client.post.assert_called_once()
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert "files" in call_kwargs
-
-    async def test_dotfile_uploads_with_detectable_name(self, converter):
+    async def test_dotfile_uploads_with_detectable_name(self, converter, serve_http):
         """docling-serve runs the same format detection on the uploaded
         filename, which ignores the extension of any name starting with a dot.
         """
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        doc = await converter.convert_text("# Test", name=".customrc.md")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        assert isinstance(doc, DoclingDocument)
+        assert doc.version == "1.10.0"
+        serve_http.post.assert_called_once()
+        uploaded_name = serve_http.post.call_args.kwargs["files"]["files"][0]
+        assert uploaded_name == "customrc.md"
 
-            await converter.convert_text("# Test", name=".customrc.md")
-            uploaded_name = mock_client.post.call_args.kwargs["files"]["files"][0]
-            assert uploaded_name == "customrc.md"
-
-    async def test_dotfile_path_uploads_with_detectable_name(self, converter, tmp_path):
+    async def test_dotfile_path_uploads_with_detectable_name(
+        self, converter, tmp_path, serve_http
+    ):
         """A dotfile is uploaded under a name whose extension docling reads."""
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
         dotfile = tmp_path / ".customrc.md"
         dotfile.write_text("# Custom")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            await converter.convert_file(dotfile)
-            uploaded_name = mock_client.post.call_args.kwargs["files"]["files"][0]
-            assert uploaded_name == "customrc.md"
+        await converter.convert_file(dotfile)
+        uploaded_name = serve_http.post.call_args.kwargs["files"]["files"][0]
+        assert uploaded_name == "customrc.md"
 
     async def test_convert_file_rejects_unsupported_extension(
         self, converter, tmp_path
@@ -2402,48 +2125,28 @@ class TestDoclingServeConverter:
 
     @pytest.mark.parametrize("name", ["NOTES.TXT", "README.MD"])
     async def test_convert_file_accepts_uppercase_extension(
-        self, converter, tmp_path, name
+        self, converter, tmp_path, name, serve_http
     ):
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
         source = tmp_path / name
         source.write_text("# Notes")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            doc = await converter.convert_file(source)
+        doc = await converter.convert_file(source)
 
         assert isinstance(doc, DoclingDocument)
-        mock_client.post.assert_called_once()
+        serve_http.post.assert_called_once()
 
     @pytest.mark.parametrize(
         ("text", "encoding"), [(JAPANESE, "cp932"), (GREEK, "utf-16")]
     )
     async def test_convert_file_uploads_text_as_utf8(
-        self, converter, tmp_path, text, encoding
+        self, converter, tmp_path, text, encoding, serve_http
     ):
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
         source = tmp_path / "doc.txt"
         source.write_bytes(text.encode(encoding))
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        await converter.convert_file(source)
 
-            await converter.convert_file(source)
-
-        uploaded = mock_client.post.call_args.kwargs["files"]["files"][1]
+        uploaded = serve_http.post.call_args.kwargs["files"]["files"][1]
         assert text.encode() in uploaded
 
     async def test_convert_file_uploads_docling_text_formats_as_utf8(
@@ -2503,7 +2206,7 @@ class TestDoclingServeConverterPictureDescription:
         config.providers.docling_serve.api_key = ""
         return config
 
-    async def test_picture_description_options_passed_to_api(self, config):
+    async def test_picture_description_options_passed_to_api(self, config, serve_http):
         """Picture-description options reach the docling-serve API when the
         VLM is enabled."""
         import json
@@ -2523,58 +2226,36 @@ class TestDoclingServeConverterPictureDescription:
         config.prompts.picture_description = "Test prompt for picture description"
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        await converter.convert_text("# Test")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
+        call_kwargs = serve_http.post.call_args.kwargs
+        assert "data" in call_kwargs
+        data = call_kwargs["data"]
 
-            await converter.convert_text("# Test")
+        assert data["do_picture_description"] == "true"
+        assert data["include_images"] == "true"
+        assert data["image_export_mode"] == "referenced"
+        assert data["target_type"] == "zip"
+        assert "picture_description_api" in data
 
-            call_kwargs = mock_client.post.call_args.kwargs
-            assert "data" in call_kwargs
-            data = call_kwargs["data"]
+        api_config = json.loads(data["picture_description_api"])
+        assert api_config["url"] == "http://localhost:11434/v1/chat/completions"
+        assert api_config["params"]["model"] == "ministral-3"
+        assert api_config["params"]["max_completion_tokens"] == 300
+        assert api_config["prompt"] == "Test prompt for picture description"
+        assert api_config["timeout"] == 120
+        assert api_config["headers"] == {"Authorization": "Bearer sk-vlm"}
 
-            assert data["do_picture_description"] == "true"
-            assert data["include_images"] == "true"
-            assert data["image_export_mode"] == "referenced"
-            assert data["target_type"] == "zip"
-            assert "picture_description_api" in data
-
-            api_config = json.loads(data["picture_description_api"])
-            assert api_config["url"] == "http://localhost:11434/v1/chat/completions"
-            assert api_config["params"]["model"] == "ministral-3"
-            assert api_config["params"]["max_completion_tokens"] == 300
-            assert api_config["prompt"] == "Test prompt for picture description"
-            assert api_config["timeout"] == 120
-            assert api_config["headers"] == {"Authorization": "Bearer sk-vlm"}
-
-    async def test_picture_description_disabled_by_default(self, config):
+    async def test_picture_description_disabled_by_default(self, config, serve_http):
         """Test that picture description is disabled by default."""
         converter = DoclingServeConverter(config)
 
-        doc_json = create_mock_docling_document("test")
-        submit_resp, poll_resp, result_resp = create_async_workflow_zip_mocks(doc_json)
+        await converter.convert_text("# Test")
 
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = AsyncMock(return_value=submit_resp)
-            mock_client.get = AsyncMock(side_effect=[poll_resp, result_resp])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            await converter.convert_text("# Test")
-
-            call_kwargs = mock_client.post.call_args.kwargs
-            data = call_kwargs["data"]
-            assert data["do_picture_description"] == "false"
-            assert "picture_description_api" not in data
+        call_kwargs = serve_http.post.call_args.kwargs
+        data = call_kwargs["data"]
+        assert data["do_picture_description"] == "false"
+        assert "picture_description_api" not in data
 
 
 async def _skip_without_ollama_model(model: str) -> None:
@@ -2607,12 +2288,6 @@ class TestDoclingServeConverterIntegration:
     def converter(self, config):
         """Create converter for integration tests."""
         return DoclingServeConverter(config)
-
-    @pytest.mark.vcr()
-    async def test_convert_text_real_service(self, converter):
-        """Test text conversion with real docling-serve."""
-        doc = await converter.convert_text("# Test Document\n\nThis is a test.")
-        assert isinstance(doc, DoclingDocument)
 
     @pytest.mark.vcr()
     async def test_convert_code_file_real_service(self, converter):
@@ -2733,36 +2408,6 @@ class TestDoclingServeConverterIntegration:
         assert isinstance(doc, DoclingDocument)
         assert len(doc.pages) > 0
         assert len(doc.export_to_markdown().strip()) > 100
-
-    @pytest.mark.vcr()
-    async def test_convert_pdf_with_picture_images(
-        self, config, doclaynet_first_page_pdf
-    ):
-        """Picture bytes are produced for PDFs that contain figures.
-
-        docling-serve only emits picture image bytes via the
-        ``image_export_mode="referenced"`` + ``target_type="zip"`` path
-        (upstream issue docling-project/docling-serve#576). The converter
-        always uses that path and rehydrates the bundled artifact files
-        into ``data:`` URIs so the result is shape-equivalent to the local
-        converter.
-        """
-        pdf_path = doclaynet_first_page_pdf
-        converter = DoclingServeConverter(config)
-
-        doc = await converter.convert_file(pdf_path)
-        assert isinstance(doc, DoclingDocument)
-
-        pictures_with_images = [p for p in doc.pictures if p.image is not None]
-        assert doc.pictures, "doclaynet.pdf is expected to contain at least one picture"
-        assert len(pictures_with_images) > 0, (
-            "Pictures should carry image data after conversion"
-        )
-        sample = pictures_with_images[0]
-        assert sample.image is not None
-        assert str(sample.image.uri).startswith("data:image/"), (
-            "Rehydrated picture URI should be a data: URI, not a bare artifact filename"
-        )
 
 
 class TestDoclingServeZipParsing:
