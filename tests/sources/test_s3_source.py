@@ -216,27 +216,32 @@ async def test_discover_respects_ignore_patterns(fake_s3_listing):
 async def test_discover_without_etag_upserts_only_unknown_keys(
     fake_s3_listing, known_uris, kind
 ):
-    """An S3 object with no ETag should not cause re-ingestion every sweep
-    once the key has been ingested. A new key still UPSERTs on first sight."""
+    """Without an ETag, discovery emits UNCHANGED for known keys and UPSERT for
+    unknown keys."""
     fake_s3_listing([[{"path": "file.md", "size": 0, "last_modified": None}]])
     src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
     events = [e async for e in src.discover(known_uris=known_uris)]
     assert [e.kind for e in events] == [kind]
 
 
-@pytest.mark.parametrize("body, fits", [(b"x" * 5000, False), (b"small", True)])
-async def test_fetch_enforces_max_size(fake_obstore_io, body, fits):
+async def test_fetch_refuses_an_oversized_object(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     head_async.return_value = {"e_tag": '"abc"', "size": 5}
-    response = _get_result(body)
+    response = _get_result(b"x" * 5000)
     get_async.return_value = response
 
     src = S3Source(uri="s3://bucket/", max_file_size=1000)
-    if fits:
-        assert (await src.fetch("s3://bucket/file.txt")).body == body
-    else:
-        with pytest.raises(
-            FileTooLargeError, match="file size 5000 bytes exceeds limit of 1000 bytes"
-        ):
-            await src.fetch("s3://bucket/file.txt")
-        response.bytes_async.assert_not_awaited()
+    with pytest.raises(
+        FileTooLargeError, match="file size 5000 bytes exceeds limit of 1000 bytes"
+    ):
+        await src.fetch("s3://bucket/file.txt")
+    response.bytes_async.assert_not_awaited()
+
+
+async def test_fetch_returns_an_object_within_the_limit(fake_obstore_io):
+    head_async, get_async = fake_obstore_io
+    head_async.return_value = {"e_tag": '"abc"', "size": 5}
+    get_async.return_value = _get_result(b"small")
+
+    src = S3Source(uri="s3://bucket/", max_file_size=1000)
+    assert (await src.fetch("s3://bucket/file.txt")).body == b"small"

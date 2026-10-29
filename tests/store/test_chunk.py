@@ -281,8 +281,7 @@ def test_search_result_from_chunk_preserves_chunk_meta():
 
 
 def test_search_result_format_for_agent_chunk_meta_is_opt_in():
-    """Only a caller that asks sees the chunk's own metadata, never the
-    structural keys haiku.rag stores beside it."""
+    """Chunk metadata requires opt-in and excludes structural keys."""
     result = SearchResult(
         content="Some content.",
         score=0.9,

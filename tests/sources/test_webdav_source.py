@@ -338,9 +338,7 @@ async def test_custom_headers_forwarded():
     ],
 )
 async def test_discover_resolves_href(href, uri):
-    """Some servers return absolute URLs in href, others return server paths,
-    percent-encoded per RFC 3986. Both resolve to the URI a user types in
-    `add-src`."""
+    """Discovery resolves absolute URLs and decodes percent-encoded server paths."""
     multistatus = _multistatus(
         {"href": href, "etag": '"rev"', "content_type": "text/markdown"}
     )
@@ -365,9 +363,8 @@ async def test_discover_resolves_href(href, uri):
     ],
 )
 async def test_discover_without_revision_upserts_only_unknown_uris(known_uris, kind):
-    """A WebDAV entry with no ETag or Last-Modified should not cause
-    re-ingestion every sweep once the URI has been ingested. A new entry
-    still UPSERTs on first sight."""
+    """Without a revision, discovery emits UNCHANGED for known URIs and UPSERT for
+    unknown URIs."""
     multistatus = _multistatus(
         {"href": "/dav/", "collection": True},
         {"href": "/dav/norev.md", "content_type": "text/markdown"},

@@ -238,8 +238,8 @@ class TestVectorIndexByConnectionMode:
 
 class TestLocationIsFixed:
     async def test_a_store_keeps_the_location_it_opened(self, temp_db_path):
-        """`db_path` and the connection mode derive from the location once; a
-        store cannot be pointed elsewhere after it is built."""
+        """The store location, db_path and connection mode remain fixed after
+        construction."""
         async with Store(temp_db_path, create=True) as store:
             with pytest.raises(AttributeError):
                 store.location = "s3://bucket/path"  # type: ignore[misc]

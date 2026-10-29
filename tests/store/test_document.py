@@ -121,7 +121,8 @@ async def test_document_list_with_filter(qa_corpus: list[dict[str, str]], temp_d
 
 
 async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_path):
-    """create writes a list of documents in a single version; [] writes nothing."""
+    """`create` writes a list of documents in one version, and `create([])` writes
+    nothing."""
     async with Store(temp_db_path, create=True) as store:
         doc_repo = DocumentRepository(store)
 
@@ -151,7 +152,8 @@ async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_pa
 
 
 async def test_document_item_create_all(temp_db_path):
-    """create_all writes several documents' items in one version; [] writes nothing."""
+    """`create_all` writes several documents' items in one version. `create_all([])`
+    and `create_items(id, [])` write nothing."""
     async with Store(temp_db_path, create=True) as store:
         item_repo = DocumentItemRepository(store)
 

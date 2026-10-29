@@ -685,11 +685,6 @@ def test_cli_entry_point_exits_cleanly_on_known_errors(monkeypatch, capsys, erro
     assert f"Error: {error}" in capsys.readouterr().err
 
 
-def _existing_directory_spellings(root) -> tuple[str, str]:
-    (root / "x").mkdir()
-    return str(root / "x"), str(root / "y" / ".." / "x")
-
-
 class TestPlacingTheIngesterDatabases:
     """The ingester writes every database `ingester.databases` names, where
     `lancedb.databases` places it, or the one a name selects."""
@@ -780,22 +775,33 @@ class TestPlacingTheIngesterDatabases:
             )
 
     @pytest.mark.parametrize(
-        "spellings",
+        "spellings, existing",
         [
-            lambda root: (str(root / "x"), str(root / "y" / ".." / "x")),
-            _existing_directory_spellings,
-            lambda root: ("s3://bucket/x.lancedb", "s3://bucket/x.lancedb/"),
-            lambda root: (str(root / "x.lancedb"), (root / "x.lancedb").as_uri()),
-            lambda root: ("archive:2026.lancedb", str(root / "archive:2026.lancedb")),
+            (lambda root: (str(root / "x"), str(root / "y" / ".." / "x")), False),
+            (lambda root: (str(root / "x"), str(root / "y" / ".." / "x")), True),
+            (lambda root: ("s3://bucket/x.lancedb", "s3://bucket/x.lancedb/"), False),
+            (
+                lambda root: (str(root / "x.lancedb"), (root / "x.lancedb").as_uri()),
+                False,
+            ),
+            (
+                lambda root: (
+                    "archive:2026.lancedb",
+                    str(root / "archive:2026.lancedb"),
+                ),
+                False,
+            ),
         ],
         ids=["path", "existing-directory", "uri", "file-uri", "relative-colon"],
     )
     def test_two_spellings_of_one_location_are_refused(
-        self, tmp_path, monkeypatch, spellings
+        self, tmp_path, monkeypatch, spellings, existing
     ):
         from haiku.rag.store.exceptions import AmbiguousDatabaseError
 
         monkeypatch.chdir(tmp_path)
+        if existing:
+            (tmp_path / "x").mkdir()
         a, b = spellings(tmp_path)
         config = self._ingesting({"a": a, "b": b}, ["a", "b"])
 

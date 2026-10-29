@@ -28,8 +28,11 @@ async def _make_legacy(store: Store) -> None:
             await table.drop_index(index)
 
 
-async def test_adds_the_missing_indexes(temp_db_path):
-    """The run indexes without touching data or undeclared indexes; a rerun is a no-op."""
+async def test_adds_missing_indexes_idempotently_and_keeps_rows_and_indexes(
+    temp_db_path,
+):
+    """The run adds the declared indexes and keeps the rows and every undeclared
+    index. A rerun writes no version."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="Kept", uri="test://kept"))

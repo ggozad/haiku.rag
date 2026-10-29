@@ -22,9 +22,8 @@ def vcr_cassette_dir():
 
 @pytest.mark.vcr()
 async def test_fs_revision_round_trips_through_a_sweep(temp_db_path, tmp_path):
-    """Ingest a file, build a sync_state-shaped snapshot from
-    document.metadata and hand it to FSSource.discover(), as the periodic
-    poller does: UNCHANGED until the file changes, then UPSERT."""
+    """A sweep reports UNCHANGED for the stored file revision until the file
+    changes, then UPSERT."""
     docs_dir = tmp_path / "docs"
     docs_dir.mkdir()
     file_path = docs_dir / "doc.md"

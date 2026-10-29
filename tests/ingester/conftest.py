@@ -123,22 +123,14 @@ def covering_stub(covering) -> MagicMock:
 
 
 def _mock_client() -> AsyncMock:
-    """A HaikuRAG mock whose upserts return a fresh Document (with an md5 so
-    the worker records sync_state) and whose lookups return a Document with a
-    deterministic id so the DELETE path resolves.
-
-    It keeps the documents it was told to write, so `list_documents` answers
-    what the store holds: startup reconciliation reads it, and a double that
-    always answered "nothing" would invalidate every revision.
-    """
+    """A HaikuRAG double that keeps ingested documents for lookup and listing."""
     client = AsyncMock(spec=HaikuRAG)
     counter = {"n": 0}
     stored: dict[str, Document] = {}
 
     async def _create(uri, *_, source_id=None, **__):
         counter["n"] += 1
-        # Mirror the real client: persist the FS revision (mtime_ns) so the
-        # poller's change-detection skips unchanged files on the next sweep.
+        # FS source_revision is the file's mtime_ns.
         path = uri_to_path(uri)
         metadata = {
             "content_type": "text/markdown",
@@ -280,7 +272,7 @@ def _gate(client, gate: asyncio.Event) -> None:
 
 @asynccontextmanager
 async def _serving(app: IngesterApp):
-    # A held job left in flight is cancelled at shutdown instead of waited for.
+    # Shutdown cancels a held job 0.2s after the pool stops.
     app._config.ingester.workers.shutdown_grace_s = 0.2
     task = asyncio.create_task(app.serve(api=False))
     try:

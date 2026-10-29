@@ -3,10 +3,10 @@ from haiku.rag.store.info import get_database_stats
 
 
 class TestStoredSettings:
-    async def test_a_new_database_carries_the_version_it_was_created_with(
+    async def test_a_new_database_records_its_version_and_reports_empty_tables(
         self, temp_db_path
     ):
-        """Creating writes the settings row and empty tables, and the store reports them."""
+        """`create=True` writes the settings row and empty tables, and the store reports them."""
         from importlib import metadata
 
         async with Store(temp_db_path, create=True) as store:
@@ -17,8 +17,6 @@ class TestStoredSettings:
 
         for name in ("documents", "chunks", "document_items", "settings"):
             assert stats[name]["exists"] is True
-            assert stats[name]["num_rows"] >= 0
-            assert stats[name]["total_bytes"] >= 0
             assert stats[name]["num_versions"] >= 1
         assert stats["documents"]["num_rows"] == 0
         assert stats["chunks"]["num_rows"] == 0

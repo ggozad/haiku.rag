@@ -20,8 +20,7 @@ from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
 async def test_create_and_list_tags(temp_db_path):
-    """create_tag tags every table at its current version; list_tags reports
-    the tag as complete with the exact versions."""
+    """A created tag is complete and records every table's current version."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="First document"))
@@ -366,9 +365,8 @@ async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):
 
 
 async def test_deleting_oldest_tag_advances_cleanup(temp_db_path):
-    """Versions pinned by a tag become cleanable once the tag is deleted;
-    the cleanup cutoff advances to the next retained tag without removing
-    its version."""
+    """Vacuum keeps both tagged versions. After the oldest tag is deleted, vacuum
+    removes its version and keeps the next tag's."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="First document"))

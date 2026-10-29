@@ -469,9 +469,8 @@ async def test_discover_propagates_non_transport_errors():
     ],
 )
 async def test_discover_without_revision_upserts_only_unknown_urls(known_uris, kind):
-    """A server that returns no ETag or Last-Modified should not cause
-    re-ingestion every sweep once the URL has been ingested. A new URL still
-    UPSERTs on first sight."""
+    """Without a revision, discovery emits UNCHANGED for known URLs and UPSERT for
+    unknown URLs."""
     transport = _transport({("HEAD", "https://example.com/a.md"): httpx.Response(200)})
     src = HTTPSource(
         source_id="x", urls=["https://example.com/a.md"], transport=transport

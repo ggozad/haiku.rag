@@ -271,15 +271,14 @@ async def test_fs_source_discover_skips_symlinked_directories(
     assert not any("escape" in u for u in uris)
 
 
-@pytest.mark.parametrize("max_file_size, fits", [(3, False), (100, True)])
-async def test_fs_source_fetch_enforces_max_size(fs_root: Path, max_file_size, fits):
-    src = FSSource(root=fs_root, max_file_size=max_file_size)
+async def test_fs_source_fetch_enforces_max_size(fs_root: Path):
     uri = (fs_root / "a.md").as_uri()  # "alpha" = 5 bytes
-    if fits:
-        assert (await src.fetch(uri)).body == b"alpha"
-    else:
-        with pytest.raises(FileTooLargeError):
-            await src.fetch(uri)
+    fits = FSSource(root=fs_root, max_file_size=100)
+    assert (await fits.fetch(uri)).body == b"alpha"
+
+    too_small = FSSource(root=fs_root, max_file_size=3)
+    with pytest.raises(FileTooLargeError):
+        await too_small.fetch(uri)
 
 
 async def test_fs_source_fetch_reads_off_event_loop_thread(fs_root: Path):

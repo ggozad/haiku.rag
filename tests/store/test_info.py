@@ -81,8 +81,8 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
 
 @pytest.mark.parametrize("database_name", ["papers", None])
 async def test_app_info_opens_a_named_remote_database(database_name):
-    """A database named in `lancedb.databases`, selected by name or as the sole
-    entry, can sit behind a URI; info opens that URI."""
+    """`info` opens the URI of a configured database, selected by name or as the
+    sole entry."""
     from haiku.rag.client.scope import DatabaseScope
 
     config = AppConfig(

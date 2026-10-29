@@ -14,10 +14,12 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
+from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.store.models.chunk import SearchResult
 
 
@@ -32,6 +34,21 @@ def make_context(deps: Deps) -> RunContext[Deps]:
         model=TestModel(),
         usage=RunUsage(),
         run_id="test-run",
+    )
+
+
+async def send_first_request(run: RAGCapability, deps: Deps) -> None:
+    """Open the run's question, as its first model request does."""
+    ctx = make_context(deps)
+    ctx.messages = [ModelRequest(parts=[UserPromptPart("a new question")])]
+    await run.before_model_request(
+        ctx,
+        ModelRequestContext(
+            messages=list(ctx.messages),
+            model=TestModel(),
+            model_request_parameters=ModelRequestParameters(),
+            model_settings=None,
+        ),
     )
 
 
@@ -98,4 +115,15 @@ def stub_client(
     client.search.side_effect = list(batches)
     client.expand_context.side_effect = lambda results: results
     client.source_names = sources
+    return client
+
+
+def single_database_client() -> AsyncMock:
+    """A client double that answers `covers_multiple`, `source` and
+    `clients_covering` as one database does."""
+    client = AsyncMock()
+    client.covers_multiple = False
+    client.source_names = ("test",)
+    client.source = "test"
+    client.clients_covering.return_value = [client]
     return client

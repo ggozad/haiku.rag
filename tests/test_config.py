@@ -1,4 +1,5 @@
 import re
+from operator import attrgetter
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,13 @@ from haiku.rag.config.loader import (
     find_config_file,
     generate_default_config,
     load_yaml_config,
+)
+from haiku.rag.config.models import (
+    ConversionOptions,
+    EvaluationsConfig,
+    ProcessingConfig,
+    QAConfig,
+    SandboxConfig,
 )
 
 
@@ -290,32 +298,34 @@ def _write(tmp_path, body: str):
     return p
 
 
-def _at(obj, path: str):
-    for part in path.split("."):
-        obj = obj[part] if isinstance(obj, dict) else getattr(obj, part)
-    return obj
+def test_config_defaults():
+    """The defaults hold on the owning model, on AppConfig and in the generated config."""
+    assert ProcessingConfig().pictures == "image"
+    assert ConversionOptions().fetch_remote_images is True
+    assert ConversionOptions().infer_furniture is False
+    assert QAConfig().max_executions == 15
+    assert SandboxConfig().code_timeout == 60.0
+    assert SandboxConfig().max_output_chars == 50_000
+    assert EvaluationsConfig().system_one is None
 
+    config = AppConfig()
+    assert config.processing.pictures == "image"
+    assert config.processing.conversion_options.fetch_remote_images is True
+    assert config.processing.conversion_options.infer_furniture is False
+    assert config.qa.max_executions == 15
+    assert config.sandbox.code_timeout == 60.0
+    assert config.sandbox.max_output_chars == 50_000
+    assert config.evaluations.system_one is None
 
-@pytest.mark.parametrize(
-    "path, default",
-    [
-        ("processing.pictures", "image"),
-        ("processing.conversion_options.fetch_remote_images", True),
-        ("processing.conversion_options.infer_furniture", False),
-        ("qa.max_executions", 15),
-        ("sandbox.code_timeout", 60.0),
-        ("sandbox.max_output_chars", 50_000),
-        ("evaluations.system_one", None),
-    ],
-)
-def test_config_defaults(path, default):
-    """The default holds on the owning model, on AppConfig and in the generated config."""
-    parent_path, _, field = path.rpartition(".")
-    parent = _at(AppConfig(), parent_path)
-
-    assert getattr(type(parent)(), field) == default
-    assert _at(AppConfig(), path) == default
-    assert _at(generate_default_config(), path) == default
+    generated = generate_default_config()
+    processing = generated["processing"]
+    assert processing["pictures"] == "image"
+    assert processing["conversion_options"]["fetch_remote_images"] is True
+    assert processing["conversion_options"]["infer_furniture"] is False
+    assert generated["qa"]["max_executions"] == 15
+    assert generated["sandbox"]["code_timeout"] == 60.0
+    assert generated["sandbox"]["max_output_chars"] == 50_000
+    assert generated["evaluations"]["system_one"] is None
 
 
 @pytest.mark.parametrize(
@@ -338,7 +348,7 @@ def test_config_defaults(path, default):
 def test_yaml_overrides_one_field(tmp_path, body, expected):
     cfg = AppConfig.model_validate(load_yaml_config(_write(tmp_path, body)))
     for path, value in expected.items():
-        assert _at(cfg, path) == value
+        assert attrgetter(path)(cfg) == value
 
 
 def test_system_one_judge_yaml_block(tmp_path):

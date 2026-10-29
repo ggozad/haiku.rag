@@ -1579,8 +1579,8 @@ async def _queue_is_gone(*args, **kwargs):
 async def test_fatal_error_terminates_whatever_mark_dead_does(
     client, jobs, sync, monkeypatch, mark_dead
 ):
-    """The reaper can reset the claim first, or the queue write can fail. The
-    process still cannot convert, so it must not carry on claiming jobs."""
+    """A fatal error terminates the process even when mark_dead fails or rejects
+    the claim."""
     from haiku.rag.ingester.workers import pool as pool_module
 
     client._ingest_observed.side_effect = PermanentError(

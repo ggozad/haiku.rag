@@ -305,7 +305,7 @@ class TestReleasingAClient:
 
         await HaikuRAG(config=config).aclose()
 
-    async def test_aclose_twice_releases_once(self, tmp_path):
+    async def test_aclose_twice_releases_every_database_once(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])

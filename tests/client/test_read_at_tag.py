@@ -117,25 +117,15 @@ async def test_client_at_a_missing_tag_names_the_database(tmp_path, given, name)
 
 
 @pytest.mark.parametrize(
-    "open_client, name, location",
-    [
-        (
-            lambda tmp_path: HaikuRAG(
-                tmp_path / "new.lancedb", create=True, tag="tagged"
-            ),
-            "new",
-            "new.lancedb",
-        ),
-        (
-            lambda tmp_path: _client_at_tag(tmp_path, "entry", create=True),
-            "before",
-            "papers.lancedb",
-        ),
-    ],
-    ids=["argument", "entry"],
+    "given, name, location",
+    [("argument", "new", "new.lancedb"), ("entry", "before", "papers.lancedb")],
 )
-async def test_client_at_a_tag_cannot_create(tmp_path, open_client, name, location):
+async def test_client_at_a_tag_cannot_create(tmp_path, given, name, location):
     with pytest.raises(ValueError, match=f"'{name}' is read at tag 'tagged'.*create"):
-        async with open_client(tmp_path):
+        if given == "argument":
+            rag = HaikuRAG(tmp_path / "new.lancedb", create=True, tag="tagged")
+        else:
+            rag = _client_at_tag(tmp_path, "entry", create=True)
+        async with rag:
             pass
     assert not (tmp_path / location).exists()

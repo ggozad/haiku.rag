@@ -20,7 +20,7 @@ def _docling_with_levels():
 class TestV0_48_0Migration:
     """v0.48.0 backfills heading_level + tree_depth on existing items rows."""
 
-    async def test_backfill_populates_levels(self, temp_db_path):
+    async def test_backfill_populates_levels_idempotently(self, temp_db_path):
         docling_doc = _docling_with_levels()
         structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
 

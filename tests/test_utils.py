@@ -1094,8 +1094,8 @@ def test_get_package_versions_reports_missing_docling(monkeypatch):
     ],
 )
 def test_get_model_api_key_from_config(monkeypatch, provider, name, base_url, api_key):
-    """A config-supplied api_key reaches the client over the environment, so
-    several openai-compatible endpoints can each carry their own key."""
+    """The configured api_key reaches the client, and the environment's key does
+    not."""
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-env")
     result = get_model(
         ModelConfig(provider=provider, name=name, base_url=base_url, api_key=api_key)

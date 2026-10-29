@@ -71,8 +71,8 @@ class TestNamingADatabaseDirectly:
     async def test_a_db_path_beside_the_configured_set_is_refused(
         self, tmp_path, temp_db_path, names
     ):
-        """The configuration places databases; a path beside it is a second
-        placement, and the refusal names both."""
+        """A path beside configured databases raises an error naming both
+        placements and creates nothing."""
         config = _config(tmp_path, names)
 
         with pytest.raises(AmbiguousDatabaseError, match="alpha") as raised:
@@ -189,8 +189,8 @@ class TestPlacingADatabase:
             assert rag.source is None
 
     async def test_a_named_database_keeps_its_name_on_re_entry(self, tmp_path):
-        """Entering derives a single-database configuration from what was
-        configured. Deriving it from the last derivation loses the name."""
+        """The selected database keeps its name and single-database scope across
+        re-entry."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
 

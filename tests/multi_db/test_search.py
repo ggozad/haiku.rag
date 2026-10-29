@@ -306,7 +306,7 @@ class TestOverFetchingForAReranker:
         [(StubReranker(), 30), (None, 3)],
         ids=["reranker", "no-reranker"],
     )
-    async def test_a_text_query_over_fetches_for_a_reranker(
+    async def test_a_text_query_over_fetches_only_for_a_reranker(
         self, tmp_path, monkeypatch, reranker, fetched
     ):
         config = _config(tmp_path, ["alpha", "beta"])

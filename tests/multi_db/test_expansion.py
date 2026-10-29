@@ -219,16 +219,16 @@ class TestFederatedEdges:
         from unittest.mock import AsyncMock, patch
 
         from haiku.rag.capabilities.rag import RAGCapability
-        from tests.capabilities.test_capabilities import (
+        from tests.capabilities.helpers import (
             Deps,
-            _single_database_client,
             make_context,
+            single_database_client,
         )
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
-        orphan = _single_database_client()
+        orphan = single_database_client()
         orphan.get_chunk_by_id.return_value = Chunk(
             id="orphan", document_id=None, content="no document"
         )

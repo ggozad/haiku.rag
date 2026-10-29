@@ -63,7 +63,7 @@ class TestStandaloneCapabilities:
 
     @pytest.mark.vcr()
     async def test_a_rag_capability_opens_the_configured_set(self, tmp_path):
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -82,7 +82,7 @@ class TestStandaloneCapabilities:
         assert "beta document" in formatted
 
     async def test_the_capability_mounts_the_configured_set(self, tmp_path):
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -139,7 +139,7 @@ class TestScopingACapabilityToASubset:
     async def test_a_scoped_capability_never_reaches_the_other_database(
         self, tmp_path, query_embedding
     ):
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -158,7 +158,7 @@ class TestScopingACapabilityToASubset:
         assert "beta document" not in formatted
 
     async def test_a_scoped_capability_mounts_only_its_databases(self, tmp_path):
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -179,7 +179,7 @@ class TestScopingACapabilityToASubset:
         self, tmp_path, query_embedding
     ):
         """State `sources` selects within the scope."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -309,7 +309,7 @@ class TestLendingANamedClient:
         """What a citation records is the lent client's database, not the scope
         the capability was constructed with. That chat lends its client is
         `TestLendingTheClient` in `tests/chat/test_chat_app.py`."""
-        from tests.capabilities.test_capabilities import (
+        from tests.capabilities.helpers import (
             Deps,
             make_context,
             send_first_request,
@@ -406,7 +406,7 @@ class TestNarrowingASearch:
 
     async def test_a_name_outside_the_run_fails_naming_the_run(self, tmp_path):
         """Checked before anything opens: a wrong name costs no database."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
         run = await capability.for_run(make_context(Deps()))
@@ -501,7 +501,7 @@ class TestTheSearchToolSchema:
     a run over one collection keeps the `(query, limit)` contract."""
 
     async def _search_tool(self, capability, deps):
-        from tests.capabilities.test_capabilities import make_context
+        from tests.capabilities.helpers import make_context
 
         ctx = make_context(deps)
         run = await capability.for_run(ctx)
@@ -515,7 +515,7 @@ class TestTheSearchToolSchema:
         return next(tool for tool in prepared if tool.name == "search")
 
     async def test_a_spanning_run_offers_sources(self, tmp_path):
-        from tests.capabilities.test_capabilities import Deps
+        from tests.capabilities.helpers import Deps
 
         capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
         tool = await self._search_tool(capability, Deps())
@@ -526,7 +526,7 @@ class TestTheSearchToolSchema:
         assert "sources" not in tool.parameters_json_schema.get("required", [])
 
     async def test_a_run_over_one_collection_keeps_two_parameters(self, tmp_path):
-        from tests.capabilities.test_capabilities import Deps
+        from tests.capabilities.helpers import Deps
 
         capability = create_capability(config=_config(tmp_path, ["alpha"]))
         tool = await self._search_tool(capability, Deps())
@@ -534,7 +534,7 @@ class TestTheSearchToolSchema:
         assert set(tool.parameters_json_schema["properties"]) == {"query", "limit"}
 
     async def test_a_question_narrowed_to_one_collection_hides_sources(self, tmp_path):
-        from tests.capabilities.test_capabilities import Deps
+        from tests.capabilities.helpers import Deps
 
         capability = create_capability(config=_config(tmp_path, ["alpha", "beta"]))
         deps = Deps(state={"rag": RAGState(sources=["alpha"]).model_dump(mode="json")})
@@ -549,7 +549,7 @@ class TestTheModelNarrowingASearch:
     async def test_the_model_narrows_a_search_and_reads_the_collection(
         self, tmp_path, query_embedding
     ):
-        from tests.capabilities.test_capabilities import Deps
+        from tests.capabilities.helpers import Deps
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -582,7 +582,7 @@ class TestTheModelNarrowingASearch:
         assert "Collection: beta" in seen["returned"]
 
     async def test_over_one_collection_the_model_is_offered_no_sources(self, tmp_path):
-        from tests.capabilities.test_capabilities import Deps
+        from tests.capabilities.helpers import Deps
 
         config = _config(tmp_path, ["alpha"])
         await _seed(config, "alpha", ["alpha document about cats"])

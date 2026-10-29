@@ -87,7 +87,7 @@ async def test_gather_database_info_connects_to_the_location_it_is_given():
 
 
 async def test_the_latest_version_time_moves_with_a_write(temp_db_path):
-    """Row counts read two states of a corpus as one; the write time does not."""
+    """A content update advances the latest version time and keeps the row count."""
     await seed_database(temp_db_path, openai_settings("1.2.3"))
     before = {
         t.name: t

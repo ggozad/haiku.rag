@@ -631,31 +631,29 @@ async def test_mark_dead_records_error(jobs):
 
 
 @pytest.mark.parametrize(
-    "finish",
+    "method, args",
     [
-        lambda jobs, job_id, worker: jobs.mark_succeeded(job_id, worker),
-        lambda jobs, job_id, worker: jobs.mark_dead(job_id, "boom", worker),
-        lambda jobs, job_id, worker: jobs.reschedule(job_id, 30.0, "transient", worker),
-        lambda jobs, job_id, worker: jobs.release_if_claimed(job_id, worker),
+        ("mark_succeeded", ()),
+        ("mark_dead", ("boom",)),
+        ("reschedule", (30.0, "transient")),
+        ("release_if_claimed", ()),
     ],
-    ids=["mark_succeeded", "mark_dead", "reschedule", "release_if_claimed"],
 )
-async def test_claimed_by_guard_skips_a_resurrected_job(jobs, finish):
-    """Reaper race: A claims, reaper resets, B re-claims, A finishes. A's
-    call must be a no-op so B's in-flight work isn't clobbered."""
+async def test_claimed_by_guard_skips_a_resurrected_job(jobs, method, args):
+    """Only the current claim owner can finish or release a job."""
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     a = await jobs.claim_next("worker-A")
     assert a is not None
     await jobs.reap_stale(lease_ttl_seconds=0)
     b = await jobs.claim_next("worker-B")
     assert b is not None and b.id == job.id and b.claimed_by == "worker-B"
-    assert await finish(jobs, job.id, "worker-A") is False
+    assert await getattr(jobs, method)(job.id, *args, "worker-A") is False
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.CLAIMED
     assert refreshed.claimed_by == "worker-B"
     assert refreshed.last_error is None
-    assert await finish(jobs, job.id, "worker-B") is True
+    assert await getattr(jobs, method)(job.id, *args, "worker-B") is True
 
 
 # --- reschedule + retry ---
@@ -1586,11 +1584,9 @@ async def test_two_revisionless_stalls_still_collide(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is None
 
 
-async def test_fresh_and_migrated_schemas_agree(tmp_path):
-    """`create_all` and the migration ladder from v2 must produce the same job
-    indexes and the same `sync_state` table, or a migrated queue enforces
-    something different from a new one. An existing row survives the ladder
-    with `conversion_stalled` false."""
+async def test_migrations_match_a_fresh_schema_and_keep_old_rows(tmp_path):
+    """The migrations from v2 produce the indexes and `sync_state` table of a
+    fresh queue, and keep an old job with `conversion_stalled` false."""
     fresh_db = tmp_path / "fresh.db"
     fresh = await open_queue(
         QueueConfig(dburi=str(URL.create("sqlite+aiosqlite", database=str(fresh_db))))
@@ -1822,7 +1818,7 @@ async def test_reads_ignore_foreign_succeeded_jobs(own, foreign):
 
 
 @pytest.mark.parametrize(
-    "touch, untouched",
+    "touch, refused",
     [
         (lambda repo, job_id: repo.mark_succeeded(job_id, "w"), False),
         (lambda repo, job_id: repo.mark_dead(job_id, "boom", "w"), False),
@@ -1840,9 +1836,9 @@ async def test_reads_ignore_foreign_succeeded_jobs(own, foreign):
         "renew_claims",
     ],
 )
-async def test_foreign_claims_are_untouched(own, foreign, touch, untouched):
+async def test_foreign_claims_are_untouched(own, foreign, touch, refused):
     theirs = await _claimed(foreign)
-    assert await touch(own, theirs.id) == untouched
+    assert await touch(own, theirs.id) == refused
     refreshed = await foreign.get_job(theirs.id)
     assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
 

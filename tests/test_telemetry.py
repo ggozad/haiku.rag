@@ -31,8 +31,8 @@ def test_service_name_variable_overrides_default(
 
     telemetry.configure(service_name="haiku-ingester")
 
-    # Deferring to logfire (service_name=None) lets it read the env var,
-    # so the customer's variable wins over our default.
+    # service_name=None lets logfire read the variable, so the variable wins over
+    # the default.
     assert captured_configure["service_name"] is None
 
 

@@ -821,11 +821,8 @@ async def test_rebuild_full_source_failure_falls_back_to_stored_content(
     ids=["rechunk", "full"],
 )
 async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch, mode, content):
-    """RECHUNK and FULL flush in batches and yield every document.
-
-    Forces a tiny batch size so three docs trigger one mid-loop flush plus
-    the final flush.
-    """
+    """RECHUNK and FULL flush a full batch and the partial remainder, and yield
+    every document."""
     from haiku.rag.client import rebuild as rebuild_module
 
     monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
@@ -2950,7 +2947,7 @@ async def test_rebuild_set_embedder_adopts_a_query_prefix_change(temp_db_path):
         pass
 
 
-async def test_rebuild_set_embedder_adopts_a_name_change_with_equal_prefixes(
+async def test_rebuild_set_embedder_adopts_a_name_change_and_keeps_vectors(
     temp_db_path,
 ):
     from haiku.rag.config import AppConfig

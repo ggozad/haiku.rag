@@ -22,7 +22,6 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
-from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.tools import ToolDefinition
@@ -48,24 +47,11 @@ from tests.capabilities.helpers import (
     make_context,
     make_result,
     scripted,
+    send_first_request,
+    single_database_client,
     stub_client,
     stub_search,
 )
-
-
-async def send_first_request(run: RAGCapability, deps: Deps) -> None:
-    """Open the run's question, as its first model request does."""
-    ctx = make_context(deps)
-    ctx.messages = [ModelRequest(parts=[UserPromptPart("a new question")])]
-    await run.before_model_request(
-        ctx,
-        ModelRequestContext(
-            messages=list(ctx.messages),
-            model=TestModel(),
-            model_request_parameters=ModelRequestParameters(),
-            model_settings=None,
-        ),
-    )
 
 
 def test_rag_capability_api(temp_db_path):
@@ -177,20 +163,6 @@ async def test_a_string_db_path_opens_a_store(temp_db_path):
         assert rag.store.db_path == temp_db_path
     finally:
         await capability._close()
-
-
-def _single_database_client() -> AsyncMock:
-    """A stand-in for a client covering one database.
-
-    `covers_multiple`, `source` and `clients_covering` answer as one database
-    does; a bare AsyncMock answers every attribute with a truthy Mock.
-    """
-    client = AsyncMock()
-    client.covers_multiple = False
-    client.source_names = ("test",)
-    client.source = "test"
-    client.clients_covering.return_value = [client]
-    return client
 
 
 async def test_capability_instructions_are_injected_once(temp_db_path):
@@ -341,7 +313,7 @@ async def test_capability_isolated_per_run_and_round_trips_state(temp_db_path):
 
 async def test_run_error_closes_resources_and_propagates(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
-    client = _single_database_client()
+    client = single_database_client()
     capability.rag = client
     error = RuntimeError("model failed")
 
@@ -485,7 +457,7 @@ async def test_two_databases_holding_one_chunk_id_both_survive(temp_db_path):
 async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = _single_database_client()
+    client = single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         Chunk(id="chunk-2", document_id="doc-1", content="second"),
@@ -510,7 +482,7 @@ async def test_cite_resolves_direct_chunk_ids_and_reuses_document_lookup(temp_db
 async def test_cite_reports_unresolved_ids_on_partial_success(temp_db_path):
     capability = create_rag(db_path=temp_db_path, config=AppConfig())
     capability.state = RAGState(evidence=CapabilityEvidenceRecord(question=0))
-    client = _single_database_client()
+    client = single_database_client()
     client.get_chunk_by_id.side_effect = [
         Chunk(id="chunk-1", document_id="doc-1", content="first"),
         None,
@@ -553,7 +525,7 @@ async def test_cite_repairs_chunk_ids_damaged_in_transcription(temp_db_path):
             ]
         },
     )
-    client = _single_database_client()
+    client = single_database_client()
     client.get_chunk_by_id.return_value = None
     capability.rag = client
 
@@ -1265,7 +1237,7 @@ async def test_citing_without_searching_grounds_the_question(temp_db_path):
         [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-1")],
         [TextPart("answer")],
     ]
-    client = _single_database_client()
+    client = single_database_client()
     client.get_chunk_by_id.return_value = Chunk(
         id="chunk-1", document_id="doc-1", content="evidence"
     )

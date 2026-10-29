@@ -1018,8 +1018,7 @@ async def test_retry_refuses_a_job_of_an_unconfigured_source(state, jobs, route)
 
 @pytest.mark.parametrize("route", ["/jobs/{id}/retry", "/dlq/{id}/retry"])
 async def test_retry_answers_409_and_names_the_blocking_tombstone(state, jobs, route):
-    """404 would be wrong for a job the operator can see in the DLQ: it exists,
-    another row holds its slot."""
+    """A blocking tombstone causes retry to return 409 with the tombstone ID."""
     claimed = await finished_job(
         jobs, JobStatus.DEAD, source_id="src", error="out of attempts"
     )

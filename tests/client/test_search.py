@@ -163,7 +163,7 @@ async def test_search_score_types(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_search_returns_search_result(temp_db_path):
+async def test_search_result_has_provenance_and_formats_for_the_agent(temp_db_path):
     """Test that client.search() returns SearchResult with provenance info."""
     async with HaikuRAG(
         db_path=temp_db_path, config=get_config(), create=True
@@ -191,7 +191,6 @@ async def test_search_returns_search_result(temp_db_path):
         assert len(result.labels) > 0
 
         formatted = result.format_for_agent(rank=1, total=1)
-        assert "[" in formatted and "]" in formatted
         assert "[rank 1 of 1]" in formatted
         assert "ML Guide" in formatted
         assert "Source:" in formatted
@@ -295,11 +294,11 @@ def _pil_image_query():
 @pytest.mark.parametrize(
     "search_kwargs", [{}, {"search_type": "fts"}], ids=["default", "fts"]
 )
-async def test_search_with_image_query_uses_multimodal_embedder(
+async def test_an_image_query_searches_vectors_only_through_embed_image(
     temp_db_path, monkeypatch, exploding_reranker, make_query, search_kwargs
 ):
-    """``client.search(image)`` embeds via ``embed_image`` and dispatches
-    to vector-only chunk search (skipping FTS and reranker)."""
+    """An image query embeds through `embed_image` and runs a vector-only search,
+    whatever `search_type` asks for, and builds no reranker."""
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.store.models.chunk import Chunk
 

@@ -123,8 +123,9 @@ async def test_migration_runs_against_pre_v0_48_0_schema(temp_db_path):
         assert blob["pictures"][0]["image"] is None
 
 
-async def test_migration_is_idempotent(temp_db_path):
-    """The first run backfills the bytes and strips the blob; a second run changes nothing."""
+async def test_migration_moves_picture_bytes_once(temp_db_path):
+    """The first run moves picture bytes into `document_items` and strips them
+    from the blob. A second run changes nothing."""
     async with Store(temp_db_path, create=True) as store:
         doc_id = "doc-1"
         await store.documents_table.add(

@@ -8,7 +8,7 @@ from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.client.processing import ensure_chunks_embedded
 from haiku.rag.client.search import populate_image_data
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models import SearchResult
+from haiku.rag.store.models import Chunk, SearchResult
 from tests.conftest import writing
 
 
@@ -487,8 +487,8 @@ def create_picture_document() -> DoclingDocument:
     doc.add_text(label=DocItemLabel.PARAGRAPH, text="Introduction with context.")
     doc.add_heading(text="Figures Section", level=1)
 
-    # Add a picture item - this will have export_to_markdown method
-    # that defaults to EMBEDDED mode if called without image_mode parameter
+    # #/pictures/0 carries an image, which EMBEDDED export inlines as base64.
+    # #/pictures/1 carries none.
     doc.add_picture(image=ImageRef.from_pil(PILImage.new("RGB", (8, 8), "red"), dpi=72))
     doc.add_picture()
 
@@ -500,12 +500,7 @@ def create_picture_document() -> DoclingDocument:
 
 @pytest.mark.vcr()
 async def test_expand_context_no_base64_images(temp_db_path):
-    """Ensure expanded context does not contain base64 image data.
-
-    This test verifies that when expand_context includes PictureItem objects,
-    they are serialized with PLACEHOLDER mode (not EMBEDDED), preventing
-    base64 image data from leaking into the expanded content.
-    """
+    """Expanded picture context excludes base64 image data."""
     config = AppConfig()
 
     docling_doc = create_picture_document()
@@ -530,6 +525,22 @@ async def test_expand_context_no_base64_images(temp_db_path):
             assert "data:image" not in result.content.lower(), (
                 f"Found 'data:image' in expanded content: {result.content[:500]}"
             )
+
+
+async def test_populate_image_data_leaves_a_picture_without_bytes_empty(
+    temp_db_path,
+):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            create_picture_document(),
+            [
+                Chunk(
+                    content="Figures Section",
+                    embedding=[0.1] * client.embedder.vector_dim,
+                )
+            ],
+        )
+        assert doc.id is not None
 
         no_bytes = SearchResult(
             content="", score=1.0, document_id=doc.id, doc_item_refs=["#/pictures/1"]

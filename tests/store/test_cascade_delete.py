@@ -29,7 +29,7 @@ def test_parent_uri_filter_escapes_backslash():
     assert "\\\\" in f
 
 
-async def test_delete_cascades_to_children(temp_db_path):
+async def test_delete_cascades_to_children_and_keeps_unrelated_documents(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///path/to/parent.pdf"
         parent = await client.document_repository.create(

@@ -27,14 +27,8 @@ def _mixed_docling_doc():
 
 
 async def test_populate_handles_extra_columns_on_items_table(temp_db_path):
-    """Regression: v0.40.0 must not fail when the live ``document_items``
-    table carries columns added by later migrations.
-
-    Mirrors what happens in practice: ``_init_tables`` always creates
-    ``document_items`` with the latest schema (picture_data, heading_level,
-    tree_depth). v0.40.0 then runs against that table — its input must be
-    accepted even though it only writes the original 6 columns.
-    """
+    """v0.40.0 writes document items into the current schema and leaves
+    picture_data null."""
     docling_doc = _mixed_docling_doc()
     structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
 
