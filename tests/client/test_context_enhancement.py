@@ -1,10 +1,12 @@
 import pytest
-from docling_core.types.doc.document import DoclingDocument, TableData
+from docling_core.types.doc.document import DoclingDocument, ImageRef, TableData
 from docling_core.types.doc.labels import DocItemLabel
+from PIL import Image as PILImage
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.client.processing import ensure_chunks_embedded
+from haiku.rag.client.search import populate_image_data
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models import SearchResult
 from tests.conftest import writing
@@ -487,6 +489,7 @@ def create_picture_document() -> DoclingDocument:
 
     # Add a picture item - this will have export_to_markdown method
     # that defaults to EMBEDDED mode if called without image_mode parameter
+    doc.add_picture(image=ImageRef.from_pil(PILImage.new("RGB", (8, 8), "red"), dpi=72))
     doc.add_picture()
 
     doc.add_text(label=DocItemLabel.CAPTION, text="Figure 1: Sample diagram")
@@ -517,6 +520,7 @@ async def test_expand_context_no_base64_images(temp_db_path):
 
         # Expand context - this should include the picture area
         expanded = await client.expand_context(results)
+        assert any("#/pictures/0" in r.doc_item_refs for r in expanded)
 
         for result in expanded:
             # Base64 image data should never appear in expanded content
@@ -527,72 +531,8 @@ async def test_expand_context_no_base64_images(temp_db_path):
                 f"Found 'data:image' in expanded content: {result.content[:500]}"
             )
 
-
-@pytest.mark.slow
-@pytest.mark.usefixtures("docling_local_models")
-@pytest.mark.vcr()
-async def test_expand_context_no_base64_images_docling_local(
-    temp_db_path, doclaynet_first_page_pdf
-):
-    """Ensure expanded context from real PDF does not contain base64 image data.
-
-    Tests end-to-end with a single page of doclaynet.pdf using docling-local converter.
-    """
-    config = AppConfig()
-    config.processing.converter = "docling-local"
-    config.processing.chunker = "docling-local"
-    config.processing.conversion_options.do_ocr = False
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        pdf_path = doclaynet_first_page_pdf
-        result = await client.create_document_from_source(pdf_path)
-        doc = result if not isinstance(result, list) else result[0]
-        assert doc.id is not None
-
-        # Search for content that might include pictures
-        results = await client.search("figure table", limit=10)
-
-        if len(results) > 0:
-            expanded = await client.expand_context(results)
-
-            for result in expanded:
-                assert "base64" not in result.content.lower(), (
-                    f"Found 'base64' in expanded content: {result.content[:500]}"
-                )
-                assert "data:image" not in result.content.lower(), (
-                    f"Found 'data:image' in expanded content: {result.content[:500]}"
-                )
-
-
-@pytest.mark.slow
-@pytest.mark.vcr()
-async def test_expand_context_no_base64_images_docling_serve(
-    temp_db_path, doclaynet_first_page_pdf
-):
-    """Ensure expanded context from real PDF does not contain base64 image data.
-
-    Tests end-to-end with a single page of doclaynet.pdf using docling-serve converter.
-    """
-    config = AppConfig()
-    config.processing.converter = "docling-serve"
-    config.processing.chunker = "docling-serve"
-
-    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-        pdf_path = doclaynet_first_page_pdf
-        result = await client.create_document_from_source(pdf_path)
-        doc = result if not isinstance(result, list) else result[0]
-        assert doc.id is not None
-
-        # Search for content that might include pictures
-        results = await client.search("figure table", limit=10)
-
-        if len(results) > 0:
-            expanded = await client.expand_context(results)
-
-            for result in expanded:
-                assert "base64" not in result.content.lower(), (
-                    f"Found 'base64' in expanded content: {result.content[:500]}"
-                )
-                assert "data:image" not in result.content.lower(), (
-                    f"Found 'data:image' in expanded content: {result.content[:500]}"
-                )
+        no_bytes = SearchResult(
+            content="", score=1.0, document_id=doc.id, doc_item_refs=["#/pictures/1"]
+        )
+        await populate_image_data(client, [no_bytes])
+        assert no_bytes.image_data is None

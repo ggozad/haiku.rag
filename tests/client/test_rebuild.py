@@ -812,32 +812,40 @@ async def test_rebuild_full_source_failure_falls_back_to_stored_content(
 
 
 @pytest.mark.vcr()
-async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch):
-    """RECHUNK flushes in batches and yields every document.
+@pytest.mark.parametrize(
+    "mode, content",
+    [
+        (RebuildMode.RECHUNK, "batch flush doc"),
+        (RebuildMode.FULL, "full batch doc"),
+    ],
+    ids=["rechunk", "full"],
+)
+async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch, mode, content):
+    """RECHUNK and FULL flush in batches and yield every document.
 
-    Forces a tiny batch size so three docs trigger at least one mid-loop
-    flush plus the final flush. Regression guard for the batched-write path
-    in _rebuild_rechunk.
+    Forces a tiny batch size so three docs trigger one mid-loop flush plus
+    the final flush.
     """
     from haiku.rag.client import rebuild as rebuild_module
 
     monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+    flushes = _count_flushes(monkeypatch, rebuild_module)
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         ids: list[str] = []
         for i in range(3):
-            doc = await client.create_document(content=f"batch flush doc {i}")
+            doc = await client.create_document(content=f"{content} {i}")
             assert doc.id is not None
             ids.append(doc.id)
 
-        processed = [
-            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
-        ]
+        processed = [doc_id async for doc_id in client.rebuild_database(mode=mode)]
 
         assert sorted(processed) == sorted(ids)
         for doc_id in ids:
             chunks = await client.chunk_repository.get_by_document_id(doc_id)
             assert len(chunks) > 0
+
+    assert len(flushes) == 2
 
 
 async def test_rebuild_descriptions_requires_description_mode(temp_db_path):
@@ -1152,30 +1160,6 @@ async def _stored_embedding_name(client: HaikuRAG) -> str:
 
     settings = await SettingsRepository(client.store).get_current_settings()
     return settings["embeddings"]["model"]["name"]
-
-
-async def test_rebuild_set_embedder_adopts_identity_without_reembedding(temp_db_path):
-    """SET_EMBEDDER updates stored embedder identity and leaves vectors untouched."""
-    from haiku.rag.config import AppConfig
-
-    dim = AppConfig().embeddings.model.vector_dim
-    sentinel = [0.5] * dim
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        await _add_chunk(client, sentinel)
-
-    drift = AppConfig()
-    drift.embeddings.model.name = "different-model"
-
-    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
-        async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
-            pass
-
-        assert await _stored_embedding_name(client) == "different-model"
-
-        rows = (await client.store.chunks_table.query().to_arrow()).to_pylist()
-        assert len(rows) == 1
-        assert rows[0]["vector"] == pytest.approx(sentinel)
 
 
 async def test_rebuild_set_embedder_works_on_empty_database(temp_db_path):
@@ -1665,29 +1649,6 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
         assert after is not None
         assert after.content == "picture doc"
         assert after.docling_pages == pages
-
-
-@pytest.mark.vcr()
-async def test_rebuild_full_flushes_in_batches(temp_db_path, monkeypatch):
-    from haiku.rag.client import rebuild as rebuild_module
-
-    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
-    flushes = _count_flushes(monkeypatch, rebuild_module)
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        ids = []
-        for i in range(3):
-            doc = await client.create_document(content=f"full batch doc {i}")
-            assert doc.id is not None
-            ids.append(doc.id)
-
-        processed = [
-            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
-        ]
-
-        assert sorted(processed) == sorted(ids)
-
-    assert len(flushes) == 2
 
 
 @pytest.mark.vcr()
@@ -2995,10 +2956,11 @@ async def test_rebuild_set_embedder_adopts_a_name_change_with_equal_prefixes(
     from haiku.rag.config import AppConfig
     from haiku.rag.store.repositories.settings import SettingsRepository
 
+    sentinel = [0.5] * AppConfig().embeddings.model.vector_dim
     prefixed = AppConfig()
     prefixed.embeddings.model.document_prefix = "D: "
-    async with HaikuRAG(temp_db_path, config=prefixed, create=True):
-        pass
+    async with HaikuRAG(temp_db_path, config=prefixed, create=True) as client:
+        await _add_chunk(client, sentinel)
 
     drift = prefixed.model_copy(deep=True)
     drift.embeddings.model.name = "different-model"
@@ -3006,9 +2968,11 @@ async def test_rebuild_set_embedder_adopts_a_name_change_with_equal_prefixes(
         async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
             pass
         recorded = await SettingsRepository(client.store).get_current_settings()
+        [row] = (await client.store.chunks_table.query().to_arrow()).to_pylist()
 
     model = recorded["embeddings"]["model"]
     assert (model["name"], model["document_prefix"]) == ("different-model", "D: ")
+    assert row["vector"] == pytest.approx(sentinel)
 
 
 async def test_rebuild_embed_only_adopts_prefixes(temp_db_path):

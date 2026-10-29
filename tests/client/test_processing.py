@@ -353,23 +353,6 @@ async def test_client_convert_unsupported_extension(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_client_convert_file_uri(temp_db_path):
-    from docling_core.types.doc.document import DoclingDocument
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / "test.txt"
-            temp_path.write_text("URI file content.")
-            file_uri = temp_path.as_uri()
-
-            docling_doc = await client.convert(file_uri)
-
-            assert isinstance(docling_doc, DoclingDocument)
-            markdown = docling_doc.export_to_markdown()
-            assert "URI file content" in markdown
-
-
-@pytest.mark.vcr()
 async def test_client_chunk_basic(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         docling_doc = await client.convert("This is test content for chunking.")

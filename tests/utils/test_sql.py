@@ -17,6 +17,12 @@ def test_build_document_id_filter_escapes_quotes():
     assert build_document_id_filter(["O'Reilly"]) == "id IN ('O''Reilly')"
 
 
+def test_escape_sql_string_doubles_quotes():
+    from haiku.rag.utils.sql import escape_sql_string
+
+    assert escape_sql_string("x' OR title LIKE '%") == "x'' OR title LIKE ''%"
+
+
 def test_escape_like_pattern_makes_wildcards_literal():
     from haiku.rag.utils.sql import escape_like_pattern
 

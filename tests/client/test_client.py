@@ -115,6 +115,10 @@ async def test_client_document_crud(qa_corpus: list[dict[str, str]], temp_db_pat
         assert "Jakarta" in created_doc.content
         assert created_doc.uri == test_uri
         assert created_doc.metadata == test_metadata
+        assert created_doc.docling_document is not None
+        assert created_doc.docling_version is not None
+        parsed = json.loads(decompress_json(created_doc.docling_document))
+        assert parsed["version"] == created_doc.docling_version
 
         # Test get_document_by_id
         retrieved_doc = await client.get_document_by_id(created_doc.id)
@@ -226,6 +230,9 @@ async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_p
         assert updated_doc.content == "Updated content only"
         assert updated_doc.title == "Original Title"
         assert updated_doc.uri == test_uri
+        assert updated_doc.docling_document is not None
+        assert updated_doc.docling_version is not None
+        assert updated_doc.docling_document != created_doc.docling_document
 
         # Test updating only metadata
         new_metadata = {"source": "updated", "version": "2.0"}
@@ -250,6 +257,10 @@ async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_p
             Chunk(content="Custom chunk 1", order=0),
             Chunk(content="Custom chunk 2", order=1),
         ]
+        before_chunks = await client.document_repository.get_by_id(
+            original_id, include_blobs=True
+        )
+        assert before_chunks is not None
         updated_doc = await client.update_document(
             document_id=original_id,
             content="Content with custom chunks",
@@ -261,6 +272,7 @@ async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_p
         assert updated_doc.content == "Content with custom chunks"
         assert updated_doc.title == "Final Title"
         assert updated_doc.metadata == {"final": "true"}
+        assert updated_doc.docling_document == before_chunks.docling_document
 
         # Verify the custom chunks were created
         doc_chunks = await client.chunk_repository.get_by_document_id(original_id)
@@ -298,6 +310,14 @@ async def test_client_create_document_from_source(temp_db_path):
             assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
             assert doc.metadata["content_type"] == "text/plain"
+            assert doc.docling_document is not None
+            assert doc.docling_version is not None
+            retrieved = await client.document_repository.get_by_id(
+                doc.id, include_blobs=True
+            )
+            assert retrieved is not None
+            assert retrieved.docling_document == doc.docling_document
+            assert retrieved.docling_version == doc.docling_version
 
             # Test create_document_from_source with string path
             doc2 = await client.create_document_from_source(source=str(temp_path))
@@ -692,6 +712,8 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             assert doc1.content == test_content
             original_id = doc1.id
             original_updated_at = doc1.updated_at
+            original_json = doc1.docling_document
+            original_version = doc1.docling_version
 
             # Second call with same content - should return existing document (no-op)
             doc2 = await client.create_document_from_source(temp_path)
@@ -709,6 +731,9 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             assert isinstance(doc3, Document)
             assert doc3.id == original_id  # Same document ID
             assert doc3.content == updated_content  # Updated content
+            assert doc3.docling_document is not None
+            assert doc3.docling_document != original_json
+            assert doc3.docling_version == original_version
 
             # Verify the document was actually updated in database
             retrieved_doc = await client.get_document_by_id(original_id)
@@ -836,6 +861,11 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
 
         assert document.id is not None
         assert "Full document content" in document.content
+        assert document.docling_document is not None
+        assert document.docling_version == docling_doc.version
+        structure = json.loads(decompress_json(document.docling_document))
+        assert "pages" not in structure
+        assert structure["name"] == "test"
 
         # Verify the chunks were created correctly
         doc_chunks = await client.chunk_repository.get_by_document_id(document.id)
@@ -1440,126 +1470,6 @@ async def test_client_ask_runs_code(allow_model_requests, temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_client_create_document_stores_docling_json(temp_db_path):
-    """Test that create_document stores DoclingDocument JSON."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(
-            content="Test content for docling storage",
-            uri="test://docling",
-            metadata={"test": "docling_storage"},
-        )
-
-        assert doc.id is not None
-        assert doc.docling_document is not None
-        assert doc.docling_version is not None
-
-        # Verify JSON is valid and can be parsed
-        import json
-
-        from haiku.rag.store.compression import decompress_json
-
-        parsed = json.loads(decompress_json(doc.docling_document))
-        assert "version" in parsed
-        assert parsed["version"] == doc.docling_version
-
-
-@pytest.mark.vcr()
-async def test_client_import_document_stores_docling_data(temp_db_path):
-    """Test that import_document stores DoclingDocument data correctly."""
-    from docling_core.types.doc.document import DoclingDocument
-    from docling_core.types.doc.labels import DocItemLabel
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create a docling document with some content
-        docling_doc = DoclingDocument(name="test")
-        docling_doc.add_text(
-            label=DocItemLabel.TEXT, text="Content from docling document"
-        )
-
-        custom_chunks = [Chunk(content="Chunk content", order=0)]
-
-        # Import with DoclingDocument
-        doc = await client.import_document(
-            docling_document=docling_doc,
-            chunks=custom_chunks,
-        )
-
-        assert doc.id is not None
-        assert "Content from docling document" in doc.content
-        assert doc.docling_document is not None
-        assert doc.docling_version == docling_doc.version
-        # Structure is stored without pages
-        structure = json.loads(decompress_json(doc.docling_document))
-        assert "pages" not in structure
-        assert structure["name"] == "test"
-
-
-@pytest.mark.vcr()
-async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
-    """Test that create_document_from_source stores DoclingDocument JSON for files."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / "test.txt"
-            temp_path.write_text("Test file content")
-
-            doc = await client.create_document_from_source(temp_path)
-            assert isinstance(doc, Document)
-
-            assert doc.id is not None
-            assert doc.docling_document is not None
-            assert doc.docling_version is not None
-
-            # Verify the stored document also has the JSON
-            retrieved = await client.document_repository.get_by_id(
-                doc.id, include_blobs=True
-            )
-            assert retrieved is not None
-            assert retrieved.docling_document == doc.docling_document
-            assert retrieved.docling_version == doc.docling_version
-
-
-@pytest.mark.vcr()
-async def test_client_update_document_stores_docling_json(temp_db_path):
-    """Test that update_document stores DoclingDocument JSON when content changes."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create initial document
-        doc = await client.create_document(content="Initial content")
-        assert doc.id is not None
-        original_json = doc.docling_document
-
-        # Update content via update_document
-        updated_doc = await client.update_document(
-            document_id=doc.id, content="New content via fields update"
-        )
-
-        assert updated_doc.docling_document is not None
-        assert updated_doc.docling_version is not None
-        # JSON should be different because content changed
-        assert updated_doc.docling_document != original_json
-
-
-@pytest.mark.vcr()
-async def test_client_update_document_with_custom_chunks_no_docling_json(
-    temp_db_path,
-):
-    """Test that update_document with custom chunks does not update docling JSON."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create initial document
-        doc = await client.create_document(content="Initial content")
-        assert doc.id is not None
-        original_json = doc.docling_document
-
-        # Update with custom chunks
-        custom_chunks = [Chunk(content="Custom chunk", order=0)]
-        updated_doc = await client.update_document(
-            document_id=doc.id, content="New content", chunks=custom_chunks
-        )
-
-        # Docling JSON should remain unchanged (no conversion when custom chunks provided)
-        assert updated_doc.docling_document == original_json
-
-
-@pytest.mark.vcr()
 async def test_client_update_document_content_docling_mutually_exclusive(
     temp_db_path,
 ):
@@ -1662,80 +1572,6 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
         assert len(chunks) == 2
         assert chunks[0].content == "Custom chunk 1"
         assert chunks[1].content == "Custom chunk 2"
-
-
-@pytest.mark.vcr()
-async def test_client_file_update_stores_docling_json(temp_db_path):
-    """Test that updating a file re-stores DoclingDocument JSON."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / "test.txt"
-            temp_path.write_text("Original content")
-
-            # Create initial document
-            doc1 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc1, Document)
-            original_json = doc1.docling_document
-            original_version = doc1.docling_version
-
-            # Modify file
-            temp_path.write_text("Modified content")
-
-            # Update document from source
-            doc2 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc2, Document)
-            assert doc2.id == doc1.id  # Same document
-
-            # Docling JSON should be updated
-            assert doc2.docling_document is not None
-            assert doc2.docling_document != original_json
-            assert doc2.docling_version == original_version  # Version stays same
-
-
-@pytest.mark.vcr()
-async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
-    """SQL injection is blocked when using escape_sql_string.
-
-    This test verifies that escape_sql_string properly prevents SQL injection
-    by escaping single quotes in user input.
-    """
-    from haiku.rag.utils.sql import escape_sql_string
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create documents
-        await client.create_document(
-            content="Secret classified data XYZ",
-            uri="secret://doc",
-            title="Secret",
-        )
-        await client.create_document(
-            content="Public report about weather",
-            uri="public://report",
-            title="Weather Report",
-        )
-
-        # Without escaping, this injection would match all documents
-        # by breaking out of the string literal: title = 'x' OR title LIKE '%'
-        injection_payload = "x' OR title LIKE '%"
-
-        # With proper escaping, single quotes become double quotes
-        # so the filter becomes: title = 'x'' OR title LIKE ''%'
-        # which searches for a literal title containing the injection string
-        safe_payload = escape_sql_string(injection_payload)
-        docs = await client.list_documents(filter=f"title = '{safe_payload}'")
-
-        # Should find 0 documents (injection is escaped, searching for literal string)
-        assert len(docs) == 0
-
-        # Verify the escaping works correctly
-        assert safe_payload == "x'' OR title LIKE ''%"
-
-        # Verify unescaped injection would have matched documents (for test validity)
-        # This demonstrates that the injection works without escaping
-        docs_unescaped = await client.list_documents(
-            filter=f"title = '{injection_payload}'"
-        )
-        assert len(docs_unescaped) == 2  # SQL injection succeeds without escaping
 
 
 # =============================================================================

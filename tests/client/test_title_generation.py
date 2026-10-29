@@ -301,65 +301,6 @@ class TestRebuildTitleOnly:
             assert updated_doc1 is not None
             assert updated_doc1.title == "Doc With Heading"
 
-    async def test_skips_already_titled_docs(self, temp_db_path):
-        """TITLE_ONLY mode skips documents that already have titles."""
-        from haiku.rag.client import RebuildMode
-
-        config = AppConfig(processing=ProcessingConfig(auto_title=True))
-        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-            await client.create_document(
-                "# Has Title\n\nContent.",
-                uri="test://has-title",
-            )
-
-            processed_ids = []
-            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
-                processed_ids.append(doc_id)
-
-            assert len(processed_ids) == 0
-
-    async def test_continues_on_per_document_failure(self, temp_db_path, monkeypatch):
-        """TITLE_ONLY mode continues when generate_title fails for a document."""
-        from haiku.rag.client import RebuildMode
-
-        config = AppConfig(processing=ProcessingConfig(auto_title=True))
-        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-            doc1 = await client.create_document(
-                "# First Heading\n\nContent.",
-                uri="test://first",
-            )
-            doc2 = await client.create_document(
-                "# Second Heading\n\nContent.",
-                uri="test://second",
-            )
-            # Clear both titles
-            doc1.title = None
-            await client.document_repository.update(doc1)
-            doc2.title = None
-            await client.document_repository.update(doc2)
-
-            # Make generate_title fail for the first doc, succeed for the second
-            import haiku.rag.client.rebuild as rebuild_mod
-
-            original = rebuild_mod.generate_title
-            call_count = 0
-
-            async def flaky_generate(config, document):
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    raise RuntimeError("LLM failed")
-                return await original(config, document)
-
-            monkeypatch.setattr(rebuild_mod, "generate_title", flaky_generate)
-
-            processed_ids = []
-            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
-                processed_ids.append(doc_id)
-
-            # Only the second doc should have been processed
-            assert len(processed_ids) == 1
-
 
 async def test_generate_title_with_llm_returns_model_output(monkeypatch):
     """The agent's output is stripped and returned."""

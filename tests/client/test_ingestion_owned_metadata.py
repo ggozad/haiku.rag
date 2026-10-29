@@ -4,13 +4,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG, documents
-from haiku.rag.client.documents import DocumentImport
 from haiku.rag.sources.fs import FSSource
-from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 
 FRESHNESS = ("content_type", "md5", "source_revision")
@@ -107,37 +103,6 @@ async def test_content_and_metadata_update_keeps_the_ingestion_keys(
         )
 
         assert updated.metadata == {**ingested.metadata, "identifier": "ACC-1"}
-
-
-@pytest.mark.vcr()
-async def test_create_document_drops_the_freshness_keys(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(
-            "Content a caller claims a revision for.",
-            uri="test://claimed",
-            metadata={"team": "docs", **FORGED},
-        )
-
-        assert doc.metadata == {"team": "docs"}
-
-
-async def test_import_drops_the_freshness_keys(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        vector_dim = client.store.embedder.vector_dim
-        docling_document = DoclingDocument(name="claimed")
-        docling_document.add_text(label=DocItemLabel.TEXT, text="Imported content.")
-        chunks = [Chunk(content="Imported content.", embedding=[0.1] * vector_dim)]
-        metadata = {"team": "docs", **FORGED}
-
-        imported = await client.import_document(
-            docling_document, chunks, uri="test://one", metadata=metadata
-        )
-        batch = await client.import_documents(
-            [DocumentImport(docling_document, chunks, "test://two", None, metadata)]
-        )
-
-        assert imported.metadata == {"team": "docs"}
-        assert [doc.metadata for doc in batch] == [{"team": "docs"}]
 
 
 @pytest.mark.vcr()

@@ -190,6 +190,14 @@ async def test_search_returns_search_result(temp_db_path):
         assert isinstance(result.labels, list)
         assert len(result.labels) > 0
 
+        formatted = result.format_for_agent(rank=1, total=1)
+        assert "[" in formatted and "]" in formatted
+        assert "[rank 1 of 1]" in formatted
+        assert "ML Guide" in formatted
+        assert "Source:" in formatted
+        assert "Content:" in formatted
+        assert "machine learning" in formatted.lower()
+
 
 @pytest.mark.vcr()
 async def test_search_graceful_degradation(temp_db_path):
@@ -219,35 +227,6 @@ async def test_search_graceful_degradation(temp_db_path):
         # Metadata defaults should still work
         assert result.page_numbers == []
         assert result.labels == []
-
-
-@pytest.mark.vcr()
-async def test_search_result_format_includes_metadata(temp_db_path):
-    """Test that formatted search results include document metadata."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        await client.create_document(
-            content="Important information about machine learning algorithms.",
-            title="ML Guide",
-            uri="https://example.com/ml-guide",
-        )
-
-        results = await client.search("machine learning", limit=1)
-        assert len(results) > 0
-
-        # Format with rank (the way agents use it)
-        formatted = results[0].format_for_agent(rank=1, total=1)
-
-        # Should include chunk ID and rank
-        assert "[" in formatted and "]" in formatted
-        assert "[rank 1 of 1]" in formatted
-
-        # Should include document title in Source
-        assert "ML Guide" in formatted
-        assert "Source:" in formatted
-
-        # Should include content
-        assert "Content:" in formatted
-        assert "machine learning" in formatted.lower()
 
 
 @pytest.mark.vcr()
@@ -288,6 +267,16 @@ async def test_fts_search_targets_content_fts_column(temp_db_path):
 # Image queries (bytes / PIL.Image)
 
 
+@pytest.fixture
+def exploding_reranker(monkeypatch):
+    """A reranker that cannot be built, so any access fails loudly."""
+
+    def boom(self):
+        raise AssertionError("reranker built for a query that cannot use it")
+
+    monkeypatch.setattr(HaikuRAG, "reranker", property(boom), raising=True)
+
+
 def _png_bytes_query() -> bytes:
     return b"\x89PNG\r\n\x1a\n"
 
@@ -303,8 +292,11 @@ def _pil_image_query():
     [_png_bytes_query, _pil_image_query],
     ids=["bytes", "pil"],
 )
+@pytest.mark.parametrize(
+    "search_kwargs", [{}, {"search_type": "fts"}], ids=["default", "fts"]
+)
 async def test_search_with_image_query_uses_multimodal_embedder(
-    temp_db_path, monkeypatch, make_query
+    temp_db_path, monkeypatch, exploding_reranker, make_query, search_kwargs
 ):
     """``client.search(image)`` embeds via ``embed_image`` and dispatches
     to vector-only chunk search (skipping FTS and reranker)."""
@@ -346,19 +338,30 @@ async def test_search_with_image_query_uses_multimodal_embedder(
         return [
             (
                 Chunk(
-                    content="figure 1",
-                    metadata={"labels": ["picture"], "doc_item_refs": ["#/pictures/0"]},
+                    content=f"figure {i}",
+                    metadata={
+                        "labels": ["picture"],
+                        "doc_item_refs": [f"#/pictures/{i}"],
+                    },
                 ),
-                0.91,
+                score,
             )
+            for i, score in enumerate([0.91, 0.8, 0.7, 0.6])
         ]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
         rag.chunk_repository.search = fake_chunk_search  # type: ignore[method-assign]
-        results = await rag.search(query, limit=3, include_images=False)
+        results = await rag.search(
+            query, limit=3, include_images=False, **search_kwargs
+        )
 
-    assert len(results) == 1
-    assert results[0].score == 0.91
+    assert [(r.content, r.score) for r in results] == [
+        ("figure 0", 0.91),
+        ("figure 1", 0.8),
+        ("figure 2", 0.7),
+    ]
+    assert received_kwargs["search_type"] == "vector"
+    assert received_kwargs["limit"] == 3
     # The image was passed through to the image embedder untouched.
     assert image_calls == [query]
     # The chunk repo received a pre-computed vector and an empty text query.

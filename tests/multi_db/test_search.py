@@ -23,6 +23,16 @@ from tests.multi_db.helpers import (
 )
 
 
+def _accept_image_queries(monkeypatch):
+    dim = get_config().embeddings.model.vector_dim
+
+    async def embed_image(self, image):  # noqa: ARG001
+        return [0.1] * dim
+
+    monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
+    monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
+
+
 class TestFederatedSearch:
     async def test_results_carry_their_source(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -49,9 +59,13 @@ class TestFederatedSearch:
 
         assert {r.source for r in results} == {"alpha"}
 
-    async def test_unknown_source_is_rejected(self, tmp_path):
-        config = _config(tmp_path, ["alpha"])
-        await _seed(config, "alpha", ["alpha document about cats"])
+    @pytest.mark.parametrize(
+        "names", [["alpha", "beta"], ["alpha"]], ids=["multi", "single"]
+    )
+    async def test_unknown_source_is_rejected(self, tmp_path, names):
+        config = _config(tmp_path, names)
+        for name in names:
+            await _seed(config, name, [f"{name} document about cats"])
 
         async with HaikuRAG(config=config) as rag:
             with pytest.raises(UnknownDatabaseError, match="nope"):
@@ -287,13 +301,18 @@ class TestOverFetchingForAReranker:
         monkeypatch.setattr(ChunkRepository, "search", spy)
         return asked
 
+    @pytest.mark.parametrize(
+        "reranker, fetched",
+        [(StubReranker(), 30), (None, 3)],
+        ids=["reranker", "no-reranker"],
+    )
     async def test_a_text_query_over_fetches_for_a_reranker(
-        self, tmp_path, monkeypatch
+        self, tmp_path, monkeypatch, reranker, fetched
     ):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
         await _seed(config, "beta", ["beta document about cats"])
-        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: StubReranker()))
+        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: reranker))
         asked = self._limits_asked(monkeypatch)
 
         async with HaikuRAG(config=config) as rag:
@@ -302,26 +321,8 @@ class TestOverFetchingForAReranker:
             asked.clear()
             await rag.search("cats", limit=3, search_type="fts", sources=["alpha"])
 
-        assert per_database == [30, 30]
-        assert asked == [30]
-
-    async def test_a_text_query_without_a_reranker_fetches_what_it_returns(
-        self, tmp_path, monkeypatch
-    ):
-        config = _config(tmp_path, ["alpha", "beta"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-        await _seed(config, "beta", ["beta document about cats"])
-        monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: None))
-        asked = self._limits_asked(monkeypatch)
-
-        async with HaikuRAG(config=config) as rag:
-            await rag.search("cats", limit=3, search_type="fts")
-            per_database = list(asked)
-            asked.clear()
-            await rag.search("cats", limit=3, search_type="fts", sources=["alpha"])
-
-        assert per_database == [3, 3]
-        assert asked == [3]
+        assert per_database == [fetched, fetched]
+        assert asked == [fetched]
 
     async def test_an_image_query_fetches_what_it_returns(self, tmp_path, monkeypatch):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -329,13 +330,7 @@ class TestOverFetchingForAReranker:
         await _seed(config, "beta", ["beta document about cats"])
         monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: StubReranker()))
 
-        dim = get_config().embeddings.model.vector_dim
-
-        async def embed_image(self, image):  # noqa: ARG001
-            return [0.1] * dim
-
-        monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
-        monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
+        _accept_image_queries(monkeypatch)
         asked = self._limits_asked(monkeypatch)
 
         async with HaikuRAG(config=config) as rag:
@@ -381,13 +376,7 @@ class TestOneReranker:
         await _seed(config, "beta", ["beta document about cats"])
         built.clear()
 
-        dim = get_config().embeddings.model.vector_dim
-
-        async def embed_image(self, image):  # noqa: ARG001
-            return [0.1] * dim
-
-        monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
-        monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
+        _accept_image_queries(monkeypatch)
 
         async with HaikuRAG(config=config) as rag:
             results = await rag.search(b"\x89PNG\r\n\x1a\n")
@@ -774,17 +763,6 @@ class TestComparingEmbedders:
 
 
 class TestOneNamedDatabase:
-    async def test_a_single_named_database_keeps_its_name(self, tmp_path):
-        """Named in config is named in results, even as the only entry."""
-        config = _config(tmp_path, ["alpha"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-
-        async with HaikuRAG(config=config) as rag:
-            results = await rag.search("cats", search_type="fts")
-
-        assert results
-        assert all(r.source == "alpha" for r in results)
-
     async def test_selecting_nothing_at_construction_is_rejected(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
 
@@ -792,19 +770,15 @@ class TestOneNamedDatabase:
             async with HaikuRAG(config=config, sources=[]):
                 pass
 
-    async def test_selecting_nothing_means_the_same_with_one_database(self, tmp_path):
+    @pytest.mark.parametrize(
+        "names", [["alpha", "beta"], ["alpha"]], ids=["multi", "single"]
+    )
+    async def test_selecting_nothing_per_query_returns_nothing(self, tmp_path, names):
         """`sources=[]` selects nothing whether one database is configured or
         several."""
-        config = _config(tmp_path, ["alpha"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-
-        async with HaikuRAG(config=config) as rag:
-            assert await rag.search("cats", search_type="fts", sources=[]) == []
-
-    async def test_selecting_nothing_per_query_returns_nothing(self, tmp_path):
-        config = _config(tmp_path, ["alpha", "beta"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-        await _seed(config, "beta", ["beta document about cats"])
+        config = _config(tmp_path, names)
+        for name in names:
+            await _seed(config, name, [f"{name} document about cats"])
 
         async with HaikuRAG(config=config) as rag:
             assert await rag.search("cats", search_type="fts", sources=[]) == []

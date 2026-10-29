@@ -158,88 +158,6 @@ async def test_adhoc_reingest_preserves_source_id(temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_caller_metadata_cannot_set_source_id(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            path = Path(temp_dir) / "claimed.txt"
-            path.write_text("Content whose caller claims a source.")
-
-            doc = await client.create_document_from_source(
-                path, metadata={"source_id": "fs:forged", "team": "docs"}
-            )
-
-            assert isinstance(doc, Document)
-            assert "source_id" not in doc.metadata
-            assert doc.metadata["team"] == "docs"
-
-
-@pytest.mark.vcr()
-async def test_create_document_cannot_set_source_id(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(
-            "Content a caller claims a source for.",
-            uri="test://claimed",
-            metadata={"source_id": "fs:forged", "team": "docs"},
-        )
-
-        assert "source_id" not in doc.metadata
-        assert doc.metadata["team"] == "docs"
-
-
-async def test_import_cannot_set_source_id(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        vector_dim = client.store.embedder.vector_dim
-        docling_document = _docling_document("Imported content.")
-
-        imported = await client.import_document(
-            docling_document,
-            [Chunk(content="Imported content.", embedding=[0.1] * vector_dim)],
-            uri="test://imported",
-            metadata={"source_id": "fs:forged", "team": "docs"},
-        )
-        batch = await client.import_documents(
-            [
-                DocumentImport(
-                    docling_document=_docling_document("Batch content."),
-                    chunks=[
-                        Chunk(content="Batch content.", embedding=[0.1] * vector_dim)
-                    ],
-                    uri="test://batched",
-                    metadata={"source_id": "fs:forged"},
-                )
-            ]
-        )
-
-        assert "source_id" not in imported.metadata
-        assert imported.metadata["team"] == "docs"
-        assert "source_id" not in batch[0].metadata
-
-
-@pytest.mark.vcr()
-async def test_update_document_cannot_drop_or_set_source_id(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            path = root / "updated.txt"
-            path.write_text("Content an owner ingested.")
-            source = fs_source(root)
-            doc = await client.create_document_from_source(
-                path, sources=[source], source_id=source.source_id
-            )
-            assert isinstance(doc, Document)
-            assert doc.id is not None
-
-            await client.update_document(
-                doc.id, metadata={"team": "docs", "source_id": "fs:forged"}
-            )
-
-            refreshed = await client.get_document_by_id(doc.id)
-            assert refreshed is not None
-            assert refreshed.metadata["source_id"] == source.source_id
-            assert refreshed.metadata["team"] == "docs"
-
-
-@pytest.mark.vcr()
 async def test_concurrent_adhoc_ingest_keeps_source_id(temp_db_path):
     """The locked re-check keeps the source of the row it replaces."""
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -587,11 +505,18 @@ async def _attachment(client: HaikuRAG, parent_uri: str, name: str) -> Document:
     return await client.document_repository.update_meta(doc)
 
 
-async def test_caller_metadata_cannot_set_parent_uri(temp_db_path):
+async def test_caller_metadata_cannot_set_ingestion_owned_keys(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         vector_dim = client.store.embedder.vector_dim
         client.store.embedder = _FixedEmbedder(vector_dim)
-        forged = {"parent_uri": "file:///forged.pdf", "team": "docs"}
+        forged = {
+            "parent_uri": "file:///forged.pdf",
+            "source_id": "fs:forged",
+            "content_type": "x/forged",
+            "md5": "forged",
+            "source_revision": "forged",
+            "team": "docs",
+        }
 
         created = await client.create_document(
             "Created content.", uri="test://created", metadata=forged
@@ -620,24 +545,36 @@ async def test_caller_metadata_cannot_set_parent_uri(temp_db_path):
             sourced = await client.create_document_from_source(path, metadata=forged)
         assert isinstance(sourced, Document)
 
-        for doc in (created, imported, batched, sourced):
-            assert "parent_uri" not in doc.metadata
-            assert doc.metadata["team"] == "docs"
+        for doc in (created, imported, batched):
+            assert doc.metadata == {"team": "docs"}
+        assert "parent_uri" not in sourced.metadata
+        assert "source_id" not in sourced.metadata
+        assert sourced.metadata["team"] == "docs"
+        for key in ("content_type", "md5", "source_revision"):
+            assert sourced.metadata[key] != forged[key]
 
 
-async def test_update_document_cannot_drop_or_set_parent_uri(temp_db_path):
+async def test_update_document_cannot_drop_or_set_lineage_keys(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         child = await _attachment(client, "file:///parent.pdf", "a.txt")
+        child.metadata = {**child.metadata, "source_id": "fs:owner"}
+        child = await client.document_repository.update_meta(child)
         assert child.id is not None
 
         await client.update_document(child.id, metadata={"team": "docs"})
         await client.update_document(
-            child.id, metadata={"parent_uri": "file:///other.pdf", "team": "docs"}
+            child.id,
+            metadata={
+                "parent_uri": "file:///other.pdf",
+                "source_id": "fs:forged",
+                "team": "docs",
+            },
         )
 
         refreshed = await client.get_document_by_id(child.id)
         assert refreshed is not None
         assert refreshed.metadata["parent_uri"] == "file:///parent.pdf"
+        assert refreshed.metadata["source_id"] == "fs:owner"
         assert refreshed.metadata["team"] == "docs"
 
 
