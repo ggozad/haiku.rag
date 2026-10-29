@@ -3,7 +3,7 @@ import hashlib
 import json
 import logging
 import mimetypes
-from collections.abc import Collection
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
@@ -275,13 +275,15 @@ async def _update_document_with_chunks(
     docling_document: "DoclingDocument | None" = None,
     observed_uri: str | None = None,
     notify_hooks: bool = True,
+    stored_meta: Callable[[], Awaitable[Document]] | None = None,
 ) -> Document:
     """Update a document and replace its chunks, embedding any that lack embeddings.
 
     Handles versioning/rollback on failure. When `docling_document` is None,
     existing items are preserved. ``observed_uri`` is the URI the other phase
     spans report, which can differ from ``document.uri``, the URI the
-    document is stored under.
+    document is stored under. ``stored_meta``, when given, supplies the
+    ``uri``, ``title`` and ``metadata`` to write, read under the write lock.
     """
     span_uri = observed_uri if observed_uri is not None else document.uri
     assert document.id is not None, "Document ID is required for update"
@@ -315,6 +317,10 @@ async def _update_document_with_chunks(
         if items is not None:
             store_span.set_attribute("items", len(items))
         async with session.store.write_transaction():
+            if stored_meta is not None:
+                current = await stored_meta()
+                document.uri, document.title = current.uri, current.title
+                document.metadata = current.metadata
             updated_doc = await session.document_repository.update(document)
 
             assert updated_doc.id is not None
@@ -504,28 +510,30 @@ async def _refresh_doc_metadata(
     user_metadata: dict,
     source_metadata: dict | None,
 ) -> Document:
-    """Update a document's title + metadata without re-chunking."""
-    updated = False
-    if title is not None and title != doc.title:
-        doc.title = title
-        updated = True
-
-    merged = {**(doc.metadata or {}), **user_metadata}
-    if source_metadata:
-        merged.update(source_metadata)
-    if merged != doc.metadata:
-        doc.metadata = merged
-        updated = True
-
+    """Update a document's title + metadata without re-chunking. Merges onto
+    the stored record, which may have changed since ``doc`` was read."""
+    assert doc.id is not None
+    async with session.store._write_lock:
+        stored = await session.document_repository.get_by_id(doc.id)
+        if stored is not None:
+            doc.uri, doc.title = stored.uri, stored.title
+            doc.metadata, doc.updated_at = stored.metadata, stored.updated_at
+        before = (doc.title, doc.metadata)
+        if title is not None:
+            doc.title = title
+        doc.metadata = {
+            **(doc.metadata or {}),
+            **user_metadata,
+            **(source_metadata or {}),
+        }
+        updated = (doc.title, doc.metadata) != before
+        if updated:
+            await session.document_repository.update_meta(doc)
     if updated:
-        async with session.store._write_lock:
-            result = await session.document_repository.update_meta(doc)
         # Reclaim the document_meta churn from rolling source_revision sweeps.
         # The vacuum is debounced, and document_meta is tiny, so this is cheap.
         if session.config.storage.auto_vacuum:
             session.schedule_vacuum()
-        session.name(result)
-        return result
     session.name(doc)
     return doc
 
@@ -1251,30 +1259,38 @@ async def update_document(
             "Provide one or the other, not both."
         )
 
-    # Caller-supplied chunks without a docling document replace neither blob,
-    # and the row is written back whole, so they have to make the round trip.
-    existing_doc = await session.document_repository.get_by_id(
-        document_id, include_blobs=chunks is not None and docling_document is None
-    )
-    if existing_doc is None:
-        raise ValueError(f"Document with ID {document_id} not found")
-
-    if title is not None:
-        existing_doc.title = title
-    if metadata is not None:
-        existing_doc.metadata = _keep_ingestion_keys(
-            _caller_metadata(metadata), existing_doc.metadata, _INGESTION_OWNED_KEYS
+    async def read_and_apply(include_blobs: bool = False) -> Document:
+        doc = await session.document_repository.get_by_id(
+            document_id, include_blobs=include_blobs
         )
-    if uri is not None:
-        existing_doc.uri = uri
+        if doc is None:
+            raise ValueError(f"Document with ID {document_id} not found")
+        if title is not None:
+            doc.title = title
+        if metadata is not None:
+            doc.metadata = _keep_ingestion_keys(
+                _caller_metadata(metadata), doc.metadata, _INGESTION_OWNED_KEYS
+            )
+        if uri is not None:
+            doc.uri = uri
+        return doc
 
     if content is None and chunks is None and docling_document is None:
+        # Read under the lock, so the write keeps every key stored before it.
         async with session.store._write_lock:
-            updated = await session.document_repository.update_meta(existing_doc)
+            updated = await session.document_repository.update_meta(
+                await read_and_apply()
+            )
         if session.config.storage.auto_vacuum:
             session.schedule_vacuum()
         session.name(updated)
         return updated
+
+    # Caller-supplied chunks without a docling document replace neither blob,
+    # and the row is written back whole, so they have to make the round trip.
+    existing_doc = await read_and_apply(
+        include_blobs=chunks is not None and docling_document is None
+    )
 
     if chunks is not None:
         if docling_document is not None:
@@ -1283,7 +1299,12 @@ async def update_document(
             existing_doc.content = content
 
         return await _update_document_with_chunks(
-            session, client, existing_doc, chunks, docling_document
+            session,
+            client,
+            existing_doc,
+            chunks,
+            docling_document,
+            stored_meta=read_and_apply,
         )
 
     if docling_document is not None:
@@ -1291,7 +1312,12 @@ async def update_document(
 
         new_chunks = await chunk_document(session, docling_document)
         return await _update_document_with_chunks(
-            session, client, existing_doc, new_chunks, docling_document
+            session,
+            client,
+            existing_doc,
+            new_chunks,
+            docling_document,
+            stored_meta=read_and_apply,
         )
 
     assert content is not None
@@ -1302,7 +1328,12 @@ async def update_document(
 
     new_chunks = await chunk_document(session, converted_docling)
     return await _update_document_with_chunks(
-        session, client, existing_doc, new_chunks, converted_docling
+        session,
+        client,
+        existing_doc,
+        new_chunks,
+        converted_docling,
+        stored_meta=read_and_apply,
     )
 
 

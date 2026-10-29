@@ -27,6 +27,7 @@ from haiku.rag.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
+from tests.conftest import writing
 from tests.locks import ObservedLock, assert_waiting_for_lock
 from tests.platform import requires_symlinks
 
@@ -1864,6 +1865,105 @@ async def test_metadata_only_update_waits_for_write_lock(temp_db_path, monkeypat
             await assert_waiting_for_lock(task, lock)
         updated = await task
         assert updated.metadata == {"k": "v"}
+
+
+async def test_metadata_only_update_keeps_keys_written_while_it_waited(
+    temp_db_path, monkeypatch
+):
+    """A metadata-only update keeps the ingestion-owned keys another writer
+    stored while the update waited for the write lock."""
+    dim = get_config().embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
+            task = asyncio.create_task(
+                client.update_document(document_id=doc.id, metadata={"k": "v"})
+            )
+            await assert_waiting_for_lock(task, lock)
+            doc.metadata = {"md5": "abc", "source_revision": "rev1"}
+            await writing(client).document_repository.update_meta(doc)
+        await task
+        stored = await client.get_document_by_id(doc.id)
+
+    assert stored is not None
+    assert stored.metadata == {"k": "v", "md5": "abc", "source_revision": "rev1"}
+
+
+async def test_content_update_keeps_metadata_written_while_it_waited(
+    temp_db_path, monkeypatch
+):
+    """A content update keeps metadata another writer stored while the update
+    waited for the write lock."""
+    dim = get_config().embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
+            task = asyncio.create_task(
+                client.update_document(
+                    document_id=doc.id,
+                    content="new body",
+                    chunks=[Chunk(content="new body", embedding=[0.2] * dim)],
+                )
+            )
+            await assert_waiting_for_lock(task, lock)
+            doc.metadata = {"k": "v"}
+            await writing(client).document_repository.update_meta(doc)
+        await task
+        stored = await client.get_document_by_id(doc.id)
+
+    assert stored is not None
+    assert stored.content == "new body"
+    assert stored.metadata == {"k": "v"}
+
+
+async def test_metadata_refresh_with_nothing_to_write_returns_the_stored_record(
+    temp_db_path,
+):
+    from haiku.rag.client.documents import _refresh_doc_metadata
+
+    dim = get_config().embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        stale = await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+        assert stale.id is not None
+        stored = await client.update_document(stale.id, metadata={"k": "v"})
+
+        refreshed = await _refresh_doc_metadata(
+            writing(client),
+            stale,
+            title=None,
+            user_metadata={"k": "v"},
+            source_metadata=None,
+        )
+
+    assert refreshed.metadata == {"k": "v"}
+    assert refreshed.updated_at == stored.updated_at
 
 
 @pytest.mark.parametrize(
