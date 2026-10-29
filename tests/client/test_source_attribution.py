@@ -5,8 +5,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG, documents
 from haiku.rag.client.documents import DocumentImport
@@ -17,18 +15,13 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from tests.conftest import capture_logs
+from tests.documents import docling_doc
 
 DOCUMENTS_LOGGER = logging.getLogger("haiku.rag.client.documents")
 
 
 def fs_source(root: Path, source_id: str = "fs:test") -> FSSource:
     return FSSource(root=root, source_id=source_id)
-
-
-def _docling_document(text: str) -> DoclingDocument:
-    doc = DoclingDocument(name="attribution")
-    doc.add_text(label=DocItemLabel.TEXT, text=text)
-    return doc
 
 
 @pytest.mark.vcr()
@@ -316,7 +309,7 @@ async def test_set_document_source_attributes_an_unattributed_document(temp_db_p
     async with HaikuRAG(temp_db_path, create=True) as client:
         vector_dim = client.store.embedder.vector_dim
         doc = await client.import_document(
-            _docling_document("Content the queue knows a source for."),
+            docling_doc("attribution", "Content the queue knows a source for."),
             [Chunk(content="Content.", embedding=[0.1] * vector_dim)],
             uri="test://legacy",
         )
@@ -339,7 +332,7 @@ async def test_set_document_source_batches_id_lookups(temp_db_path, monkeypatch)
         ids = []
         for n in range(5):
             doc = await client.import_document(
-                _docling_document(f"Content {n}."),
+                docling_doc("attribution", f"Content {n}."),
                 [Chunk(content=f"Content {n}.", embedding=[0.1] * vector_dim)],
                 uri=f"test://batched-{n}",
             )
@@ -497,7 +490,7 @@ async def _attachment(client: HaikuRAG, parent_uri: str, name: str) -> Document:
     """A stored attachment of `parent_uri`, without an embedder call."""
     vector_dim = client.store.embedder.vector_dim
     doc = await client.import_document(
-        _docling_document(f"Attachment {name}."),
+        docling_doc("attribution", f"Attachment {name}."),
         [Chunk(content=f"Attachment {name}.", embedding=[0.1] * vector_dim)],
         uri=f"{parent_uri}#attachment={name}",
     )
@@ -522,7 +515,7 @@ async def test_caller_metadata_cannot_set_ingestion_owned_keys(temp_db_path):
             "Created content.", uri="test://created", metadata=forged
         )
         imported = await client.import_document(
-            _docling_document("Imported content."),
+            docling_doc("attribution", "Imported content."),
             [Chunk(content="Imported content.", embedding=[0.1] * vector_dim)],
             uri="test://imported",
             metadata=forged,
@@ -530,7 +523,7 @@ async def test_caller_metadata_cannot_set_ingestion_owned_keys(temp_db_path):
         (batched,) = await client.import_documents(
             [
                 DocumentImport(
-                    docling_document=_docling_document("Batch content."),
+                    docling_document=docling_doc("attribution", "Batch content."),
                     chunks=[
                         Chunk(content="Batch content.", embedding=[0.1] * vector_dim)
                     ],

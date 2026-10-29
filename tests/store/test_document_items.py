@@ -10,6 +10,7 @@ from haiku.rag.store.models.document_item import (
 )
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from tests.conftest import writing
+from tests.documents import add_picture_text, docling_doc_with_picture
 
 
 def _make_docling_doc():
@@ -153,14 +154,6 @@ def _doc_with_captioned_picture(*captions: str):
     return doc, pic
 
 
-def _add_picture_text(doc, parent, *texts: str) -> None:
-    """Add text items under ``parent``, as docling does for text it OCRs inside a picture."""
-    from docling_core.types.doc.labels import DocItemLabel
-
-    for text in texts:
-        doc.add_text(label=DocItemLabel.TEXT, text=text, parent=parent)
-
-
 def _doc_with_tables(n: int):
     from docling_core.types.doc.document import DoclingDocument, TableCell, TableData
 
@@ -199,14 +192,14 @@ class TestExtractItemTextPictures:
 
     def test_child_text_is_extracted(self):
         doc, pic = _doc_with_captioned_picture()
-        _add_picture_text(doc, pic, "Skip paywalls", "Save on subscription costs.")
+        add_picture_text(doc, pic, "Skip paywalls", "Save on subscription costs.")
         assert (
             extract_item_text(pic, doc) == "Skip paywalls Save on subscription costs."
         )
 
     def test_child_text_follows_caption(self):
         doc, pic = _doc_with_captioned_picture("Figure 1")
-        _add_picture_text(doc, pic, "Bypass Paywall")
+        add_picture_text(doc, pic, "Bypass Paywall")
         assert extract_item_text(pic, doc) == "Figure 1\nBypass Paywall"
 
     def test_child_text_follows_description(self):
@@ -214,7 +207,7 @@ class TestExtractItemTextPictures:
 
         doc, pic = _doc_with_captioned_picture("A caption")
         pic.meta = PictureMeta(description=DescriptionMetaField(text="A screenshot."))
-        _add_picture_text(doc, pic, "Bypass Paywall")
+        add_picture_text(doc, pic, "Bypass Paywall")
         assert extract_item_text(pic, doc) == "A screenshot.\nBypass Paywall"
 
     def test_caption_child_not_repeated(self):
@@ -223,7 +216,7 @@ class TestExtractItemTextPictures:
         doc, pic = _doc_with_captioned_picture()
         cap = doc.add_text(label=DocItemLabel.CAPTION, text="Figure 2", parent=pic)
         pic.captions.append(cap.get_ref())
-        _add_picture_text(doc, pic, "axis label")
+        add_picture_text(doc, pic, "axis label")
         assert extract_item_text(pic, doc) == "Figure 2\naxis label"
 
     def test_footnote_child_is_extracted(self):
@@ -239,12 +232,12 @@ class TestExtractItemTextPictures:
     def test_text_nested_in_group_is_extracted(self):
         doc, pic = _doc_with_captioned_picture()
         group = doc.add_group(parent=pic)
-        _add_picture_text(doc, group, "grouped words")
+        add_picture_text(doc, group, "grouped words")
         assert extract_item_text(pic, doc) == "grouped words"
 
     def test_extract_items_row_carries_child_text(self):
         doc, pic = _doc_with_captioned_picture("Figure 1")
-        _add_picture_text(doc, pic, "Bypass Paywall")
+        add_picture_text(doc, pic, "Bypass Paywall")
         rows = {row.self_ref: row for row in extract_items("doc-1", doc)}
         assert rows[pic.self_ref].text == "Figure 1\nBypass Paywall"
 
@@ -652,25 +645,11 @@ class TestPictureDataStorage:
             assert (await repo.get_picture_bytes("doc-1", "#/pictures/0")) == heavy
 
 
-def _docling_doc_with_picture():
-    """Build a tiny DoclingDocument with one PictureItem carrying real PNG bytes
-    via ImageRef.from_pil. Used by the picture-extraction tests."""
-    from docling_core.types.doc.document import DoclingDocument, ImageRef
-    from docling_core.types.doc.labels import DocItemLabel
-    from PIL import Image as PilImageModule
-
-    img = PilImageModule.new("RGB", (8, 8), "red")
-    doc = DoclingDocument(name="test-with-picture")
-    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Hello world")
-    doc.add_picture(image=ImageRef.from_pil(img, dpi=72))
-    return doc
-
-
 class TestExtractItemsPictureBytes:
     """extract_items decodes picture image bytes from data URIs."""
 
     def test_decodes_picture_bytes_from_live_doc(self):
-        doc = _docling_doc_with_picture()
+        doc = docling_doc_with_picture()
         items = extract_items("doc-1", doc)
         picture_items = [i for i in items if i.label == "picture"]
         assert len(picture_items) == 1
@@ -681,7 +660,7 @@ class TestExtractItemsPictureBytes:
 
     def test_existing_picture_data_used_when_image_stripped(self):
         """Rebuild round-trip: live docling has image=None, snapshot fills the gap."""
-        doc = _docling_doc_with_picture()
+        doc = docling_doc_with_picture()
         for picture in doc.pictures:
             picture.image = None
         snapshot = {"#/pictures/0": b"snapshot-picture-bytes"}
@@ -691,7 +670,7 @@ class TestExtractItemsPictureBytes:
 
     def test_live_image_uri_wins_over_existing_picture_data(self):
         """When both an inline URI and a snapshot are available, the URI wins."""
-        doc = _docling_doc_with_picture()
+        doc = docling_doc_with_picture()
         snapshot = {"#/pictures/0": b"snapshot-bytes-should-not-be-used"}
         items = extract_items("doc-1", doc, existing_picture_data=snapshot)
         picture_items = [i for i in items if i.label == "picture"]
@@ -772,7 +751,7 @@ class TestPictureDataPreservedThroughRoundTrip:
         )
         from haiku.rag.store.models.document import Document
 
-        docling_doc = _docling_doc_with_picture()
+        docling_doc = docling_doc_with_picture()
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
             document = Document(content="Hello world", uri="test://doc")

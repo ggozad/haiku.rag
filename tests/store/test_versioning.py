@@ -125,7 +125,7 @@ async def test_batch_import_rolls_back_the_documents_write(temp_db_path):
     """The batch document write is inside the guarded body, so a failure after
     it lands restores the documents table too."""
     from haiku.rag.client.documents import DocumentImport
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
         orig_create = client.document_repository.create
@@ -140,7 +140,7 @@ async def test_batch_import_rolls_back_the_documents_write(temp_db_path):
             await client.import_documents(
                 [
                     DocumentImport(
-                        docling_document=_docling_doc_with_picture(),
+                        docling_document=docling_doc_with_picture(),
                         chunks=[],
                         uri="test://batch-rollback",
                     )

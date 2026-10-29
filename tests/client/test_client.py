@@ -28,6 +28,7 @@ from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from tests.conftest import writing
+from tests.documents import docling_doc, document_import
 from tests.locks import ObservedLock, assert_waiting_for_lock
 from tests.platform import requires_symlinks
 
@@ -881,26 +882,6 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
             )  # Original metadata preserved
 
 
-def _docling_doc(name: str, text: str):
-    from docling_core.types.doc.document import DoclingDocument
-    from docling_core.types.doc.labels import DocItemLabel
-
-    doc = DoclingDocument(name=name)
-    doc.add_text(label=DocItemLabel.TEXT, text=text)
-    return doc
-
-
-def _import(name: str, text: str, **overrides) -> "DocumentImport":
-    """Build a DocumentImport with one pre-embedded chunk (no embedder call)."""
-    dim = get_config().embeddings.model.vector_dim
-    chunk = Chunk(content=text, embedding=[0.1] * dim, order=0)
-    return DocumentImport(
-        docling_document=_docling_doc(name, text),
-        chunks=[chunk],
-        **overrides,
-    )
-
-
 async def test_client_import_documents_single_version_per_table(temp_db_path):
     """import_documents writes documents/chunks/document_items once for the
     whole batch (issue #287)."""
@@ -909,9 +890,9 @@ async def test_client_import_documents_single_version_per_table(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         imports = [
-            _import("a", "Alpha document body", uri="mem://a", title="Alpha"),
-            _import("b", "Beta document body", uri="mem://b", title="Beta"),
-            _import("c", "Gamma document body", uri="mem://c", title="Gamma"),
+            document_import("a", "Alpha document body", uri="mem://a", title="Alpha"),
+            document_import("b", "Beta document body", uri="mem://b", title="Beta"),
+            document_import("c", "Gamma document body", uri="mem://c", title="Gamma"),
         ]
 
         before = await client.store.current_table_versions()
@@ -930,7 +911,7 @@ async def test_client_import_documents_single_version_per_table(temp_db_path):
 
         # With the index in place, a further batch is one version per table.
         again = await client.import_documents(
-            [_import("d", "Delta document body", uri="mem://d", title="Delta")]
+            [document_import("d", "Delta document body", uri="mem://d", title="Delta")]
         )
         assert [d.title for d in again] == ["Delta"]
         latest = await client.store.current_table_versions()
@@ -953,9 +934,9 @@ async def test_client_import_documents_rolls_back_on_failure(temp_db_path):
     dim = get_config().embeddings.model.vector_dim
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        good = _import("good", "Good document body", uri="mem://good")
+        good = document_import("good", "Good document body", uri="mem://good")
         bad = DocumentImport(
-            docling_document=_docling_doc("bad", "Bad document body"),
+            docling_document=docling_doc("bad", "Bad document body"),
             chunks=[Chunk(content="bad", embedding=[0.1] * (dim + 1), order=0)],
             uri="mem://bad",
         )
@@ -998,7 +979,7 @@ async def test_client_import_documents_batches_embeddings(temp_db_path):
         client.store.embedder = embedder
         imports = [
             DocumentImport(
-                docling_document=_docling_doc(name, text),
+                docling_document=docling_doc(name, text),
                 chunks=[Chunk(content=text, order=0)],
                 uri=f"mem://{name}",
                 title=name,
@@ -1031,14 +1012,14 @@ async def test_single_and_batch_import_store_the_same_document(temp_db_path):
         client.store.embedder = _CountingEmbedder(dim)
 
         single = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://single",
         )
         [batched] = await client.import_documents(
             [
                 DocumentImport(
-                    docling_document=_docling_doc("a", "Alpha document body"),
+                    docling_document=docling_doc("a", "Alpha document body"),
                     chunks=[Chunk(content="Alpha document body", order=0)],
                     uri="mem://batch",
                 )
@@ -1089,7 +1070,7 @@ async def test_client_import_documents_mixed_embeddings(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = embedder
         pre_embedded = DocumentImport(
-            docling_document=_docling_doc("b", "Beta document body"),
+            docling_document=docling_doc("b", "Beta document body"),
             chunks=[
                 Chunk(content="Beta document body", embedding=[0.5] * dim, order=0)
             ],
@@ -1098,7 +1079,7 @@ async def test_client_import_documents_mixed_embeddings(temp_db_path):
         )
         unembedded = [
             DocumentImport(
-                docling_document=_docling_doc(name, text),
+                docling_document=docling_doc(name, text),
                 chunks=[Chunk(content=text, order=0)],
                 uri=f"mem://{name}",
                 title=name,
@@ -1136,14 +1117,14 @@ async def test_client_update_document_replaces_rows_with_bounded_versions(
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         created = await client.import_document(
-            _docling_doc("original", "Original body"),
+            docling_doc("original", "Original body"),
             [Chunk(content="Original body", embedding=[0.1] * dim, order=0)],
             uri="mem://replace",
             title="Replace",
         )
         assert created.id is not None
 
-        updated_docling = _docling_doc("updated", "Updated body")
+        updated_docling = docling_doc("updated", "Updated body")
         updated_chunks = [
             Chunk(content="Updated body A", embedding=[0.2] * dim, order=0),
             Chunk(content="Updated body B", embedding=[0.3] * dim, order=1),
@@ -1188,7 +1169,7 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         created = await client.import_document(
-            _docling_doc("doc", "Body text"),
+            docling_doc("doc", "Body text"),
             [Chunk(content="Body text", embedding=[0.1] * dim, order=0)],
             uri="mem://meta-bloat",
             title="Original",
@@ -1243,7 +1224,7 @@ async def test_delete_marks_vacuum_dirty(temp_db_path):
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://del",
         )
@@ -1260,7 +1241,7 @@ async def test_delete_document_for_a_source_skips_another_sources_document(
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://owned",
         )
@@ -1279,12 +1260,12 @@ async def test_delete_document_for_a_source_cascades_to_unattributed_attachments
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent = await client.import_document(
-            _docling_doc("p", "parent"),
+            docling_doc("p", "parent"),
             [Chunk(content="parent", embedding=[0.1] * dim, order=0)],
             uri="mem://parent.pdf",
         )
         child = await client.import_document(
-            _docling_doc("c", "child"),
+            docling_doc("c", "child"),
             [Chunk(content="child", embedding=[0.1] * dim, order=0)],
             uri="mem://parent.pdf#attachment",
         )
@@ -1314,7 +1295,7 @@ async def test_delete_rolls_back_on_partial_failure(temp_db_path, monkeypatch):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://del",
             title="T",
@@ -1351,12 +1332,12 @@ async def test_cascade_delete_is_atomic(temp_db_path, monkeypatch):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         parent = await client.import_document(
-            _docling_doc("p", "parent"),
+            docling_doc("p", "parent"),
             [Chunk(content="parent", embedding=[0.1] * dim, order=0)],
             uri="mem://parent",
         )
         child = await client.import_document(
-            _docling_doc("c", "child"),
+            docling_doc("c", "child"),
             [Chunk(content="child", embedding=[0.2] * dim, order=0)],
             uri="mem://child",
         )

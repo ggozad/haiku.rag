@@ -377,6 +377,51 @@ def build_pdf(attachments: list[tuple[str, bytes]]) -> bytes:
     return buf.getvalue()
 
 
+DOCUMENTED_SECRETS = (
+    "LANCESECRET",
+    "PGSECRET",
+    "HDRSECRET",
+    "DAVSECRET",
+    "FETCHSECRET",
+)
+
+
+def documented_secret_shapes() -> "AppConfig":
+    """Credentials where the docs tell operators to put them."""
+    from haiku.rag.config.models import AppConfig
+
+    return AppConfig.model_validate(
+        {
+            "lancedb": {"api_key": "LANCESECRET"},
+            "processing": {
+                "conversion_options": {
+                    "fetch_headers": {"Authorization": "Bearer FETCHSECRET"}
+                }
+            },
+            "ingester": {
+                "queue": {"dburi": "postgresql+asyncpg://ingest:PGSECRET@db/queue"},
+                "databases": {
+                    "haiku.rag": {
+                        "sources": [
+                            {
+                                "type": "http",
+                                "id": "reports",
+                                "urls": ["https://reports.example/a.pdf"],
+                                "headers": {"Authorization": "Bearer HDRSECRET"},
+                            },
+                            {
+                                "type": "webdav",
+                                "id": "dav",
+                                "base_url": "https://alice:DAVSECRET@dav.example/remote/",
+                            },
+                        ]
+                    }
+                },
+            },
+        }
+    )
+
+
 async def fake_ingest_fetch_result(
     session,
     client,

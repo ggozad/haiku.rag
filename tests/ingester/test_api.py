@@ -860,7 +860,7 @@ async def test_config_returns_full_yaml_with_redacted_secrets(jobs, sync):
 
 
 async def test_config_masks_credentials_in_urls_and_headers(jobs, sync):
-    from tests.interfaces.test_app import DOCUMENTED_SECRETS, documented_secret_shapes
+    from tests.conftest import DOCUMENTED_SECRETS, documented_secret_shapes
 
     state = APIState(config=documented_secret_shapes(), job_repo=jobs, sync_repo=sync)
     async with _client(state) as client:

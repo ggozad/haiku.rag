@@ -872,9 +872,9 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
 
     config = AppConfig()
     config.processing.pictures = "description"
@@ -887,7 +887,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         )
         assert created.id is not None
 
-        # _docling_doc_with_picture has no PageItems, so set_docling leaves
+        # docling_doc_with_picture has no PageItems, so set_docling leaves
         # docling_pages as None. Inject sentinel bytes to stand in for what
         # a real ingest with generate_page_images=True would store.
         sentinel_pages = b"\x80SENTINEL_PAGE_BYTES"
@@ -951,9 +951,9 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
 
     # Pre-populate the description directly on the docling document
     from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
@@ -1029,9 +1029,9 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
     from haiku.rag.client.rebuild import _patch_picture_descriptions
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     config = AppConfig()
     config.processing.pictures = "description"
 
@@ -1070,9 +1070,9 @@ async def test_patch_picture_descriptions_skips_when_all_already_described(
     from haiku.rag.client.rebuild import _patch_picture_descriptions
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     docling_doc.pictures[0].meta = PictureMeta(
         description=DescriptionMetaField(text="Pre-described.")
     )
@@ -1113,9 +1113,9 @@ async def test_rebuild_descriptions_raises_when_blob_is_missing(
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     config = AppConfig()
     config.processing.pictures = "description"
 
@@ -1295,7 +1295,7 @@ async def test_flush_rebuild_batch_writes_items_in_few_versions(
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
     from haiku.rag.store.repositories.document_item import DocumentItemRepository
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     config = AppConfig()
     config.storage.auto_vacuum = False
@@ -1303,7 +1303,7 @@ async def test_flush_rebuild_batch_writes_items_in_few_versions(
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         created = []
         for i in range(5):
-            docling_doc = _docling_doc_with_picture()
+            docling_doc = docling_doc_with_picture()
             document = Document(content=f"doc {i}", uri=f"test://doc-{i}")
             document.set_docling(docling_doc)
             created.append(
@@ -1417,9 +1417,9 @@ async def test_apply_descriptions_writes_only_non_empty_text(
     is written through to the picture meta."""
     from haiku.rag.client.rebuild import _apply_descriptions_sync
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     ref = docling_doc.pictures[0].self_ref
     document = Document(content="x", uri="test://doc")
 
@@ -1440,9 +1440,9 @@ async def test_patch_picture_descriptions_returns_zero_without_descriptions(
     from haiku.rag.client.rebuild import _patch_picture_descriptions
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     config = AppConfig()
     config.processing.pictures = "description"
 
@@ -1603,7 +1603,7 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     config = AppConfig()
     config.processing.pictures = "description"
@@ -1625,7 +1625,7 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
     monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", spy)
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
-        docling_doc = _docling_doc_with_picture()
+        docling_doc = docling_doc_with_picture()
         document = Document(content="picture doc", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
@@ -1706,7 +1706,7 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     config = AppConfig()
     config.processing.pictures = "description"
@@ -1724,7 +1724,7 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         ids = []
         for i in range(2):
-            docling_doc = _docling_doc_with_picture()
+            docling_doc = docling_doc_with_picture()
             document = Document(content=f"picture doc {i}", uri=f"test://doc-{i}")
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(
@@ -1777,9 +1777,9 @@ async def test_rebuild_embed_only_recovers_picture_bytes(
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.store.models.chunk import Chunk
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     ref = docling_doc.pictures[0].self_ref
 
     async with HaikuRAG(temp_db_path, create=True) as rag:

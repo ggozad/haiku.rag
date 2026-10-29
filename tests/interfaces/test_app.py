@@ -21,7 +21,7 @@ from haiku.rag.config.models import (
 )
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
-from tests.conftest import for_path
+from tests.conftest import DOCUMENTED_SECRETS, documented_secret_shapes, for_path
 
 
 @pytest.fixture
@@ -478,49 +478,6 @@ async def test_create_index_reports_a_build_that_found_too_few_chunks(app, clien
         "the build" in out(app)
     )
     assert "created successfully" not in out(app)
-
-
-DOCUMENTED_SECRETS = (
-    "LANCESECRET",
-    "PGSECRET",
-    "HDRSECRET",
-    "DAVSECRET",
-    "FETCHSECRET",
-)
-
-
-def documented_secret_shapes() -> AppConfig:
-    """Credentials where the docs tell operators to put them."""
-    return AppConfig.model_validate(
-        {
-            "lancedb": {"api_key": "LANCESECRET"},
-            "processing": {
-                "conversion_options": {
-                    "fetch_headers": {"Authorization": "Bearer FETCHSECRET"}
-                }
-            },
-            "ingester": {
-                "queue": {"dburi": "postgresql+asyncpg://ingest:PGSECRET@db/queue"},
-                "databases": {
-                    "haiku.rag": {
-                        "sources": [
-                            {
-                                "type": "http",
-                                "id": "reports",
-                                "urls": ["https://reports.example/a.pdf"],
-                                "headers": {"Authorization": "Bearer HDRSECRET"},
-                            },
-                            {
-                                "type": "webdav",
-                                "id": "dav",
-                                "base_url": "https://alice:DAVSECRET@dav.example/remote/",
-                            },
-                        ]
-                    }
-                },
-            },
-        }
-    )
 
 
 def test_show_settings_hides_credentials_in_urls_and_headers():

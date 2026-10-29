@@ -1,8 +1,6 @@
 import asyncio
 
 import logfire
-from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.doc.labels import DocItemLabel
 from logfire.testing import TestExporter
 
 from haiku.rag.client import HaikuRAG
@@ -10,6 +8,7 @@ from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import get_config
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.store.models.chunk import Chunk
+from tests.documents import docling_doc
 from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
@@ -21,12 +20,6 @@ class _StubEmbedder(EmbedderWrapper):
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [[0.1] * self.vector_dim for _ in texts]
-
-
-def _docling_doc(name: str, text: str) -> DoclingDocument:
-    doc = DoclingDocument(name=name)
-    doc.add_text(label=DocItemLabel.TEXT, text=text)
-    return doc
 
 
 class Tree:
@@ -70,7 +63,7 @@ async def test_import_spans_report_each_phase(temp_db_path, exporter):
         client.store.embedder = _StubEmbedder(dim)
         with logfire.span("test.parent"):
             doc = await client.import_document(
-                _docling_doc("a", "Alpha document body"),
+                docling_doc("a", "Alpha document body"),
                 [
                     Chunk(content="Alpha document body", order=0),
                     Chunk(content="Beta document body", order=1),
@@ -110,7 +103,7 @@ async def test_embed_span_is_emitted_when_nothing_needs_embedding(
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", embedding=[0.1] * dim, order=0)],
             uri="mem://a",
         )
@@ -129,13 +122,13 @@ async def test_store_span_reports_update_when_the_uri_is_already_taken(
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         first = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://a",
         )
         exporter.clear()
         await client.import_document(
-            _docling_doc("a", "Alpha document body, revised"),
+            docling_doc("a", "Alpha document body, revised"),
             [Chunk(content="Alpha document body, revised", order=0)],
             uri="mem://a",
         )
@@ -151,7 +144,7 @@ async def test_update_path_store_span(temp_db_path, exporter):
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         doc = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://a",
         )
@@ -159,7 +152,7 @@ async def test_update_path_store_span(temp_db_path, exporter):
         await client.update_document(
             doc.id,
             chunks=[Chunk(content="Revised body", order=0)],
-            docling_document=_docling_doc("a", "Revised body"),
+            docling_document=docling_doc("a", "Revised body"),
         )
 
     tree = Tree(exporter)
@@ -178,7 +171,7 @@ async def test_update_without_a_docling_document_skips_the_items_phase(
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         doc = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://a",
         )
@@ -201,7 +194,7 @@ async def test_batch_store_span(temp_db_path, exporter):
         await client.import_documents(
             [
                 DocumentImport(
-                    docling_document=_docling_doc(name, text),
+                    docling_document=docling_doc(name, text),
                     chunks=[Chunk(content=text, order=0)],
                     uri=f"mem://{name}",
                 )
@@ -262,7 +255,7 @@ async def test_store_span_reports_time_waiting_for_the_write_lock(
         async with lock:
             write = asyncio.create_task(
                 client.import_document(
-                    _docling_doc("a", "Alpha document body"),
+                    docling_doc("a", "Alpha document body"),
                     [Chunk(content="Alpha document body", order=0)],
                     uri="mem://a",
                 )

@@ -1,8 +1,6 @@
 import logging
 
 import pytest
-from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.doc.labels import DocItemLabel
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import (
@@ -20,17 +18,12 @@ from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.queue.repository import SyncStateRepo
 from haiku.rag.ingester.reconcile import reconcile
 from haiku.rag.store.models.chunk import Chunk
+from tests.documents import docling_doc
 from tests.platform import converts_pdf_locally
 
 from ..conftest import capture_logs
 
 RECONCILE_LOGGER = logging.getLogger("haiku.rag.ingester.reconcile")
-
-
-def _docling_document(text: str) -> DoclingDocument:
-    doc = DoclingDocument(name="reconcile")
-    doc.add_text(label=DocItemLabel.TEXT, text=text)
-    return doc
 
 
 async def _document(
@@ -43,7 +36,7 @@ async def _document(
     attachment of `parent_uri` when that is given, without an embedder call."""
     vector_dim = client.store.embedder.vector_dim
     doc = await client.import_document(
-        _docling_document(f"Content of {uri}."),
+        docling_doc("reconcile", f"Content of {uri}."),
         [Chunk(content=f"Content of {uri}.", embedding=[0.1] * vector_dim)],
         uri=uri,
     )
@@ -361,7 +354,7 @@ async def test_ignores_documents_without_a_uri(client, sync):
     """A document with no URI matches no source item."""
     vector_dim = client.store.embedder.vector_dim
     await client.import_document(
-        _docling_document("Content with no source."),
+        docling_doc("reconcile", "Content with no source."),
         [Chunk(content="Content with no source.", embedding=[0.1] * vector_dim)],
     )
 
