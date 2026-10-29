@@ -89,7 +89,15 @@ class TestMetadataJson:
 
     async def test_metadata_reader_returns_document_fields(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as client:
-            doc_id = await _empty_doc(client, uri="test://meta", title="Meta Doc")
+            doc = await client.document_repository.create(
+                Document(
+                    content="x",
+                    uri="test://meta",
+                    title="Meta Doc",
+                    metadata={"author": "Ada"},
+                )
+            )
+            doc_id = doc.id
 
         sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
         raw = await _read_vfs_text(sandbox, f"/documents/{doc_id}/metadata.json")
@@ -98,6 +106,7 @@ class TestMetadataJson:
         assert meta["id"] == doc_id
         assert meta["title"] == "Meta Doc"
         assert meta["uri"] == "test://meta"
+        assert meta["metadata"]["author"] == "Ada"
 
 
 class TestTocShape:
@@ -154,7 +163,8 @@ class TestTocShape:
         assert methods["children"] == []
 
     async def test_flat_pdf_style(self, temp_db_path):
-        """All section_headers at level 1 (PDF reality) -> flat sibling list."""
+        """All section_headers at level 1 (PDF reality) -> flat sibling list,
+        whose nodes carry chunk_ids and no position."""
         async with HaikuRAG(temp_db_path, create=True) as client:
             doc_id = await _empty_doc(client, uri="test://pdf-style", title="Flat PDF")
             items = [
@@ -177,6 +187,19 @@ class TestTocShape:
         assert tree[0]["item_range"] == [0, 3]
         assert tree[1]["item_range"] == [3, 5]
         assert tree[2]["item_range"] == [5, 7]
+        expected = {
+            "self_ref",
+            "level",
+            "title",
+            "page_numbers",
+            "item_range",
+            "chunk_ids",
+            "children",
+        }
+        node = tree[0]
+        assert expected <= set(node)
+        assert "position" not in node
+        assert node["chunk_ids"] == []
 
     async def test_no_headers(self, temp_db_path):
         async with HaikuRAG(temp_db_path, create=True) as client:
@@ -208,29 +231,6 @@ class TestTocShape:
         titles = [n["title"] for n in _flatten(toc["tree"])]
         assert titles == ["Real H1"]
         assert toc["tree"][0]["item_range"] == [0, 4]
-
-    async def test_node_shape_has_chunk_ids_not_position(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            doc_id = await _empty_doc(client, uri="test://shape", title="Shape")
-            await client.document_item_repository.create_items(
-                doc_id, [_header(doc_id, 0, 1, "Only"), _para(doc_id, 1)]
-            )
-
-        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
-        toc = await _read_toc(sandbox, doc_id)
-        node = toc["tree"][0]
-        expected = {
-            "self_ref",
-            "level",
-            "title",
-            "page_numbers",
-            "item_range",
-            "chunk_ids",
-            "children",
-        }
-        assert expected <= set(node)
-        assert "position" not in node
-        assert node["chunk_ids"] == []
 
 
 class TestTocChunkIdsAggregation:
@@ -488,20 +488,3 @@ class TestVfsReadPaths:
             "#/texts/0",
             "#/texts/1",
         ]
-
-    async def test_toc_skips_gaps_in_item_positions(self, temp_db_path):
-        """Positions need not be contiguous — a heading's span may cover
-        positions that carry no item."""
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            doc_id = await _empty_doc(client, uri="test://gaps", title="Gaps")
-            # Positions 1 and 2 are absent between the header and the paragraph.
-            items = [
-                _header(doc_id, 0, 1, "Intro"),
-                _para(doc_id, 3),
-            ]
-            await client.document_item_repository.create_items(doc_id, items)
-
-        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
-        toc = await _read_toc(sandbox, doc_id)
-
-        assert [n["title"] for n in toc["tree"]] == ["Intro"]

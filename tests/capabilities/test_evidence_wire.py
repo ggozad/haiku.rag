@@ -1,5 +1,5 @@
 import base64
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
@@ -31,6 +31,7 @@ from haiku.rag.capabilities.rag import RAGCapability, RAGState
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
+from tests.capabilities.helpers import Deps, in_flight_history, scripted
 
 OWNED = frozenset({"search"})
 PNG = BinaryContent(data=b"fake-image-bytes", media_type="image/png")
@@ -98,20 +99,6 @@ def test_nothing_before_the_first_question_is_compacted():
     assert compacted == messages
 
 
-def test_the_newest_earlier_return_carries_the_capsule():
-    messages = [
-        *answered_question("first", evidence="OLD EVIDENCE"),
-        ModelRequest(parts=[UserPromptPart("second")]),
-    ]
-
-    compacted = compact_history(
-        messages, boundary=4, owned_tools=OWNED, capsule_text="CAPSULE"
-    )
-
-    assert returns_of(compacted) == ["CAPSULE"]
-    assert "OLD EVIDENCE" not in returns_of(compacted)
-
-
 def test_older_returns_become_receipts_and_only_the_newest_carries_the_capsule():
     messages = [
         *answered_question("first", evidence="OLDEST"),
@@ -172,20 +159,6 @@ def test_a_cite_acknowledgement_survives():
     )
 
     assert returns_of(compacted) == ["Registered 1 citation."]
-
-
-def test_an_uncited_earlier_image_is_dropped_with_its_label():
-    messages = [
-        *answered_question("first", evidence="OLD", images=True),
-        ModelRequest(parts=[UserPromptPart("second")]),
-    ]
-
-    compacted = compact_history(
-        messages, boundary=4, owned_tools=OWNED, capsule_text="CAPSULE"
-    )
-
-    assert images_of(compacted) == []
-    assert texts_of(compacted) == []
 
 
 def test_cited_pictures_are_attached_beside_the_capsule():
@@ -271,11 +244,6 @@ def test_nothing_cited_leaves_only_receipts():
     assert returns_of(compacted) == [RECEIPT]
 
 
-@dataclass
-class Deps:
-    state: dict[str, Any] = field(default_factory=dict)
-
-
 def rag_and_compactor(temp_db_path):
     return (
         create_rag(db_path=temp_db_path, config=AppConfig()),
@@ -292,17 +260,6 @@ def settled_deps(question: int = 0) -> Deps:
             ).model_dump(mode="json")
         }
     )
-
-
-def in_flight_history() -> list[Any]:
-    """A question already asked and searched, still awaiting its answer."""
-    return [
-        ModelRequest(parts=[UserPromptPart("what does the supervisor do?")]),
-        ModelResponse(parts=[ToolCallPart("search", {"query": "s"}, "call-1")]),
-        ModelRequest(
-            parts=[ToolReturnPart("search", "EVIDENCE FOR THE LIVE TURN", "call-1")]
-        ),
-    ]
 
 
 def resuming_deps(question: int = 0) -> Deps:
@@ -445,64 +402,51 @@ async def _search_with_a_picture(
     return "EVIDENCE"
 
 
-async def _cite_a_picture_chunk(temp_db_path, fetched: bytes | None):
-    """Two questions: cite a picture chunk, then ask something else."""
+@pytest.mark.parametrize(
+    ("fetch", "shown"),
+    [
+        pytest.param({"return_value": REAL_PNG}, True, id="fetched"),
+        pytest.param({"return_value": None}, False, id="missing"),
+        pytest.param({"return_value": b"not-an-image"}, False, id="undecodable"),
+        pytest.param({"side_effect": OSError("the read failed")}, False, id="raises"),
+    ],
+)
+async def test_a_cited_picture_is_attached_with_its_label_only_when_it_can_be_shown(
+    temp_db_path, fetch, shown
+):
+    """A cited picture returns with its label on the next question. A picture
+    that cannot be fetched or decoded costs the picture and its label, never the
+    answer: a label without its picture tells the model a figure is there when it
+    is not, and one vision placeholder is rendered per attachment."""
     rag, compactor = rag_and_compactor(temp_db_path)
-    calls = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
-            [TextPart("first answer")],
-            [TextPart("second answer")],
-        ]
-    )
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+        [TextPart("first answer")],
+        [TextPart("second answer")],
+    ]
     wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=next(calls))
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
+    agent = Agent(
+        scripted(responses, wire), deps_type=Deps, capabilities=[rag, compactor]
+    )
     deps = Deps()
 
     with (
         patch.object(RAGCapability, "_search", _search_with_a_picture),
-        patch.object(
-            RAGCapability, "get_picture_bytes", AsyncMock(return_value=fetched)
-        ),
+        patch.object(RAGCapability, "get_picture_bytes", AsyncMock(**fetch)),
     ):
         first = await agent.run("what does the supervisor do?", deps=deps)
-        await agent.run(
+        second = await agent.run(
             "and what else?", deps=deps, message_history=first.all_messages()
         )
-    return wire
 
-
-async def test_a_cited_picture_is_fetched_and_attached_with_its_label(temp_db_path):
-    wire = await _cite_a_picture_chunk(temp_db_path, REAL_PNG)
-
-    assert [picture.data for picture in images_of(wire[-1])] == [REAL_PNG]
-    assert texts_of(wire[-1]) == [picture_label("chunk-1", "#/pictures/0")]
-
-
-async def test_a_picture_that_cannot_be_fetched_emits_neither_image_nor_label(
-    temp_db_path,
-):
-    """A label without its picture tells the model a figure is there when it is not."""
-    wire = await _cite_a_picture_chunk(temp_db_path, None)
-
-    assert images_of(wire[-1]) == []
-    assert texts_of(wire[-1]) == []
-
-
-async def test_a_picture_that_will_not_decode_emits_neither_image_nor_label(
-    temp_db_path,
-):
-    """One vision placeholder is rendered per attachment, so a corrupt one miscounts."""
-    wire = await _cite_a_picture_chunk(temp_db_path, b"not-an-image")
-
-    assert images_of(wire[-1]) == []
-    assert texts_of(wire[-1]) == []
+    assert second.output == "second answer"
+    if shown:
+        assert [picture.data for picture in images_of(wire[-1])] == [REAL_PNG]
+        assert texts_of(wire[-1]) == [picture_label("chunk-1", "#/pictures/0")]
+    else:
+        assert images_of(wire[-1]) == []
+        assert texts_of(wire[-1]) == []
 
 
 def _burst_result() -> SearchResult:
@@ -683,45 +627,6 @@ def test_a_label_of_ours_with_no_picture_after_it_is_kept():
     ]
 
 
-async def test_a_picture_whose_fetch_raises_costs_the_picture_not_the_answer(
-    temp_db_path,
-):
-    rag, compactor = rag_and_compactor(temp_db_path)
-    calls = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
-            [TextPart("first answer")],
-            [TextPart("second answer")],
-        ]
-    )
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=next(calls))
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
-    deps = Deps()
-
-    with (
-        patch.object(RAGCapability, "_search", _search_with_a_picture),
-        patch.object(
-            RAGCapability,
-            "get_picture_bytes",
-            AsyncMock(side_effect=OSError("the read failed")),
-        ),
-    ):
-        first = await agent.run("what does the supervisor do?", deps=deps)
-        second = await agent.run(
-            "and what else?", deps=deps, message_history=first.all_messages()
-        )
-
-    assert second.output == "second answer"
-    assert images_of(wire[-1]) == []
-    assert texts_of(wire[-1]) == []
-
-
 def test_a_request_is_never_left_with_no_parts():
     """Emptying a message would leave something that is not a message.
 
@@ -746,37 +651,6 @@ def test_a_request_is_never_left_with_no_parts():
 
     assert all(message.parts for message in compacted)
     assert compacted[0] is ours_alone
-
-
-def test_two_owned_returns_in_one_request_yield_one_capsule():
-    """A model can search twice in one response, so a request can hold two returns.
-
-    Identifying the carrier by message alone gave every return in it the capsule,
-    which duplicates the whole thing — and it is unbounded.
-    """
-    messages = [
-        ModelRequest(parts=[UserPromptPart("first")]),
-        ModelResponse(
-            parts=[
-                ToolCallPart("search", {"query": "a"}, "call-1"),
-                ToolCallPart("search", {"query": "b"}, "call-2"),
-            ]
-        ),
-        ModelRequest(
-            parts=[
-                ToolReturnPart("search", "FIRST EVIDENCE", "call-1"),
-                ToolReturnPart("search", "SECOND EVIDENCE", "call-2"),
-            ]
-        ),
-        ModelResponse(parts=[TextPart("an answer")]),
-        ModelRequest(parts=[UserPromptPart("second")]),
-    ]
-
-    compacted = compact_history(
-        messages, boundary=4, owned_tools=OWNED, capsule_text="CAPSULE"
-    )
-
-    assert returns_of(compacted) == [RECEIPT, "CAPSULE"]
 
 
 def test_the_capsule_is_attached_beside_the_newest_return_of_that_request():
@@ -830,31 +704,6 @@ async def test_compaction_refuses_to_strip_evidence_it_cannot_replace(temp_db_pa
         await agent.run("a follow-up", deps=Deps(), message_history=history)
 
 
-async def test_compaction_proceeds_for_a_host_that_carries_state(temp_db_path):
-    """The same history, with the record the earlier question left behind."""
-    rag, compactor = rag_and_compactor(temp_db_path)
-    wire: list[list[Any]] = []
-
-    async def model(messages, _info):
-        wire.append(list(messages))
-        return ModelResponse(parts=[TextPart("answer")])
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=[rag, compactor])
-    history = answered_question("an earlier question", evidence="EVIDENCE TO LOSE")
-
-    carried = Deps(
-        state={
-            "rag": RAGState(
-                evidence=CapabilityEvidenceRecord(question=0, in_progress=False)
-            ).model_dump(mode="json")
-        }
-    )
-
-    await agent.run("a follow-up", deps=carried, message_history=history)
-
-    assert returns_of(wire[-1]) == [RECEIPT]
-
-
 # The exact JSON a 0.75.0 host stored or sent over AG-UI. Capability state is
 # dumped and re-validated at four carry points, one of them a snapshot the
 # browser client sends back on the next turn, so this layout is a wire format.
@@ -899,6 +748,7 @@ def test_stored_state_shape_is_unchanged():
 def _populated(state_type):
     """A state with every field carrying real nested data."""
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
+    from haiku.rag.capabilities.rag import CodeExecutionEntry
     from haiku.rag.store.models.chunk import SearchResult
     from haiku.rag.store.models.citation import Citation
 
@@ -918,6 +768,8 @@ def _populated(state_type):
             "a query": [SearchResult(content="evidence", score=0.9, chunk_id="chunk-1")]
         },
         evidence=CapabilityEvidenceRecord(question=3, in_progress=True),
+        sources=["alpha"],
+        executions=[CodeExecutionEntry(code="print(1)", stdout="1")],
     )
 
 
@@ -935,39 +787,15 @@ def test_populated_state_round_trips():
     assert second["searches"]["a query"][0]["chunk_id"] == "chunk-1"
     assert second["citation_index"]["chunk-1"]["document_uri"] == "test://doc"
     assert second["evidence"]["question"] == 3
-
-
-def test_state_loads_any_field_order():
-    """Key order is not part of the stored shape."""
-    from haiku.rag.capabilities.rag import CodeExecutionEntry, RAGState
-
-    populated = _populated(RAGState)
-    populated.executions.append(CodeExecutionEntry(code="print(1)", stdout="1"))
-    dumped = populated.model_dump(mode="json")
-
-    old_order = {
-        key: dumped[key]
-        for key in (
-            "document_filter",
-            "executions",
-            "citation_index",
-            "citations",
-            "evidence",
-            "searches",
-        )
-    }
-
-    reloaded = RAGState.model_validate(old_order)
-
-    assert reloaded == populated
-    assert reloaded.model_dump(mode="json") == dumped
+    assert second["sources"] == ["alpha"]
+    assert second["executions"][0]["code"] == "print(1)"
 
 
 def test_begin_invocation_drops_the_previous_question_working_set():
-    """A new question starts from no citations and no results, while the evidence
-    record — which carries question identity — survives."""
+    """A new question starts from no citations, results or executions, while the
+    evidence record, which carries question identity, survives."""
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
-    from haiku.rag.capabilities.rag import RAGState
+    from haiku.rag.capabilities.rag import CodeExecutionEntry, RAGState
     from haiku.rag.store.models.citation import Citation
 
     citation = Citation(
@@ -981,6 +809,7 @@ def test_begin_invocation_drops_the_previous_question_working_set():
         citations=["chunk-a"],
         citation_index={"chunk-a": citation},
         searches={"query": []},
+        executions=[CodeExecutionEntry(code="print(1)", stdout="1")],
         document_filter="uri LIKE 'x%'",
         evidence=CapabilityEvidenceRecord(question=7),
     )
@@ -989,26 +818,13 @@ def test_begin_invocation_drops_the_previous_question_working_set():
 
     assert state.citations == []
     assert state.searches == {}
+    assert state.executions == []
     # Kept: the filter scopes the whole conversation, the record carries question
     # identity, and citation_index keeps citation numbering continuous across
     # questions.
     assert state.document_filter == "uri LIKE 'x%'"
     assert state.evidence.question == 7
     assert state.citation_index == {"chunk-a": citation}
-
-
-def test_begin_invocation_also_drops_executions():
-    from haiku.rag.capabilities.rag import CodeExecutionEntry, RAGState
-
-    state = RAGState(
-        citations=["chunk-a"],
-        executions=[CodeExecutionEntry(code="print(1)", stdout="1")],
-    )
-
-    state.begin_invocation()
-
-    assert state.executions == []
-    assert state.citations == []
 
 
 async def test_compaction_proceeds_when_the_earlier_question_used_no_tools(

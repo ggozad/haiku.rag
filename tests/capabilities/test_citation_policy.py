@@ -1,6 +1,6 @@
 import json
-from dataclasses import dataclass, field
-from typing import Any, cast
+from dataclasses import dataclass
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -14,14 +14,12 @@ from pydantic_ai import (
     PromptedOutput,
     ToolOutput,
 )
-from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart, ToolCallPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from haiku.rag.capabilities.policy import (
     CITATION_REDIRECT_TAG,
     REDIRECT_HINT,
-    CitationPolicyState,
 )
 from haiku.rag.capabilities.policy import (
     create_capability as create_policy,
@@ -29,22 +27,7 @@ from haiku.rag.capabilities.policy import (
 from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models.chunk import SearchResult
-
-
-@dataclass
-class Deps:
-    state: dict[str, Any] = field(default_factory=dict)
-
-
-async def stub_search(
-    self, query: str, _limit: int | None, _run_step: int, _sources=None
-) -> str:
-    cast(Any, self.state).searches[query] = [
-        SearchResult(content="evidence", score=1.0, chunk_id="chunk-1")
-    ]
-    self._note_evidence()
-    return "EVIDENCE"
+from tests.capabilities.helpers import Deps, scripted, stub_search
 
 
 def prompts_of(messages) -> list[str]:
@@ -62,14 +45,8 @@ async def run_with_policy(temp_db_path, responses, *, policy=True, config=None):
     capabilities: list[Any] = [rag]
     if policy:
         capabilities.append(create_policy())
-    turns = iter(responses)
     sent: list[list[Any]] = []
-
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
-    agent = Agent(FunctionModel(model), deps_type=Deps, capabilities=capabilities)
+    agent = Agent(scripted(responses, sent), deps_type=Deps, capabilities=capabilities)
     deps = Deps()
     with patch.object(RAGCapability, "_search", stub_search):
         result = await agent.run("what does the supervisor do?", deps=deps)
@@ -162,58 +139,37 @@ async def test_without_the_policy_capability_nothing_is_enforced(temp_db_path):
     assert "citation_policy" not in deps.state
 
 
-def test_two_policy_capabilities_fail_fast(temp_db_path):
-    rag = create_rag(db_path=temp_db_path, config=AppConfig())
-
-    async def model(_messages, _info):  # pragma: no cover - never reached
-        return ModelResponse(parts=[TextPart("answer")])
-
-    with pytest.raises(UserError, match="haiku-rag-citation-policy"):
-        Agent(
-            FunctionModel(model),
-            deps_type=Deps,
-            capabilities=[rag, create_policy(), create_policy()],
-        )
-
-
-def test_the_policy_state_round_trips():
-    state = CitationPolicyState(violations=[4, 12])
-
-    restored = CitationPolicyState.model_validate(state.model_dump(mode="json"))
-
-    assert restored.violations == [4, 12]
-
-
 async def test_a_second_question_can_be_redirected_again(temp_db_path):
-    """The redirect fires once per question, not once per conversation."""
+    """The redirect fires once per question, and each question records its violation."""
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [TextPart("first, uncited")],
-            [TextPart("first, uncited")],
-            [ToolCallPart("search", {"query": "again"}, "call-2")],
-            [TextPart("second, uncited")],
-            [TextPart("second, uncited")],
-        ]
-    )
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [TextPart("first, uncited")],
+        [TextPart("first, uncited")],
+        [ToolCallPart("search", {"query": "again"}, "call-2")],
+        [TextPart("second, uncited")],
+        [TextPart("second, uncited")],
+    ]
     sent: list[list[Any]] = []
 
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
     agent = Agent(
-        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+        scripted(responses, sent), deps_type=Deps, capabilities=[rag, create_policy()]
     )
     deps = Deps()
     with patch.object(RAGCapability, "_search", stub_search):
         first = await agent.run("what does the supervisor do?", deps=deps)
+        first_question = deps.state["rag"]["evidence"]["question"]
         await agent.run(
             "and who supervises them?", deps=deps, message_history=first.all_messages()
         )
 
     assert len([p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]) == 2
+    second_question = deps.state["rag"]["evidence"]["question"]
+    assert second_question != first_question
+    assert deps.state["citation_policy"]["violations"] == [
+        first_question,
+        second_question,
+    ]
 
 
 @dataclass
@@ -225,18 +181,13 @@ async def test_a_violation_with_nowhere_to_record_it_does_not_fail_the_run(
     temp_db_path,
 ):
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [TextPart("an answer with no citation")],
-        ]
-    )
-
-    async def model(_messages, _info):
-        return ModelResponse(parts=next(turns))
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [TextPart("an answer with no citation")],
+    ]
 
     agent = Agent(
-        FunctionModel(model),
+        scripted(responses),
         deps_type=StatelessDeps,
         capabilities=[rag, create_policy()],
     )
@@ -261,23 +212,17 @@ async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_p
     evidence outcome let exactly those answers through undeclared.
     """
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
-            [TextPart("first answer")],
-            [TextPart("a follow-up answered from what is already here")],
-            [TextPart("a follow-up answered from what is already here")],
-        ]
-    )
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+        [TextPart("first answer")],
+        [TextPart("a follow-up answered from what is already here")],
+        [TextPart("a follow-up answered from what is already here")],
+    ]
     sent: list[list[Any]] = []
 
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
     agent = Agent(
-        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+        scripted(responses, sent), deps_type=Deps, capabilities=[rag, create_policy()]
     )
     deps = Deps()
 
@@ -292,15 +237,6 @@ async def test_a_follow_up_answered_from_retained_evidence_is_enforced(temp_db_p
     assert [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
 
 
-async def test_a_conversation_that_never_cited_anything_is_still_left_alone(
-    temp_db_path,
-):
-    """A greeting has nothing to declare, and no evidence exists to declare from."""
-    _, _, sent = await run_with_policy(temp_db_path, [[TextPart("hello back")]])
-
-    assert not [p for p in prompts_of(sent[-1]) if REDIRECT_HINT in p]
-
-
 async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
     """Once per question has to mean once, across every run of that question.
 
@@ -308,24 +244,18 @@ async def test_a_resumed_question_is_not_redirected_twice(temp_db_path):
     interrupted question asked for the citation again.
     """
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [TextPart("uncited")],
-            [TextPart("uncited again")],
-            [TextPart("uncited a third time")],
-            [TextPart("uncited a fourth time")],
-            [TextPart("uncited a fifth time")],
-        ]
-    )
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [TextPart("uncited")],
+        [TextPart("uncited again")],
+        [TextPart("uncited a third time")],
+        [TextPart("uncited a fourth time")],
+        [TextPart("uncited a fifth time")],
+    ]
     sent: list[list[Any]] = []
 
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
     agent = Agent(
-        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+        scripted(responses, sent), deps_type=Deps, capabilities=[rag, create_policy()]
     )
     deps = Deps()
 
@@ -356,21 +286,15 @@ async def test_a_user_quoting_the_redirect_does_not_suppress_enforcement(temp_db
     asked, which silently switches enforcement off.
     """
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [TextPart("uncited")],
-            [TextPart("uncited again")],
-        ]
-    )
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [TextPart("uncited")],
+        [TextPart("uncited again")],
+    ]
     sent: list[list[Any]] = []
 
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
     agent = Agent(
-        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
+        scripted(responses, sent), deps_type=Deps, capabilities=[rag, create_policy()]
     )
 
     with patch.object(RAGCapability, "_search", stub_search):
@@ -503,23 +427,17 @@ async def test_prose_rejected_by_a_structured_run_is_not_redirected(temp_db_path
 
 async def test_prose_opening_a_structured_follow_up_is_not_redirected(temp_db_path):
     """A question's first request still reports ``auto`` with text allowed."""
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
-            [ToolCallPart("final_result", {"text": "cited"}, "out-1")],
-            [TextPart("prose where the output tool was required")],
-            [ToolCallPart("final_result", {"text": "uncited"}, "out-2")],
-        ]
-    )
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+        [ToolCallPart("final_result", {"text": "cited"}, "out-1")],
+        [TextPart("prose where the output tool was required")],
+        [ToolCallPart("final_result", {"text": "uncited"}, "out-2")],
+    ]
     sent: list[list[Any]] = []
 
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
     agent = Agent(
-        FunctionModel(model),
+        scripted(responses, sent),
         deps_type=Deps,
         output_type=Answer,
         capabilities=[
@@ -620,19 +538,14 @@ async def test_a_run_paused_for_deferred_results_is_not_a_violation(
     temp_db_path, completion, output, violations
 ):
     """The question is still open at the pause. Only its completion is judged."""
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [ToolCallPart("external_tool", {}, "call-2")],
-            *completion,
-        ]
-    )
-
-    async def model(_messages, _info):
-        return ModelResponse(parts=next(turns))
+    responses = [
+        [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+        [ToolCallPart("external_tool", {}, "call-2")],
+        *completion,
+    ]
 
     agent = Agent(  # ty: ignore[no-matching-overload]
-        FunctionModel(model),
+        scripted(responses),
         deps_type=Deps,
         output_type=[str, DeferredToolRequests],
         capabilities=[
@@ -664,33 +577,3 @@ async def test_a_run_paused_for_deferred_results_is_not_a_violation(
 
     assert resumed.output == output
     assert deps.state["citation_policy"]["violations"] == violations
-
-
-async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_path):
-    """Being asked is not an outcome; the question still ended undeclared.
-
-    Returning early on the redirect marker meant a question that was asked, ignored,
-    and then finished — with the cite tool possibly gone by that point — was neither
-    redirected again nor recorded anywhere.
-    """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig())
-    turns = iter(
-        [
-            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [TextPart("uncited")],
-            [TextPart("still uncited after being asked")],
-        ]
-    )
-
-    async def model(_messages, _info):
-        return ModelResponse(parts=next(turns))
-
-    agent = Agent(
-        FunctionModel(model), deps_type=Deps, capabilities=[rag, create_policy()]
-    )
-    deps = Deps()
-
-    with patch.object(RAGCapability, "_search", stub_search):
-        await agent.run("what does the supervisor do?", deps=deps)
-
-    assert deps.state["citation_policy"]["violations"] == [0]

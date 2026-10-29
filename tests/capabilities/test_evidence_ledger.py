@@ -82,22 +82,14 @@ def test_evidence_from_another_capability_after_citing_makes_it_uncited():
     assert citation_status([cited, searched_after], question=0) == "missing"
 
 
-def test_declarations_at_the_same_epoch_merge():
+def test_declarations_at_the_same_epoch_merge_without_duplicates():
     record = CapabilityEvidenceRecord(question=0)
+    record.declare([rag_ref("c1")], epoch=3)
     record.declare([rag_ref("c1")], epoch=3)
     record.declare([rag_ref("c2")], epoch=3)
 
     assert record.declaration is not None
     assert [ref.chunk_id for ref in record.declaration.refs] == ["c1", "c2"]
-
-
-def test_repeating_a_ref_at_the_same_epoch_does_not_duplicate_it():
-    record = CapabilityEvidenceRecord(question=0)
-    record.declare([rag_ref()], epoch=3)
-    record.declare([rag_ref()], epoch=3)
-
-    assert record.declaration is not None
-    assert len(record.declaration.refs) == 1
 
 
 def test_neither_cite_order_downgrades_a_grounded_declaration():

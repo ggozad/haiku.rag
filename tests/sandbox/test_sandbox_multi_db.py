@@ -116,13 +116,15 @@ class TestDocumentsAcrossDatabases:
         assert [d.uri for d in docs] == ["test://alpha/alpha document about cats"]
         assert {owner.source for owner in owners.values()} == {"alpha"}
 
-    async def test_one_database_needs_no_owners(self, tmp_path, temp_db_path):
-        """A single connection serves every read, so nothing has to be routed."""
+    @pytest.mark.parametrize("sources", [None, ["alpha"]])
+    async def test_one_database_needs_no_owners(self, tmp_path, sources):
+        """A single connection serves every read, so nothing has to be routed,
+        whether or not the database is selected by name."""
         config = _config(tmp_path, ["alpha"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            _, docs, owners = await _mounted(rag)
+            _, docs, owners = await _mounted(rag, sources=sources)
 
         assert len(docs) == 1
         assert owners == {}
@@ -290,18 +292,9 @@ class TestSelectionOnOneDatabase:
             with pytest.raises(UnknownDatabaseError, match="beta"):
                 await _mounted(rag, sources=["beta"])
 
-    async def test_selecting_it_by_name_mounts_it(self, tmp_path):
-        config = _config(tmp_path, ["alpha"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-
-        async with HaikuRAG(config=config) as rag:
-            _, docs, _ = await _mounted(rag, sources=["alpha"])
-
-        assert len(docs) == 1
-
 
 class TestCopiedDatabases:
-    async def test_a_document_in_two_databases_is_refused(self, tmp_path):
+    async def test_the_refusal_names_the_databases(self, tmp_path):
         """Ids are unique per database, not across a copy of one, so one path
         cannot serve two documents."""
         config = _config(tmp_path, ["alpha", "clone"])
@@ -310,17 +303,7 @@ class TestCopiedDatabases:
         shutil.copytree(tmp_path / "alpha.lancedb", tmp_path / "clone.lancedb")
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(ValueError, match="one document per id"):
-                await _mounted(rag)
-
-    async def test_the_refusal_names_the_databases(self, tmp_path):
-        config = _config(tmp_path, ["alpha", "clone"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-        shutil.rmtree(tmp_path / "clone.lancedb", ignore_errors=True)
-        shutil.copytree(tmp_path / "alpha.lancedb", tmp_path / "clone.lancedb")
-
-        async with HaikuRAG(config=config) as rag:
-            with pytest.raises(ValueError) as raised:
+            with pytest.raises(ValueError, match="one document per id") as raised:
                 await _mounted(rag)
 
         assert "alpha" in str(raised.value)

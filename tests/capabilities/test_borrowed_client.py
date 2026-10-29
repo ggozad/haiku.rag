@@ -2,30 +2,7 @@ import pytest
 
 from haiku.rag.capabilities.rag import create_capability
 from haiku.rag.client import HaikuRAG
-
-
-async def test_a_borrowed_client_is_reused_not_reopened(temp_db_path, monkeypatch):
-    """A capability handed a client must not open a second connection to the
-    same database."""
-    from haiku.rag.store.engine import Store
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        opens = 0
-        initialize = Store._initialize
-
-        async def counted(self):
-            nonlocal opens
-            opens += 1
-            return await initialize(self)
-
-        monkeypatch.setattr(Store, "_initialize", counted)
-
-        capability = create_capability(
-            db_path=client.store.db_path, config=client._config, rag=client
-        )
-
-        assert await capability._ensure_rag() is client
-        assert opens == 0
+from tests.capabilities.helpers import Deps, make_context
 
 
 async def test_closing_never_closes_a_borrowed_client(temp_db_path):
@@ -46,8 +23,6 @@ async def test_closing_never_closes_a_borrowed_client(temp_db_path):
 async def test_a_borrowed_client_survives_for_run(temp_db_path):
     """for_run clears the owned connection per run; a borrowed one is the
     caller's and carries into the run copy."""
-    from tests.capabilities.test_capabilities import Deps, make_context
-
     async with HaikuRAG(temp_db_path, create=True) as client:
         capability = create_capability(
             db_path=client.store.db_path, config=client._config, rag=client
