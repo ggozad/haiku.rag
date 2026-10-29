@@ -16,7 +16,7 @@ Inside the code, these functions are available (use `await`):
 - `await search(query, limit=10)` → list of dicts with keys: chunk_id, content, document_id, document_title, document_uri, score, page_numbers, headings, doc_item_refs, labels, picture_refs (subset of doc_item_refs labeled `picture`), chunk_meta (the matched chunk's stored metadata, custom keys included)
 - `await list_documents()` → list of dicts with keys: id, title, uri, created_at, metadata
 
-Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools` and `dataclasses`. `decimal` and `statistics` do not exist.
+Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools`, `dataclasses` and `decimal`. `statistics` does not exist.
 Not supported: class inheritance and metaclasses, generators/yield
 
 ### search
