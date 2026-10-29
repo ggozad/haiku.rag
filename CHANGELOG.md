@@ -12,6 +12,8 @@
 
 - Ingester workers claim from the ready source with the fewest jobs in flight, then the one claimed least recently. Jobs stay oldest first within a source (#755).
 - The ingester queue is at schema 6, which adds `idx_jobs_source_claimable`. Run `haiku-ingester queue migrate` on a server queue (#755).
+- Under `delete_orphans`, a sweep of an `http` source whose every URL answers 404 fails as an empty listing does, and repeated failures open its poller breaker (#757).
+- Under `delete_orphans`, a URL confirmed gone by a 404 gets a DELETE job on every sweep, and the DELETE removes the URL's dead jobs (#757).
 - `pydantic-monty` raised to 1.4. The sandbox now has the `decimal` module.
 
 ### Fixed
@@ -23,7 +25,7 @@
 - The `http` source reads the revision from the headers of a GET when HEAD answers 405 or 501 (#757).
 - Under `delete_orphans`, the `http` source deletes the document of a URL that answers 404 on two sweeps with a permanently failed fetch between them (#757).
 - `IngestRequest.uri`, `DocumentRejected.uri` and the `HookError` message carry the URI the document is stored under, for an ingest given an explicit `uri` and for a path or `file://` URI through a symlink (#776).
-- Metadata written to a document while its source ingest runs is kept, including an `after_ingest` hook's metadata-only `update_document` on a PDF with attachment extraction (#778).
+- Metadata written while a source-ingested PDF reconciles its attachments, or before an unchanged-bytes refresh, is kept, including an `after_ingest` hook's metadata-only `update_document` (#778).
 - `update_document` keeps metadata written while it waited for the write lock, `md5` and `source_revision` included (#778).
 
 ## [0.102.0] - 2026-10-28
