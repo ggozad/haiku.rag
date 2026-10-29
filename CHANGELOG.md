@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.103.0] - 2026-10-29
+
 ### Added
 
 - The ingester's `POST /sources/{id}/retry?status=dead|rejected|all` re-queues a source's failed jobs (#756).
@@ -3146,7 +3148,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.102.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.103.0...HEAD
+[0.103.0]: https://github.com/ggozad/haiku.rag/compare/0.102.0...0.103.0
 [0.102.0]: https://github.com/ggozad/haiku.rag/compare/0.101.2...0.102.0
 [0.101.2]: https://github.com/ggozad/haiku.rag/compare/0.101.1...0.101.2
 [0.101.1]: https://github.com/ggozad/haiku.rag/compare/0.101.0...0.101.1
