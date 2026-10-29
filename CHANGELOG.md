@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Ingester workers claim from the ready source with the fewest jobs in flight, then the one claimed least recently. Jobs stay oldest first within a source (#755).
 - The ingester queue is at schema 6, which adds `idx_jobs_source_claimable`. Run `haiku-ingester queue migrate` on a server queue (#755).
 
 ### Fixed
