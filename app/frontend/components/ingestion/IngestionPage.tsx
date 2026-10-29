@@ -51,8 +51,8 @@ function Section({
 	);
 }
 
-// A refresh answers once its source's discovery sweep ends.
-const REFRESH_TIMEOUT_MS = 300_000;
+// A refresh runs a discovery sweep, and a retry waits for one in progress.
+const SWEEP_TIMEOUT_MS = 300_000;
 
 function Lazy({
 	title,
@@ -235,11 +235,25 @@ export default function IngestionPage() {
 							const result = (await ingester(
 								`sources/${encodeURIComponent(source)}/refresh`,
 								{ method: "POST" },
-								REFRESH_TIMEOUT_MS,
+								SWEEP_TIMEOUT_MS,
 							)) as { refreshed: boolean };
 							return result.refreshed
 								? `Refreshed ${source}.`
 								: `Refresh of ${source} skipped or failed.`;
+						})
+					}
+					onRetry={(source) =>
+						act(async () => {
+							const result = (await ingester(
+								`sources/${encodeURIComponent(source)}/retry?status=dead`,
+								{ method: "POST" },
+								SWEEP_TIMEOUT_MS,
+							)) as { retried: number; worker_breaker_open: boolean };
+							const one = result.retried === 1;
+							const queued = `Queued ${result.retried} dead ${one ? "job" : "jobs"} of ${source} again.`;
+							return result.worker_breaker_open
+								? `${queued} Its worker breaker is open, so ${one ? "it waits" : "they wait"} until the breaker closes.`
+								: queued;
 						})
 					}
 				/>

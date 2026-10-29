@@ -507,6 +507,7 @@
               <td>${circuitBadge}</td>
               <td class="actions">
                 <button onclick="refreshSource('${escapeHtml(s.source_id)}')">Refresh</button>
+                <button data-source="${escapeHtml(s.source_id)}" onclick="retrySource(this.dataset.source)">Retry failed</button>
               </td>
             </tr>`;
           })
@@ -716,6 +717,22 @@
       };
       window.retryJob = async (id) => {
         try { await postJson(`jobs/${encodeURIComponent(id)}/retry`); } catch (e) { alert(e.message); }
+        refresh();
+      };
+      window.retrySource = async (sid) => {
+        try {
+          const result = await postJson(
+            `sources/${encodeURIComponent(sid)}/retry?status=dead`,
+          );
+          const one = result.retried === 1;
+          let message = `Queued ${result.retried} dead ${one ? "job" : "jobs"} of ${sid} again.`;
+          if (result.worker_breaker_open) {
+            message += ` Its worker breaker is open, so ${one ? "it waits" : "they wait"} until the breaker closes.`;
+          }
+          alert(message);
+        } catch (e) {
+          alert(e.message);
+        }
         refresh();
       };
       window.refreshSource = async (sid) => {

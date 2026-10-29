@@ -855,6 +855,14 @@ async def test_dashboard_wires_database_and_config_panels(state):
     assert "loadConfig" in body
 
 
+async def test_dashboard_retries_a_sources_dead_jobs(state):
+    async with _client(state) as client:
+        body = (await client.get("/")).text
+    assert 'onclick="retrySource(this.dataset.source)"' in body
+    assert "`sources/${encodeURIComponent(sid)}/retry?status=dead`" in body
+    assert "result.worker_breaker_open" in body
+
+
 async def test_dashboard_base_href_defaults_to_root(state):
     """With no root_path the dashboard's <base href> is the origin root, so its
     relative fetches resolve at the top level exactly as before."""
