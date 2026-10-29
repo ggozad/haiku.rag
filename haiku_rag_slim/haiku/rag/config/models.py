@@ -669,6 +669,14 @@ class APIConfig(ConfigModel):
         return trimmed
 
 
+class MetadataProviderConfig(ConfigModel):
+    """A metadata provider named by entry point, with keyword arguments for its
+    factory."""
+
+    name: str
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 class _SourceBase(ConfigModel):
     """Fields common to every source. `id` is optional; if omitted the source
     derives a deterministic id from its target (root path / bucket+prefix /
@@ -694,12 +702,14 @@ class _SourceBase(ConfigModel):
         description="Maximum file size in bytes to fetch. Files larger than "
         "this are rejected with a PermanentError. None = no limit.",
     )
-    metadata_provider: str | None = Field(
+    metadata_provider: str | MetadataProviderConfig | None = Field(
         default=None,
-        description="Name of a metadata provider registered under the "
-        "'haiku.rag.metadata_providers' entry-point group. When set, the "
-        "provider is called per document with (source_id, uri) and its result "
-        "is attached as document metadata. None = no provider.",
+        description="A metadata provider registered under the "
+        "'haiku.rag.metadata_providers' entry-point group, by name or as "
+        "{name, options}. The options are passed to its factory as keyword "
+        "arguments. The provider is called per document with (source_id, uri, "
+        "result) and its result is attached as document metadata. None = no "
+        "provider.",
     )
 
 
