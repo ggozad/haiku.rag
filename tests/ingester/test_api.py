@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 
 import httpx
@@ -493,6 +494,134 @@ async def test_source_refresh_503_when_pollers_absent(state):
     async with _client(state) as client:
         resp = await client.post("/sources/anything/refresh")
     assert resp.status_code == 503
+
+
+# --- POST /sources/{id}/retry ---
+
+
+async def _failed(jobs: JobRepo, source_id: str, uri: str, *, rejected=False):
+    job = await jobs.enqueue(source_id, uri, JobOp.UPSERT)
+    assert job is not None
+    assert await jobs.claim_next("w", source_ids={source_id}) is not None
+    if rejected:
+        assert await jobs.mark_rejected(job.id, "refused", "w")
+    else:
+        assert await jobs.mark_dead(job.id, "boom", "w")
+    return job
+
+
+async def _status_of(jobs: JobRepo, job_id: str) -> JobStatus:
+    job = await jobs.get_job(job_id)
+    assert job is not None
+    return job.status
+
+
+async def test_source_retry_requeues_the_selected_failures_of_that_source(
+    tmp_path, jobs, sync
+):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    dead = await _failed(jobs, "local", "file:///a.md")
+    rejected = await _failed(jobs, "local", "file:///b.md", rejected=True)
+    other = await _failed(jobs, "other", "file:///c.md")
+
+    async with _client(state) as client:
+        resp = await client.post("/sources/local/retry", params={"status": "dead"})
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "source_id": "local",
+            "retried": 1,
+            "worker_breaker_open": False,
+        }
+        assert await _status_of(jobs, dead.id) is JobStatus.QUEUED
+        assert await _status_of(jobs, rejected.id) is JobStatus.REJECTED
+
+        resp = await client.post("/sources/local/retry", params={"status": "all"})
+        assert resp.json()["retried"] == 1
+        assert await _status_of(jobs, rejected.id) is JobStatus.QUEUED
+
+    assert await _status_of(jobs, other.id) is JobStatus.DEAD
+
+
+@pytest.mark.parametrize("params", [{}, {"status": "queued"}])
+async def test_source_retry_requires_a_failed_status(tmp_path, jobs, sync, params):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    async with _client(state) as client:
+        resp = await client.post("/sources/local/retry", params=params)
+    assert resp.status_code == 422
+
+
+async def test_source_retry_unknown_id_404(tmp_path, jobs, sync):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    async with _client(state) as client:
+        resp = await client.post("/sources/missing/retry", params={"status": "dead"})
+    assert resp.status_code == 404
+
+
+async def test_source_retry_503_when_pollers_absent(state):
+    async with _client(state) as client:
+        resp = await client.post("/sources/src/retry", params={"status": "dead"})
+    assert resp.status_code == 503
+
+
+async def test_source_retry_of_an_unserved_source_answers_409(tmp_path, jobs, sync):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    state.source_databases = {}
+    dead = await _failed(jobs, "local", "file:///a.md")
+
+    async with _client(state) as client:
+        resp = await client.post("/sources/local/retry", params={"status": "dead"})
+
+    assert resp.status_code == 409
+    assert await _status_of(jobs, dead.id) is JobStatus.DEAD
+
+
+async def test_source_retry_of_a_stopped_poller_answers_409(tmp_path, jobs, sync):
+    state, manager = _build_pollers_state(tmp_path, jobs, sync)
+    await manager.pollers[0].stop()
+    dead = await _failed(jobs, "local", "file:///a.md")
+
+    async with _client(state) as client:
+        resp = await client.post("/sources/local/retry", params={"status": "dead"})
+
+    assert resp.status_code == 409
+    assert await _status_of(jobs, dead.id) is JobStatus.DEAD
+
+
+async def test_source_retry_requeues_while_the_worker_breaker_is_open(
+    tmp_path, jobs, sync
+):
+    from haiku.rag.ingester.workers.pool import _WORKER_BREAKER_THRESHOLD, WorkerPool
+
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    pool = WorkerPool(clients={}, job_repo=jobs, sync_repo=sync)
+    for _ in range(_WORKER_BREAKER_THRESHOLD):
+        pool._breaker_for("local").record_failure()
+    state.pool = pool
+    dead = await _failed(jobs, "local", "file:///a.md")
+
+    async with _client(state) as client:
+        resp = await client.post("/sources/local/retry", params={"status": "dead"})
+
+    assert resp.json()["worker_breaker_open"] is True
+    assert resp.json()["retried"] == 1
+    assert await _status_of(jobs, dead.id) is JobStatus.QUEUED
+
+
+async def test_source_retry_waits_for_a_sweep_in_progress(tmp_path, jobs, sync):
+    state, manager = _build_pollers_state(tmp_path, jobs, sync)
+    dead = await _failed(jobs, "local", "file:///a.md")
+
+    async with _client(state) as client:
+        async with manager.pollers[0]._sweep_lock:
+            request = asyncio.create_task(
+                client.post("/sources/local/retry", params={"status": "dead"})
+            )
+            await asyncio.sleep(0.05)
+            assert not request.done()
+            assert await _status_of(jobs, dead.id) is JobStatus.DEAD
+        resp = await asyncio.wait_for(request, timeout=5.0)
+
+    assert resp.json()["retried"] == 1
 
 
 # --- /stats ---

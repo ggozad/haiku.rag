@@ -680,6 +680,22 @@ async def test_watch_deleted_then_added_enqueues_upsert(tmp_path, jobs, sync):
     assert queued[0].op is JobOp.UPSERT
 
 
+async def test_watch_change_waits_for_the_sweep_lock(tmp_path, jobs, sync):
+    from watchfiles import Change
+
+    poller = _fs_poller(tmp_path, jobs, sync)
+    path = tmp_path / "doc.md"
+    path.write_text("contents")
+
+    async with poller._sweep_lock:
+        handling = asyncio.create_task(poller._handle_watch_change(Change.added, path))
+        await asyncio.sleep(0.05)
+        assert await jobs.list_jobs(source_id="local") == []
+    await asyncio.wait_for(handling, timeout=5.0)
+
+    assert len(await jobs.list_jobs(source_id="local")) == 1
+
+
 async def test_watch_added_file_deleted_before_stat_does_not_crash(
     tmp_path, jobs, sync
 ):

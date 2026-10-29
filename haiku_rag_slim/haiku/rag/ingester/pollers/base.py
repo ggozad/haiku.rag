@@ -7,7 +7,7 @@ from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.config import SourceConfig
 from haiku.rag.ingester.batch import BatchChange, BatchSourceSummary
 from haiku.rag.ingester.exceptions import EmptyListingError
-from haiku.rag.ingester.queue.models import JobOp, SyncRow
+from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.sources.base import (
     Source,
@@ -56,8 +56,9 @@ class BasePoller:
         self._sync = sync_repo
         self._breaker = breaker or CircuitBreaker(config.circuit_breaker)
         self._stop = asyncio.Event()
-        # Held for a whole sweep, whether the loop or a refresh request runs
-        # it, so `stop` returns only once no sweep can still list or enqueue.
+        # Held for a sweep, a watch event's enqueue and a retry, so `stop`
+        # returns only once none of them can still enqueue, and a retry never
+        # overlaps discovery.
         self._sweep_lock = asyncio.Lock()
         self._last_polled_at: datetime | None = None
         self._last_skip_reason: str | None = None
@@ -129,6 +130,14 @@ class BasePoller:
             if self._stop.is_set():
                 return False
             return await self._sweep()
+
+    async def retry_failed(self, statuses: set[JobStatus]) -> int | None:
+        """Re-queue this source's latest failures in `statuses` with no
+        discovery running. Returns how many, or None once the poller stopped."""
+        async with self._sweep_lock:
+            if self._stop.is_set():
+                return None
+            return await self._jobs.retry_failed(statuses, source_ids=[self.source_id])
 
     async def _sweep(self) -> bool:
         if self._breaker.is_open:

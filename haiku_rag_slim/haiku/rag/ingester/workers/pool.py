@@ -153,6 +153,11 @@ class WorkerPool:
     def breaker_consecutive_failures(self) -> int:
         return max((b.consecutive_failures for b in self._breakers.values()), default=0)
 
+    def breaker_open_for(self, source_id: str) -> bool:
+        """Whether `source_id`'s breaker holds back claims of its jobs."""
+        breaker = self._breakers.get(source_id)
+        return breaker is not None and breaker.is_open
+
     def _breaker_for(self, source_id: str) -> CircuitBreaker:
         breaker = self._breakers.get(source_id)
         if breaker is None:
@@ -170,7 +175,7 @@ class WorkerPool:
         return {
             source_id
             for source_id in self._served
-            if not ((breaker := self._breakers.get(source_id)) and breaker.is_open)
+            if not self.breaker_open_for(source_id)
         }
 
     def add_sources(
