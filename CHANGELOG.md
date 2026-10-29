@@ -18,6 +18,8 @@
 - The ingester dashboard's Refresh works for a source id containing an apostrophe.
 - The ingester's `POST /sources/{id}/refresh` and the app's proxy accept a source id containing `/`, such as the default `fs:` and `s3:` ids.
 - The docling-serve chunker sends the same convert options as the docling-serve converter (#769).
+- The `http` source records a permanent HEAD error as an `http-<status>` revision and fetches a failing URL once (#757).
+- The `http` source reads the revision from the headers of a GET when HEAD answers 405 or 501 (#757).
 
 ## [0.102.0] - 2026-10-28
 
