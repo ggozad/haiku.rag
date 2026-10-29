@@ -139,7 +139,9 @@ ingester:
           poll_interval_s: 86400
 ```
 
-Change detection uses `HEAD`. A URL removed from `urls`, or answering `410 Gone`, counts as gone. Other failures leave the decision to the fetch. A URL whose server sends neither `ETag` nor `Last-Modified` is not fetched again once ingested. The source fetches only the URLs in `urls`, so its `headers` reach no other URL.
+Change detection uses `HEAD`, or the headers of a `GET` closed before its body when `HEAD` answers 405 or 501. A URL removed from `urls`, or answering `410 Gone`, counts as gone. A URL answering `404` counts as gone when it also answered `404` to the previous sweep's probe and the fetch between them failed permanently. A transport error, 408, 429 or 5xx leaves the decision to the fetch. Any other error status is recorded as the URL's revision, `http-<status>`, so the fetch fails once and the URL is not fetched again until its status changes. A URL whose server sends neither `ETag` nor `Last-Modified` is not fetched again once ingested. The source fetches only the URLs in `urls`, so its `headers` reach no other URL.
+
+Under `delete_orphans`, a sweep in which every URL counts as gone deletes nothing and fails, as an empty listing does. `/sources` reports the error in `last_error`, and repeated failures open the source's poller circuit breaker, until a URL answers again or `urls` lists one that does. Removing the gone URLs from `urls` does not clear it: the removed URLs count as gone too.
 
 ### WebDAV
 

@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from haiku.rag.sources.base import FileTooLargeError, SourceEventKind
-from haiku.rag.sources.http import HTTPSource
+from haiku.rag.sources.http import HTTPSource, is_failure_marker
 
 
 def _transport(routes: dict[tuple[str, str], httpx.Response]) -> httpx.MockTransport:
@@ -238,8 +238,8 @@ async def test_discover_emits_delete_on_410_gone():
     assert events[0].revision is None
 
 
-@pytest.mark.parametrize("status", [404, 401, 403, 405, 500, 502, 503])
-async def test_discover_treats_non_410_errors_as_upsert(status):
+@pytest.mark.parametrize("status", [408, 429, 500, 502, 503])
+async def test_discover_treats_transient_errors_as_upsert(status):
     transport = _transport(
         {
             ("HEAD", "https://example.com/a.md"): httpx.Response(status),
@@ -252,6 +252,154 @@ async def test_discover_treats_non_410_errors_as_upsert(status):
     assert len(events) == 1
     assert events[0].kind is SourceEventKind.UPSERT
     assert events[0].revision is None
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404])
+async def test_discover_marks_a_permanent_error_with_its_status(status):
+    transport = _transport(
+        {
+            ("HEAD", "https://example.com/a.md"): httpx.Response(status),
+        }
+    )
+    src = HTTPSource(
+        source_id="x", urls=["https://example.com/a.md"], transport=transport
+    )
+    events = [e async for e in src.discover()]
+    assert len(events) == 1
+    assert events[0].kind is SourceEventKind.UPSERT
+    assert events[0].revision == f"http-{status}"
+    assert is_failure_marker(events[0].revision)
+
+
+async def test_discover_reports_an_unchanged_permanent_error_as_unchanged():
+    url = "https://example.com/a.md"
+    src = HTTPSource(
+        source_id="x",
+        urls=[url],
+        transport=_transport({("HEAD", url): httpx.Response(403)}),
+    )
+    events = [e async for e in src.discover(since={url: "http-403"}, known_uris={url})]
+    assert [(e.kind, e.revision) for e in events] == [
+        (SourceEventKind.UNCHANGED, "http-403")
+    ]
+
+
+async def test_discover_deletes_a_url_that_answers_404_twice():
+    url = "https://example.com/a.md"
+    src = HTTPSource(
+        source_id="x",
+        urls=[url],
+        transport=_transport({("HEAD", url): httpx.Response(404)}),
+    )
+    events = [e async for e in src.discover(since={url: "http-404"}, known_uris={url})]
+    assert [(e.kind, e.revision) for e in events] == [
+        (SourceEventKind.DELETE, "http-404")
+    ]
+
+
+async def test_discover_marks_a_404_after_another_failure():
+    url = "https://example.com/a.md"
+    src = HTTPSource(
+        source_id="x",
+        urls=[url],
+        transport=_transport({("HEAD", url): httpx.Response(404)}),
+    )
+    events = [e async for e in src.discover(since={url: "http-403"}, known_uris={url})]
+    assert [(e.kind, e.revision) for e in events] == [
+        (SourceEventKind.UPSERT, "http-404")
+    ]
+
+
+class _TrackedBody(httpx.AsyncByteStream):
+    def __init__(self) -> None:
+        self.read = False
+
+    async def __aiter__(self):
+        self.read = True
+        yield b"body"
+
+
+@pytest.mark.parametrize("status", [405, 501])
+async def test_discover_probes_with_get_when_head_is_refused(status):
+    url = "https://example.com/a.md"
+    body = _TrackedBody()
+    transport = _transport(
+        {
+            ("HEAD", url): httpx.Response(status),
+            ("GET", url): httpx.Response(200, headers={"etag": '"v1"'}, stream=body),
+        }
+    )
+    src = HTTPSource(source_id="x", urls=[url], transport=transport)
+    events = [e async for e in src.discover()]
+    assert [(e.kind, e.revision) for e in events] == [(SourceEventKind.UPSERT, "v1")]
+    assert not body.read
+
+
+async def test_discover_marks_the_status_of_a_refused_head_probe():
+    url = "https://example.com/a.md"
+    transport = _transport(
+        {
+            ("HEAD", url): httpx.Response(405),
+            ("GET", url): httpx.Response(404),
+        }
+    )
+    src = HTTPSource(source_id="x", urls=[url], transport=transport)
+    events = [e async for e in src.discover()]
+    assert [(e.kind, e.revision) for e in events] == [
+        (SourceEventKind.UPSERT, "http-404")
+    ]
+
+
+async def test_probe_revision_matches_the_fetched_revision():
+    url = "https://example.com/a.md"
+    headers = {"etag": 'W/"v1"', "last-modified": "Wed, 21 Oct 2025 07:28:00 GMT"}
+    transport = _transport(
+        {
+            ("HEAD", url): httpx.Response(405),
+            ("GET", url): httpx.Response(200, headers=headers, content=b"x"),
+        }
+    )
+    src = HTTPSource(source_id="x", urls=[url], transport=transport)
+    [event] = [e async for e in src.discover()]
+    assert event.revision == (await src.fetch(url)).revision
+
+
+async def test_head_probes_with_get_when_head_is_refused():
+    url = "https://example.com/a.md"
+    transport = _transport(
+        {
+            ("HEAD", url): httpx.Response(405),
+            ("GET", url): httpx.Response(200, headers={"etag": '"v1"'}),
+        }
+    )
+    src = HTTPSource(source_id="x", transport=transport)
+    assert await src.head(url) == "v1"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"etag": "http-404"},
+        {"etag": '"http-404"'},
+        {"etag": ' "http-404" '},
+        {"etag": 'W/"http-404"'},
+        {"last-modified": "http-404"},
+        {"last-modified": " http-404 "},
+    ],
+)
+async def test_no_header_value_reads_as_a_failure_marker(headers):
+    url = "https://example.com/a.md"
+    transport = _transport(
+        {
+            ("HEAD", url): httpx.Response(200, headers=headers),
+            ("GET", url): httpx.Response(200, headers=headers, content=b"x"),
+        }
+    )
+    src = HTTPSource(source_id="x", transport=transport)
+    revision = await src.head(url)
+    assert revision is not None
+    assert not is_failure_marker(revision)
+    assert (await src.fetch(url)).revision == revision
 
 
 async def test_discover_treats_network_errors_as_upsert():
@@ -361,6 +509,17 @@ async def test_discover_emits_upsert_for_unknown_url_without_revision():
     events = [e async for e in src.discover()]
     assert len(events) == 1
     assert events[0].kind is SourceEventKind.UPSERT
+
+
+async def test_discover_upserts_a_url_that_recovers_without_validators():
+    url = "https://example.com/a.md"
+    src = HTTPSource(
+        source_id="x",
+        urls=[url],
+        transport=_transport({("HEAD", url): httpx.Response(200)}),
+    )
+    events = [e async for e in src.discover(since={url: "http-404"}, known_uris={url})]
+    assert [(e.kind, e.revision) for e in events] == [(SourceEventKind.UPSERT, None)]
 
 
 async def test_fetch_rejects_file_exceeding_max_size():

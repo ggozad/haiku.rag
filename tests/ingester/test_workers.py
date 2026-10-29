@@ -324,6 +324,43 @@ async def test_restored_file_preserves_sync_state_and_failures(
     ]
 
 
+async def test_delete_with_a_revision_retires_sync_state(client, jobs, sync):
+    uri = "https://example.com/a.md"
+    await sync.upsert("src", uri, revision="e1", content_hash="m1", ingested=True)
+    await sync.upsert("src", uri, revision="http-404")
+    client.get_document_by_uri.return_value = Document(
+        id="doc-1", content="", uri=uri, metadata={"source_id": "src"}
+    )
+    job = await jobs.enqueue("src", uri, JobOp.DELETE, revision="http-404")
+    assert job is not None
+
+    await _pool(client, jobs, sync).drain_once()
+
+    assert (await jobs.get_job(job.id)).status is JobStatus.SUCCEEDED
+    row = await sync.get_row("src", uri)
+    assert row is not None
+    assert row.revision == "http-404"
+    assert row.last_ingested_at is None
+
+
+async def test_ingest_without_a_revision_clears_the_stored_revision(client, jobs, sync):
+    uri = "https://example.com/a.md"
+    await sync.upsert("src", uri, revision="http-404")
+    client._ingest_observed.return_value = Document(
+        id="doc-1", content="x", uri=uri, metadata={"md5": "m1"}
+    )
+    job = await jobs.enqueue("src", uri, JobOp.UPSERT)
+    assert job is not None
+
+    await _pool(client, jobs, sync).drain_once()
+
+    row = await sync.get_row("src", uri)
+    assert row is not None
+    assert row.revision is None
+    assert row.content_hash == "m1"
+    assert row.last_ingested_at is not None
+
+
 async def test_successful_delete_prunes_dead_jobs_for_same_uri(client, jobs, sync):
     """Once a DELETE resolves a URI, any earlier UPSERT failure for the same
     (source_id, uri) is stale — auto-prune keeps the DLQ free of resolved

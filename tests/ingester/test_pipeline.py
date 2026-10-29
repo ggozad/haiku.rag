@@ -21,6 +21,7 @@ from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.sources.base import FetchResult, FileTooLargeError, Source
 from haiku.rag.sources.fs import FSSource
+from haiku.rag.sources.http import HTTPSource
 from haiku.rag.store.models.document import Document
 from tests.conftest import capture_logs
 from tests.platform import converts_pdf_locally
@@ -351,6 +352,39 @@ async def test_manifest_upsert_rejects_stale_revision_before_fetch():
         )
 
     client._ingest_observed.assert_not_awaited()
+
+
+async def test_manifest_upsert_with_a_failure_marker_fetches():
+    uri = "https://example.com/a.pdf"
+    client = _mock_client()
+    request = httpx.Request("GET", uri)
+    client._ingest_observed.side_effect = httpx.HTTPStatusError(
+        "forbidden", request=request, response=httpx.Response(403, request=request)
+    )
+    http = HTTPSource(
+        source_id="src",
+        urls=[uri],
+        transport=httpx.MockTransport(lambda request: httpx.Response(403)),
+    )
+
+    with pytest.raises(PermanentError, match="HTTP 403"):
+        await run_job(
+            client,
+            _job(revision="http-403", extra={"_manifest": {"version": 1}}),
+            sources=[http],
+        )
+
+
+async def test_manifest_upsert_checks_a_marker_shaped_revision_of_another_source():
+    client = _mock_client()
+    sources: list[Source] = [_StubSource("src", "r2")]
+
+    with pytest.raises(PermanentError, match="manifest revision is stale"):
+        await run_job(
+            client,
+            _job(revision="http-403", extra={"_manifest": {"version": 1}}),
+            sources=sources,
+        )
 
 
 async def test_manifest_upsert_ingests_when_revision_matches():

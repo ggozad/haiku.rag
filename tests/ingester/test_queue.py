@@ -1775,6 +1775,25 @@ async def test_sync_state_invalidate_clears_revision_and_hash(sync):
     assert await sync.list_known_uris("s") == {"u"}
 
 
+async def test_sync_state_retire_keeps_the_row_without_its_ingestion(sync):
+    await sync.upsert("s", "u", revision="v1", content_hash="hash-v1", ingested=True)
+
+    await sync.retire("s", "u", "http-404")
+
+    row = await sync.get_row("s", "u")
+    assert row is not None
+    assert row.revision == "http-404"
+    assert row.content_hash is None
+    assert row.last_ingested_at is None
+    assert await sync.list_ingested_uris("s") == set()
+
+
+async def test_sync_state_retire_inserts_a_missing_row(sync):
+    await sync.retire("s", "u", "http-404")
+
+    assert await sync.get_revision_snapshot("s") == {"u": "http-404"}
+
+
 async def test_sync_state_invalidate_ignores_unknown_row(sync):
     await sync.invalidate("s", ["missing"])
     assert await sync.list_known_uris("s") == set()

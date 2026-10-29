@@ -450,6 +450,29 @@ async def test_dry_run_reports_changes_without_mutating_queue_or_sync(
     assert await sync.list_known_uris("src") == set()
 
 
+async def test_a_delete_carries_its_revision(jobs, sync, fs_config):
+    delete = SourceEvent(
+        source_id="src",
+        uri="https://example.com/a.md",
+        kind=SourceEventKind.DELETE,
+        revision="http-404",
+        discovered_at=datetime.now(UTC),
+    )
+    sweeps = [[_event("https://example.com/b.md"), delete]]
+    source = _StubSource("src", sweeps * 2)
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    ok, _, changes = await poller._dry_run_once()
+    assert ok is True
+    assert [(c.op, c.revision) for c in changes if c.op is JobOp.DELETE] == [
+        (JobOp.DELETE, "http-404")
+    ]
+
+    assert await poller._sweep_once() is True
+    [job] = [j for j in await jobs.list_jobs(source_id="src") if j.op is JobOp.DELETE]
+    assert job.revision == "http-404"
+
+
 async def test_dry_run_counts_ignored_deletes_when_orphan_delete_disabled(
     fs_config, jobs, sync
 ):

@@ -23,8 +23,10 @@ from haiku.rag.hooks import DocumentRejected, HookError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.sources.base import FileTooLargeError
+from haiku.rag.sources.http import HTTPSource, is_failure_marker
 from haiku.rag.sources.registry import resolve_configured_source
 from haiku.rag.telemetry import attach_context, logfire
+from haiku.rag.utils.http import is_transient_status
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -45,10 +47,6 @@ class JobResult(BaseModel):
     content_hash: str | None = None
     deleted: bool = False
     resource_restored: bool = False
-
-
-def _is_transient_status(status: int) -> bool:
-    return status in (408, 429) or status >= 500
 
 
 def _causes(exc: BaseException) -> Iterator[BaseException]:
@@ -79,7 +77,7 @@ def _is_transient_cause(cause: BaseException) -> bool:
         | socket.gaierror,
     ):
         return True
-    return isinstance(cause, httpx.HTTPStatusError) and _is_transient_status(
+    return isinstance(cause, httpx.HTTPStatusError) and is_transient_status(
         cause.response.status_code
     )
 
@@ -132,7 +130,7 @@ def _classify(exc: BaseException) -> Exception:
         # 401/403/404/410 are unrecoverable without operator action; 408/429/5xx
         # are transient. Everything else in 4xx is treated as permanent — better
         # to DLQ a misconfigured URL than to retry it forever.
-        if _is_transient_status(status):
+        if is_transient_status(status):
             return TransientError(f"HTTP {status}: {exc}")
         return PermanentError(f"HTTP {status}: {exc}")
 
@@ -246,7 +244,11 @@ async def run_job(
             if manifest_context is not None and job.revision is not None:
                 source = resolve_configured_source(job.uri, job.source_id, sources)
                 current_revision = await source.head(job.uri)
-                if current_revision != job.revision:
+                # An HTTP failure marker reads as None, and the fetch decides.
+                failed = isinstance(source, HTTPSource) and is_failure_marker(
+                    job.revision
+                )
+                if current_revision != job.revision and not failed:
                     raise PermanentError(
                         "manifest revision is stale for "
                         f"{job.uri}: expected {job.revision!r}, "

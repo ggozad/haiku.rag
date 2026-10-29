@@ -947,6 +947,16 @@ class SyncStateRepo:
                     .values(revision=None, content_hash=None)
                 )
 
+    async def retire(self, source_id: str, uri: str, revision: str) -> None:
+        """Keep `uri` accounted for at `revision` with no ingested document."""
+        delete = sa.delete(sync_state).where(
+            self._owned, sync_state.c.source_id == source_id, sync_state.c.uri == uri
+        )
+        insert = self._upsert_stmt(source_id, uri, revision, None, _utcnow_iso(), None)
+        async with self._engine.begin() as conn:
+            await conn.execute(delete)
+            await conn.execute(insert)
+
     async def delete(self, source_id: str, uri: str) -> None:
         stmt = sa.delete(sync_state).where(
             self._owned, sync_state.c.source_id == source_id, sync_state.c.uri == uri

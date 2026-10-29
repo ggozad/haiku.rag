@@ -17,6 +17,10 @@ DROPPED_CONNECTION_ERRORS = (
 )
 
 
+def is_transient_status(status: int) -> bool:
+    return status in (408, 429) or status >= 500
+
+
 def pooled_client(timeout: float | httpx.Timeout) -> httpx.AsyncClient:
     """A client whose idle connections expire before the server closes them."""
     return httpx.AsyncClient(
