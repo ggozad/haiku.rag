@@ -76,7 +76,9 @@ class IngestRequest:
     replace ``body`` and add keys to ``metadata``, which starts empty. The
     other fields describe the document. ``uri`` is the URI the document is
     stored under. ``source_id`` is the ingesting source, a PDF attachment's
-    parent's included, and ``None`` for an ad-hoc ingest."""
+    parent's included. An ad-hoc ingest passes the source recorded on the
+    stored document, and ``None`` when there is none. "Metadata lifetime"
+    in docs/hooks.md says how long the added keys last."""
 
     uri: str
     source_id: str | None
@@ -117,10 +119,10 @@ class Hook:
     async def before_ingest(
         self, client: "HaikuRAG", request: IngestRequest
     ) -> IngestRequest:
-        """Transform a fetched document before conversion. Runs once per
-        fetched document and once per PDF attachment, before the
-        unchanged-bytes check, so the stored ``md5`` is that of the returned
-        body. Added metadata keys win over a metadata provider's and a
+        """Transform a fetched document before conversion. Runs on every
+        fetch, unchanged bytes included, and once per PDF attachment, before
+        the unchanged-bytes check, so the stored ``md5`` is that of the
+        returned body. Added metadata keys win over a metadata provider's and a
         source's, and the keys
         ingestion owns (``content_type``, ``md5``, ``source_revision``,
         ``source_id``, ``parent_uri``) are dropped. Raise ``DocumentRejected``
@@ -134,7 +136,9 @@ class Hook:
         document's content was rewritten (including creation against an
         already-stored URI). Replace any state derived from the documents
         regardless of the operation: even a creation may be a retry.
-        Metadata/title-only updates do not fire.
+        Metadata/title-only updates do not fire, so a hook may store derived
+        keys with a metadata-only ``update_document``. "Metadata lifetime" in
+        docs/hooks.md says how long they last.
 
         Best-effort observer: the operation has already committed, so
         exceptions are logged and never raised, and subsequent hooks still

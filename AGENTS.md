@@ -95,6 +95,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 ├── mcp.py                  # FastMCP server (create_mcp_server)
 ├── doctor.py               # Database health checks, provider probes, near-duplicate detection
 ├── circuit_breaker.py      # CircuitBreaker (ingester pollers and workers, docling-serve provider)
+├── hooks.py                # Hook, IngestRequest, IngestEvent, DeleteEvent, SearchRequest, build_hooks, notify
 ├── s3.py                   # Object-store helpers
 ├── telemetry.py            # Logfire configuration
 ├── logging.py              # Logging configuration
@@ -172,6 +173,14 @@ app/                        # Web application: chat, ingestion, inspector, docto
 **Domain vs Persistence:**
 - Domain: `Document`, `Chunk`, `SearchResult`, `Citation` (Pydantic BaseModel in store/models/)
 - Persistence: `DocumentRecord`, `ChunkRecord`, `SettingsRecord` (LanceModel in store/schema.py)
+
+**Hooks** (hooks.py, user docs in docs/hooks.md):
+- A package registers a factory under the `haiku.rag.hooks` entry-point group. `config.hooks` activates it by name or as `{name, options}` (`HookConfig`), and the options are the factory's keyword arguments. `HaikuRAG.__init__` builds the hooks with `build_hooks`, which loads only the entry points the config names. An unknown name raises `ValueError` at construction.
+- Hook points, run in configured order: `before_ingest`, `after_ingest`, `after_delete`, `before_search`, `after_search`, `lifespan`. `before_ingest` refuses a document with `DocumentRejected`, and any other exception fails the ingest as `HookError`. Search hook failures propagate. `after_ingest` and `after_delete` run through `notify`, which logs a failure and never raises. A FULL rebuild passes `notify_hooks=False`.
+- One set of hook instances and one lifespan per client that owns its session. A borrowed client (`clients_for`) gets `_hooks = []`. The ingester opens one client per database, so each database has its own instances and lifespan.
+- A hook's own tables take the `hook_` prefix.
+- The ingester's reload refuses a `hooks` change (`_changed_sections`), so it needs a restart.
+- How long metadata from the caller, provider, `before_ingest` and `after_ingest` lasts: docs/hooks.md, "Metadata lifetime".
 
 ## HaikuRAG Client API
 
