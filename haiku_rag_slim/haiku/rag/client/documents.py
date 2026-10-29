@@ -583,16 +583,19 @@ def _storable(metadata: dict) -> dict:
 
 
 async def _before_ingest(
-    client: "HaikuRAG | None", result: "FetchResult", source_id: str | None
+    client: "HaikuRAG | None",
+    result: "FetchResult",
+    source_id: str | None,
+    uri: str,
 ) -> "tuple[FetchResult, dict]":
-    """Run the ``before_ingest`` hooks over a fetched document. Returns the
-    result to convert, its ``content_hash`` following a replaced body and its
-    ``extra_metadata`` without the keys the hooks set, and the metadata the
-    hooks added."""
+    """Run the ``before_ingest`` hooks over a fetched document, stored under
+    ``uri``. Returns the result to convert, its ``content_hash`` following a
+    replaced body and its ``extra_metadata`` without the keys the hooks set,
+    and the metadata the hooks added."""
     if client is None or not client._hooks:
         return result, {}
     request = IngestRequest(
-        uri=result.uri,
+        uri=uri,
         source_id=source_id,
         body=result.body,
         content_type=result.content_type,
@@ -607,13 +610,13 @@ async def _before_ingest(
             # The store serialises metadata after conversion and embedding.
             json.dumps(_storable(request.metadata))
         except DocumentRejected as e:
-            e.uri = result.uri
+            e.uri = uri
             raise
         except Exception as e:
             cls = type(hook)
             raise HookError(
                 f"{cls.__module__}.{cls.__qualname__}.before_ingest failed for "
-                f"{result.uri}: {type(e).__name__}: {e}"
+                f"{uri}: {type(e).__name__}: {e}"
             ) from e
     if request.body != result.body:
         result = result.model_copy(
@@ -903,7 +906,9 @@ async def _reconcile_pdf_attachments(
             extra_metadata={"parent_uri": parent_doc.uri},
         )
         try:
-            child_fr, hook_metadata = await _before_ingest(client, fetched, source_id)
+            child_fr, hook_metadata = await _before_ingest(
+                client, fetched, source_id, child_uri
+            )
         except DocumentRejected as e:
             logger.warning("%s", e)
             continue
@@ -1127,7 +1132,7 @@ async def create_document_from_source(
             else None
         )
         provider_metadata = await _provider_metadata(bound_provider, source_str, result)
-        result, hook_metadata = await _before_ingest(client, result, owner)
+        result, hook_metadata = await _before_ingest(client, result, owner, stored_uri)
         user_metadata = {**metadata, **provider_metadata, **hook_metadata}
 
         # MD5 short-circuit: the bytes are unchanged even if the revision wasn't.

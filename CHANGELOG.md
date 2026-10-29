@@ -21,6 +21,7 @@
 - The `http` source records a permanent HEAD error as an `http-<status>` revision and fetches a failing URL once (#757).
 - The `http` source reads the revision from the headers of a GET when HEAD answers 405 or 501 (#757).
 - Under `delete_orphans`, the `http` source deletes the document of a URL that answers 404 on two sweeps with a permanently failed fetch between them (#757).
+- `IngestRequest.uri`, `DocumentRejected.uri` and the `HookError` message carry the URI the document is stored under, for an ingest given an explicit `uri` and for a path or `file://` URI through a symlink (#776).
 
 ## [0.102.0] - 2026-10-28
 

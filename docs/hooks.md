@@ -23,7 +23,7 @@ Hooks receive the `HaikuRAG` client, so they can search, read repositories, and 
 
 ## Transforming documents before ingestion
 
-`before_ingest` runs for every document ingested from a source (`create_document_from_source`, `add-src`, the ingester) and for every PDF attachment with a supported extension. `IngestRequest` carries `uri`, `source_id`, `body`, `content_type`, and `metadata`. A hook may replace `body` and add keys to `metadata`, which starts empty, and returns the request. `source_id` is the ingesting source, an attachment's parent's included, and `None` for an ad-hoc ingest. An attachment's `uri` is `<parent uri>#attachment=<name>`, with the name URL-quoted.
+`before_ingest` runs for every document ingested from a source (`create_document_from_source`, `add-src`, the ingester) and for every PDF attachment with a supported extension. `IngestRequest` carries `uri`, `source_id`, `body`, `content_type`, and `metadata`. A hook may replace `body` and add keys to `metadata`, which starts empty, and returns the request. `uri` is the URI the document is stored under: the `uri` given to `create_document_from_source`, else the source as given, with a local path made absolute and its symlinks kept. `source_id` is the ingesting source, an attachment's parent's included, and `None` for an ad-hoc ingest. An attachment's `uri` is `<parent uri>#attachment=<name>`, with the name URL-quoted.
 
 ```python
 class StripBoilerplateHook(Hook):
