@@ -35,7 +35,7 @@ async def list_sources(
     return summaries
 
 
-@router.post("/{source_id}/refresh", response_model=RefreshResponse)
+@router.post("/{source_id:path}/refresh", response_model=RefreshResponse)
 async def refresh_source(
     source_id: str, state: APIState = Depends(get_state)
 ) -> RefreshResponse:
@@ -44,7 +44,7 @@ async def refresh_source(
     return RefreshResponse(source_id=source_id, refreshed=ok)
 
 
-@router.post("/{source_id}/retry", response_model=SourceRetryResponse)
+@router.post("/{source_id:path}/retry", response_model=SourceRetryResponse)
 async def retry_source(
     source_id: str,
     selection: RetrySelection = Query(alias="status"),

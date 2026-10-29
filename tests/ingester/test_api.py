@@ -550,6 +550,22 @@ async def test_source_retry_requires_a_failed_status(tmp_path, jobs, sync, param
     assert resp.status_code == 422
 
 
+async def test_source_actions_take_an_id_containing_slashes(tmp_path, jobs, sync):
+    from urllib.parse import quote
+
+    state, _ = _build_pollers_state(tmp_path, jobs, sync, source_id="fs:/tmp/docs")
+    dead = await _failed(jobs, "fs:/tmp/docs", "file:///tmp/docs/a.md")
+    path = f"/sources/{quote('fs:/tmp/docs', safe='')}"
+
+    async with _client(state) as client:
+        retried = await client.post(f"{path}/retry", params={"status": "dead"})
+        refreshed = await client.post(f"{path}/refresh")
+
+    assert retried.json()["retried"] == 1
+    assert await _status_of(jobs, dead.id) is JobStatus.QUEUED
+    assert refreshed.status_code == 200
+
+
 async def test_source_retry_unknown_id_404(tmp_path, jobs, sync):
     state, _ = _build_pollers_state(tmp_path, jobs, sync)
     async with _client(state) as client:
