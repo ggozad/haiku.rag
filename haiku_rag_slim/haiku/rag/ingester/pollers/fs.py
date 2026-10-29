@@ -113,41 +113,45 @@ class FSPoller(BasePoller):
             change=change.name,
             uri=uri,
         ):
-            if change is Change.deleted:
-                if not self._fs_config.delete_orphans:
-                    return
-                # `git checkout`, atomic-rename saves, and similar atomic
-                # restores fire (deleted, added) back-to-back. By the time we
-                # handle the delete, the file is already back. Enqueuing
-                # DELETE here would block the follow-up Change.added's UPSERT
-                # via the live-row unique index, then run and remove the
-                # document — blackholing it until the next periodic sweep.
-                if path.exists():
-                    return
-                await self._jobs.enqueue(
-                    self.source_id,
-                    uri,
-                    op=JobOp.DELETE,
-                    max_attempts=max_attempts(self.config, self._default_max_attempts),
-                    extra=_enqueue_extra(),
-                )
-                return
+            async with self._sweep_lock:
+                await self._enqueue_change(change, path, uri)
 
-            if change in (Change.added, Change.modified):
-                try:
-                    revision = str(path.stat().st_mtime_ns)
-                except FileNotFoundError:
-                    # File was deleted between the watchfiles event and our
-                    # stat() call.  Skip — the deletion event will handle it.
-                    return
-                await self._jobs.enqueue(
-                    self.source_id,
-                    uri,
-                    op=JobOp.UPSERT,
-                    revision=revision,
-                    max_attempts=max_attempts(self.config, self._default_max_attempts),
-                    extra=_enqueue_extra(),
-                )
-                await self._sync.upsert(
-                    self.source_id, uri, revision=None, content_hash=None
-                )
+    async def _enqueue_change(self, change: Change, path: Path, uri: str) -> None:
+        if change is Change.deleted:
+            if not self._fs_config.delete_orphans:
+                return
+            # `git checkout`, atomic-rename saves, and similar atomic
+            # restores fire (deleted, added) back-to-back. By the time we
+            # handle the delete, the file is already back. Enqueuing
+            # DELETE here would block the follow-up Change.added's UPSERT
+            # via the live-row unique index, then run and remove the
+            # document — blackholing it until the next periodic sweep.
+            if path.exists():
+                return
+            await self._jobs.enqueue(
+                self.source_id,
+                uri,
+                op=JobOp.DELETE,
+                max_attempts=max_attempts(self.config, self._default_max_attempts),
+                extra=_enqueue_extra(),
+            )
+            return
+
+        if change in (Change.added, Change.modified):
+            try:
+                revision = str(path.stat().st_mtime_ns)
+            except FileNotFoundError:
+                # File was deleted between the watchfiles event and our
+                # stat() call.  Skip — the deletion event will handle it.
+                return
+            await self._jobs.enqueue(
+                self.source_id,
+                uri,
+                op=JobOp.UPSERT,
+                revision=revision,
+                max_attempts=max_attempts(self.config, self._default_max_attempts),
+                extra=_enqueue_extra(),
+            )
+            await self._sync.upsert(
+                self.source_id, uri, revision=None, content_hash=None
+            )

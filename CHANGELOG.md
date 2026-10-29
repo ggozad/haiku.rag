@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- The ingester's `POST /sources/{id}/retry?status=dead|rejected|all` re-queues a source's failed jobs (#756).
+- The ingester dashboard and the app's ingestion page retry a source's dead jobs with Retry failed (#756).
+
+### Fixed
+
+- The ingester dashboard's Refresh works for a source id containing an apostrophe.
+- The ingester's `POST /sources/{id}/refresh` and the app's proxy accept a source id containing `/`, such as the default `fs:` and `s3:` ids.
+
 ## [0.102.0] - 2026-10-28
 
 ### Added

@@ -353,7 +353,8 @@ class JobRepo:
 
         Assumes no discovery runs meanwhile: a job enqueued between a revive's
         lock and its update can complete unseen and leave a superseded failure
-        re-queued."""
+        re-queued. `run-batch` retries after its sweep, and
+        `BasePoller.retry_failed` holds the sweep lock."""
         wanted = {status.value for status in statuses}
         refused = wanted - {JobStatus.DEAD.value, JobStatus.REJECTED.value}
         if refused:

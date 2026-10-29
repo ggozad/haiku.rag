@@ -3,7 +3,6 @@ import sys
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -41,7 +40,7 @@ from haiku.rag.ingester.queue.migrations import (  # noqa: E402
     apply_migrations,
     make_engine,
 )
-from haiku.rag.ingester.queue.models import JobStatus  # noqa: E402
+from haiku.rag.ingester.queue.models import JobStatus, RetrySelection  # noqa: E402
 from haiku.rag.logging import configure_cli_logging  # noqa: E402
 from haiku.rag.store.exceptions import (  # noqa: E402
     AmbiguousDatabaseError,
@@ -325,19 +324,6 @@ def serve(
     asyncio.run(app.serve(api=not no_api))
 
 
-class RetrySelection(StrEnum):
-    DEAD = "dead"
-    REJECTED = "rejected"
-    ALL = "all"
-
-
-_RETRY_STATUSES = {
-    RetrySelection.DEAD: {JobStatus.DEAD},
-    RetrySelection.REJECTED: {JobStatus.REJECTED},
-    RetrySelection.ALL: {JobStatus.DEAD, JobStatus.REJECTED},
-}
-
-
 @_cli.command("run-batch")
 def run_batch(
     db_name: str | None = typer.Option(
@@ -390,7 +376,7 @@ def run_batch(
             dry_run=dry_run,
             output=output,
             manifest_path=manifest,
-            retry=_RETRY_STATUSES[retry] if retry is not None else set(),
+            retry=retry.statuses if retry is not None else set(),
         )
     )
 

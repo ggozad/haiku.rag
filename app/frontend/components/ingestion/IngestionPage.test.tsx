@@ -73,11 +73,21 @@ const answers: Record<string, unknown> = {
 	"databases/papers": { path: "/data/papers.lancedb" },
 };
 
+// What the ingester answers a write, by path.
+let actions: Record<string, () => Promise<unknown>>;
 let calls: { path: string; method: string }[];
 let page: EventTarget & { hidden: boolean };
 
 beforeEach(() => {
 	calls = [];
+	actions = {
+		"sources/docs/refresh": async () => ({ refreshed: true }),
+		"sources/docs/retry?status=dead": async () => ({
+			source_id: "docs",
+			retried: 2,
+			worker_breaker_open: false,
+		}),
+	};
 	page = document as unknown as EventTarget & { hidden: boolean };
 	Object.defineProperty(document, "hidden", {
 		configurable: true,
@@ -90,10 +100,15 @@ beforeEach(() => {
 			const path = String(url).replace("/api/ingester/", "");
 			const method = init?.method ?? "GET";
 			calls.push({ path, method });
-			if (method !== "GET")
-				return Response.json(
-					path.endsWith("/refresh") ? { refreshed: true } : {},
+			if (method !== "GET") {
+				const aborted = new Promise<never>((_, reject) =>
+					init?.signal?.addEventListener("abort", () =>
+						reject(new DOMException("aborted", "AbortError")),
+					),
 				);
+				const answer = actions[path]?.() ?? Promise.resolve({});
+				return Response.json(await Promise.race([answer, aborted]));
+			}
 			if (path.startsWith("jobs?limit=")) return Response.json([]);
 			const answer = answers[path];
 			return answer instanceof Response
@@ -242,6 +257,54 @@ describe("IngestionPage", () => {
 			),
 		);
 		await waitFor(() => expect(browserReads()).toBe(browsed + 1));
+	});
+
+	it("retries a source's dead jobs", async () => {
+		const user = userEvent.setup();
+		render(<IngestionPage />);
+		await screen.findByText("filesystem");
+		await user.click(screen.getByRole("button", { name: "Retry failed" }));
+		await screen.findByText("Queued 2 dead jobs of docs again.");
+		expect(writes()).toEqual([
+			{ path: "sources/docs/retry?status=dead", method: "POST" },
+		]);
+	});
+
+	it("says when a source's retried jobs wait on its worker breaker", async () => {
+		actions["sources/docs/retry?status=dead"] = async () => ({
+			source_id: "docs",
+			retried: 1,
+			worker_breaker_open: true,
+		});
+		const user = userEvent.setup();
+		render(<IngestionPage />);
+		await screen.findByText("filesystem");
+		await user.click(screen.getByRole("button", { name: "Retry failed" }));
+		await screen.findByText(
+			"Queued 1 dead job of docs again. Its worker breaker is open, so it waits until the breaker closes.",
+		);
+	});
+
+	it("waits for a source retry behind a long sweep", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		actions["sources/docs/retry?status=dead"] = () =>
+			new Promise((resolve) =>
+				setTimeout(
+					() =>
+						resolve({
+							source_id: "docs",
+							retried: 2,
+							worker_breaker_open: false,
+						}),
+					60_000,
+				),
+			);
+		const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+		render(<IngestionPage />);
+		await screen.findByText("filesystem");
+		await user.click(screen.getByRole("button", { name: "Retry failed" }));
+		await act(() => vi.advanceTimersByTimeAsync(60_000));
+		await screen.findByText("Queued 2 dead jobs of docs again.");
 	});
 
 	it("retries a dead letter", async () => {

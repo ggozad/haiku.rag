@@ -13,6 +13,18 @@ class JobStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class RetrySelection(StrEnum):
+    DEAD = "dead"
+    REJECTED = "rejected"
+    ALL = "all"
+
+    @property
+    def statuses(self) -> set[JobStatus]:
+        if self is RetrySelection.ALL:
+            return {JobStatus.DEAD, JobStatus.REJECTED}
+        return {JobStatus(self.value)}
+
+
 class JobOp(StrEnum):
     UPSERT = "upsert"
     DELETE = "delete"

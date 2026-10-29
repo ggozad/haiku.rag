@@ -62,6 +62,13 @@ class RefreshResponse(BaseModel):
     refreshed: bool
 
 
+class SourceRetryResponse(BaseModel):
+    source_id: str
+    retried: int
+    # The source's worker breaker: re-queued jobs wait while it is open.
+    worker_breaker_open: bool
+
+
 class CancelResponse(BaseModel):
     job_id: str
     cancelled: bool

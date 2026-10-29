@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,16 +15,19 @@ import { formatRelativeTime } from "@/lib/format";
 import { ingestedDatabases } from "@/lib/ingestion";
 import type { Source, Stats } from "./types";
 
-// The configured sources, their queued, dead and rejected counts, and Refresh.
+// The configured sources, their queued, dead and rejected counts, Refresh and
+// Retry failed.
 // The database column shows when the ingester writes more than one.
 export default function SourcesPanel({
 	sources,
 	stats,
 	onRefresh,
+	onRetry,
 }: {
 	sources: Source[];
 	stats: Stats | undefined;
 	onRefresh: (sourceId: string) => void;
+	onRetry: (sourceId: string) => void;
 }) {
 	const showDatabase = ingestedDatabases(sources).length > 1;
 	return (
@@ -90,7 +93,7 @@ export default function SourcesPanel({
 									</>
 								)}
 							</TableCell>
-							<TableCell className="text-right">
+							<TableCell className="space-x-1 text-right whitespace-nowrap">
 								<Button
 									size="sm"
 									variant="outline"
@@ -98,6 +101,14 @@ export default function SourcesPanel({
 								>
 									<RefreshCw />
 									Refresh
+								</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => onRetry(source.source_id)}
+								>
+									<RotateCcw />
+									Retry failed
 								</Button>
 							</TableCell>
 						</TableRow>

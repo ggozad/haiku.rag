@@ -251,6 +251,50 @@ async def test_a_retry_landing_before_a_removal_is_deleted_by_it(
     assert await _live(config, "papers") == []
 
 
+async def test_a_source_retry_racing_a_removal_completes_first_or_is_refused(
+    tmp_path, use_client, monkeypatch
+):
+    use_client({"papers": _mock_client()})
+    config = _papers_only(tmp_path)
+    async with _queue(config) as (jobs, _):
+        dead = await jobs.enqueue("papers", "file:///old.md", JobOp.UPSERT)
+        assert dead is not None and await jobs.claim_next("w") is not None
+        assert await jobs.mark_dead(dead.id, "boom", "w")
+    app = IngesterApp(config=config)
+
+    async with _serving(app), _api(app) as api:
+        assert app._jobs is not None
+        retrying, release = asyncio.Event(), asyncio.Event()
+        retry_failed = app._jobs.retry_failed
+
+        async def _paused(statuses, *, source_ids=None):
+            retrying.set()
+            await release.wait()
+            return await retry_failed(statuses, source_ids=source_ids)
+
+        monkeypatch.setattr(app._jobs, "retry_failed", _paused)
+        retry = partial(api.post, "/sources/papers/retry", params={"status": "dead"})
+        first = asyncio.create_task(retry())
+        await asyncio.wait_for(retrying.wait(), timeout=5.0)
+        waiting = asyncio.create_task(retry())
+        await asyncio.sleep(0.05)
+        removal = asyncio.create_task(app.remove_database("papers"))
+        await asyncio.sleep(0.05)
+        assert not removal.done() and not waiting.done()
+        late = await asyncio.wait_for(retry(), timeout=5.0)
+
+        release.set()
+        first_resp, waiting_resp = await asyncio.wait_for(
+            asyncio.gather(first, waiting), timeout=5.0
+        )
+        await asyncio.wait_for(removal, timeout=5.0)
+
+    assert first_resp.json()["retried"] == 1
+    assert waiting_resp.status_code == 409
+    assert late.status_code == 409
+    assert await _live(config, "papers") == []
+
+
 async def test_a_refresh_racing_a_removal_completes_first_or_is_refused(
     tmp_path, use_client, monkeypatch
 ):

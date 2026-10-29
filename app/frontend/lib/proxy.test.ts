@@ -173,6 +173,8 @@ describe("routes", () => {
 			);
 		for (const [method, path] of [
 			["POST", ["sources", "docs", "refresh"]],
+			["POST", ["sources", "docs", "retry"]],
+			["POST", ["sources", "fs:/tmp/docs", "retry"]],
 			["POST", ["jobs", "7", "retry"]],
 			["POST", ["dlq", "7", "retry"]],
 			["DELETE", ["jobs", "7"]],
@@ -187,7 +189,7 @@ describe("routes", () => {
 		] as const) {
 			expect((await send(method, [...path])).status).toBe(405);
 		}
-		expect(calls).toHaveLength(4);
+		expect(calls).toHaveLength(6);
 	});
 
 	it("sends no token when none is configured", async () => {

@@ -4,9 +4,10 @@ export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ path: string[] }> };
 
-// The operator actions: refresh a source, retry a job or a dead letter, cancel a job.
+// The operator actions: refresh a source, retry its failed jobs, retry a job or
+// a dead letter, cancel a job.
 const ACTIONS: Record<string, RegExp> = {
-	POST: /^(sources\/[^/]+\/refresh|jobs\/[^/]+\/retry|dlq\/[^/]+\/retry)$/,
+	POST: /^(sources\/.+\/(refresh|retry)|jobs\/[^/]+\/retry|dlq\/[^/]+\/retry)$/,
 	DELETE: /^jobs\/[^/]+$/,
 };
 
