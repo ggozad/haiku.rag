@@ -74,9 +74,9 @@ class SearchRequest:
 class IngestRequest:
     """A fetched document about to be converted. ``before_ingest`` hooks may
     replace ``body`` and add keys to ``metadata``, which starts empty. The
-    other fields describe the document. ``source_id`` is the ingesting
-    source, a PDF attachment's parent's included, and ``None`` for an ad-hoc
-    ingest."""
+    other fields describe the document. ``uri`` is the URI the document is
+    stored under. ``source_id`` is the ingesting source, a PDF attachment's
+    parent's included, and ``None`` for an ad-hoc ingest."""
 
     uri: str
     source_id: str | None

@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -12,7 +13,7 @@ from haiku.rag.config.models import AppConfig, HookConfig
 from haiku.rag.hooks import ENTRY_POINT_GROUP, Hook, build_hooks
 from haiku.rag.store.models.chunk import Chunk
 from tests.client.test_client import _docling_doc, _import
-from tests.platform import converts_pdf_locally
+from tests.platform import converts_pdf_locally, requires_symlinks
 
 
 class RecordingHook(Hook):
@@ -1037,7 +1038,8 @@ class RaisingIngestHook(Hook):
 
 
 @pytest.mark.asyncio
-async def test_a_raising_before_ingest_stores_nothing(temp_db_path, tmp_path):
+@pytest.mark.parametrize("uri", [None, "custom://notes"])
+async def test_a_raising_before_ingest_stores_nothing(temp_db_path, tmp_path, uri):
     from haiku.rag.hooks import HookError
 
     path = tmp_path / "doc.md"
@@ -1046,14 +1048,73 @@ async def test_a_raising_before_ingest_stores_nothing(temp_db_path, tmp_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         client._hooks = [RaisingIngestHook()]
         with pytest.raises(HookError) as raised:
-            await client.create_document_from_source(path)
+            await client.create_document_from_source(path, uri=uri)
         assert await client.list_documents() == []
 
     assert str(raised.value) == (
         "tests.test_hooks.RaisingIngestHook.before_ingest failed for "
-        f"{path.as_uri()}: RuntimeError: hook refused"
+        f"{uri or path.as_uri()}: RuntimeError: hook refused"
     )
     assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+class LookupIngestHook(Hook):
+    """Looks up the stored document by the request's URI, then rejects."""
+
+    def __init__(self):
+        self.found: list = []
+
+    async def before_ingest(self, client, request):
+        from haiku.rag.hooks import DocumentRejected
+
+        self.found.append(await client.get_document_by_uri(request.uri))
+        raise DocumentRejected("looked up")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "through",
+    [
+        "explicit_uri",
+        pytest.param("symlinked_path", marks=requires_symlinks),
+        pytest.param("symlinked_file_uri", marks=requires_symlinks),
+    ],
+)
+async def test_before_ingest_request_uri_finds_the_stored_document(
+    temp_db_path, tmp_path, through
+):
+    from haiku.rag.hooks import DocumentRejected
+
+    target = tmp_path / "target.md"
+    target.write_bytes(b"# Notes\n\nBody.\n")
+    if through == "explicit_uri":
+        source: Path | str = target
+        uri = stored_uri = "custom://notes"
+    else:
+        link = tmp_path / "link.md"
+        link.symlink_to(target)
+        source = link if through == "symlinked_path" else link.as_uri()
+        uri, stored_uri = None, link.as_uri()
+    hook = LookupIngestHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        stored = await client.import_document(
+            _docling_doc("notes", "Body"),
+            [
+                Chunk(
+                    content="Body",
+                    embedding=[0.1] * get_config().embeddings.model.vector_dim,
+                    order=0,
+                )
+            ],
+            uri=stored_uri,
+        )
+        client._hooks = [hook]
+        with pytest.raises(DocumentRejected) as raised:
+            await client.create_document_from_source(source, uri=uri)
+
+    assert [doc.id for doc in hook.found] == [stored.id]
+    assert raised.value.uri == stored_uri
 
 
 class NoReturnIngestHook(Hook):
