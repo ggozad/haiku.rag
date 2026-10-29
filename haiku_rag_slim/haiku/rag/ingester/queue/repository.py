@@ -165,6 +165,27 @@ class JobRepo:
                 self.job_available.notify_all()
         return _row_to_job(row) if row else None
 
+    def _ready(
+        self, now: str, source_ids: Collection[str] | None
+    ) -> list[sa.ColumnElement[bool]]:
+        """The jobs a claim can take at `now`."""
+        return [
+            self._owned,
+            jobs.c.status == "queued",
+            jobs.c.scheduled_at <= now,
+            *_of_sources(source_ids),
+        ]
+
+    async def ready_sources(self, source_ids: Collection[str]) -> set[str]:
+        """The sources in `source_ids` with a job a claim can take now."""
+        stmt = (
+            sa.select(jobs.c.source_id)
+            .distinct()
+            .where(*self._ready(_utcnow_iso(), source_ids))
+        )
+        async with self._engine.connect() as conn:
+            return set((await conn.execute(stmt)).scalars())
+
     async def claim_next(
         self, worker_id: str, *, source_ids: Collection[str] | None = None
     ) -> Job | None:
@@ -178,15 +199,9 @@ class JobRepo:
         `source_ids` limits the claim to jobs of those sources, and an empty
         collection claims nothing. None claims from every source."""
         now = _utcnow_iso()
-        conditions = [
-            self._owned,
-            jobs.c.status == "queued",
-            jobs.c.scheduled_at <= now,
-        ]
-        conditions.extend(_of_sources(source_ids))
         candidate = (
             sa.select(jobs.c.id)
-            .where(*conditions)
+            .where(*self._ready(now, source_ids))
             .order_by(jobs.c.scheduled_at, jobs.c.id)
             .limit(1)
             .with_for_update(skip_locked=True)

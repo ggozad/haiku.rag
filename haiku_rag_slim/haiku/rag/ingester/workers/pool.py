@@ -1,7 +1,9 @@
 import asyncio
+import itertools
 import logging
 import os
 import time
+from collections import Counter
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -113,6 +115,9 @@ class WorkerPool:
         self._idle.set()
         self._pending_releases: set[asyncio.Task] = set()
         self._breakers: dict[str, CircuitBreaker] = {}
+        # source_id -> sequence number of its last claim, for the tie-break.
+        self._last_claim: dict[str, int] = {}
+        self._claims = itertools.count()
 
     def _worker_id(self, i: int) -> str:
         return f"{self._instance}-{i}"
@@ -215,20 +220,31 @@ class WorkerPool:
             self._source_retry.pop(source_id, None)
             self._metadata_providers.pop(source_id, None)
             self._breakers.pop(source_id, None)
+            self._last_claim.pop(source_id, None)
 
     async def _claim(
         self, worker_id: str, *, open_breakers: bool = False
     ) -> Job | None:
-        """Claim a job of a served source. The sources are read under the
-        lock, so a claim queued behind `unserve` sees its result."""
+        """Claim the oldest job of the ready source with the fewest jobs in
+        flight, then the one claimed least recently. The sources are read under
+        the lock, so a claim queued behind `unserve` sees its result."""
         async with self.claim_lock:
             source_ids = (
                 set(self._served) if open_breakers else self._claimable_source_ids()
             )
-            job = await self._jobs.claim_next(worker_id, source_ids=source_ids)
-            if job is not None:
-                self._track(job)
-            return job
+            if len(source_ids) > 1:
+                source_ids = await self._jobs.ready_sources(source_ids)
+            in_flight = Counter(self._executions.values())
+            for source_id in sorted(
+                source_ids,
+                key=lambda s: (in_flight[s], self._last_claim.get(s, -1), s),
+            ):
+                job = await self._jobs.claim_next(worker_id, source_ids={source_id})
+                if job is not None:
+                    self._last_claim[source_id] = next(self._claims)
+                    self._track(job)
+                    return job
+            return None
 
     def _track(self, job: Job) -> None:
         assert job.claimed_by is not None, "only claimed jobs are in flight"

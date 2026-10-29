@@ -1805,3 +1805,85 @@ async def _until(predicate, timeout: float = 5.0) -> None:
         if asyncio.get_running_loop().time() > deadline:
             raise AssertionError("condition not reached within timeout")
         await asyncio.sleep(0.02)
+
+
+# --- claim order across sources ---
+
+
+def _ingested(client) -> list[str]:
+    return [call.args[0] for call in client._ingest_observed.await_args_list]
+
+
+async def test_claims_alternate_between_sources_with_one_worker(jobs, sync):
+    """A source enqueued later is claimed before the backlog ahead of it
+    drains, and each source's jobs are claimed oldest first."""
+    client = _ingesting_client()
+    for uri in ("a1", "a2", "a3"):
+        await jobs.enqueue("a", uri, JobOp.UPSERT)
+    await jobs.enqueue("b", "b1", JobOp.UPSERT)
+    pool = _pool(client, jobs, sync, source_ids=("a", "b"))
+
+    assert await pool.drain_once() == 4
+
+    assert _ingested(client) == ["a1", "b1", "a2", "a3"]
+
+
+async def test_jobs_in_flight_outrank_claim_recency(jobs, sync):
+    client = _ingesting_client()
+    for source_id, uri in (("a", "a1"), ("a", "a2"), ("b", "b1"), ("b", "b2")):
+        await jobs.enqueue(source_id, uri, JobOp.UPSERT)
+    pool = _pool(client, jobs, sync, source_ids=("a", "b"))
+
+    running = await pool._claim(pool._worker_id(0))
+    assert running is not None and running.uri == "a1"
+    finished = await pool._claim(pool._worker_id(1))
+    assert finished is not None and finished.uri == "b1"
+    await pool._process(finished)
+
+    nxt = await pool._claim(pool._worker_id(1))
+    assert nxt is not None and nxt.uri == "b2"
+
+
+async def test_one_claimable_source_claims_without_reading_ready_sources(
+    jobs, sync, monkeypatch
+):
+    reads = []
+    real = jobs.ready_sources
+
+    async def counted(source_ids):
+        reads.append(set(source_ids))
+        return await real(source_ids)
+
+    monkeypatch.setattr(jobs, "ready_sources", counted)
+    await jobs.enqueue("a", "a1", JobOp.UPSERT)
+    await jobs.enqueue("b", "b1", JobOp.UPSERT)
+
+    single = _pool(_ingesting_client(), jobs, sync, source_ids=("a",))
+    assert await single._claim(single._worker_id(0)) is not None
+    assert reads == []
+
+    both = _pool(_ingesting_client(), jobs, sync, source_ids=("a", "b"))
+    assert await both._claim(both._worker_id(0)) is not None
+    assert reads == [{"a", "b"}]
+
+
+async def test_a_claim_falls_through_when_the_chosen_source_is_drained(
+    jobs, sync, monkeypatch
+):
+    """Another process can take a source's last ready job between the read
+    and the claim."""
+    real = jobs.ready_sources
+
+    async def raced(source_ids):
+        ready = await real(source_ids)
+        assert await jobs.claim_next("peer", source_ids={"a"}) is not None
+        return ready
+
+    monkeypatch.setattr(jobs, "ready_sources", raced)
+    await jobs.enqueue("a", "a1", JobOp.UPSERT)
+    await jobs.enqueue("b", "b1", JobOp.UPSERT)
+    pool = _pool(_ingesting_client(), jobs, sync, source_ids=("a", "b"))
+
+    claimed = await pool._claim(pool._worker_id(0))
+
+    assert claimed is not None and claimed.uri == "b1"

@@ -309,7 +309,7 @@ ingester:
       jitter: 0.25                  # ±25%
 ```
 
-`worker_count` workers each process one job at a time, so it is also the most jobs in flight. A job failing with a transient error is retried with exponential backoff and jitter up to `max_attempts`, then moves to the dead-letter queue. A permanent error skips retries: an unsupported extension, an HTTP 4xx other than 408 and 429, an object-store credential or configuration error.
+`worker_count` workers each process one job at a time, so it is also the most jobs in flight. Each claim takes the oldest ready job of the source with the fewest jobs in flight, and among those the source claimed least recently, so a backlog in one source does not hold every worker. The share is per source, not per database: a database with ten sources gets ten shares against a database with one. Processes sharing a queue each balance only their own claims. A job failing with a transient error is retried with exponential backoff and jitter up to `max_attempts`, then moves to the dead-letter queue. A permanent error skips retries: an unsupported extension, an HTTP 4xx other than 408 and 429, an object-store credential or configuration error.
 
 A DELETE job skipped because the resource is back at the source completes successfully and preserves its sync state and earlier dead or rejected jobs. Discovery can still detect a later removal. If the document belongs to another source or has no owner, the worker leaves it indexed and removes only the requesting source's sync state and failed jobs for that URI.
 
@@ -678,6 +678,10 @@ A queue that several ingesters already wrote to needs a mapping from `source_id`
 ##### Upgrading a queue from schema 4
 
 Queue schema 5 adds the `rejected` job status. The migration changes no table, but ingesters sharing a server queue still upgrade together, in the order above. SQLite queues migrate themselves.
+
+##### Upgrading a queue from schema 5
+
+Queue schema 6 adds an index over each source's queued jobs. Server queues migrate with `haiku-ingester queue migrate`, in the order above. SQLite queues migrate themselves.
 
 ### Logs and tracing
 

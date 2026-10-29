@@ -7,6 +7,11 @@
 - The ingester's `POST /sources/{id}/retry?status=dead|rejected|all` re-queues a source's failed jobs (#756).
 - The ingester dashboard and the app's ingestion page retry a source's dead jobs with Retry failed (#756).
 
+### Changed
+
+- Ingester workers claim from the ready source with the fewest jobs in flight, then the one claimed least recently. Jobs stay oldest first within a source (#755).
+- The ingester queue is at schema 6, which adds `idx_jobs_source_claimable`. Run `haiku-ingester queue migrate` on a server queue (#755).
+
 ### Fixed
 
 - The ingester dashboard's Refresh works for a source id containing an apostrophe.

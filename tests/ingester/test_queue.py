@@ -484,6 +484,29 @@ async def test_claim_next_with_no_sources_claims_nothing(jobs):
     assert await jobs.claim_next("w", source_ids=set()) is None
 
 
+async def test_ready_sources_lists_the_sources_a_claim_can_take(engine, jobs):
+    """Only listed sources with a queued job due now, in the repo's namespace."""
+    assert await jobs.enqueue("ready", "u1", JobOp.UPSERT) is not None
+    assert await jobs.enqueue("ready", "u2", JobOp.UPSERT) is not None
+    later = await jobs.enqueue("later", "u", JobOp.UPSERT)
+    assert later is not None
+    assert await jobs.enqueue("claimed", "u", JobOp.UPSERT) is not None
+    assert await jobs.claim_next("w", source_ids={"claimed"}) is not None
+    assert await jobs.enqueue("unlisted", "u", JobOp.UPSERT) is not None
+    assert await JobRepo(engine, "other").enqueue("theirs", "u") is not None
+    future = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
+    async with engine.begin() as c:
+        await c.execute(
+            sa.update(jobs_table)
+            .where(jobs_table.c.id == later.id)
+            .values(scheduled_at=future)
+        )
+
+    listed = {"ready", "later", "claimed", "theirs"}
+    assert await jobs.ready_sources(listed) == {"ready"}
+    assert await jobs.ready_sources(set()) == set()
+
+
 async def test_cancel_unconfigured_deletes_live_jobs_of_other_sources(jobs):
     kept = await jobs.enqueue("kept", "u", JobOp.UPSERT)
     claimed = await jobs.enqueue("gone", "claimed", JobOp.UPSERT)
@@ -2115,11 +2138,30 @@ async def test_migration_v4_to_v5_keeps_the_jobs(engine):
             )
         )
 
-    assert SCHEMA_VERSION == 5
-    assert await apply_migrations(engine) == 5
+    assert await apply_migrations(engine) == SCHEMA_VERSION
     async with engine.connect() as conn:
         ids = (await conn.execute(sa.text("SELECT id FROM jobs"))).scalars().all()
     assert ids == ["old-1"]
+
+
+async def test_migration_v5_to_v6_adds_the_per_source_claim_index(engine, jobs):
+    queued = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert queued is not None
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("DROP INDEX idx_jobs_source_claimable"))
+        await conn.execute(sa.text("UPDATE schema_version SET version = 5"))
+
+    assert await apply_migrations(engine) == SCHEMA_VERSION
+    async with engine.connect() as conn:
+        names = (
+            await conn.execute(
+                sa.text("SELECT name FROM sqlite_master WHERE type = 'index'")
+            )
+        ).scalars()
+        assert "idx_jobs_source_claimable" in set(names)
+    assert await jobs.ready_sources({"s"}) == {"s"}
+    claimed = await jobs.claim_next("w", source_ids={"s"})
+    assert claimed is not None and claimed.id == queued.id
 
 
 # --- retry_failed ---

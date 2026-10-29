@@ -182,6 +182,11 @@ async def apply_migrations(engine: AsyncEngine) -> int:
                             "ADD PRIMARY KEY (namespace, source_id, uri)"
                         )
                     )
+            if current < 6:
+                (index,) = (
+                    i for i in jobs.indexes if i.name == "idx_jobs_source_claimable"
+                )
+                await conn.execute(CreateIndex(index, if_not_exists=True))
             await conn.execute(sa.update(schema_version).values(version=SCHEMA_VERSION))
     return SCHEMA_VERSION
 

@@ -89,6 +89,18 @@ async def test_enqueue_after_terminal_succeeds(postgres_dburi):
         assert second is not None and second.id != first.id
 
 
+async def test_ready_sources_lists_sources_with_due_jobs(postgres_dburi):
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine, "mine")
+        assert await jobs.enqueue("a", "u1", JobOp.UPSERT) is not None
+        assert await jobs.enqueue("a", "u2", JobOp.UPSERT) is not None
+        assert await jobs.enqueue("b", "u", JobOp.UPSERT) is not None
+        assert await jobs.claim_next("w", source_ids={"b"}) is not None
+        assert await JobRepo(engine, "theirs").enqueue("c", "u") is not None
+
+        assert await jobs.ready_sources({"a", "b", "c"}) == {"a"}
+
+
 async def test_skip_locked_claims_each_job_once(postgres_dburi):
     """FOR UPDATE SKIP LOCKED: many concurrent claims over real Postgres
     connections each take a distinct job, with none claimed twice. Without
@@ -356,7 +368,7 @@ async def test_migration_v3_to_v4_keeps_a_populated_queue(postgres_dburi):
         assert job_ns == ""
         assert tuple(sync_row) == ("", "r1")
         assert key_columns == {"namespace", "source_id", "uri"}
-        assert len(namespaced) == 4
+        assert len(namespaced) == 5
 
         repo = JobRepo(engine)
         old = await repo.get_job("old-1")
