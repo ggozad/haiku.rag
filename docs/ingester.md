@@ -65,7 +65,7 @@ haiku-ingester run-batch --db-name wiki      # wiki's sources only
 
 The ingester writes every database a key names, each through its own client, and leaves the other entries to readers, such as `papers-release` here. A key naming no configured database, or one configured at a tag, fails at load, and so does an entry without sources. A configuration carrying `ingester.sources` fails at load. `run-batch` refuses to start when `ingester.databases` names no database. `serve` starts, ingests nothing until a [reload](#reloading-databases) adds a database, and deletes every queued and claimed job of its queue namespace, as it does for any source it does not configure.
 
-One process serves every database. A [reload](#reloading-databases) adds or removes one while the others keep ingesting. A database that fails to start is logged at ERROR and skipped, and the others start: for example when it needs a migration, when its recorded embedder differs from the configuration, when its store is unreachable, when a hook's lifespan raises, when a source names an unregistered metadata provider, or when reconciliation fails. The next reload retries it. `/health` lists each skipped database with its error and reports `degraded`. Startup fails when every configured database fails, and deletes no job then. Invalid configuration, an unreachable queue, two sources sharing an id and two databases at one location still fail startup. If a conversion stalls, the process exits (see [Run it under a supervisor](#run-it-under-a-supervisor)), and every database waits for the restart. If a database's writes fail while the ingester runs, only that database's sources pause, since each source has its own worker circuit breaker. If databases must not stop together, run one ingester per database, each with its own queue or namespace.
+One process serves every database. A [reload](#reloading-databases) adds or removes one while the others keep ingesting. A database that fails to start is logged at ERROR and skipped, and the others start: for example when it needs a migration, when its recorded embedder differs from the configuration, when its store is unreachable, when a hook's lifespan raises, when a source names an unregistered metadata provider or one whose factory fails, or when reconciliation fails. The next reload retries it. `/health` lists each skipped database with its error and reports `degraded`. Startup fails when every configured database fails, and deletes no job then. Invalid configuration, an unreachable queue, two sources sharing an id and two databases at one location still fail startup. If a conversion stalls, the process exits (see [Run it under a supervisor](#run-it-under-a-supervisor)), and every database waits for the restart. If a database's writes fail while the ingester runs, only that database's sources pause, since each source has its own worker circuit breaker. If databases must not stop together, run one ingester per database, each with its own queue or namespace.
 
 Source ids are unique across every database: startup fails when two sources share an id, given or derived from their target. Two keys whose databases sit at one location fail startup too, a path and its `file://` URI included, and two names a case-insensitive filesystem treats as one directory, since a database has one writer. Each open database holds its own embedder client.
 
@@ -194,9 +194,16 @@ A source can attach custom metadata to every document it ingests through a `meta
           id: handbook
           base_url: https://dav.example.com/remote.php/dav/files/svc
           metadata_provider: example-provider
+        - type: webdav
+          id: policies
+          base_url: https://dav.example.com/remote.php/dav/files/policies
+          metadata_provider:
+            name: example-provider
+            options:
+              department: legal
 ```
 
-The entry point is a zero-argument callable returning the provider, so a class is its own factory. The ingester calls the provider with `(source_id, uri, result)`, where `result` is the source's `FetchResult`, and merges the returned dict into the document's metadata:
+`metadata_provider` takes a name, or `name` and `options`. The entry point is a callable returning the provider, so a class is its own factory. It receives `options` as keyword arguments, and none for a bare name. The ingester calls the provider with `(source_id, uri, result)`, where `result` is the source's `FetchResult`, and merges the returned dict into the document's metadata:
 
 ```python
 # example_pkg/__init__.py
@@ -206,15 +213,21 @@ from haiku.rag.sources import FetchResult
 
 
 class Provider:
+    def __init__(self, department: str | None = None):
+        self.department = department
+
     async def __call__(
         self, source_id: str, uri: str, result: FetchResult
     ) -> dict:
         path = urlparse(uri).path
-        return {
+        metadata = {
             "collection": source_id,
             "folder": path.rsplit("/", 1)[0] or "/",
             "bytes": str(len(result.body)),
         }
+        if self.department:
+            metadata["department"] = self.department
+        return metadata
 ```
 
 ```toml
@@ -223,7 +236,7 @@ class Provider:
 example-provider = "example_pkg:Provider"
 ```
 
-The provider is built once at startup, so it can hold a client or a cache. It runs when a document is fetched for a new or changed revision. An unchanged document is skipped without a fetch and keeps its stored provider metadata. The keys `md5`, `source_revision`, `content_type`, `source_id` and `parent_uri` are removed from provider output. A `metadata_provider` with no installed entry point fails startup. A provider exception is handled like any ingestion error: network and timeout errors retry, others go to the dead-letter queue.
+The provider is built once per source when its database starts, so it can hold a client or a cache. When a source's provider has no installed entry point, fails to import, or raises from its factory, the source's database does not start, and the error names the source and the provider (see [Configure sources](#configure-sources)). Options are part of the source, so a [reload](#reloading-databases) that changes them removes and adds the database, which builds the provider again with the new options. The provider runs when a document is fetched for a new or changed revision. An unchanged document is skipped without a fetch and keeps its stored provider metadata, so changed options reach a document at its next change, and the others keep their stored provider metadata until they are re-ingested. The keys `md5`, `source_revision`, `content_type`, `source_id` and `parent_uri` are removed from provider output. A provider exception is handled like any ingestion error: network and timeout errors retry, others go to the dead-letter queue.
 
 The provider is also called for each [PDF attachment](configuration/processing.md#pdf-embedded-attachments) the ingester stores, new or with changed bytes, at any nesting depth. It receives the source id of the document the attachment came from, the attachment's URI (`<parent uri>#attachment=<percent-encoded name>`; nested attachments chain fragments), and a `FetchResult` holding the attachment's bytes and guessed content type, with `result.extra_metadata["parent_uri"]` set and `disk_path` and `revision` unset. A provider that should treat attachments differently can test `"parent_uri" in result.extra_metadata`. It is not called for an attachment the converter does not support, or for one whose bytes are unchanged, which keeps its stored provider metadata. A provider exception for an attachment is handled like one for the document it came from. Attachments carry no `source_id` (see [Which source a document came from](#which-source-a-document-came-from)).
 

@@ -6,6 +6,7 @@
 
 - The ingester's `POST /sources/{id}/retry?status=dead|rejected|all` re-queues a source's failed jobs (#756).
 - The ingester dashboard and the app's ingestion page retry a source's dead jobs with Retry failed (#756).
+- A source's `metadata_provider` accepts `{name, options}`. The options are passed to the provider's factory as keyword arguments (#761).
 
 ### Changed
 

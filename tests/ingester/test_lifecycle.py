@@ -12,7 +12,12 @@ import pytest
 from httpx import ASGITransport
 
 from haiku.rag.client.scope import DatabaseScope
-from haiku.rag.config import AppConfig, FSSourceConfig, SourceConfig
+from haiku.rag.config import (
+    AppConfig,
+    FSSourceConfig,
+    MetadataProviderConfig,
+    SourceConfig,
+)
 from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.exceptions import PermanentError
 from haiku.rag.ingester.pollers.manager import PollerManager
@@ -802,6 +807,42 @@ async def test_a_database_with_an_unknown_metadata_provider_is_never_opened(
     assert [record.getMessage() for record in records] == [
         "Database 'wiki' failed to start and is skipped: Source 'wiki' references unknown metadata provider 'missing'; no entry point registered under 'haiku.rag.metadata_providers'."
     ]
+
+
+async def test_a_database_whose_metadata_provider_factory_fails_is_skipped(
+    tmp_path, monkeypatch
+):
+    def _strict(**options):
+        raise TypeError(f"unexpected options {sorted(options)}")
+
+    entry_point = SimpleNamespace(load=lambda: _strict)
+    monkeypatch.setattr(
+        "haiku.rag.ingester.app.load_metadata_providers",
+        lambda: {"strict": entry_point},
+    )
+    opened = []
+    papers = _Opened(_mock_client())
+
+    def _covering(scope, *a, **k):
+        opened.append(scope.names[0])
+        return papers
+
+    stub = MagicMock()
+    stub._covering = _covering
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    config = _two_databases(tmp_path)
+    config.ingester.databases["wiki"].sources[
+        0
+    ].metadata_provider = MetadataProviderConfig(name="strict", options={"tier": "a"})
+    app = IngesterApp(config=config)
+
+    with capture_logs(_APP_LOGGER, logging.ERROR):
+        async with _serving(app):
+            assert opened == ["papers"]
+            assert list(app._running) == ["papers"]
+            assert app._failed["wiki"] == (
+                "Source 'wiki' metadata provider 'strict': unexpected options ['tier']"
+            )
 
 
 async def test_every_adapter_of_a_skipped_database_is_closed(tmp_path, monkeypatch):

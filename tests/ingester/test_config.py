@@ -12,6 +12,7 @@ from haiku.rag.config import (
     IngestedDatabase,
     IngesterConfig,
     LanceDBConfig,
+    MetadataProviderConfig,
     QueueConfig,
     RetryPolicyConfig,
     S3SourceConfig,
@@ -105,6 +106,41 @@ def test_source_carries_metadata_provider_name():
         }
     )
     assert cfg.sources[0].metadata_provider == "example"
+
+
+def test_source_carries_metadata_provider_options():
+    cfg = IngestedDatabase.model_validate(
+        {
+            "sources": [
+                {
+                    "type": "fs",
+                    "root": "/tmp/docs",
+                    "metadata_provider": {
+                        "name": "example",
+                        "options": {"classification": "secret"},
+                    },
+                }
+            ]
+        }
+    )
+    assert cfg.sources[0].metadata_provider == MetadataProviderConfig(
+        name="example", options={"classification": "secret"}
+    )
+
+
+def test_metadata_provider_rejects_unknown_keys():
+    with pytest.raises(ValidationError):
+        IngestedDatabase.model_validate(
+            {
+                "sources": [
+                    {
+                        "type": "fs",
+                        "root": "/tmp/docs",
+                        "metadata_provider": {"name": "example", "option": {}},
+                    }
+                ]
+            }
+        )
 
 
 def test_discriminator_picks_http_source():

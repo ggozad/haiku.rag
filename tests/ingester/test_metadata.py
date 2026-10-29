@@ -1,5 +1,6 @@
 import pytest
 
+from haiku.rag.config import MetadataProviderConfig
 from haiku.rag.ingester import metadata as metadata_module
 from haiku.rag.ingester.metadata import (
     ENTRY_POINT_GROUP,
@@ -98,3 +99,59 @@ def test_build_providers_does_not_load_unreferenced_entry_points():
 
     assert isinstance(providers["docs"], _Provider)
     assert discovered["unused"].loaded is False
+
+
+class _OptionsProvider:
+    def __init__(self, **options):
+        self.options = options
+
+    async def __call__(self, source_id: str, uri: str, result: FetchResult) -> dict:
+        return dict(self.options)
+
+
+async def test_build_providers_passes_options_to_the_factory():
+    discovered = {"tuned": _FakeEntryPoint("tuned", _OptionsProvider)}
+    providers = build_providers(
+        [
+            ("docs", MetadataProviderConfig(name="tuned", options={"tier": "a"})),
+            ("wiki", "tuned"),
+        ],
+        discovered,
+    )
+
+    result = FetchResult(
+        uri="u",
+        body=b"x",
+        content_type="text/plain",
+        content_hash="9dd4e461268c8034f5c8564e155c67a6",
+    )
+    assert await providers["docs"]("docs", "u", result) == {"tier": "a"}
+    assert await providers["wiki"]("wiki", "u", result) == {}
+
+
+def test_build_providers_names_source_and_provider_when_the_factory_fails():
+    def _strict(**options):
+        raise TypeError(f"unexpected options {sorted(options)}")
+
+    discovered = {"strict": _FakeEntryPoint("strict", _strict)}
+    with pytest.raises(
+        ValueError,
+        match=r"Source 'docs' metadata provider 'strict': unexpected options \['tier'\]",
+    ) as raised:
+        build_providers(
+            [("docs", MetadataProviderConfig(name="strict", options={"tier": "a"}))],
+            discovered,
+        )
+    assert isinstance(raised.value.__cause__, TypeError)
+
+
+def test_build_providers_names_source_and_provider_when_loading_fails():
+    class _BrokenEntryPoint:
+        def load(self):
+            raise ImportError("optional dependency missing")
+
+    with pytest.raises(
+        ValueError,
+        match="Source 'docs' metadata provider 'broken': optional dependency missing",
+    ):
+        build_providers([("docs", "broken")], {"broken": _BrokenEntryPoint()})
