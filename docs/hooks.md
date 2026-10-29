@@ -4,6 +4,8 @@ Hooks let external packages transform or refuse documents before ingestion, obse
 
 A hook is a class registered under the `haiku.rag.hooks` entry-point group and activated by name in config. Hooks run everywhere the client runs: CLI, MCP server, RAG capability, and your own code.
 
+A hook is behaviour for the whole process. It can transform, reject or observe any document or search that passes through the client. Metadata for one source belongs in that source's [metadata provider](ingester.md#metadata-providers). The source's configuration names it, and an ingester reload changes it. The ingester's reload refuses a change to `hooks`, which needs a restart.
+
 ## Hook points
 
 Subclass `haiku.rag.hooks.Hook` and override any subset:
@@ -23,7 +25,7 @@ Hooks receive the `HaikuRAG` client, so they can search, read repositories, and 
 
 ## Transforming documents before ingestion
 
-`before_ingest` runs for every document ingested from a source (`create_document_from_source`, `add-src`, the ingester) and for every PDF attachment with a supported extension. `IngestRequest` carries `uri`, `source_id`, `body`, `content_type`, and `metadata`. A hook may replace `body` and add keys to `metadata`, which starts empty, and returns the request. `uri` is the URI the document is stored under: the `uri` given to `create_document_from_source`, else the source as given, with a local path made absolute and its symlinks kept. `source_id` is the ingesting source, an attachment's parent's included, and `None` for an ad-hoc ingest. An attachment's `uri` is `<parent uri>#attachment=<name>`, with the name URL-quoted.
+`before_ingest` runs for every document ingested from a source (`create_document_from_source`, `add-src`, the ingester) and for every PDF attachment with a supported extension. `IngestRequest` carries `uri`, `source_id`, `body`, `content_type`, and `metadata`. A hook may replace `body` and add keys to `metadata`, which starts empty, and returns the request. `uri` is the URI the document is stored under: the `uri` given to `create_document_from_source`, else the source as given, with a local path made absolute and its symlinks kept. A hook reads the stored document, if there is one, with `client.get_document_by_uri(request.uri)`. `source_id` is the ingesting source, an attachment's parent's included. An ad-hoc ingest passes the source recorded on the stored document, and `None` when there is none. An attachment's `uri` is `<parent uri>#attachment=<name>`, with the name URL-quoted.
 
 ```python
 class StripBoilerplateHook(Hook):
@@ -34,12 +36,44 @@ class StripBoilerplateHook(Hook):
         return request
 ```
 
+- `before_ingest` runs on every fetch, before the unchanged-bytes check, so it also runs for bytes that have not changed: a file whose modification time moved, an object uploaded again with the same bytes, an `add-src` re-run of a document stored without a `source_revision`.
 - The stored `md5` is that of the body the hook returns, and `source_revision` stays the source's. An unchanged source file that transforms to the same bytes is not re-ingested.
 - Keys a hook adds win over a metadata provider's and over the source's own metadata. The keys ingestion owns (`content_type`, `md5`, `source_revision`, `source_id`, `parent_uri`) are dropped. Any other value that is not JSON-serialisable fails the ingest as a `HookError` before conversion. A metadata provider receives the fetched bytes, never the hook's.
 - Raising `DocumentRejected(reason)` refuses the document. Nothing is written, and a stored copy stays. A hook that wants a stored standalone document gone deletes it through the client before raising. A stored attachment cannot be deleted on its own while its PDF is stored: `delete_document` raises `AttachmentDeletionError`, which fails the PDF's ingest as a `HookError`. Ingesting one document raises the exception with `uri` set, reading `<uri> rejected: <reason>`. A directory `add-src` logs that message as a warning and goes on to the next file, and a PDF's attachments skip a rejected one the same way. The ingester records the job `rejected` with that message, on the first attempt. A rejection is not a failure: it stays out of the dead-letter queue and does not make `run-batch` exit non-zero. `run-batch --retry rejected`, or the API's retry under `serve`, re-runs the job once the hook accepts the document.
 - Any other exception fails the ingest as a `HookError` carrying the hook's exception as its cause, as does returning anything but an `IngestRequest` whose `body` is `bytes`. The ingester records the job dead on the first attempt. It retries instead when the hook's exception came from a connection, DNS or timeout error, an httpx transport error, an httpx HTTP 408, 429 or 5xx response, or a `TransientError`, anywhere in its chain of causes, the members of an exception group included. A hook raises `TransientError` for any other failure worth retrying.
 - The ingester skips a document whose source revision is unchanged before fetching it, so a new hook, or new options, changes stored documents only when their source changes or a FULL rebuild runs.
 - A PDF's attachments are ingested after the PDF itself, and not atomically with it: an attachment failure leaves the PDF and the attachments before it stored, and fails the ingest. A retry re-reconciles the attachments. A rejected attachment fails nothing, and the PDF is stored complete, so the hook sees that attachment again only when the PDF changes or a FULL rebuild runs.
+
+## Metadata lifetime
+
+A key written after an ingest lasts until the next ingest that writes the document's content: a source ingest of changed bytes, or `create_document` or `import_document` over its URI.
+
+**A write of content replaces the metadata.** A source ingest of changed bytes stores the caller's metadata, the metadata provider's, the source's and the `before_ingest` hooks', each winning over the ones before it. The ingestion-owned keys come from the fetch. Of the stored keys only `source_id` and `parent_uri` carry over, so a key written after the ingest, by `update_document(metadata=...)` for example, is gone after the next change to the source. `create_document` and `import_document` over a stored URI replace it the same way with the caller's metadata alone: no provider or `before_ingest` hook runs, and `after_ingest` fires. `update_document(content=...)` keeps the stored metadata unless it is also given `metadata`. For a PDF ingested from a source with `extract_pdf_attachments` on, the `after_ingest` event's document has no `md5` or `source_revision` yet: they are written once its attachments are reconciled.
+
+**An unchanged source writes no content.** An unchanged revision skips the fetch: no provider or hook runs, and the caller's metadata is merged over the stored keys. Unchanged bytes under a new revision run the provider and the `before_ingest` hooks, and their keys and the source's are merged over the stored keys. Other stored keys stay, and `after_ingest` does not fire. A PDF attachment with unchanged bytes is not written at all: it keeps its stored metadata, and keys added by a hook are dropped.
+
+**A FULL rebuild** fetches each source-backed document again and runs `before_ingest`, but no metadata provider, and fires no `after_ingest`. It passes the stored metadata as the caller's, so stored keys stay unless a hook or the source sets them.
+
+Derived metadata belongs where it is recomputed when its input changes:
+
+- Keys computed from the fetched bytes belong in `before_ingest` or a metadata provider. A source ingest that writes content computes them again. A FULL rebuild runs only the hooks. `create_document`, `import_document(s)` and `update_document` run neither.
+- Keys computed from the converted text belong in `after_ingest`, written with a metadata-only `update_document`, which does not fire `after_ingest` again. They last until the next such ingest, which fires `after_ingest` again. A FULL rebuild keeps them and fires no `after_ingest`, so after one they can describe the content it replaced.
+- Expensive work belongs in `after_ingest`, which runs only after content is written. `before_ingest` runs on every fetch.
+
+```python
+class LanguageHook(Hook):
+    async def after_ingest(self, client, event):
+        for doc in event.documents:
+            stored = await client.get_document_by_id(doc.id)
+            if stored is None:
+                continue
+            language = detect_language(doc.content)
+            await client.update_document(
+                doc.id, metadata={**stored.metadata, "language": language}
+            )
+```
+
+`update_document(metadata=...)` replaces the stored metadata with the caller's and keeps the ingestion-owned keys. Every hook receives the same event, and its documents lack keys written by an earlier hook.
 
 ## Several databases
 
