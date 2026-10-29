@@ -21,8 +21,13 @@ def vcr_cassette_dir():
 
 
 @pytest.mark.vcr()
-async def test_fs_ingest_writes_source_revision_to_metadata(temp_db_path, tmp_path):
-    file_path = tmp_path / "doc.md"
+async def test_fs_revision_round_trips_through_a_sweep(temp_db_path, tmp_path):
+    """Ingest a file, build a sync_state-shaped snapshot from
+    document.metadata and hand it to FSSource.discover(), as the periodic
+    poller does: UNCHANGED until the file changes, then UPSERT."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir()
+    file_path = docs_dir / "doc.md"
     file_path.write_text("hello")
     expected_revision = str(file_path.stat().st_mtime_ns)
 
@@ -30,58 +35,19 @@ async def test_fs_ingest_writes_source_revision_to_metadata(temp_db_path, tmp_pa
         doc = await client.create_document_from_source(file_path)
 
     assert doc.metadata["source_revision"] == expected_revision
-
-
-@pytest.mark.vcr()
-async def test_fs_second_sweep_emits_unchanged_after_ingest(temp_db_path, tmp_path):
-    """The full round-trip: ingest a file, build a sync_state-shaped snapshot
-    from document.metadata, hand it to FSSource.discover() — must see
-    UNCHANGED, not UPSERT. This is exactly what the periodic poller does."""
-    docs_dir = tmp_path / "docs"
-    docs_dir.mkdir()
-    file_path = docs_dir / "doc.md"
-    file_path.write_text("hello")
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document_from_source(file_path)
-
     assert doc.uri is not None
     snapshot = {doc.uri: doc.metadata["source_revision"]}
-
     src = FSSource(root=docs_dir)
-    kinds: list[SourceEventKind] = []
-    async for event in src.discover(since=snapshot):
-        kinds.append(event.kind)
+    assert [event.kind async for event in src.discover(since=snapshot)] == [
+        SourceEventKind.UNCHANGED
+    ]
 
-    assert kinds == [SourceEventKind.UNCHANGED]
-
-
-@pytest.mark.vcr()
-async def test_fs_second_sweep_emits_upsert_when_file_changes(temp_db_path, tmp_path):
-    """Counterpart to the unchanged test: a file modified after ingest still
-    triggers UPSERT. Ensures the round-trip doesn't accidentally over-skip."""
-    docs_dir = tmp_path / "docs"
-    docs_dir.mkdir()
-    file_path = docs_dir / "doc.md"
-    file_path.write_text("hello")
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document_from_source(file_path)
-
-    # Bump mtime by writing different content; snapshot still has the old revision.
-    assert doc.uri is not None
-    snapshot = {doc.uri: doc.metadata["source_revision"]}
     file_path.write_text("hello world")
-    # st_mtime_ns has nanosecond resolution; a write_text always advances it
-    # on any sane filesystem, but assert anyway to make the intent explicit.
     assert str(file_path.stat().st_mtime_ns) != doc.metadata["source_revision"]
 
-    src = FSSource(root=docs_dir)
-    kinds: list[SourceEventKind] = []
-    async for event in src.discover(since=snapshot):
-        kinds.append(event.kind)
-
-    assert kinds == [SourceEventKind.UPSERT]
+    assert [event.kind async for event in src.discover(since=snapshot)] == [
+        SourceEventKind.UPSERT
+    ]
 
 
 @pytest.mark.vcr()

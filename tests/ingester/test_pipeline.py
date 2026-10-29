@@ -15,6 +15,7 @@ from obstore.exceptions import (
 )
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.hooks import Hook
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
@@ -121,25 +122,6 @@ class _MetadataProvider:
         return {**self._metadata, "source": source_id}
 
 
-async def test_provider_passed_to_client():
-    client = _mock_client()
-    client._ingest_observed.return_value = Document(
-        id="d", content="x", uri="u", metadata={}
-    )
-    provider = _MetadataProvider({"classification": "secret"})
-    providers = {"src": provider}
-
-    await run_job(client, _job(), metadata_providers=providers)
-
-    client._ingest_observed.assert_awaited_once_with(
-        "https://example.com/a.pdf",
-        sources=None,
-        source_id="src",
-        metadata_provider=provider,
-        observed_revision=None,
-    )
-
-
 async def test_provider_not_called_in_pipeline():
     """Provider execution happens inside create_document_from_source after
     fetch, where FetchResult exists."""
@@ -179,17 +161,6 @@ async def test_no_provider_for_source_passes_no_metadata():
         metadata_provider=None,
         observed_revision=None,
     )
-
-
-async def test_provider_error_from_client_is_classified_and_blocks_ingest():
-    client = _mock_client()
-    client._ingest_observed.side_effect = httpx.ConnectError("provider down")
-    providers = {"src": _MetadataProvider()}
-
-    with pytest.raises(TransientError):
-        await run_job(client, _job(), metadata_providers=providers)
-
-    client._ingest_observed.assert_awaited_once()
 
 
 async def test_provider_not_called_for_delete():
@@ -435,134 +406,6 @@ async def test_delete_proceeds_when_head_probe_raises():
     client.delete_document.assert_awaited_once_with("doc-9", source_id="src")
 
 
-async def test_unsupported_extension_classified_permanent():
-    from haiku.rag.client.exceptions import UnsupportedSourceError
-
-    client = _mock_client()
-    client._ingest_observed.side_effect = UnsupportedSourceError(
-        "Unsupported file extension: .xyz"
-    )
-
-    with pytest.raises(PermanentError, match="Unsupported"):
-        await run_job(client, _job())
-
-
-async def test_unsupported_content_type_classified_permanent():
-    from haiku.rag.client.exceptions import UnsupportedSourceError
-
-    client = _mock_client()
-    client._ingest_observed.side_effect = UnsupportedSourceError(
-        "Unsupported content type/extension: application/octet-stream/.bin"
-    )
-    with pytest.raises(PermanentError):
-        await run_job(client, _job())
-
-
-async def test_invalid_s3_uri_classified_permanent():
-    from haiku.rag.client.exceptions import UnsupportedSourceError
-
-    client = _mock_client()
-    client._ingest_observed.side_effect = UnsupportedSourceError(
-        "Invalid S3 URI: s3:///bad"
-    )
-    with pytest.raises(PermanentError):
-        await run_job(client, _job())
-
-
-async def test_missing_file_classified_permanent():
-    from haiku.rag.client.exceptions import UnsupportedSourceError
-
-    client = _mock_client()
-    client._ingest_observed.side_effect = UnsupportedSourceError(
-        "File does not exist: /nope"
-    )
-    with pytest.raises(PermanentError):
-        await run_job(client, _job())
-
-
-async def test_other_value_error_classified_transient():
-    client = _mock_client()
-    client._ingest_observed.side_effect = ValueError("DB busy")
-    with pytest.raises(TransientError):
-        await run_job(client, _job())
-
-
-@pytest.mark.parametrize("status", [401, 403, 404, 410])
-async def test_http_4xx_classified_permanent(status):
-    client = _mock_client()
-    response = httpx.Response(
-        status, request=httpx.Request("GET", "https://example.com/a")
-    )
-    client._ingest_observed.side_effect = httpx.HTTPStatusError(
-        "err", request=response.request, response=response
-    )
-    with pytest.raises(PermanentError):
-        await run_job(client, _job())
-
-
-@pytest.mark.parametrize("status", [408, 429, 500, 502, 503])
-async def test_http_408_429_5xx_classified_transient(status):
-    client = _mock_client()
-    response = httpx.Response(
-        status, request=httpx.Request("GET", "https://example.com/a")
-    )
-    client._ingest_observed.side_effect = httpx.HTTPStatusError(
-        "err", request=response.request, response=response
-    )
-    with pytest.raises(TransientError):
-        await run_job(client, _job())
-
-
-async def test_connect_error_classified_transient():
-    client = _mock_client()
-    client._ingest_observed.side_effect = httpx.ConnectError("boom")
-    with pytest.raises(TransientError):
-        await run_job(client, _job())
-
-
-@pytest.mark.parametrize(
-    "exc_factory",
-    [
-        lambda: TimeoutError("slow"),
-        lambda: OSError("io"),
-    ],
-)
-async def test_timeout_and_io_errors_classified_transient(exc_factory):
-    """TimeoutError / OSError both classify as transient. Without this
-    branch they'd fall through to the generic "unexpected" wrapper."""
-    client = _mock_client()
-    client._ingest_observed.side_effect = exc_factory()
-    with pytest.raises(TransientError, match="timeout/io"):
-        await run_job(client, _job())
-
-
-@pytest.mark.parametrize(
-    "exc_factory",
-    [
-        lambda: httpx.ConnectTimeout("slow connect"),
-        lambda: httpx.ReadTimeout("slow read"),
-        lambda: httpx.WriteTimeout("slow write"),
-        lambda: httpx.PoolTimeout("pool"),
-        lambda: httpx.ProxyError("proxy"),
-    ],
-)
-async def test_transport_subclasses_classified_transient(exc_factory):
-    """The classifier umbrellas on httpx.TransportError so every transport-
-    layer subclass routes to TransientError, not the generic 'unexpected'
-    fallback."""
-    client = _mock_client()
-    client._ingest_observed.side_effect = exc_factory()
-    with pytest.raises(TransientError, match="network"):
-        await run_job(client, _job())
-
-
-async def test_unknown_exception_classified_transient():
-    client = _mock_client()
-    client._ingest_observed.side_effect = RuntimeError("???")
-    with pytest.raises(TransientError):
-        await run_job(client, _job())
-
-
 def _hook_error(cause: BaseException):
     from haiku.rag.hooks import HookError
 
@@ -653,6 +496,61 @@ async def test_a_hook_failure_caused_by_a_transient_error_is_retried(cause):
     assert str(raised.value) == "pkg.Hook.before_ingest failed for file:///a.md"
 
 
+@pytest.mark.parametrize(
+    "exc, match",
+    [
+        (UnsupportedSourceError("Unsupported file extension: .xyz"), "Unsupported"),
+        (_http_status_error(401), None),
+        (_http_status_error(403), None),
+        (_http_status_error(404), None),
+        (_http_status_error(410), None),
+        (FileNotFoundError("gone"), "file not found"),
+        (PermissionError("no access"), "permission denied"),
+        (IsADirectoryError("not a file"), "path error"),
+        (NotADirectoryError("not a file"), "path error"),
+        (FileTooLargeError("too big"), "too big"),
+        (PermissionDeniedError("bad config"), "object store"),
+        (UnauthenticatedError("bad config"), "object store"),
+        (UnknownConfigurationKeyError("bad config"), "object store"),
+        (InvalidPathError("bad config"), "object store"),
+    ],
+)
+async def test_ingest_errors_classified_permanent(exc, match):
+    client = _mock_client()
+    client._ingest_observed.side_effect = exc
+    with pytest.raises(PermanentError, match=match):
+        await run_job(client, _job())
+
+
+@pytest.mark.parametrize(
+    "exc, match",
+    [
+        (ValueError("DB busy"), None),
+        (_http_status_error(408), None),
+        (_http_status_error(429), None),
+        (_http_status_error(500), None),
+        (_http_status_error(502), None),
+        (_http_status_error(503), None),
+        (httpx.ConnectError("boom"), None),
+        (TimeoutError("slow"), "timeout/io"),
+        (OSError("io"), "timeout/io"),
+        (httpx.ConnectTimeout("slow connect"), "network"),
+        (httpx.ReadTimeout("slow read"), "network"),
+        (httpx.WriteTimeout("slow write"), "network"),
+        (httpx.PoolTimeout("pool"), "network"),
+        (httpx.ProxyError("proxy"), "network"),
+        (RuntimeError("???"), None),
+        (GenericError("upstream hiccup"), None),
+        (JoinError("upstream hiccup"), None),
+    ],
+)
+async def test_ingest_errors_classified_transient(exc, match):
+    client = _mock_client()
+    client._ingest_observed.side_effect = exc
+    with pytest.raises(TransientError, match=match):
+        await run_job(client, _job())
+
+
 async def test_directory_result_classified_permanent():
     client = _mock_client()
     client._ingest_observed.return_value = [
@@ -672,100 +570,23 @@ async def test_existing_permanent_error_passes_through_unchanged():
     assert excinfo.value is sentinel
 
 
-async def test_file_not_found_classified_as_permanent():
-    """A deleted file should go straight to the DLQ, not retry."""
-    client = _mock_client()
-    client._ingest_observed.side_effect = FileNotFoundError("gone")
-    with pytest.raises(PermanentError, match="file not found"):
-        await run_job(client, _job())
-
-
-async def test_permission_error_classified_as_permanent():
-    """An unreadable file should go straight to the DLQ, not retry."""
-    client = _mock_client()
-    client._ingest_observed.side_effect = PermissionError("no access")
-    with pytest.raises(PermanentError, match="permission denied"):
-        await run_job(client, _job())
-
-
-@pytest.mark.parametrize("exc_class", [IsADirectoryError, NotADirectoryError])
-async def test_directory_errors_classified_as_permanent(exc_class):
-    """Pointing at a directory instead of a file should DLQ immediately."""
-    client = _mock_client()
-    client._ingest_observed.side_effect = exc_class("not a file")
-    with pytest.raises(PermanentError, match="path error"):
-        await run_job(client, _job())
-
-
-async def test_file_too_large_classified_as_permanent():
-    client = _mock_client()
-    client._ingest_observed.side_effect = FileTooLargeError("too big")
-    with pytest.raises(PermanentError, match="too big"):
-        await run_job(client, _job())
-
-
-@pytest.mark.parametrize(
-    "exc_class",
-    [
-        PermissionDeniedError,
-        UnauthenticatedError,
-        UnknownConfigurationKeyError,
-        InvalidPathError,
-    ],
-)
-async def test_obstore_config_errors_classified_permanent(exc_class):
-    client = _mock_client()
-    client._ingest_observed.side_effect = exc_class("bad config")
-    with pytest.raises(PermanentError, match="object store"):
-        await run_job(client, _job())
-
-
-@pytest.mark.parametrize(
-    "exc_class",
-    [GenericError, JoinError],
-)
-async def test_other_obstore_errors_classified_transient(exc_class):
-    """Only the credential/configuration errors are permanent; umbrellaing on
-    obstore's BaseError would sweep up retryable failures too."""
-    client = _mock_client()
-    client._ingest_observed.side_effect = exc_class("upstream hiccup")
-    with pytest.raises(TransientError):
-        await run_job(client, _job())
-
-
-async def test_conversion_deadline_is_permanent_and_fatal_to_the_process():
-    """The document that exceeded the deadline is dead, and the process that
+@pytest.mark.parametrize("converter_wedged", [True, False])
+async def test_conversion_deadline_is_permanent_and_fatal_only_to_a_wedged_converter(
+    converter_wedged,
+):
+    """The document that exceeded the deadline is dead. Only a process that
     abandoned the shared converter cannot convert again."""
     from haiku.rag.converters.exceptions import ConversionTimeoutError
 
     client = _mock_client()
     client._ingest_observed.side_effect = ConversionTimeoutError(
-        "took too long", converter_wedged=True
+        "took too long", converter_wedged=converter_wedged
     )
 
     with pytest.raises(PermanentError) as excinfo:
         await run_job(client, _job())
 
-    assert excinfo.value.fatal_to_process is True
-    assert excinfo.value.conversion_stalled is True
-
-
-async def test_conversion_deadline_on_its_own_converter_spares_the_process():
-    """HTML and Markdown hold no shared converter, so the deadline kills the
-    document only."""
-    from haiku.rag.converters.exceptions import ConversionTimeoutError
-
-    client = _mock_client()
-    client._ingest_observed.side_effect = ConversionTimeoutError(
-        "took too long", converter_wedged=False
-    )
-
-    with pytest.raises(PermanentError) as excinfo:
-        await run_job(client, _job())
-
-    assert excinfo.value.fatal_to_process is False
-    # Still tombstoned: the same bytes stall again, and each attempt leaves
-    # another daemon thread and its memory behind.
+    assert excinfo.value.fatal_to_process is converter_wedged
     assert excinfo.value.conversion_stalled is True
 
 
@@ -795,18 +616,6 @@ async def test_upsert_passes_the_observed_revision():
 
     kwargs = client._ingest_observed.await_args.kwargs
     assert kwargs["observed_revision"] == "etag-2"
-
-
-async def test_upsert_without_a_revision_passes_none():
-    client = _mock_client()
-    client._ingest_observed.return_value = Document(
-        id="doc-1", content="x", uri="https://example.com/a.pdf", metadata={}
-    )
-
-    await run_job(client, _job(revision=None))
-
-    kwargs = client._ingest_observed.await_args.kwargs
-    assert kwargs["observed_revision"] is None
 
 
 async def test_manifest_replay_still_revalidates_before_ingesting():

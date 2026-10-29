@@ -15,6 +15,7 @@ from haiku.rag.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
+from tests.ingester.conftest import finished_job, status_of
 
 
 @pytest.fixture
@@ -160,9 +161,23 @@ async def test_api_hides_another_namespace(state, engine):
 # --- auth ---
 
 
-async def test_protected_endpoint_rejects_without_token(state):
+@pytest.mark.parametrize(
+    "method, path",
+    [
+        ("GET", "/jobs"),
+        ("GET", "/stats"),
+        ("GET", "/providers"),
+        ("GET", "/config"),
+        ("GET", "/databases/docs"),
+        ("DELETE", "/jobs/j"),
+        ("POST", "/jobs/j/retry"),
+        ("POST", "/dlq/j/retry"),
+        ("POST", "/sources/anything/refresh"),
+    ],
+)
+async def test_protected_endpoint_rejects_without_token(state, method, path):
     async with _client(state, auth_token="secret") as client:
-        resp = await client.get("/jobs")
+        resp = await client.request(method, path)
     assert resp.status_code == 401
 
 
@@ -182,38 +197,6 @@ async def test_no_auth_token_allows_everything(state):
     async with _client(state, auth_token=None) as client:
         assert (await client.get("/jobs")).status_code == 200
         assert (await client.get("/health")).status_code == 200
-
-
-async def test_mutation_endpoints_require_auth(state, jobs):
-    """Existing tests prove auth gates GETs; this pins that the *mutation*
-    endpoints (retry, cancel, DLQ requeue, source refresh) also require the
-    bearer. A missing-auth regression on these would silently let anyone
-    cancel jobs or reset the DLQ."""
-    j = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert j is not None
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    await jobs.mark_dead(j.id, "boom", "w")
-
-    async with _client(state, auth_token="secret") as client:
-        # Cancel: blocked without token
-        resp = await client.delete(f"/jobs/{j.id}")
-        assert resp.status_code == 401
-        # Retry: blocked without token
-        resp = await client.post(f"/jobs/{j.id}/retry")
-        assert resp.status_code == 401
-        # DLQ retry: blocked without token
-        resp = await client.post(f"/dlq/{j.id}/retry")
-        assert resp.status_code == 401
-        # Source refresh: blocked without token
-        resp = await client.post("/sources/anything/refresh")
-        assert resp.status_code == 401
-
-        # With correct token: 200 for retry (job is dead, gets resurrected).
-        ok = await client.post(
-            f"/jobs/{j.id}/retry", headers={"Authorization": "Bearer secret"}
-        )
-        assert ok.status_code == 200
 
 
 # --- /jobs ---
@@ -275,15 +258,14 @@ async def test_get_job_404(state):
     assert resp.status_code == 404
 
 
-async def test_retry_revives_dead_job(state, jobs):
-    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert job is not None
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    await jobs.mark_dead(job.id, "err", "w")
+@pytest.mark.parametrize("route", ["/jobs/{id}/retry", "/dlq/{id}/retry"])
+async def test_retry_revives_dead_job(state, jobs, route):
+    job = await finished_job(jobs, JobStatus.DEAD, source_id="src")
 
-    async with _client(state) as client:
-        resp = await client.post(f"/jobs/{job.id}/retry")
+    async with _client(state, auth_token="secret") as client:
+        resp = await client.post(
+            route.format(id=job.id), headers={"Authorization": "Bearer secret"}
+        )
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == JobStatus.QUEUED.value
@@ -291,10 +273,9 @@ async def test_retry_revives_dead_job(state, jobs):
 
 
 async def test_a_rejected_job_is_listed_and_retried(state, jobs):
-    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert job is not None
-    await jobs.claim_next("w")
-    await jobs.mark_rejected(job.id, "u rejected: draft", "w")
+    job = await finished_job(
+        jobs, JobStatus.REJECTED, source_id="src", error="u rejected: draft"
+    )
 
     async with _client(state) as client:
         listed = await client.get("/jobs?status=rejected")
@@ -306,9 +287,10 @@ async def test_a_rejected_job_is_listed_and_retried(state, jobs):
     assert retried.json()["status"] == JobStatus.QUEUED.value
 
 
-async def test_retry_404(state):
+@pytest.mark.parametrize("route", ["/jobs/missing/retry", "/dlq/missing/retry"])
+async def test_retry_404(state, route):
     async with _client(state) as client:
-        resp = await client.post("/jobs/missing/retry")
+        resp = await client.post(route)
     assert resp.status_code == 404
 
 
@@ -324,11 +306,7 @@ async def test_cancel_queued_job(state, jobs):
 
 
 async def test_cancel_succeeded_returns_404(state, jobs):
-    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert job is not None
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    await jobs.mark_succeeded(claimed.id, "w")
+    job = await finished_job(jobs, JobStatus.SUCCEEDED, source_id="src")
 
     async with _client(state) as client:
         resp = await client.delete(f"/jobs/{job.id}")
@@ -355,33 +333,10 @@ async def test_dlq_lists_dead_jobs_only(state, jobs):
     assert payload[0]["id"] == j2.id
 
 
-async def test_dlq_retry_resurrects(state, jobs):
-    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert job is not None
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    await jobs.mark_dead(job.id, "err", "w")
-
-    async with _client(state) as client:
-        resp = await client.post(f"/dlq/{job.id}/retry")
-    assert resp.status_code == 200
-    assert resp.json()["status"] == JobStatus.QUEUED.value
-
-
-async def test_dlq_retry_404_on_missing_job(state):
-    async with _client(state) as client:
-        resp = await client.post("/dlq/missing/retry")
-    assert resp.status_code == 404
-
-
 async def test_dlq_retry_with_live_sibling_returns_200(state, jobs):
     """Retrying a dead job when a live job already exists for the same
     (source_id, uri) returns 200 with the live job, not a 500."""
-    first = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert first is not None
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    await jobs.mark_dead(first.id, "err", "w")
+    first = await finished_job(jobs, JobStatus.DEAD, source_id="src")
     live = await jobs.enqueue("src", "u", JobOp.UPSERT)
     assert live is not None
 
@@ -499,30 +454,15 @@ async def test_source_refresh_503_when_pollers_absent(state):
 # --- POST /sources/{id}/retry ---
 
 
-async def _failed(jobs: JobRepo, source_id: str, uri: str, *, rejected=False):
-    job = await jobs.enqueue(source_id, uri, JobOp.UPSERT)
-    assert job is not None
-    assert await jobs.claim_next("w", source_ids={source_id}) is not None
-    if rejected:
-        assert await jobs.mark_rejected(job.id, "refused", "w")
-    else:
-        assert await jobs.mark_dead(job.id, "boom", "w")
-    return job
-
-
-async def _status_of(jobs: JobRepo, job_id: str) -> JobStatus:
-    job = await jobs.get_job(job_id)
-    assert job is not None
-    return job.status
-
-
 async def test_source_retry_requeues_the_selected_failures_of_that_source(
     tmp_path, jobs, sync
 ):
     state, _ = _build_pollers_state(tmp_path, jobs, sync)
-    dead = await _failed(jobs, "local", "file:///a.md")
-    rejected = await _failed(jobs, "local", "file:///b.md", rejected=True)
-    other = await _failed(jobs, "other", "file:///c.md")
+    dead = await finished_job(jobs, JobStatus.DEAD, "file:///a.md", source_id="local")
+    rejected = await finished_job(
+        jobs, JobStatus.REJECTED, "file:///b.md", source_id="local", error="refused"
+    )
+    other = await finished_job(jobs, JobStatus.DEAD, "file:///c.md", source_id="other")
 
     async with _client(state) as client:
         resp = await client.post("/sources/local/retry", params={"status": "dead"})
@@ -532,14 +472,14 @@ async def test_source_retry_requeues_the_selected_failures_of_that_source(
             "retried": 1,
             "worker_breaker_open": False,
         }
-        assert await _status_of(jobs, dead.id) is JobStatus.QUEUED
-        assert await _status_of(jobs, rejected.id) is JobStatus.REJECTED
+        assert await status_of(jobs, dead.id) is JobStatus.QUEUED
+        assert await status_of(jobs, rejected.id) is JobStatus.REJECTED
 
         resp = await client.post("/sources/local/retry", params={"status": "all"})
         assert resp.json()["retried"] == 1
-        assert await _status_of(jobs, rejected.id) is JobStatus.QUEUED
+        assert await status_of(jobs, rejected.id) is JobStatus.QUEUED
 
-    assert await _status_of(jobs, other.id) is JobStatus.DEAD
+    assert await status_of(jobs, other.id) is JobStatus.DEAD
 
 
 @pytest.mark.parametrize("params", [{}, {"status": "queued"}])
@@ -554,7 +494,9 @@ async def test_source_actions_take_an_id_containing_slashes(tmp_path, jobs, sync
     from urllib.parse import quote
 
     state, _ = _build_pollers_state(tmp_path, jobs, sync, source_id="fs:/tmp/docs")
-    dead = await _failed(jobs, "fs:/tmp/docs", "file:///tmp/docs/a.md")
+    dead = await finished_job(
+        jobs, JobStatus.DEAD, "file:///tmp/docs/a.md", source_id="fs:/tmp/docs"
+    )
     path = f"/sources/{quote('fs:/tmp/docs', safe='')}"
 
     async with _client(state) as client:
@@ -562,7 +504,7 @@ async def test_source_actions_take_an_id_containing_slashes(tmp_path, jobs, sync
         refreshed = await client.post(f"{path}/refresh")
 
     assert retried.json()["retried"] == 1
-    assert await _status_of(jobs, dead.id) is JobStatus.QUEUED
+    assert await status_of(jobs, dead.id) is JobStatus.QUEUED
     assert refreshed.status_code == 200
 
 
@@ -582,25 +524,25 @@ async def test_source_retry_503_when_pollers_absent(state):
 async def test_source_retry_of_an_unserved_source_answers_409(tmp_path, jobs, sync):
     state, _ = _build_pollers_state(tmp_path, jobs, sync)
     state.source_databases = {}
-    dead = await _failed(jobs, "local", "file:///a.md")
+    dead = await finished_job(jobs, JobStatus.DEAD, "file:///a.md", source_id="local")
 
     async with _client(state) as client:
         resp = await client.post("/sources/local/retry", params={"status": "dead"})
 
     assert resp.status_code == 409
-    assert await _status_of(jobs, dead.id) is JobStatus.DEAD
+    assert await status_of(jobs, dead.id) is JobStatus.DEAD
 
 
 async def test_source_retry_of_a_stopped_poller_answers_409(tmp_path, jobs, sync):
     state, manager = _build_pollers_state(tmp_path, jobs, sync)
     await manager.pollers[0].stop()
-    dead = await _failed(jobs, "local", "file:///a.md")
+    dead = await finished_job(jobs, JobStatus.DEAD, "file:///a.md", source_id="local")
 
     async with _client(state) as client:
         resp = await client.post("/sources/local/retry", params={"status": "dead"})
 
     assert resp.status_code == 409
-    assert await _status_of(jobs, dead.id) is JobStatus.DEAD
+    assert await status_of(jobs, dead.id) is JobStatus.DEAD
 
 
 async def test_source_retry_requeues_while_the_worker_breaker_is_open(
@@ -613,19 +555,19 @@ async def test_source_retry_requeues_while_the_worker_breaker_is_open(
     for _ in range(_WORKER_BREAKER_THRESHOLD):
         pool._breaker_for("local").record_failure()
     state.pool = pool
-    dead = await _failed(jobs, "local", "file:///a.md")
+    dead = await finished_job(jobs, JobStatus.DEAD, "file:///a.md", source_id="local")
 
     async with _client(state) as client:
         resp = await client.post("/sources/local/retry", params={"status": "dead"})
 
     assert resp.json()["worker_breaker_open"] is True
     assert resp.json()["retried"] == 1
-    assert await _status_of(jobs, dead.id) is JobStatus.QUEUED
+    assert await status_of(jobs, dead.id) is JobStatus.QUEUED
 
 
 async def test_source_retry_waits_for_a_sweep_in_progress(tmp_path, jobs, sync):
     state, manager = _build_pollers_state(tmp_path, jobs, sync)
-    dead = await _failed(jobs, "local", "file:///a.md")
+    dead = await finished_job(jobs, JobStatus.DEAD, "file:///a.md", source_id="local")
 
     async with _client(state) as client:
         async with manager.pollers[0]._sweep_lock:
@@ -634,7 +576,7 @@ async def test_source_retry_waits_for_a_sweep_in_progress(tmp_path, jobs, sync):
             )
             await asyncio.sleep(0.05)
             assert not request.done()
-            assert await _status_of(jobs, dead.id) is JobStatus.DEAD
+            assert await status_of(jobs, dead.id) is JobStatus.DEAD
         resp = await asyncio.wait_for(request, timeout=5.0)
 
     assert resp.json()["retried"] == 1
@@ -689,12 +631,6 @@ async def test_stats_aggregates_real_queue(state, jobs):
     # The dead job was claim_next-ed from s1.
     assert body["dlq_by_source"] == {"s1": 1}
     assert body["rejected_by_source"] == {"s2": 1}
-
-
-async def test_stats_requires_auth(state):
-    async with _client(state, auth_token="secret") as client:
-        resp = await client.get("/stats")
-    assert resp.status_code == 401
 
 
 # --- providers ---
@@ -808,12 +744,6 @@ async def test_providers_probe_with_real_httpx_transport():
         assert dead.reachable is False
         assert dead.status_code is None
         assert dead.error is not None and "boom" in dead.error
-
-
-async def test_providers_requires_auth(state):
-    async with _client(state, auth_token="secret") as client:
-        resp = await client.get("/providers")
-    assert resp.status_code == 401
 
 
 # --- dashboard ---
@@ -940,12 +870,6 @@ async def test_config_masks_credentials_in_urls_and_headers(jobs, sync):
     assert "db/queue" in text
     for secret in DOCUMENTED_SECRETS:
         assert secret not in text
-
-
-async def test_config_requires_auth(state):
-    async with _client(state, auth_token="secret") as client:
-        resp = await client.get("/config")
-    assert resp.status_code == 401
 
 
 # --- database ---
@@ -1079,18 +1003,9 @@ async def test_a_database_the_ingester_does_not_write_is_not_found(
     assert resp.status_code == 404
 
 
-async def test_database_requires_auth(state):
-    async with _client(state, auth_token="secret") as client:
-        resp = await client.get("/databases/docs")
-    assert resp.status_code == 401
-
-
 @pytest.mark.parametrize("route", ["/jobs/{id}/retry", "/dlq/{id}/retry"])
 async def test_retry_refuses_a_job_of_an_unconfigured_source(state, jobs, route):
-    job = await jobs.enqueue("removed", "u", JobOp.UPSERT)
-    assert job is not None
-    assert await jobs.claim_next("w") is not None
-    assert await jobs.mark_dead(job.id, "boom", "w")
+    job = await finished_job(jobs, JobStatus.DEAD, source_id="removed")
 
     async with _client(state) as client:
         resp = await client.post(route.format(id=job.id))
@@ -1105,17 +1020,12 @@ async def test_retry_refuses_a_job_of_an_unconfigured_source(state, jobs, route)
 async def test_retry_answers_409_and_names_the_blocking_tombstone(state, jobs, route):
     """404 would be wrong for a job the operator can see in the DLQ: it exists,
     another row holds its slot."""
-    first = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert first is not None
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    await jobs.mark_dead(claimed.id, "out of attempts", "w")
-
-    second = await jobs.enqueue("src", "u", JobOp.UPSERT)
-    assert second is not None
-    claimed_second = await jobs.claim_next("w")
-    assert claimed_second is not None
-    await jobs.mark_dead(claimed_second.id, "stalled", "w", conversion_stalled=True)
+    claimed = await finished_job(
+        jobs, JobStatus.DEAD, source_id="src", error="out of attempts"
+    )
+    claimed_second = await finished_job(
+        jobs, JobStatus.DEAD, source_id="src", error="stalled", conversion_stalled=True
+    )
 
     async with _client(state) as client:
         resp = await client.post(route.format(id=claimed.id))

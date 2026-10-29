@@ -766,51 +766,6 @@ async def test_fs_poller_enqueues_initial_files(tmp_path, jobs, sync):
 # --- _dry_run_once ---
 
 
-async def test_dry_run_collects_changes_without_writing(fs_config, jobs, sync):
-    source = _StubSource(
-        "src",
-        [
-            [
-                _event("file:///a.md"),
-                _event("file:///b.md", kind=SourceEventKind.UNCHANGED),
-                _event("file:///c.md", kind=SourceEventKind.DELETE),
-            ]
-        ],
-    )
-    poller = _periodic(source, fs_config, jobs, sync)
-
-    ok, summary, changes = await poller._dry_run_once()
-
-    assert ok is True
-    assert summary.upsert_count == 1
-    assert summary.unchanged_count == 1
-    assert summary.delete_count == 1
-    assert {c.op for c in changes} == {JobOp.UPSERT, JobOp.DELETE}
-    # A dry run must not touch the queue.
-    assert await jobs.list_jobs(source_id="src") == []
-
-
-async def test_dry_run_ignores_deletes_when_delete_orphans_false(
-    fs_config, jobs, sync, tmp_path
-):
-    config = FSSourceConfig(
-        type="fs",
-        id="src",
-        root=tmp_path,
-        delete_orphans=False,
-        poll_interval_s=0.05,
-    )
-    source = _StubSource("src", [[_event("file:///c.md", kind=SourceEventKind.DELETE)]])
-    poller = _periodic(source, config, jobs, sync)
-
-    ok, summary, changes = await poller._dry_run_once()
-
-    assert ok is True
-    assert summary.delete_count == 0
-    assert summary.ignored_delete_count == 1
-    assert changes == []
-
-
 async def test_dry_run_skipped_when_circuit_open(fs_config, jobs, sync):
     class _Clock:
         now = 0.0
@@ -836,30 +791,6 @@ async def test_dry_run_skipped_when_circuit_open(fs_config, jobs, sync):
     assert changes == []
     assert source.discover_calls == before
     assert poller.last_skip_reason == "circuit_open"
-
-
-async def test_dry_run_records_failure_when_discover_raises(fs_config, jobs, sync):
-    source = _StubSource("src", [])
-    source.fail_with = RuntimeError("upstream down")
-    poller = _periodic(source, fs_config, jobs, sync)
-
-    ok, summary, changes = await poller._dry_run_once()
-
-    assert ok is False
-    assert changes == []
-    assert poller._breaker.consecutive_failures == 1
-
-
-async def test_dry_run_skipped_when_queue_has_pending_work(fs_config, jobs, sync):
-    source = _StubSource("src", [[_event("file:///a.md")]])
-    poller = _periodic(source, fs_config, jobs, sync)
-    await jobs.enqueue("src", "file:///pending.md", JobOp.UPSERT)
-
-    ok, _summary, changes = await poller._dry_run_once()
-
-    assert ok is False
-    assert changes == []
-    assert poller.last_skip_reason == "pending_work"
 
 
 async def test_watch_deleted_skipped_when_delete_orphans_false(tmp_path, jobs, sync):

@@ -819,6 +819,28 @@ def test_set_config_reaches_the_factories(monkeypatch, tmp_path):
         ),
         ({"ingester": {"queue": {"bogus": 1}}}, "ingester.queue.bogus"),
         (
+            {"ingester": {"workers": {"claim_timeout_s": 1800}}},
+            "ingester.workers.claim_timeout_s",
+        ),
+        (
+            {
+                "ingester": {
+                    "databases": {
+                        "haiku.rag": {
+                            "sources": [
+                                {
+                                    "type": "fs",
+                                    "root": "/tmp/docs",
+                                    "metadata_provider": {"name": "x", "option": {}},
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "ingester.databases.haiku.rag.sources.0.fs.metadata_provider.MetadataProviderConfig.option",
+        ),
+        (
             {
                 "ingester": {
                     "databases": {

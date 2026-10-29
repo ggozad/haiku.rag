@@ -327,15 +327,22 @@ async def test_custom_headers_forwarded():
     assert seen == ["Bearer tok-123"]
 
 
-async def test_discover_resolves_absolute_href():
-    """Some servers return absolute URLs in href, others return server paths.
-    Both must produce the same stored URI."""
+@pytest.mark.parametrize(
+    "href, uri",
+    [
+        ("https://nc.example.com/dav/a.md", "https://nc.example.com/dav/a.md"),
+        (
+            "/dav/my%20docs/Hello%20World.md",
+            "https://nc.example.com/dav/my docs/Hello World.md",
+        ),
+    ],
+)
+async def test_discover_resolves_href(href, uri):
+    """Some servers return absolute URLs in href, others return server paths,
+    percent-encoded per RFC 3986. Both resolve to the URI a user types in
+    `add-src`."""
     multistatus = _multistatus(
-        {
-            "href": "https://nc.example.com/dav/a.md",
-            "etag": '"rev"',
-            "content_type": "text/markdown",
-        }
+        {"href": href, "etag": '"rev"', "content_type": "text/markdown"}
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -347,37 +354,20 @@ async def test_discover_resolves_absolute_href():
         transport=_transport(handler),
     )
     events = [event async for event in src.discover()]
-    assert [e.uri for e in events] == ["https://nc.example.com/dav/a.md"]
+    assert [e.uri for e in events] == [uri]
 
 
-async def test_discover_url_decodes_href_path():
-    """PROPFIND hrefs are percent-encoded per RFC 3986. We unquote them so
-    the stored URI matches what a user types in `add-src`."""
-    multistatus = _multistatus(
-        {
-            "href": "/dav/my%20docs/Hello%20World.md",
-            "etag": '"rev"',
-            "content_type": "text/markdown",
-        }
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(207, content=multistatus)
-
-    src = WebDAVSource(
-        source_id="nc",
-        base_url="https://nc.example.com/dav/",
-        transport=_transport(handler),
-    )
-    events = [event async for event in src.discover()]
-    assert [e.uri for e in events] == [
-        "https://nc.example.com/dav/my docs/Hello World.md"
-    ]
-
-
-async def test_discover_emits_unchanged_for_known_uri_without_revision():
+@pytest.mark.parametrize(
+    "known_uris, kind",
+    [
+        ({"https://nc.example.com/dav/norev.md"}, SourceEventKind.UNCHANGED),
+        (None, SourceEventKind.UPSERT),
+    ],
+)
+async def test_discover_without_revision_upserts_only_unknown_uris(known_uris, kind):
     """A WebDAV entry with no ETag or Last-Modified should not cause
-    re-ingestion every sweep once the URI has been ingested."""
+    re-ingestion every sweep once the URI has been ingested. A new entry
+    still UPSERTs on first sight."""
     multistatus = _multistatus(
         {"href": "/dav/", "collection": True},
         {"href": "/dav/norev.md", "content_type": "text/markdown"},
@@ -391,34 +381,8 @@ async def test_discover_emits_unchanged_for_known_uri_without_revision():
         base_url="https://nc.example.com/dav/",
         transport=_transport(handler),
     )
-    events = [
-        e
-        async for e in src.discover(known_uris={"https://nc.example.com/dav/norev.md"})
-    ]
-    non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
-    assert len(non_delete) == 1
-    assert non_delete[0].kind is SourceEventKind.UNCHANGED
-
-
-async def test_discover_emits_upsert_for_unknown_uri_without_revision():
-    """A brand-new WebDAV entry with no revision should UPSERT on first sight."""
-    multistatus = _multistatus(
-        {"href": "/dav/", "collection": True},
-        {"href": "/dav/new.md", "content_type": "text/markdown"},
-    )
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(207, content=multistatus)
-
-    src = WebDAVSource(
-        source_id="nc",
-        base_url="https://nc.example.com/dav/",
-        transport=_transport(handler),
-    )
-    events = [e async for e in src.discover()]
-    non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
-    assert len(non_delete) == 1
-    assert non_delete[0].kind is SourceEventKind.UPSERT
+    events = [e async for e in src.discover(known_uris=known_uris)]
+    assert [e.kind for e in events] == [kind]
 
 
 async def test_fetch_follows_redirect():

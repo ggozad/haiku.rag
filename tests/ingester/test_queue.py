@@ -21,6 +21,7 @@ from haiku.rag.ingester.queue.migrations import (
 )
 from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo, _insert
+from tests.ingester.conftest import finished_job, status_of
 
 # --- migrations / schema ---
 
@@ -629,74 +630,32 @@ async def test_mark_dead_records_error(jobs):
     assert refreshed.last_error == "permanent failure"
 
 
-async def test_mark_succeeded_with_claimed_by_guard_skips_when_resurrected(jobs):
+@pytest.mark.parametrize(
+    "finish",
+    [
+        lambda jobs, job_id, worker: jobs.mark_succeeded(job_id, worker),
+        lambda jobs, job_id, worker: jobs.mark_dead(job_id, "boom", worker),
+        lambda jobs, job_id, worker: jobs.reschedule(job_id, 30.0, "transient", worker),
+        lambda jobs, job_id, worker: jobs.release_if_claimed(job_id, worker),
+    ],
+    ids=["mark_succeeded", "mark_dead", "reschedule", "release_if_claimed"],
+)
+async def test_claimed_by_guard_skips_a_resurrected_job(jobs, finish):
     """Reaper race: A claims, reaper resets, B re-claims, A finishes. A's
-    mark_succeeded must be a no-op so B's in-flight work isn't clobbered."""
+    call must be a no-op so B's in-flight work isn't clobbered."""
     job = await jobs.enqueue("s", "u", JobOp.UPSERT)
     a = await jobs.claim_next("worker-A")
     assert a is not None
-    # Reaper resets A's stale claim.
     await jobs.reap_stale(lease_ttl_seconds=0)
-    # B picks the job up.
     b = await jobs.claim_next("worker-B")
     assert b is not None and b.id == job.id and b.claimed_by == "worker-B"
-    # A finally finishes and tries to mark succeeded — guarded, no-op.
-    assert await jobs.mark_succeeded(job.id, "worker-A") is False
-    refreshed = await jobs.get_job(job.id)
-    assert refreshed is not None
-    assert refreshed.status is JobStatus.CLAIMED
-    assert refreshed.claimed_by == "worker-B"
-    # B's own mark_succeeded does land.
-    assert await jobs.mark_succeeded(job.id, "worker-B") is True
-
-
-async def test_mark_dead_with_claimed_by_guard_skips_when_resurrected(jobs):
-    """Same guard semantics as mark_succeeded for the dead transition."""
-    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
-    a = await jobs.claim_next("worker-A")
-    assert a is not None
-    await jobs.reap_stale(lease_ttl_seconds=0)
-    b = await jobs.claim_next("worker-B")
-    assert b is not None and b.claimed_by == "worker-B"
-    assert await jobs.mark_dead(job.id, "boom", "worker-A") is False
-    refreshed = await jobs.get_job(job.id)
-    assert refreshed is not None
-    assert refreshed.status is JobStatus.CLAIMED
-    assert refreshed.last_error is None
-
-
-async def test_reschedule_with_claimed_by_guard_skips_when_resurrected(jobs):
-    """Worker A times out → reaper resets → worker B re-claims → A surfaces
-    with a TransientError and calls reschedule. The guard turns A's call
-    into a no-op so B's claim isn't stripped back to `queued`."""
-    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
-    a = await jobs.claim_next("worker-A")
-    assert a is not None
-    await jobs.reap_stale(lease_ttl_seconds=0)
-    b = await jobs.claim_next("worker-B")
-    assert b is not None and b.claimed_by == "worker-B"
-    assert await jobs.reschedule(job.id, 30.0, "transient", "worker-A") is False
+    assert await finish(jobs, job.id, "worker-A") is False
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.CLAIMED
     assert refreshed.claimed_by == "worker-B"
     assert refreshed.last_error is None
-
-
-async def test_release_if_claimed_with_claimed_by_guard_skips_when_resurrected(jobs):
-    """Cancel-cleanup path: worker A is cancelled while reaper-resurrected.
-    release_if_claimed must not strip worker B's fresh claim."""
-    job = await jobs.enqueue("s", "u", JobOp.UPSERT)
-    a = await jobs.claim_next("worker-A")
-    assert a is not None
-    await jobs.reap_stale(lease_ttl_seconds=0)
-    b = await jobs.claim_next("worker-B")
-    assert b is not None and b.claimed_by == "worker-B"
-    assert await jobs.release_if_claimed(job.id, "worker-A") is False
-    refreshed = await jobs.get_job(job.id)
-    assert refreshed is not None
-    assert refreshed.status is JobStatus.CLAIMED
-    assert refreshed.claimed_by == "worker-B"
+    assert await finish(jobs, job.id, "worker-B") is True
 
 
 # --- reschedule + retry ---
@@ -1233,12 +1192,6 @@ async def test_sync_state_upsert_and_get(sync):
     assert await sync.get_revision_snapshot("s") == {"u1": "abc", "u2": "def"}
 
 
-async def test_sync_state_upsert_overwrites(sync):
-    await sync.upsert("s", "u1", revision="abc", content_hash="m1")
-    await sync.upsert("s", "u1", revision="def", content_hash="m2", ingested=True)
-    assert await sync.get_revision_snapshot("s") == {"u1": "def"}
-
-
 async def test_sync_state_delete_removes_entry(sync):
     await sync.upsert("s", "u1", revision="abc", content_hash="m1")
     await sync.delete("s", "u1")
@@ -1293,6 +1246,7 @@ async def test_sync_state_upsert_replaces_revision_when_provided(sync):
     assert row.revision == "v2"
     assert row.content_hash == "hash-v2"
     assert row.last_ingested_at is not None
+    assert await sync.get_revision_snapshot("s") == {"u": "v2"}
 
 
 async def test_sync_state_batch_upsert_inserts_multiple_rows(sync):
@@ -1346,50 +1300,6 @@ async def test_sync_state_batch_upsert_empty_is_noop(sync):
     """batch_upsert with an empty list does nothing."""
     await sync.batch_upsert([])
     assert await sync.get_revision_snapshot("s") == {}
-
-
-async def test_migration_v2_to_v3_adds_conversion_stalled(tmp_path):
-    """A v2 DB gains `conversion_stalled`, defaulted false for existing rows."""
-    db = tmp_path / "v2.db"
-    engine = create_async_engine(URL.create("sqlite+aiosqlite", database=str(db)))
-    try:
-        await apply_migrations(engine)
-        await _downgrade_to_v3(engine)
-        async with engine.begin() as conn:
-            await conn.execute(sa.text("UPDATE schema_version SET version = 2"))
-            await conn.execute(sa.text("DROP INDEX uq_jobs_blocking_op"))
-            await conn.execute(
-                sa.text("ALTER TABLE jobs DROP COLUMN conversion_stalled")
-            )
-            when = "2026-01-01T00:00:00+00:00"
-            await conn.execute(
-                sa.text(
-                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
-                    "max_attempts, enqueued_at, scheduled_at) "
-                    "VALUES ('old-1', 's', 'u1', 'upsert', 'dead', 1, 5, "
-                    f"'{when}', '{when}')"
-                )
-            )
-
-        assert await apply_migrations(engine) == SCHEMA_VERSION
-
-        async with engine.connect() as conn:
-            cols = (await conn.execute(sa.text("PRAGMA table_info(jobs)"))).fetchall()
-            assert "conversion_stalled" in {c[1] for c in cols}
-            names = (
-                await conn.execute(
-                    sa.text("SELECT name FROM sqlite_master WHERE type = 'index'")
-                )
-            ).scalars()
-            assert "uq_jobs_blocking_op" in set(names)
-            killed = (
-                await conn.execute(
-                    sa.text("SELECT conversion_stalled FROM jobs WHERE id = 'old-1'")
-                )
-            ).scalar_one()
-            assert not killed
-    finally:
-        await engine.dispose()
 
 
 async def test_migration_v3_to_v4_adds_namespace(tmp_path):
@@ -1566,18 +1476,6 @@ async def test_dlq_retry_lifts_the_suppression(jobs):
     assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
 
 
-async def test_an_ordinary_dead_job_still_re_enqueues(jobs):
-    """Only a worker-killing failure suppresses; the documented behaviour for
-    every other dead job is unchanged."""
-    job = await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT)
-    assert job is not None
-    claimed = await jobs.claim_next("w1")
-    assert claimed is not None
-    await jobs.mark_dead(claimed.id, "unsupported", "w1")
-
-    assert await jobs.enqueue("src", "https://x/y.pdf", JobOp.UPSERT) is not None
-
-
 async def test_retention_never_prunes_a_stalled_document(jobs):
     """The row is what stops rediscovery, so age must not remove it: age is not
     evidence the document changed."""
@@ -1691,7 +1589,8 @@ async def test_two_revisionless_stalls_still_collide(jobs):
 async def test_fresh_and_migrated_schemas_agree(tmp_path):
     """`create_all` and the migration ladder from v2 must produce the same job
     indexes and the same `sync_state` table, or a migrated queue enforces
-    something different from a new one."""
+    something different from a new one. An existing row survives the ladder
+    with `conversion_stalled` false."""
     fresh_db = tmp_path / "fresh.db"
     fresh = await open_queue(
         QueueConfig(dburi=str(URL.create("sqlite+aiosqlite", database=str(fresh_db))))
@@ -1710,7 +1609,26 @@ async def test_fresh_and_migrated_schemas_agree(tmp_path):
             await conn.execute(
                 sa.text("ALTER TABLE jobs DROP COLUMN conversion_stalled")
             )
-        await apply_migrations(migrated)
+            when = "2026-01-01T00:00:00+00:00"
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO jobs (id, source_id, uri, op, status, attempts, "
+                    "max_attempts, enqueued_at, scheduled_at) "
+                    "VALUES ('old-1', 's', 'u1', 'upsert', 'dead', 1, 5, "
+                    f"'{when}', '{when}')"
+                )
+            )
+        assert await apply_migrations(migrated) == SCHEMA_VERSION
+
+        async with migrated.connect() as conn:
+            rows = (
+                await conn.execute(sa.text("SELECT id, conversion_stalled FROM jobs"))
+            ).all()
+            version = (
+                await conn.execute(sa.text("SELECT version FROM schema_version"))
+            ).scalar_one()
+        assert [(id_, bool(stalled)) for id_, stalled in rows] == [("old-1", False)]
+        assert version == SCHEMA_VERSION
 
         def _norm(sql: str) -> str:
             return " ".join(sql.replace('"', "").lower().split())
@@ -1832,7 +1750,7 @@ async def test_sync_state_lists_only_ingested_uris(sync):
 # --- namespaces ---
 #
 # Two repositories over one queue file, under different namespaces, using the
-# same source id and URI. Each test fails when the method it names loses its
+# same source id and URI. Each test fails when a method it calls loses its
 # namespace filter, or writes a row without one.
 
 
@@ -1864,14 +1782,6 @@ async def _claimed(repo: JobRepo, uri: str = "u"):
     return claimed
 
 
-async def _dead(repo: JobRepo, uri: str = "u", *, conversion_stalled: bool = False):
-    claimed = await _claimed(repo, uri)
-    assert await repo.mark_dead(
-        claimed.id, "boom", "w", conversion_stalled=conversion_stalled
-    )
-    return claimed
-
-
 async def test_enqueue_writes_the_namespace_and_keeps_live_slots_apart(
     own, foreign, conn
 ):
@@ -1891,39 +1801,60 @@ async def test_claim_next_skips_foreign_jobs(own, foreign):
     assert claimed is not None and claimed.id == theirs.id
 
 
-async def test_get_job_hides_foreign_jobs(own, foreign):
+async def test_reads_ignore_foreign_queued_jobs(own, foreign):
+    since = datetime.now(UTC) - timedelta(minutes=1)
     theirs = await foreign.enqueue("s", "u", JobOp.UPSERT)
     assert theirs is not None
     assert await own.get_job(theirs.id) is None
+    assert not await own.has_pending("s")
+    assert await own.counts_by_status() == {}
+    assert await own.batch_progress_counts_since(since) == {}
+    assert await own.oldest_queued_age_seconds() is None
+    assert await own.counts_by_source("queued", "claimed") == {}
 
 
-async def test_mark_succeeded_ignores_foreign_claims(own, foreign):
+async def test_reads_ignore_foreign_succeeded_jobs(own, foreign):
+    since = datetime.now(UTC) - timedelta(minutes=1)
     theirs = await _claimed(foreign)
-    assert not await own.mark_succeeded(theirs.id, "w")
+    assert await foreign.mark_succeeded(theirs.id, "w")
+    assert await own.counts_by_status_since(since) == {}
+    assert await own.count_succeeded_since(3600) == 0
+
+
+@pytest.mark.parametrize(
+    "touch, untouched",
+    [
+        (lambda repo, job_id: repo.mark_succeeded(job_id, "w"), False),
+        (lambda repo, job_id: repo.mark_dead(job_id, "boom", "w"), False),
+        (lambda repo, job_id: repo.reschedule(job_id, 60, "later", "w"), False),
+        (lambda repo, job_id: repo.release_if_claimed(job_id, "w"), False),
+        (lambda repo, job_id: repo.reap_stale(lease_ttl_seconds=0), 0),
+        (lambda repo, job_id: repo.renew_claims({job_id: "w"}), 0),
+    ],
+    ids=[
+        "mark_succeeded",
+        "mark_dead",
+        "reschedule",
+        "release_if_claimed",
+        "reap_stale",
+        "renew_claims",
+    ],
+)
+async def test_foreign_claims_are_untouched(own, foreign, touch, untouched):
+    theirs = await _claimed(foreign)
+    assert await touch(own, theirs.id) == untouched
     refreshed = await foreign.get_job(theirs.id)
     assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
 
 
-async def test_mark_dead_ignores_foreign_claims(own, foreign):
-    theirs = await _claimed(foreign)
-    assert not await own.mark_dead(theirs.id, "boom", "w")
-    refreshed = await foreign.get_job(theirs.id)
-    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
-
-
-async def test_reschedule_ignores_foreign_claims(own, foreign):
-    theirs = await _claimed(foreign)
-    assert not await own.reschedule(theirs.id, 60, "later", "w")
-    refreshed = await foreign.get_job(theirs.id)
-    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
-
-
-async def test_retry_refuses_foreign_jobs(own, foreign):
-    theirs = await _dead(foreign)
+async def test_retry_and_prune_refuse_foreign_dead_jobs(own, foreign):
+    theirs = await finished_job(foreign, JobStatus.DEAD)
     with pytest.raises(KeyError):
         await own.retry(theirs.id)
     refreshed = await foreign.get_job(theirs.id)
     assert refreshed is not None and refreshed.status is JobStatus.DEAD
+    assert await own.prune_unsuccessful("s", "u") == 0
+    assert await foreign.get_job(theirs.id) is not None
 
 
 async def test_live_sibling_is_scoped(own, foreign):
@@ -1932,7 +1863,7 @@ async def test_live_sibling_is_scoped(own, foreign):
 
 
 async def test_blocking_tombstone_is_scoped(own, foreign):
-    await _dead(foreign, conversion_stalled=True)
+    await finished_job(foreign, JobStatus.DEAD, conversion_stalled=True)
     mine = await own.enqueue("s", "u", JobOp.UPSERT)
     assert mine is not None
     assert await own._blocking_tombstone(mine) is None
@@ -1943,11 +1874,6 @@ async def test_cancel_refuses_foreign_jobs(own, foreign):
     assert theirs is not None
     assert not await own.cancel(theirs.id)
     assert await foreign.get_job(theirs.id) is not None
-
-
-async def test_cancel_sources_ignores_foreign_jobs(own, foreign):
-    theirs = await foreign.enqueue("s", "u", JobOp.UPSERT)
-    assert theirs is not None
     assert await own.cancel_sources({"s"}) == 0
     assert await foreign.get_job(theirs.id) is not None
 
@@ -1959,75 +1885,11 @@ async def test_list_jobs_hides_foreign_jobs(own, foreign):
     assert [job.id for job in await own.list_jobs()] == [mine.id]
 
 
-async def test_has_pending_ignores_foreign_jobs(own, foreign):
-    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
-    assert not await own.has_pending("s")
-
-
-async def test_counts_by_status_ignores_foreign_jobs(own, foreign):
-    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
-    assert await own.counts_by_status() == {}
-
-
-async def test_counts_by_status_since_ignores_foreign_jobs(own, foreign):
-    since = datetime.now(UTC) - timedelta(minutes=1)
-    theirs = await _claimed(foreign)
-    assert await foreign.mark_succeeded(theirs.id, "w")
-    assert await own.counts_by_status_since(since) == {}
-
-
-async def test_batch_progress_counts_since_ignores_foreign_jobs(own, foreign):
-    since = datetime.now(UTC) - timedelta(minutes=1)
-    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
-    assert await own.batch_progress_counts_since(since) == {}
-
-
-async def test_count_succeeded_since_ignores_foreign_jobs(own, foreign):
-    theirs = await _claimed(foreign)
-    assert await foreign.mark_succeeded(theirs.id, "w")
-    assert await own.count_succeeded_since(3600) == 0
-
-
-async def test_oldest_queued_age_ignores_foreign_jobs(own, foreign):
-    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
-    assert await own.oldest_queued_age_seconds() is None
-
-
-async def test_counts_by_source_ignores_foreign_jobs(own, foreign):
-    assert await foreign.enqueue("s", "u", JobOp.UPSERT) is not None
-    assert await own.counts_by_source("queued", "claimed") == {}
-
-
-async def test_release_if_claimed_ignores_foreign_claims(own, foreign):
-    theirs = await _claimed(foreign)
-    assert not await own.release_if_claimed(theirs.id, "w")
-    refreshed = await foreign.get_job(theirs.id)
-    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
-
-
-async def test_prune_unsuccessful_ignores_foreign_jobs(own, foreign):
-    theirs = await _dead(foreign)
-    assert await own.prune_unsuccessful("s", "u") == 0
-    assert await foreign.get_job(theirs.id) is not None
-
-
 async def test_prune_terminal_ignores_foreign_jobs(own, foreign):
     theirs = await _claimed(foreign)
     assert await foreign.mark_succeeded(theirs.id, "w")
     assert await own.prune_terminal(max_age_seconds=0) == 0
     assert await foreign.get_job(theirs.id) is not None
-
-
-async def test_reap_stale_ignores_foreign_claims(own, foreign):
-    theirs = await _claimed(foreign)
-    assert await own.reap_stale(lease_ttl_seconds=0) == 0
-    refreshed = await foreign.get_job(theirs.id)
-    assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
-
-
-async def test_renew_claims_ignores_foreign_claims(own, foreign):
-    theirs = await _claimed(foreign)
-    assert await own.renew_claims({theirs.id: "w"}) == 0
 
 
 async def test_sync_upsert_keeps_namespaces_apart(own_sync, foreign_sync):
@@ -2039,25 +1901,17 @@ async def test_sync_upsert_keeps_namespaces_apart(own_sync, foreign_sync):
     assert theirs is not None and theirs.revision == "theirs"
 
 
-async def test_revision_snapshot_ignores_foreign_rows(own_sync, foreign_sync):
-    await foreign_sync.upsert("s", "u", revision="r1")
+async def test_sync_reads_ignore_foreign_rows(own_sync, foreign_sync):
+    await foreign_sync.upsert("s", "u", revision="r1", ingested=True)
     assert await own_sync.get_revision_snapshot("s") == {}
-
-
-async def test_list_known_uris_ignores_foreign_rows(own_sync, foreign_sync):
-    await foreign_sync.upsert("s", "u")
     assert await own_sync.list_known_uris("s") == set()
+    assert await own_sync.list_ingested_uris("s") == set()
 
 
 async def test_batch_upsert_writes_the_namespace(own_sync, foreign_sync):
     await own_sync.batch_upsert([SyncRow("s", "u", "r1", None, True)])
     assert await own_sync.get_revision_snapshot("s") == {"u": "r1"}
     assert await foreign_sync.get_row("s", "u") is None
-
-
-async def test_list_ingested_uris_ignores_foreign_rows(own_sync, foreign_sync):
-    await foreign_sync.upsert("s", "u", ingested=True)
-    assert await own_sync.list_ingested_uris("s") == set()
 
 
 async def test_invalidate_ignores_foreign_rows(own_sync, foreign_sync):
@@ -2071,10 +1925,6 @@ async def test_sync_delete_ignores_foreign_rows(own_sync, foreign_sync):
     await foreign_sync.upsert("s", "u")
     await own_sync.delete("s", "u")
     assert await foreign_sync.get_row("s", "u") is not None
-
-
-async def test_sync_delete_sources_ignores_foreign_rows(own_sync, foreign_sync):
-    await foreign_sync.upsert("s", "u")
     await own_sync.delete_sources({"s"})
     assert await foreign_sync.get_row("s", "u") is not None
 
@@ -2082,17 +1932,8 @@ async def test_sync_delete_sources_ignores_foreign_rows(own_sync, foreign_sync):
 # --- rejected ---
 
 
-async def _rejected(jobs, uri: str = "u"):
-    job = await jobs.enqueue("s", uri, JobOp.UPSERT)
-    assert job is not None
-    claimed = await jobs.claim_next("w")
-    assert claimed is not None
-    assert await jobs.mark_rejected(claimed.id, "u rejected: draft", "w")
-    return job
-
-
 async def test_mark_rejected_records_the_reason(jobs):
-    job = await _rejected(jobs)
+    job = await finished_job(jobs, JobStatus.REJECTED, error="u rejected: draft")
 
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
@@ -2102,7 +1943,7 @@ async def test_mark_rejected_records_the_reason(jobs):
 
 
 async def test_retry_revives_a_rejected_job(jobs):
-    job = await _rejected(jobs)
+    job = await finished_job(jobs, JobStatus.REJECTED, error="u rejected: draft")
 
     revived = await jobs.retry(job.id)
 
@@ -2111,14 +1952,14 @@ async def test_retry_revives_a_rejected_job(jobs):
 
 
 async def test_prune_unsuccessful_removes_rejected_rows(jobs):
-    job = await _rejected(jobs)
+    job = await finished_job(jobs, JobStatus.REJECTED, error="u rejected: draft")
 
     assert await jobs.prune_unsuccessful("s", "u") == 1
     assert await jobs.get_job(job.id) is None
 
 
 async def test_prune_terminal_deletes_old_rejected_rows(jobs, conn):
-    job = await _rejected(jobs)
+    job = await finished_job(jobs, JobStatus.REJECTED, error="u rejected: draft")
     long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     await conn.execute(
         "UPDATE jobs SET completed_at = ? WHERE id = ?", (long_ago, job.id)
@@ -2131,36 +1972,12 @@ async def test_prune_terminal_deletes_old_rejected_rows(jobs, conn):
 
 async def test_rejections_are_counted_apart_from_dead(jobs):
     since = datetime.now(UTC) - timedelta(seconds=1)
-    await _rejected(jobs, "u1")
-    dead = await jobs.enqueue("s", "u2", JobOp.UPSERT)
-    assert dead is not None
-    await jobs.claim_next("w")
-    await jobs.mark_dead(dead.id, "boom", "w")
+    await finished_job(jobs, JobStatus.REJECTED, "u1", error="u rejected: draft")
+    await finished_job(jobs, JobStatus.DEAD, "u2")
 
     expected = {"rejected": 1, "dead": 1}
     assert await jobs.counts_by_status_since(since) == expected
     assert await jobs.batch_progress_counts_since(since) == expected
-
-
-async def test_migration_v4_to_v5_keeps_the_jobs(engine):
-    """Schema 5 adds the `rejected` status, which needs no DDL: the version
-    alone keeps an older release from reading a status it cannot parse."""
-    when = "2026-01-01T00:00:00+00:00"
-    async with engine.begin() as conn:
-        await conn.execute(sa.text("UPDATE schema_version SET version = 4"))
-        await conn.execute(
-            sa.text(
-                "INSERT INTO jobs (id, namespace, source_id, uri, op, status, "
-                "attempts, max_attempts, enqueued_at, scheduled_at) "
-                "VALUES ('old-1', '', 's', 'u1', 'upsert', 'queued', 0, 5, "
-                f"'{when}', '{when}')"
-            )
-        )
-
-    assert await apply_migrations(engine) == SCHEMA_VERSION
-    async with engine.connect() as conn:
-        ids = (await conn.execute(sa.text("SELECT id FROM jobs"))).scalars().all()
-    assert ids == ["old-1"]
 
 
 async def test_migration_v5_to_v6_adds_the_per_source_claim_index(engine, jobs):
@@ -2186,44 +2003,22 @@ async def test_migration_v5_to_v6_adds_the_per_source_claim_index(engine, jobs):
 # --- retry_failed ---
 
 
-async def _failed(repo: JobRepo, uri: str = "u", op: JobOp = JobOp.UPSERT):
-    job = await repo.enqueue("s", uri, op)
-    assert job is not None
-    claimed = await repo.claim_next("w")
-    assert claimed is not None and claimed.id == job.id
-    assert await repo.mark_dead(claimed.id, "boom", "w")
-    return job
-
-
-async def _succeeded(repo: JobRepo, uri: str = "u", op: JobOp = JobOp.UPSERT):
-    job = await repo.enqueue("s", uri, op)
-    assert job is not None
-    claimed = await repo.claim_next("w")
-    assert claimed is not None and claimed.id == job.id
-    assert await repo.mark_succeeded(claimed.id, "w")
-    return job
-
-
-async def _status(repo: JobRepo, job_id: str) -> JobStatus:
-    job = await repo.get_job(job_id)
-    assert job is not None
-    return job.status
-
-
 async def test_retry_failed_revives_the_chosen_statuses_only(jobs):
-    dead = await _failed(jobs, "a")
-    rejected = await _rejected(jobs, "b")
+    dead = await finished_job(jobs, JobStatus.DEAD, "a")
+    rejected = await finished_job(
+        jobs, JobStatus.REJECTED, "b", error="u rejected: draft"
+    )
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 1
 
-    assert await _status(jobs, dead.id) is JobStatus.QUEUED
-    assert await _status(jobs, rejected.id) is JobStatus.REJECTED
+    assert await status_of(jobs, dead.id) is JobStatus.QUEUED
+    assert await status_of(jobs, rejected.id) is JobStatus.REJECTED
     assert await jobs.retry_failed({JobStatus.REJECTED}) == 1
-    assert await _status(jobs, rejected.id) is JobStatus.QUEUED
+    assert await status_of(jobs, rejected.id) is JobStatus.QUEUED
 
 
 async def test_retry_failed_revives_the_given_sources_only(jobs):
-    served = await _failed(jobs, "a")
+    served = await finished_job(jobs, JobStatus.DEAD, "a")
     other = await jobs.enqueue("other", "b", JobOp.UPSERT)
     assert other is not None
     assert await jobs.claim_next("w", source_ids={"other"}) is not None
@@ -2231,8 +2026,8 @@ async def test_retry_failed_revives_the_given_sources_only(jobs):
 
     assert await jobs.retry_failed({JobStatus.DEAD}, source_ids={"s"}) == 1
 
-    assert await _status(jobs, served.id) is JobStatus.QUEUED
-    assert await _status(jobs, other.id) is JobStatus.DEAD
+    assert await status_of(jobs, served.id) is JobStatus.QUEUED
+    assert await status_of(jobs, other.id) is JobStatus.DEAD
 
 
 async def test_retry_failed_refuses_a_live_or_succeeded_status(jobs):
@@ -2241,7 +2036,7 @@ async def test_retry_failed_refuses_a_live_or_succeeded_status(jobs):
 
 
 async def test_retry_failed_makes_a_revived_job_claimable_at_once(jobs):
-    dead = await _dead(jobs, conversion_stalled=True)
+    dead = await finished_job(jobs, JobStatus.DEAD, conversion_stalled=True)
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 1
 
@@ -2263,46 +2058,46 @@ async def test_retry_failed_makes_a_revived_job_claimable_at_once(jobs):
 async def test_retry_failed_leaves_a_failure_a_later_success_resolved(
     jobs, failed_op, succeeded_op
 ):
-    dead = await _failed(jobs, op=failed_op)
-    await _succeeded(jobs, op=succeeded_op)
+    dead = await finished_job(jobs, JobStatus.DEAD, op=failed_op)
+    await finished_job(jobs, JobStatus.SUCCEEDED, op=succeeded_op)
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 0
-    assert await _status(jobs, dead.id) is JobStatus.DEAD
+    assert await status_of(jobs, dead.id) is JobStatus.DEAD
 
 
 async def test_retry_failed_leaves_a_failure_ingested_after_its_success_row_aged_out(
     jobs, sync
 ):
-    stalled = await _dead(jobs, conversion_stalled=True)
+    stalled = await finished_job(jobs, JobStatus.DEAD, conversion_stalled=True)
     await sync.upsert("s", "u", revision="r2", ingested=True)
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 0
-    assert await _status(jobs, stalled.id) is JobStatus.DEAD
+    assert await status_of(jobs, stalled.id) is JobStatus.DEAD
 
 
 async def test_retry_failed_revives_a_failure_after_an_earlier_ingest(jobs, sync):
     await sync.upsert("s", "u", revision="r1", ingested=True)
-    dead = await _failed(jobs)
+    dead = await finished_job(jobs, JobStatus.DEAD)
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 1
-    assert await _status(jobs, dead.id) is JobStatus.QUEUED
+    assert await status_of(jobs, dead.id) is JobStatus.QUEUED
 
 
 async def test_retry_failed_revives_only_the_latest_failure_of_a_uri(jobs):
-    older = await _failed(jobs)
-    newer = await _rejected(jobs)
+    older = await finished_job(jobs, JobStatus.DEAD)
+    newer = await finished_job(jobs, JobStatus.REJECTED, error="u rejected: draft")
 
     assert await jobs.retry_failed({JobStatus.DEAD, JobStatus.REJECTED}) == 1
 
-    assert await _status(jobs, older.id) is JobStatus.DEAD
-    assert await _status(jobs, newer.id) is JobStatus.QUEUED
+    assert await status_of(jobs, older.id) is JobStatus.DEAD
+    assert await status_of(jobs, newer.id) is JobStatus.QUEUED
 
 
 async def test_retry_failed_revives_one_of_two_failures_with_equal_completed_at(
     jobs, conn
 ):
-    first = await _failed(jobs)
-    second = await _failed(jobs)
+    first = await finished_job(jobs, JobStatus.DEAD)
+    second = await finished_job(jobs, JobStatus.DEAD)
     await conn.execute(
         "UPDATE jobs SET completed_at = ? WHERE id IN (?, ?)",
         ("2026-01-01T00:00:00+00:00", first.id, second.id),
@@ -2310,24 +2105,24 @@ async def test_retry_failed_revives_one_of_two_failures_with_equal_completed_at(
     await conn.commit()
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 1
-    statuses = {await _status(jobs, first.id), await _status(jobs, second.id)}
+    statuses = {await status_of(jobs, first.id), await status_of(jobs, second.id)}
     assert statuses == {JobStatus.QUEUED, JobStatus.DEAD}
 
 
 async def test_retry_failed_skips_a_failure_with_a_live_sibling(jobs):
-    dead = await _failed(jobs)
+    dead = await finished_job(jobs, JobStatus.DEAD)
     live = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert live is not None
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 0
-    assert await _status(jobs, dead.id) is JobStatus.DEAD
-    assert await _status(jobs, live.id) is JobStatus.QUEUED
+    assert await status_of(jobs, dead.id) is JobStatus.DEAD
+    assert await status_of(jobs, live.id) is JobStatus.QUEUED
 
 
 async def test_retry_failed_skips_a_failure_superseded_after_selection(
     jobs, monkeypatch
 ):
-    dead = await _failed(jobs)
+    dead = await finished_job(jobs, JobStatus.DEAD)
     replacement = await jobs.enqueue("s", "u", JobOp.UPSERT)
     assert replacement is not None
     claimed = await jobs.claim_next("w")
@@ -2341,11 +2136,11 @@ async def test_retry_failed_skips_a_failure_superseded_after_selection(
     monkeypatch.setattr(JobRepo, "_revive", _complete_then_revive)
 
     assert await jobs.retry_failed({JobStatus.DEAD}) == 0
-    assert await _status(jobs, dead.id) is JobStatus.DEAD
+    assert await status_of(jobs, dead.id) is JobStatus.DEAD
 
 
 async def test_retry_failed_skips_a_failure_pruned_after_selection(jobs, monkeypatch):
-    dead = await _failed(jobs)
+    dead = await finished_job(jobs, JobStatus.DEAD)
     revive = JobRepo._revive
 
     async def _prune_then_revive(self, job_id, statuses):
@@ -2361,15 +2156,15 @@ async def test_retry_failed_skips_a_failure_pruned_after_selection(jobs, monkeyp
 async def test_retry_failed_stays_within_its_namespace(
     own, foreign, own_sync, foreign_sync
 ):
-    mine = await _failed(own)
-    theirs = await _failed(foreign)
-    await _succeeded(foreign)
+    mine = await finished_job(own, JobStatus.DEAD)
+    theirs = await finished_job(foreign, JobStatus.DEAD)
+    await finished_job(foreign, JobStatus.SUCCEEDED)
     await foreign_sync.upsert("s", "u", revision="r", ingested=True)
 
     assert await own.retry_failed({JobStatus.DEAD}) == 1
 
-    assert await _status(own, mine.id) is JobStatus.QUEUED
-    assert await _status(foreign, theirs.id) is JobStatus.DEAD
+    assert await status_of(own, mine.id) is JobStatus.QUEUED
+    assert await status_of(foreign, theirs.id) is JobStatus.DEAD
 
 
 async def test_run_counts_cover_the_given_sources_only(jobs):

@@ -1,3 +1,4 @@
+from operator import attrgetter
 from pathlib import Path
 
 import pytest
@@ -13,27 +14,28 @@ from haiku.rag.config import (
     IngesterConfig,
     LanceDBConfig,
     MetadataProviderConfig,
-    QueueConfig,
     RetryPolicyConfig,
     S3SourceConfig,
     WorkerConfig,
 )
 
 
-def test_default_ingester_config_has_sane_values():
-    cfg = IngesterConfig()
-    assert cfg.databases == {}
-    assert cfg.workers.worker_count == 4
-    assert cfg.workers.retry.max_attempts == 5
-    assert cfg.workers.lease_ttl_s == 120
-    assert cfg.workers.heartbeat_interval_s == 30
-    assert cfg.api.enabled is True
-    assert cfg.api.port == 8765
-    assert cfg.api.root_path == ""
-
-
-def test_queue_namespace_defaults_to_empty():
-    assert QueueConfig().namespace == ""
+@pytest.mark.parametrize(
+    "path, default",
+    [
+        ("databases", {}),
+        ("workers.worker_count", 4),
+        ("workers.retry.max_attempts", 5),
+        ("workers.lease_ttl_s", 120),
+        ("workers.heartbeat_interval_s", 30),
+        ("api.enabled", True),
+        ("api.port", 8765),
+        ("api.root_path", ""),
+        ("queue.namespace", ""),
+    ],
+)
+def test_ingester_config_defaults(path, default):
+    assert attrgetter(path)(IngesterConfig()) == default
 
 
 def test_worker_config_rejects_heartbeat_too_close_to_lease():
@@ -51,13 +53,6 @@ def test_worker_config_rejects_non_positive_timings():
         WorkerConfig(lease_ttl_s=0)
     with pytest.raises(ValidationError):
         WorkerConfig(heartbeat_interval_s=0)
-
-
-def test_worker_config_rejects_unknown_field():
-    """The former claim_timeout_s (and any typo) must fail loudly rather than
-    being silently ignored."""
-    with pytest.raises(ValidationError, match="claim_timeout_s"):
-        WorkerConfig(claim_timeout_s=1800)  # ty: ignore[unknown-argument]
 
 
 @pytest.mark.parametrize(
@@ -85,16 +80,6 @@ def test_api_root_path_normalized_on_assignment():
     cfg.root_path = "ingester/"
 
     assert cfg.root_path == "/ingester"
-
-
-def test_discriminator_picks_fs_source():
-    cfg = IngestedDatabase.model_validate(
-        {"sources": [{"type": "fs", "root": "/tmp/docs"}]}
-    )
-    assert isinstance(cfg.sources[0], FSSourceConfig)
-    assert cfg.sources[0].root == Path("/tmp/docs")
-    assert cfg.sources[0].delete_orphans is True
-    assert cfg.sources[0].metadata_provider is None
 
 
 def test_source_carries_metadata_provider_name():
@@ -126,37 +111,6 @@ def test_source_carries_metadata_provider_options():
     assert cfg.sources[0].metadata_provider == MetadataProviderConfig(
         name="example", options={"classification": "secret"}
     )
-
-
-def test_metadata_provider_rejects_unknown_keys():
-    with pytest.raises(ValidationError):
-        IngestedDatabase.model_validate(
-            {
-                "sources": [
-                    {
-                        "type": "fs",
-                        "root": "/tmp/docs",
-                        "metadata_provider": {"name": "example", "option": {}},
-                    }
-                ]
-            }
-        )
-
-
-def test_discriminator_picks_http_source():
-    cfg = IngestedDatabase.model_validate(
-        {"sources": [{"type": "http", "id": "arxiv", "urls": ["https://x"]}]}
-    )
-    assert isinstance(cfg.sources[0], HTTPSourceConfig)
-    assert cfg.sources[0].id == "arxiv"
-
-
-def test_discriminator_picks_s3_source():
-    cfg = IngestedDatabase.model_validate(
-        {"sources": [{"type": "s3", "uri": "s3://bucket/prefix/"}]}
-    )
-    assert isinstance(cfg.sources[0], S3SourceConfig)
-    assert cfg.sources[0].uri == "s3://bucket/prefix/"
 
 
 def test_discriminator_picks_webdav_source():
@@ -233,7 +187,6 @@ ingester:
         - type: fs
           root: /data/docs
           ignore_patterns: ["**/.git/**"]
-          delete_orphans: true
         - type: s3
           uri: s3://my-bucket/incoming/
           poll_interval_s: 300
@@ -256,8 +209,13 @@ ingester:
     assert isinstance(fs, FSSourceConfig)
     assert isinstance(s3, S3SourceConfig)
     assert isinstance(http, HTTPSourceConfig)
+    assert fs.root == Path("/data/docs")
     assert fs.ignore_patterns == ["**/.git/**"]
+    assert fs.delete_orphans is True
+    assert fs.metadata_provider is None
+    assert s3.uri == "s3://my-bucket/incoming/"
     assert s3.storage_options["endpoint"] == "http://seaweed:8333"
+    assert http.id == "arxiv"
     assert http.headers["Authorization"] == "Bearer abc"
     assert app.ingester.workers.worker_count == 8
     assert app.ingester.api.enabled is False
