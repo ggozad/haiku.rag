@@ -267,7 +267,7 @@ class BasePoller:
                                     op=JobOp.DELETE,
                                     source_id=event.source_id,
                                     uri=event.uri,
-                                    revision=None,
+                                    revision=event.revision,
                                     discovered_at=event.discovered_at,
                                 )
                             )
@@ -335,6 +335,7 @@ class BasePoller:
                 event.source_id,
                 event.uri,
                 op=JobOp.DELETE,
+                revision=event.revision,
                 max_attempts=max_attempts(self.config, self._default_max_attempts),
                 extra=_enqueue_extra(),
             )

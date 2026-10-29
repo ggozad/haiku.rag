@@ -185,6 +185,20 @@ async def test_sync_state_batch_upsert(postgres_dburi):
         assert await sync.get_revision_snapshot("s") == {"u1": "r1", "u2": "r2"}
 
 
+async def test_sync_state_retire(postgres_dburi):
+    async with queue_engine(postgres_dburi) as engine:
+        sync = SyncStateRepo(engine)
+        await sync.upsert("s", "u", revision="v1", content_hash="h1", ingested=True)
+        await sync.retire("s", "u", "http-404")
+        row = await sync.get_row("s", "u")
+        assert row is not None
+        assert (row.revision, row.content_hash, row.last_ingested_at) == (
+            "http-404",
+            None,
+            None,
+        )
+
+
 async def test_prune_terminal_removes_old_rows(postgres_dburi):
     async with queue_engine(postgres_dburi) as engine:
         jobs = JobRepo(engine)

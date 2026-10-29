@@ -23,6 +23,7 @@ from haiku.rag.hooks import DocumentRejected, HookError
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.sources.base import FileTooLargeError
+from haiku.rag.sources.http import HTTPSource, is_failure_marker
 from haiku.rag.sources.registry import resolve_configured_source
 from haiku.rag.telemetry import attach_context, logfire
 from haiku.rag.utils.http import is_transient_status
@@ -243,7 +244,11 @@ async def run_job(
             if manifest_context is not None and job.revision is not None:
                 source = resolve_configured_source(job.uri, job.source_id, sources)
                 current_revision = await source.head(job.uri)
-                if current_revision != job.revision:
+                # An HTTP failure marker reads as None, and the fetch decides.
+                failed = isinstance(source, HTTPSource) and is_failure_marker(
+                    job.revision
+                )
+                if current_revision != job.revision and not failed:
                     raise PermanentError(
                         "manifest revision is stale for "
                         f"{job.uri}: expected {job.revision!r}, "

@@ -565,7 +565,12 @@ class WorkerPool:
             )
         try:
             if job.op is JobOp.DELETE and not result.resource_restored:
-                await self._sync.delete(job.source_id, job.uri)
+                # A DELETE carrying a revision is for a URI still listed by its
+                # source, so the row keeps it accounted for.
+                if job.revision is None:
+                    await self._sync.delete(job.source_id, job.uri)
+                else:
+                    await self._sync.retire(job.source_id, job.uri, job.revision)
                 # Retiring a source's URI resolves its earlier ingestion failures.
                 pruned = await self._jobs.prune_unsuccessful(job.source_id, job.uri)
                 if pruned:
@@ -575,6 +580,8 @@ class WorkerPool:
                         job.uri,
                     )
             elif job.op is JobOp.UPSERT:
+                if result.revision is None:
+                    await self._sync.invalidate(job.source_id, [job.uri])
                 await self._sync.upsert(
                     job.source_id,
                     job.uri,
