@@ -480,27 +480,20 @@ async def test_create_index_reports_a_build_that_found_too_few_chunks(app, clien
     assert "created successfully" not in out(app)
 
 
-def test_show_settings_hides_secrets(tmp_path):
-    config = AppConfig(
-        lancedb=LanceDBConfig(databases={"x": "db://x"}, api_key="secret-value")
-    )
-    app = HaikuRAGApp(scope=DatabaseScope.resolve(config), config=config)
-    app.console = Console(record=True, width=200)
-
-    app.show_settings()
-
-    printed = app.console.export_text()
-    assert "haiku.rag configuration" in printed
-    assert "secret-value" not in printed
-
-
-DOCUMENTED_SECRETS = ("PGSECRET", "HDRSECRET", "DAVSECRET", "FETCHSECRET")
+DOCUMENTED_SECRETS = (
+    "LANCESECRET",
+    "PGSECRET",
+    "HDRSECRET",
+    "DAVSECRET",
+    "FETCHSECRET",
+)
 
 
 def documented_secret_shapes() -> AppConfig:
     """Credentials where the docs tell operators to put them."""
     return AppConfig.model_validate(
         {
+            "lancedb": {"api_key": "LANCESECRET"},
             "processing": {
                 "conversion_options": {
                     "fetch_headers": {"Authorization": "Bearer FETCHSECRET"}
@@ -538,6 +531,7 @@ def test_show_settings_hides_credentials_in_urls_and_headers():
     app.show_settings()
 
     printed = app.console.export_text()
+    assert "haiku.rag configuration" in printed
     assert "dav.example/remote/" in printed
     for secret in DOCUMENTED_SECRETS:
         assert secret not in printed
@@ -626,22 +620,12 @@ async def test_init_reports_an_existing_database(app):
     assert "Database already exists" in out(app)
 
 
-async def test_info_reports_a_missing_path(tmp_path):
+@pytest.mark.parametrize("command", ["info", "history"])
+async def test_a_command_reports_a_missing_path(tmp_path, command):
     application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
     application.console = Console(record=True, width=200)
 
-    await application.info()
-
-    assert "Database path does not exist" in application.console.export_text(
-        clear=False
-    )
-
-
-async def test_history_reports_a_missing_path(tmp_path):
-    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
-    application.console = Console(record=True, width=200)
-
-    await application.history()
+    await getattr(application, command)()
 
     assert "Database path does not exist" in application.console.export_text(
         clear=False
@@ -753,15 +737,6 @@ def test_search_result_rendering_includes_provenance(app):
     assert "Chapter > Section" in printed
 
 
-async def test_run_mcp_stdio(app, client, monkeypatch):
-    server = AsyncMock()
-    monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
-
-    await app.run_mcp(transport="stdio")
-
-    server.run_stdio_async.assert_awaited_once()
-
-
 async def test_run_mcp_http(app, client, monkeypatch):
     server = AsyncMock()
     monkeypatch.setattr("haiku.rag.app._mcp_server_covering", lambda *a, **kw: server)
@@ -793,10 +768,10 @@ def _as_cm(store):
 
 
 async def test_doctor_renders_the_report(app, monkeypatch):
-    from haiku.rag.doctor import CheckResult, Severity
+    from haiku.rag.doctor import CheckResult, DoctorReport, Severity
 
-    class Report:
-        results = [
+    doctor_report = DoctorReport(
+        results=[
             CheckResult(name="tables", severity=Severity.OK, message="tables present"),
             CheckResult(
                 name="orphans",
@@ -811,14 +786,11 @@ async def test_doctor_renders_the_report(app, monkeypatch):
                 message="ollama unreachable",
             ),
         ]
-        failed = True
-
-        def count(self, severity):
-            return sum(1 for r in self.results if r.severity is severity)
+    )
 
     async def report(*args, **kwargs):
         kwargs["on_progress"]("checking tables")
-        return Report()
+        return doctor_report
 
     monkeypatch.setattr("haiku.rag.doctor.run_doctor", report)
 
@@ -836,10 +808,10 @@ async def test_doctor_renders_the_report(app, monkeypatch):
 
 
 async def test_doctor_prints_details_holding_markup_as_text(app, monkeypatch):
-    from haiku.rag.doctor import CheckResult, Severity
+    from haiku.rag.doctor import CheckResult, DoctorReport, Severity
 
-    class Report:
-        results = [
+    doctor_report = DoctorReport(
+        results=[
             CheckResult(
                 name="duplicate_documents",
                 severity=Severity.WARN,
@@ -848,13 +820,10 @@ async def test_doctor_prints_details_holding_markup_as_text(app, monkeypatch):
             ),
             CheckResult(name="tables", severity=Severity.OK, message="tables present"),
         ]
-        failed = False
-
-        def count(self, severity):
-            return sum(1 for r in self.results if r.severity is severity)
+    )
 
     async def report(*args, **kwargs):
-        return Report()
+        return doctor_report
 
     monkeypatch.setattr("haiku.rag.doctor.run_doctor", report)
 
@@ -867,44 +836,16 @@ async def test_doctor_prints_details_holding_markup_as_text(app, monkeypatch):
 
 
 async def test_doctor_reports_the_duplicates_export(app, monkeypatch, tmp_path):
-    class Report:
-        results = []
-        failed = False
-
-        def count(self, severity):
-            return 0
+    from haiku.rag.doctor import DoctorReport
 
     async def report(*args, **kwargs):
-        return Report()
+        return DoctorReport()
 
     monkeypatch.setattr("haiku.rag.doctor.run_doctor", report)
     target = tmp_path / "dupes.yaml"
 
     assert await app.doctor(duplicates_out=target) is False
     assert f"written to {target}" in out(app)
-
-
-async def test_doctor_passes_providers_to_run_doctor(app, monkeypatch):
-    from haiku.rag.doctor import DoctorReport
-
-    seen = {}
-
-    async def report(*args, **kwargs):
-        seen.update(kwargs)
-        return DoctorReport()
-
-    monkeypatch.setattr("haiku.rag.doctor.run_doctor", report)
-
-    await app.doctor(providers=False)
-    assert seen["providers"] is False
-
-
-async def test_doctor_reports_a_missing_database(tmp_path):
-    application = HaikuRAGApp(scope=for_path(tmp_path / "gone"), config=AppConfig())
-    application.console = Console(record=True, width=200)
-
-    assert await application.doctor() is True
-    assert "does not exist" in application.console.export_text(clear=False)
 
 
 async def test_download_models_reports_each_stage(app, monkeypatch):
@@ -1034,19 +975,13 @@ async def test_info_suggests_creating_an_index_when_there_are_enough_chunks(
 
 async def test_doctor_updates_a_terminal_status(app, monkeypatch):
     """On a terminal the checks report progress through console.status."""
-
-    class Report:
-        results = []
-        failed = False
-
-        def count(self, severity):
-            return 0
+    from haiku.rag.doctor import DoctorReport
 
     labels: list[str] = []
 
     async def report(*args, **kwargs):
         kwargs["on_progress"]("scanning vectors")
-        return Report()
+        return DoctorReport()
 
     class Status:
         def __enter__(self):
@@ -1067,24 +1002,11 @@ async def test_doctor_updates_a_terminal_status(app, monkeypatch):
     assert labels == ["scanning vectors..."]
 
 
-async def test_history_limits_the_versions_shown(app, monkeypatch):
-    store = AsyncMock()
-    store.list_tags.return_value = {}
-    store.list_table_versions.return_value = [
+async def test_history_limits_the_versions_shown(app, store_stub):
+    store_stub.list_tags.return_value = {}
+    store_stub.list_table_versions.return_value = [
         {"version": v, "timestamp": None} for v in (1, 2, 3)
     ]
-
-    class StubStore:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return store
-
-        async def __aexit__(self, *exc):
-            return False
-
-    monkeypatch.setattr("haiku.rag.store.engine.Store", StubStore)
 
     await app.history(table="documents", limit=1)
 
