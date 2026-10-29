@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
@@ -102,11 +101,6 @@ def test_config_accepts_a_hook_name_or_a_name_with_options():
         HookConfig(name="tuned", options={"token": "syn"}),
     ]
     assert HookConfig(name="bare").options == {}
-
-
-def test_config_rejects_an_unknown_key_in_a_hook_entry():
-    with pytest.raises(ValidationError, match="opts"):
-        AppConfig.model_validate({"hooks": [{"name": "tuned", "opts": {}}]})
 
 
 def test_build_hooks_passes_options_to_the_factory():

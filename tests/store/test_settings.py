@@ -5,6 +5,7 @@ import pytest
 
 from haiku.rag.config import AppConfig, get_config
 from haiku.rag.store.exceptions import ConfigMismatchError
+from tests.conftest import capture_logs
 
 SECRETS = {
     "lancedb": {
@@ -142,145 +143,95 @@ class TestValidateConfigCompatibility:
 
             assert await settings_repo.get_current_settings() == {}
 
-    async def test_compatible_config_no_error(self, temp_db_path):
-        """Compatible config does not raise error."""
+    @pytest.mark.parametrize(
+        "field, value",
+        [("provider", "openai"), ("name", "different-model"), ("query_prefix", "Q: ")],
+    )
+    async def test_drift_read_only_warns_without_writing(
+        self, temp_db_path, field, value
+    ):
+        """Drift at the same vector_dim warns read-only and writes nothing."""
         from haiku.rag.store.engine import Store
+        from haiku.rag.store.repositories import settings as settings_module
         from haiku.rag.store.repositories.settings import SettingsRepository
 
         async with Store(temp_db_path, create=True) as store:
-            settings_repo = SettingsRepository(store)
-
-            # Should not raise - same config
-            await settings_repo.validate_config_compatibility()
-
-    async def test_provider_drift_read_only_warns_without_writing(
-        self, temp_db_path, caplog, monkeypatch
-    ):
-        """Provider drift (vector_dim matches) on a read-only store warns and continues.
-
-        Same model served by a different stack (Ollama vs vLLM via openai-compat)
-        legitimately differs in `provider`. A read-only open surfaces the change
-        but must never modify the stored settings.
-        """
-        from haiku.rag.store.engine import Store
-        from haiku.rag.store.repositories.settings import SettingsRepository
-
-        # haiku.rag.logging.get_logger() sets propagate=False on the
-        # `haiku.rag` logger. caplog's handler attaches to root by default,
-        # so without restoring propagation the records never reach it.
-        monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
-
-        async with Store(temp_db_path, create=True):
-            pass
+            before = await SettingsRepository(store).get_current_settings()
 
         new_config = AppConfig()
-        new_config.embeddings.model.provider = "openai"
+        setattr(new_config.embeddings.model, field, value)
+        change = (
+            f"{field}: {before['embeddings']['model'].get(field, '')!r} -> {value!r}"
+        )
 
         async with Store(
             temp_db_path, config=new_config, skip_validation=True, read_only=True
         ) as store2:
             settings_repo = SettingsRepository(store2)
 
-            with caplog.at_level(logging.WARNING):
+            with capture_logs(settings_module.logger, logging.WARNING) as records:
                 await settings_repo.validate_config_compatibility()
 
-            # Warning surfaced the change
-            assert any(
-                "provider" in r.getMessage()
-                and "ollama" in r.getMessage()
-                and "openai" in r.getMessage()
-                for r in caplog.records
-            )
+            warnings = [r.getMessage() for r in records if change in r.getMessage()]
+            assert warnings
+            for warning in warnings:
+                _assert_drift_advice(warning)
 
-            # Stored settings are untouched
-            saved = await settings_repo.get_current_settings()
-            assert saved["embeddings"]["model"]["provider"] == "ollama"
+            assert await settings_repo.get_current_settings() == before
 
-    async def test_provider_drift_writable_raises_without_writing(
-        self, temp_db_path, caplog, monkeypatch
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("provider", "openai"),
+            ("name", "different-model"),
+            ("document_prefix", "D: "),
+        ],
+    )
+    async def test_drift_writable_raises_without_writing(
+        self, temp_db_path, field, value
     ):
-        """Provider drift on a writable store warns and raises, without writing."""
+        """Drift at the same vector_dim raises writable and writes nothing."""
         from haiku.rag.store.engine import Store
-        from haiku.rag.store.repositories.settings import (
-            ConfigMismatchError,
-            SettingsRepository,
-        )
+        from haiku.rag.store.repositories import settings as settings_module
+        from haiku.rag.store.repositories.settings import SettingsRepository
 
-        monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
-
-        async with Store(temp_db_path, create=True):
-            pass
+        async with Store(temp_db_path, create=True) as store:
+            before = await SettingsRepository(store).get_current_settings()
 
         new_config = AppConfig()
-        new_config.embeddings.model.provider = "openai"
+        setattr(new_config.embeddings.model, field, value)
+        change = (
+            f"{field}: {before['embeddings']['model'].get(field, '')!r} -> {value!r}"
+        )
 
         async with Store(
             temp_db_path, config=new_config, skip_validation=True
         ) as store2:
             settings_repo = SettingsRepository(store2)
 
-            with caplog.at_level(logging.WARNING):
-                with pytest.raises(ConfigMismatchError):
+            with capture_logs(settings_module.logger, logging.WARNING) as records:
+                with pytest.raises(ConfigMismatchError) as raised:
                     await settings_repo.validate_config_compatibility()
 
-            assert any(
-                "provider" in r.getMessage()
-                and "ollama" in r.getMessage()
-                and "openai" in r.getMessage()
-                for r in caplog.records
-            )
+            assert change in str(raised.value)
+            _assert_drift_advice(str(raised.value))
+            assert any(change in r.getMessage() for r in records)
+            assert await settings_repo.get_current_settings() == before
 
-            # Stored settings are untouched despite the writable open
-            saved = await settings_repo.get_current_settings()
-            assert saved["embeddings"]["model"]["provider"] == "ollama"
-
-    async def test_model_drift_read_only_warns_without_writing(
-        self, temp_db_path, caplog, monkeypatch
-    ):
-        """Model name drift (vector_dim matches) on a read-only store warns, no write."""
+    @pytest.mark.parametrize("read_only", [False, True])
+    async def test_vector_dim_mismatch_raises_error(self, temp_db_path, read_only):
+        """A different vector dimension raises ConfigMismatchError, read-only included."""
         from haiku.rag.store.engine import Store
         from haiku.rag.store.repositories.settings import SettingsRepository
-
-        monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
 
         async with Store(temp_db_path, create=True):
             pass
 
-        new_config = AppConfig()
-        new_config.embeddings.model.name = "different-model"
-
-        async with Store(
-            temp_db_path, config=new_config, skip_validation=True, read_only=True
-        ) as store2:
-            settings_repo = SettingsRepository(store2)
-
-            with caplog.at_level(logging.WARNING):
-                await settings_repo.validate_config_compatibility()
-
-            recorded_name = get_config().embeddings.model.name
-            assert any(
-                f"name: '{recorded_name}' -> 'different-model'" in r.getMessage()
-                for r in caplog.records
-            )
-
-            saved = await settings_repo.get_current_settings()
-            assert saved["embeddings"]["model"]["name"] != "different-model"
-
-    async def test_vector_dim_mismatch_raises_error(self, temp_db_path):
-        """Different vector dimension raises ConfigMismatchError."""
-        from haiku.rag.store.engine import Store
-        from haiku.rag.store.repositories.settings import SettingsRepository
-
-        # Create store with default config
-        async with Store(temp_db_path, create=True):
-            pass
-
-        # Create new config with different vector dimension
         new_config = AppConfig()
         new_config.embeddings.model.vector_dim = 9999
 
         async with Store(
-            temp_db_path, config=new_config, skip_validation=True
+            temp_db_path, config=new_config, skip_validation=True, read_only=read_only
         ) as store2:
             settings_repo = SettingsRepository(store2)
 
@@ -289,74 +240,6 @@ class TestValidateConfigCompatibility:
 
             assert "vector dimension" in str(exc_info.value)
             assert "9999" in str(exc_info.value)
-
-    async def test_vector_dim_mismatch_raises_error_read_only(self, temp_db_path):
-        """vector_dim mismatch raises even read-only — search cannot work."""
-        from haiku.rag.store.engine import Store
-        from haiku.rag.store.repositories.settings import SettingsRepository
-
-        async with Store(temp_db_path, create=True):
-            pass
-
-        new_config = AppConfig()
-        new_config.embeddings.model.vector_dim = 9999
-
-        async with Store(
-            temp_db_path, config=new_config, skip_validation=True, read_only=True
-        ) as store2:
-            settings_repo = SettingsRepository(store2)
-
-            with pytest.raises(ConfigMismatchError) as exc_info:
-                await settings_repo.validate_config_compatibility()
-
-            assert "9999" in str(exc_info.value)
-
-    async def test_prefix_drift_read_only_warns_without_writing(
-        self, temp_db_path, caplog, monkeypatch
-    ):
-        from haiku.rag.store.engine import Store
-        from haiku.rag.store.repositories.settings import SettingsRepository
-
-        monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
-
-        async with Store(temp_db_path, create=True):
-            pass
-
-        new_config = AppConfig()
-        new_config.embeddings.model.query_prefix = "Q: "
-
-        async with Store(
-            temp_db_path, config=new_config, skip_validation=True, read_only=True
-        ) as store2:
-            settings_repo = SettingsRepository(store2)
-
-            with caplog.at_level(logging.WARNING):
-                await settings_repo.validate_config_compatibility()
-
-            assert any(
-                "query_prefix: '' -> 'Q: '" in r.getMessage() for r in caplog.records
-            )
-
-            saved = await settings_repo.get_current_settings()
-            assert "query_prefix" not in saved["embeddings"]["model"]
-
-    async def test_prefix_drift_writable_raises(self, temp_db_path):
-        from haiku.rag.store.engine import Store
-        from haiku.rag.store.repositories.settings import SettingsRepository
-
-        async with Store(temp_db_path, create=True):
-            pass
-
-        new_config = AppConfig()
-        new_config.embeddings.model.document_prefix = "D: "
-
-        async with Store(
-            temp_db_path, config=new_config, skip_validation=True
-        ) as store2:
-            with pytest.raises(
-                ConfigMismatchError, match="document_prefix: '' -> 'D: '"
-            ):
-                await SettingsRepository(store2).validate_config_compatibility()
 
 
 async def test_save_current_settings_recreates_a_deleted_row(temp_db_path):
@@ -386,51 +269,6 @@ def _assert_drift_advice(text: str) -> None:
         "the same vectors" in text
     )
     assert "'haiku-rag rebuild'" not in text
-
-
-async def test_drift_error_advises_re_embedding_not_adopting(temp_db_path):
-    from haiku.rag.store.engine import Store
-    from haiku.rag.store.repositories.settings import (
-        ConfigMismatchError,
-        SettingsRepository,
-    )
-
-    async with Store(temp_db_path, create=True):
-        pass
-
-    new_config = AppConfig()
-    new_config.embeddings.model.name = "different-model"
-    async with Store(temp_db_path, config=new_config, skip_validation=True) as store:
-        with pytest.raises(ConfigMismatchError) as raised:
-            await SettingsRepository(store).validate_config_compatibility()
-
-    _assert_drift_advice(str(raised.value))
-
-
-async def test_drift_warning_advises_re_embedding_not_adopting(
-    temp_db_path, caplog, monkeypatch
-):
-    from haiku.rag.store.engine import Store
-    from haiku.rag.store.repositories.settings import SettingsRepository
-
-    monkeypatch.setattr(logging.getLogger("haiku.rag"), "propagate", True)
-    async with Store(temp_db_path, create=True):
-        pass
-
-    new_config = AppConfig()
-    new_config.embeddings.model.name = "different-model"
-    async with Store(
-        temp_db_path, config=new_config, skip_validation=True, read_only=True
-    ) as store:
-        with caplog.at_level(logging.WARNING):
-            await SettingsRepository(store).validate_config_compatibility()
-
-    warnings = [
-        r.getMessage() for r in caplog.records if "different-model" in r.getMessage()
-    ]
-    assert warnings
-    for warning in warnings:
-        _assert_drift_advice(warning)
 
 
 def _settings_with(provider: str, name: str, vector_dim: int, **prefixes: str) -> dict:

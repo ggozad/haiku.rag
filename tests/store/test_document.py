@@ -121,9 +121,13 @@ async def test_document_list_with_filter(qa_corpus: list[dict[str, str]], temp_d
 
 
 async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_path):
-    """create accepts a list of documents and writes them in a single version."""
+    """create writes a list of documents in a single version; [] writes nothing."""
     async with Store(temp_db_path, create=True) as store:
         doc_repo = DocumentRepository(store)
+
+        before = await store.documents_table.version()
+        assert await doc_repo.create([]) == []
+        assert await store.documents_table.version() == before
 
         content = qa_corpus[0]["document_extracted"]
         doc_a = Document(content=content, uri="https://example.com/a.txt", title="A")
@@ -146,23 +150,18 @@ async def test_document_create_batch(qa_corpus: list[dict[str, str]], temp_db_pa
         assert round_b is not None and round_b.title == "B"
 
 
-async def test_document_create_empty_batch(temp_db_path):
-    """create([]) is a no-op returning an empty list with no version bump."""
-    async with Store(temp_db_path, create=True) as store:
-        doc_repo = DocumentRepository(store)
-
-        before = await store.documents_table.version()
-        created = await doc_repo.create([])
-        after = await store.documents_table.version()
-
-        assert created == []
-        assert after == before
-
-
 async def test_document_item_create_all(temp_db_path):
-    """create_all writes items spanning multiple documents in a single version."""
+    """create_all writes several documents' items in one version; [] writes nothing."""
     async with Store(temp_db_path, create=True) as store:
         item_repo = DocumentItemRepository(store)
+
+        before = await store.document_items_table.version()
+        await item_repo.create_all([])
+        assert await store.document_items_table.version() == before
+
+        before = await store.document_items_table.version()
+        await item_repo.create_items("doc-1", [])
+        assert await store.document_items_table.version() == before
 
         items = [
             DocumentItem(
@@ -186,28 +185,6 @@ async def test_document_item_create_all(temp_db_path):
         doc2_items = await item_repo.get_all_items("doc-2")
         assert [i.text for i in doc1_items] == ["a", "b"]
         assert [i.text for i in doc2_items] == ["c"]
-
-
-async def test_document_item_create_all_empty(temp_db_path):
-    """create_all([]) is a no-op with no version bump."""
-    async with Store(temp_db_path, create=True) as store:
-        item_repo = DocumentItemRepository(store)
-
-        before = await store.document_items_table.version()
-        await item_repo.create_all([])
-        after = await store.document_items_table.version()
-
-        assert after == before
-
-
-async def test_document_item_create_items_empty(temp_db_path):
-    async with Store(temp_db_path, create=True) as store:
-        item_repo = DocumentItemRepository(store)
-
-        before = await store.document_items_table.version()
-        await item_repo.create_items("doc-1", [])
-
-        assert await store.document_items_table.version() == before
 
 
 async def test_document_item_delete_by_document_ids(temp_db_path):

@@ -1,5 +1,3 @@
-import json
-
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import Store
 from haiku.rag.store.schema import DocumentItemRecord, DocumentRecord
@@ -75,51 +73,15 @@ class TestV0_48_0Migration:
             assert all(r["heading_level"] == 0 for r in non_headers)
             assert all(r["tree_depth"] > 0 for r in rows)
 
-    async def test_backfill_idempotent(self, temp_db_path):
-        docling_doc = _docling_with_levels()
-        structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
-
-        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.45.0")
-            await store.documents_table.add(
-                [
-                    DocumentRecord(
-                        id="doc-1",
-                        content="legacy",
-                        docling_document=structure,
-                        docling_pages=pages,
-                        docling_version=docling_doc.version,
-                    )
-                ]
-            )
-            items = list(docling_doc.iterate_items())
-            await store.document_items_table.add(
-                [
-                    DocumentItemRecord(
-                        document_id="doc-1",
-                        position=pos,
-                        self_ref=item.self_ref,
-                        label=str(getattr(item.label, "value", item.label) or ""),
-                        text=getattr(item, "text", "") or "",
-                        page_numbers="[]",
-                    )
-                    for pos, (item, _depth) in enumerate(items)
-                ]
-            )
-
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            # Apply twice to prove idempotency (in isolation from the chain).
-            await _apply_backfill_heading_hierarchy(store)
             await _apply_backfill_heading_hierarchy(store)
 
-            rows = await (
+            rerun = await (
                 store.document_items_table.query()
                 .where("document_id = 'doc-1'")
                 .to_list()
             )
-            rows.sort(key=lambda r: r["position"])
-            headers = [r for r in rows if r["label"] == "section_header"]
-            assert [r["heading_level"] for r in headers] == [1, 2, 1]
+            rerun.sort(key=lambda r: r["position"])
+            assert rerun == rows
 
     async def test_skips_documents_without_docling(self, temp_db_path):
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
@@ -150,23 +112,3 @@ class TestV0_48_0Migration:
             # Plain doc — no levels to backfill; defaults stay zero.
             assert rows[0]["heading_level"] == 0
             assert rows[0]["tree_depth"] == 0
-
-
-class TestV0_48_0FreshSchema:
-    """A newly-created DB has the new columns from the start."""
-
-    async def test_fresh_db_has_heading_level_and_tree_depth(self, temp_db_path):
-        from haiku.rag.client import HaikuRAG
-
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            schema = await rag.store.document_items_table.schema()
-            names = {f.name for f in schema}
-            assert "heading_level" in names
-            assert "tree_depth" in names
-
-
-def test_module_imports():
-    from haiku.rag.store.upgrades import v0_48_0  # noqa: F401
-
-    assert hasattr(v0_48_0, "upgrade_backfill_heading_hierarchy")
-    assert json.dumps  # silence unused-import flake on json

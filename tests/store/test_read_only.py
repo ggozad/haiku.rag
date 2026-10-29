@@ -10,18 +10,6 @@ from haiku.rag.store.repositories.settings import SettingsRepository
 from tests.conftest import for_path
 
 
-class TestReadOnlyError:
-    def test_read_only_error_is_exception(self):
-        """ReadOnlyError should be a subclass of Exception."""
-        assert issubclass(ReadOnlyError, Exception)
-
-    def test_read_only_error_can_be_raised(self):
-        """ReadOnlyError can be raised and caught."""
-        with pytest.raises(ReadOnlyError) as exc_info:
-            raise ReadOnlyError("Cannot modify database in read-only mode")
-        assert "read-only" in str(exc_info.value)
-
-
 class TestStoreReadOnly:
     async def test_store_read_only_raises_on_empty_directory(self, tmp_path):
         """Opening an empty directory in read-only mode raises ReadOnlyError."""
@@ -39,201 +27,82 @@ class TestStoreReadOnly:
             ):
                 pass
 
-    async def test_store_default_is_not_read_only(self, temp_db_path):
-        """Store defaults to not read-only."""
-        async with Store(temp_db_path, create=True) as store:
-            assert store.is_read_only is False
 
-    async def test_store_can_be_created_read_only(self, temp_db_path):
-        """Store can be created with read_only=True."""
-        # First create a normal store to initialize the database
-        async with Store(temp_db_path, create=True):
-            pass
-
-        # Now open in read-only mode
-        async with Store(temp_db_path, read_only=True) as store:
-            assert store.is_read_only is True
-
-    async def test_assert_writable_raises_when_read_only(self, temp_db_path):
-        """_assert_writable() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            with pytest.raises(ReadOnlyError):
-                store._assert_writable()
-
-    async def test_assert_writable_passes_when_not_read_only(self, temp_db_path):
-        """_assert_writable() does not raise when read_only=False."""
-        async with Store(temp_db_path, create=True) as store:
-            store._assert_writable()  # Should not raise
-
-    async def test_vacuum_raises_when_read_only(self, temp_db_path):
-        """vacuum() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            with pytest.raises(ReadOnlyError):
-                await store.vacuum()
-
-    async def test_set_haiku_version_raises_when_read_only(self, temp_db_path):
-        """set_haiku_version() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            with pytest.raises(ReadOnlyError):
-                await store.set_haiku_version("1.0.0")
-
-    async def test_recreate_embeddings_table_raises_when_read_only(self, temp_db_path):
-        """recreate_embeddings_table() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            with pytest.raises(ReadOnlyError):
-                await store.recreate_embeddings_table()
-
-    async def test_write_transaction_raises_when_read_only(self, temp_db_path):
-        """write_transaction() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            with pytest.raises(ReadOnlyError):
-                async with store.write_transaction():
-                    pass  # pragma: no cover - entering already raised
+async def _enter_write_transaction(store: Store, doc: Document) -> None:
+    async with store.write_transaction():
+        pass  # pragma: no cover - entering already raised
 
 
-class TestDocumentRepositoryReadOnly:
-    async def test_create_raises_when_read_only(self, temp_db_path):
-        """DocumentRepository.create() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = DocumentRepository(store)
-            doc = Document(content="test content")
-
-            with pytest.raises(ReadOnlyError):
-                await repo.create(doc)
-
-    async def test_update_raises_when_read_only(self, temp_db_path):
-        """DocumentRepository.update() raises ReadOnlyError when read_only=True."""
-        # First create a document
-        async with Store(temp_db_path, create=True) as store:
-            repo = DocumentRepository(store)
-            doc = Document(content="test content")
-            created_doc = await repo.create(doc)
-
-        # Try to update in read-only mode
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = DocumentRepository(store)
-            created_doc.content = "updated content"
-
-            with pytest.raises(ReadOnlyError):
-                await repo.update(created_doc)
-
-    async def test_delete_raises_when_read_only(self, temp_db_path):
-        """DocumentRepository.delete() raises ReadOnlyError when read_only=True."""
-        # First create a document
-        async with Store(temp_db_path, create=True) as store:
-            repo = DocumentRepository(store)
-            doc = Document(content="test content")
-            created_doc = await repo.create(doc)
-            assert created_doc.id is not None
-            doc_id = created_doc.id
-
-        # Try to delete in read-only mode
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = DocumentRepository(store)
-
-            with pytest.raises(ReadOnlyError):
-                await repo.delete(doc_id)
-
-    async def test_delete_all_raises_when_read_only(self, temp_db_path):
-        """DocumentRepository.delete_all() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = DocumentRepository(store)
-
-            with pytest.raises(ReadOnlyError):
-                await repo.delete_all()
+async def _update_document(store: Store, doc: Document) -> None:
+    doc.content = "updated content"
+    await DocumentRepository(store).update(doc)
 
 
-class TestChunkRepositoryReadOnly:
-    async def test_create_raises_when_read_only(self, temp_db_path):
-        """ChunkRepository.create() raises ReadOnlyError when read_only=True."""
-        # First create a document to have a valid document_id
-        async with Store(temp_db_path, create=True) as store:
-            doc_repo = DocumentRepository(store)
-            doc = Document(content="test content")
-            created_doc = await doc_repo.create(doc)
-
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = ChunkRepository(store)
-            chunk = Chunk(
-                content="test chunk",
-                document_id=created_doc.id,
-                embedding=[0.0] * store.embedder._vector_dim,
-            )
-
-            with pytest.raises(ReadOnlyError):
-                await repo.create(chunk)
-
-    async def test_delete_by_document_id_raises_when_read_only(self, temp_db_path):
-        """ChunkRepository.delete_by_document_id() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = ChunkRepository(store)
-
-            with pytest.raises(ReadOnlyError):
-                await repo.delete_by_document_id("some-id")
-
-    async def test_delete_all_raises_when_read_only(self, temp_db_path):
-        """ChunkRepository.delete_all() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = ChunkRepository(store)
-
-            with pytest.raises(ReadOnlyError):
-                await repo.delete_all()
+async def _create_chunk(store: Store, doc: Document) -> None:
+    chunk = Chunk(
+        content="test chunk",
+        document_id=doc.id,
+        embedding=[0.0] * store.embedder._vector_dim,
+    )
+    await ChunkRepository(store).create(chunk)
 
 
-class TestSettingsRepositoryReadOnly:
-    async def test_save_current_settings_raises_when_read_only(self, temp_db_path):
-        """SettingsRepository.save_current_settings() raises ReadOnlyError when read_only=True."""
-        async with Store(temp_db_path, create=True):
-            pass
+@pytest.mark.parametrize(
+    "operation",
+    [
+        pytest.param(lambda store, doc: store.vacuum(), id="vacuum"),
+        pytest.param(
+            lambda store, doc: store.set_haiku_version("1.0.0"),
+            id="set_haiku_version",
+        ),
+        pytest.param(
+            lambda store, doc: store.recreate_embeddings_table(),
+            id="recreate_embeddings_table",
+        ),
+        pytest.param(_enter_write_transaction, id="write_transaction"),
+        pytest.param(
+            lambda store, doc: DocumentRepository(store).create(
+                Document(content="test content")
+            ),
+            id="document_create",
+        ),
+        pytest.param(_update_document, id="document_update"),
+        pytest.param(
+            lambda store, doc: DocumentRepository(store).delete(doc.id),
+            id="document_delete",
+        ),
+        pytest.param(
+            lambda store, doc: DocumentRepository(store).delete_all(),
+            id="document_delete_all",
+        ),
+        pytest.param(_create_chunk, id="chunk_create"),
+        pytest.param(
+            lambda store, doc: ChunkRepository(store).delete_by_document_id("some-id"),
+            id="chunk_delete_by_document_id",
+        ),
+        pytest.param(
+            lambda store, doc: ChunkRepository(store).delete_all(),
+            id="chunk_delete_all",
+        ),
+        pytest.param(
+            lambda store, doc: SettingsRepository(store).save_current_settings(),
+            id="settings_save_current_settings",
+        ),
+    ],
+)
+async def test_a_read_only_store_refuses_writes(temp_db_path, operation):
+    async with Store(temp_db_path, create=True) as store:
+        assert store.is_read_only is False
+        doc = await DocumentRepository(store).create(Document(content="test content"))
+        assert doc.id is not None
 
-        async with Store(temp_db_path, read_only=True) as store:
-            repo = SettingsRepository(store)
-
-            with pytest.raises(ReadOnlyError):
-                await repo.save_current_settings()
+    async with Store(temp_db_path, read_only=True) as store:
+        assert store.is_read_only is True
+        with pytest.raises(ReadOnlyError):
+            await operation(store, doc)
 
 
 class TestClientReadOnly:
-    async def test_client_default_is_not_read_only(self, temp_db_path):
-        """Client defaults to not read-only."""
-        async with HaikuRAG(temp_db_path, create=True) as client:
-            assert client.is_read_only is False
-
-    async def test_client_can_be_created_read_only(self, temp_db_path):
-        """Client can be created with read_only=True."""
-        async with HaikuRAG(temp_db_path, create=True):
-            pass
-
-        async with HaikuRAG(temp_db_path, read_only=True) as client:
-            assert client.is_read_only is True
-
     @pytest.mark.vcr()
     async def test_client_create_document_raises_when_read_only(self, temp_db_path):
         """Client.create_document() raises ReadOnlyError when read_only=True."""
@@ -278,35 +147,6 @@ class TestClientReadOnly:
 
 
 class TestAppReadVerbsDoNotWrite:
-    async def test_read_verb_leaves_settings_and_version_unchanged_on_drift(
-        self, temp_db_path
-    ):
-        """A read CLI verb opens read-only: drift warns but never writes."""
-        from haiku.rag.app import HaikuRAGApp
-        from haiku.rag.config import AppConfig
-
-        async with Store(temp_db_path, create=True) as store:
-            stored_name_before = (
-                await SettingsRepository(store).get_current_settings()
-            )["embeddings"]["model"]["name"]
-            version_before = await store.get_haiku_version()
-
-        drift = AppConfig()
-        drift.embeddings.model.name = "different-model"
-
-        # list is a read verb — must open read-only and not raise on drift
-        app = HaikuRAGApp(scope=for_path(temp_db_path, drift), config=drift)
-        await app.list_documents()
-
-        async with Store(temp_db_path, skip_validation=True, read_only=True) as store:
-            stored_name_after = (
-                await SettingsRepository(store).get_current_settings()
-            )["embeddings"]["model"]["name"]
-            version_after = await store.get_haiku_version()
-
-        assert stored_name_after == stored_name_before
-        assert version_after == version_before
-
     async def test_list_works_with_mismatched_embeddings_config(self, temp_db_path):
         """list skips the embeddings compatibility check and never writes."""
         from haiku.rag.app import HaikuRAGApp

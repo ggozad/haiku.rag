@@ -49,28 +49,6 @@ async def test_delete_cascades_to_children(temp_db_path):
                 metadata={"parent_uri": parent_uri},
             )
         )
-
-        deleted = await client.delete_document(parent.id)
-        assert deleted is True
-
-        assert await client.get_document_by_id(parent.id) is None
-        assert await client.get_document_by_id(child_a.id) is None
-        assert await client.get_document_by_id(child_b.id) is None
-
-
-async def test_delete_leaves_unrelated_documents(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        parent_uri = "file:///path/to/parent.pdf"
-        parent = await client.document_repository.create(
-            Document(content="parent", uri=parent_uri, metadata={})
-        )
-        child = await client.document_repository.create(
-            Document(
-                content="child",
-                uri=f"{parent_uri}#attachment=a.pdf",
-                metadata={"parent_uri": parent_uri},
-            )
-        )
         unrelated = await client.document_repository.create(
             Document(
                 content="unrelated",
@@ -79,9 +57,12 @@ async def test_delete_leaves_unrelated_documents(temp_db_path):
             )
         )
 
-        await client.delete_document(parent.id)
+        deleted = await client.delete_document(parent.id)
+        assert deleted is True
 
-        assert await client.get_document_by_id(child.id) is None
+        assert await client.get_document_by_id(parent.id) is None
+        assert await client.get_document_by_id(child_a.id) is None
+        assert await client.get_document_by_id(child_b.id) is None
         survivor = await client.get_document_by_id(unrelated.id)
         assert survivor is not None
         assert survivor.id == unrelated.id

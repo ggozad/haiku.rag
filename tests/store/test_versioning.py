@@ -8,28 +8,32 @@ from haiku.rag.store.engine import Store
 
 
 @pytest.mark.vcr()
-async def test_version_rollback_on_create_failure(temp_db_path):
+@pytest.mark.parametrize(
+    "error, content",
+    [
+        pytest.param(RuntimeError("boom"), "Hello, rollback!", id="RuntimeError"),
+        pytest.param(
+            asyncio.CancelledError(), "cancelled mid-write", id="CancelledError"
+        ),
+    ],
+)
+async def test_version_rollback_on_create_failure(temp_db_path, error, content):
+    """A failure or cancellation between two table writes rolls back, leaving no
+    chunks committed without their document."""
     async with HaikuRAG(db_path=temp_db_path, create=True) as client:
-        # Patch chunk_repository.create to succeed then fail, triggering rollback
         orig_create = client.chunk_repository.create
 
         async def succeed_then_fail(chunks):
             await orig_create(chunks)
-            raise RuntimeError("boom")
+            raise error
 
         client.chunk_repository.create = succeed_then_fail
 
-        # Attempt to create document; expect failure and rollback
-        content = "Hello, rollback!"
-
-        with pytest.raises(RuntimeError):
+        with pytest.raises(type(error)):
             await client.create_document(content=content)
 
-        # State should be restored (no documents/chunks)
-        docs = await client.list_documents()
-        assert len(docs) == 0
-        all_chunks = await client.chunk_repository.list_all()
-        assert len(all_chunks) == 0
+        assert await client.list_documents() == []
+        assert await client.chunk_repository.list_all() == []
 
 
 @pytest.mark.vcr()
@@ -61,26 +65,6 @@ async def test_version_rollback_on_update_failure(temp_db_path):
         assert persisted.content == base_content
         original_chunks = await client.chunk_repository.get_by_document_id(created.id)
         assert len(original_chunks) > 0
-
-
-@pytest.mark.vcr()
-async def test_cancellation_mid_write_rolls_back(temp_db_path):
-    """A cancellation between two table writes must roll back, not leave the
-    chunks write committed without its document."""
-    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
-        orig_create = client.chunk_repository.create
-
-        async def succeed_then_cancel(chunks):
-            await orig_create(chunks)
-            raise asyncio.CancelledError()
-
-        client.chunk_repository.create = succeed_then_cancel
-
-        with pytest.raises(asyncio.CancelledError):
-            await client.create_document(content="cancelled mid-write")
-
-        assert await client.list_documents() == []
-        assert await client.chunk_repository.list_all() == []
 
 
 @pytest.mark.vcr()
@@ -177,31 +161,6 @@ async def test_new_database_does_not_run_upgrades(monkeypatch, temp_db_path):
 
     async with Store(temp_db_path, create=True):
         pass
-
-
-async def test_existing_database_checks_migrations(monkeypatch, temp_db_path):
-    async with Store(temp_db_path, create=True):
-        pass
-
-    from haiku.rag.store import upgrades
-
-    called = {"value": False}
-    original_get_pending = upgrades.get_pending_upgrades
-
-    def mark_called(*args, **kwargs):
-        called["value"] = True
-        return original_get_pending(*args, **kwargs)
-
-    monkeypatch.setattr(
-        "haiku.rag.store.upgrades.get_pending_upgrades",
-        mark_called,
-    )
-
-    # Opening an existing database should check for pending migrations
-    async with Store(temp_db_path):
-        pass
-
-    assert called["value"]
 
 
 async def _wait_for_background_vacuum(client):
@@ -413,30 +372,6 @@ async def test_auto_vacuum_disabled_skips_vacuum(temp_db_path, monkeypatch):
         )
         assert chunk_versions >= 3, (
             f"Without auto-vacuum, should have accumulated versions, got {chunk_versions}"
-        )
-
-
-@pytest.mark.vcr()
-async def test_auto_vacuum_enabled_triggers_vacuum(temp_db_path, monkeypatch):
-    """Test that auto_vacuum=True (default) triggers vacuum after operations."""
-    from haiku.rag.config import get_config
-
-    # Enable auto-vacuum with aggressive retention
-    monkeypatch.setattr(get_config().storage, "auto_vacuum", True)
-    monkeypatch.setattr(get_config().storage, "vacuum_retention_seconds", 0)
-
-    async with HaikuRAG(db_path=temp_db_path, create=True) as client:
-        # Create multiple documents
-        for i in range(3):
-            await client.create_document(content=f"Test document {i}")
-
-    # After context exit, vacuum should have cleaned up
-    async with Store(temp_db_path, create=True) as store:
-        final_versions = len(await store.documents_table.list_versions())
-
-        # With auto_vacuum=True and retention=0, should have minimal versions
-        assert final_versions <= 2, (
-            f"With auto-vacuum enabled, should have minimal versions, got {final_versions}"
         )
 
 

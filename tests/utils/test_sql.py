@@ -30,20 +30,12 @@ class TestDocumentSearchFilter:
         assert title_or_uri_filter("   ") is None
 
     def test_a_term_matches_titles_and_uris(self):
-        built = title_or_uri_filter("Nobel")
+        built = title_or_uri_filter("NoBeL")
 
         assert built == (
             "LOWER(title) LIKE '%nobel%' ESCAPE '\\' "
             "OR LOWER(uri) LIKE '%nobel%' ESCAPE '\\'"
         )
-
-    def test_the_search_is_case_insensitive(self):
-        """LIKE is case-sensitive, so both sides are lowered."""
-        built = title_or_uri_filter("NoBeL")
-
-        assert built is not None
-        assert "LOWER(title) LIKE '%nobel%'" in built
-        assert "LOWER(uri) LIKE '%nobel%'" in built
 
     def test_like_wildcards_in_the_term_are_literal(self):
         """A term is text to find, not a pattern: `_` matches any character."""

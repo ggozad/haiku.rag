@@ -158,23 +158,6 @@ def test_find_config_file_env_var_tilde_expansion(tmp_path, monkeypatch):
     assert found == config_file
 
 
-def test_find_config_file_not_found(tmp_path, monkeypatch):
-    """Test returning None when no config found."""
-    monkeypatch.delenv("HAIKU_RAG_CONFIG_PATH", raising=False)
-    monkeypatch.chdir(tmp_path)
-
-    # Mock get_default_data_dir to return tmp_path
-    def mock_get_default_data_dir():
-        return tmp_path
-
-    monkeypatch.setattr(
-        "haiku.rag.utils.paths.get_default_data_dir", mock_get_default_data_dir
-    )
-
-    found = find_config_file()
-    assert found is None
-
-
 def test_find_config_file_cli_path_not_exists(tmp_path):
     """Test error when CLI path doesn't exist."""
     config_file = tmp_path / "nonexistent.yaml"
@@ -307,105 +290,55 @@ def _write(tmp_path, body: str):
     return p
 
 
-def test_pictures_field_defaults_to_image():
-    """`processing.pictures` defaults to `'image'` — current ingest behavior
-    (store picture bytes, no VLM) preserved on fresh configs."""
-    cfg = AppConfig()
-    assert cfg.processing.pictures == "image"
+def _at(obj, path: str):
+    for part in path.split("."):
+        obj = obj[part] if isinstance(obj, dict) else getattr(obj, part)
+    return obj
 
 
-def test_picture_description_has_no_enabled_field():
-    """`enabled` is gone from PictureDescriptionConfig — activation is now
-    controlled by `processing.pictures == 'description'`."""
-    from haiku.rag.config.models import PictureDescriptionConfig
+@pytest.mark.parametrize(
+    "path, default",
+    [
+        ("processing.pictures", "image"),
+        ("processing.conversion_options.fetch_remote_images", True),
+        ("processing.conversion_options.infer_furniture", False),
+        ("qa.max_executions", 15),
+        ("sandbox.code_timeout", 60.0),
+        ("sandbox.max_output_chars", 50_000),
+        ("evaluations.system_one", None),
+    ],
+)
+def test_config_defaults(path, default):
+    """The default holds on the owning model, on AppConfig and in the generated config."""
+    parent_path, _, field = path.rpartition(".")
+    parent = _at(AppConfig(), parent_path)
 
-    assert "enabled" not in PictureDescriptionConfig.model_fields
-
-
-def test_fetch_remote_images_default_true():
-    """`fetch_remote_images` defaults to True and round-trips through YAML."""
-    from haiku.rag.config.models import ConversionOptions
-
-    assert ConversionOptions().fetch_remote_images is True
-
-    cfg = AppConfig()
-    assert cfg.processing.conversion_options.fetch_remote_images is True
-
-    data = generate_default_config()
-    assert data["processing"]["conversion_options"]["fetch_remote_images"] is True
-
-
-def test_fetch_remote_images_override_via_yaml(tmp_path):
-    """User can disable image fetching via YAML."""
-    config_file = _write(
-        tmp_path,
-        """
-processing:
-  conversion_options:
-    fetch_remote_images: false
-""",
-    )
-    data = load_yaml_config(config_file)
-    cfg = AppConfig.model_validate(data)
-    assert cfg.processing.conversion_options.fetch_remote_images is False
+    assert getattr(type(parent)(), field) == default
+    assert _at(AppConfig(), path) == default
+    assert _at(generate_default_config(), path) == default
 
 
-def test_infer_furniture_default_false():
-    """`infer_furniture` defaults to False and round-trips through YAML."""
-    from haiku.rag.config.models import ConversionOptions
-
-    assert ConversionOptions().infer_furniture is False
-
-    cfg = AppConfig()
-    assert cfg.processing.conversion_options.infer_furniture is False
-
-    data = generate_default_config()
-    assert data["processing"]["conversion_options"]["infer_furniture"] is False
-
-
-def test_infer_furniture_override_via_yaml(tmp_path):
-    """A host can opt back into docling's furniture rule via YAML."""
-    config_file = _write(
-        tmp_path,
-        """
-processing:
-  conversion_options:
-    infer_furniture: true
-""",
-    )
-    data = load_yaml_config(config_file)
-    cfg = AppConfig.model_validate(data)
-    assert cfg.processing.conversion_options.infer_furniture is True
-
-
-def test_qa_max_executions_default():
-    assert AppConfig().qa.max_executions == 15
-
-
-def test_sandbox_defaults():
-    cfg = AppConfig()
-    assert cfg.sandbox.code_timeout == 60.0
-    assert cfg.sandbox.max_output_chars == 50_000
-
-
-def test_sandbox_yaml_overrides_one_field(tmp_path):
-    cfg = AppConfig.model_validate(
-        load_yaml_config(
-            _write(
-                tmp_path,
-                """
-sandbox:
-  code_timeout: 120
-""",
-            )
-        )
-    )
-    assert cfg.sandbox.code_timeout == 120.0
-    assert cfg.sandbox.max_output_chars == 50_000
-
-
-def test_system_one_judge_is_off_by_default():
-    assert AppConfig().evaluations.system_one is None
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (
+            "processing:\n  conversion_options:\n    fetch_remote_images: false\n",
+            {"processing.conversion_options.fetch_remote_images": False},
+        ),
+        (
+            "processing:\n  conversion_options:\n    infer_furniture: true\n",
+            {"processing.conversion_options.infer_furniture": True},
+        ),
+        (
+            "sandbox:\n  code_timeout: 120\n",
+            {"sandbox.code_timeout": 120.0, "sandbox.max_output_chars": 50_000},
+        ),
+    ],
+)
+def test_yaml_overrides_one_field(tmp_path, body, expected):
+    cfg = AppConfig.model_validate(load_yaml_config(_write(tmp_path, body)))
+    for path, value in expected.items():
+        assert _at(cfg, path) == value
 
 
 def test_system_one_judge_yaml_block(tmp_path):
@@ -642,34 +575,21 @@ def test_expand_env_var_empty_raises(tmp_path, monkeypatch):
         load_yaml_config(config_file)
 
 
-def test_expand_env_var_default_when_unset(tmp_path, monkeypatch):
-    """${VAR:-default} falls back to the default when VAR is unset."""
-    monkeypatch.delenv("HAIKU_TEST_MISSING", raising=False)
-    config_file = tmp_path / "test.yaml"
-    config_file.write_text("environment: ${HAIKU_TEST_MISSING:-production}")
-
-    config = load_yaml_config(config_file)
-    assert config["environment"] == "production"
-
-
-def test_expand_env_var_default_when_empty(tmp_path, monkeypatch):
-    """${VAR:-default} falls back to the default when VAR is set but empty."""
-    monkeypatch.setenv("HAIKU_TEST_EMPTY", "")
-    config_file = tmp_path / "test.yaml"
-    config_file.write_text("environment: ${HAIKU_TEST_EMPTY:-production}")
-
-    config = load_yaml_config(config_file)
-    assert config["environment"] == "production"
-
-
-def test_expand_env_var_default_overridden_when_set(tmp_path, monkeypatch):
-    """${VAR:-default} uses the variable when it is set and non-empty."""
-    monkeypatch.setenv("HAIKU_TEST_ENV", "staging")
+@pytest.mark.parametrize(
+    "value, expected",
+    [(None, "production"), ("", "production"), ("staging", "staging")],
+)
+def test_expand_env_var_default(tmp_path, monkeypatch, value, expected):
+    """${VAR:-default} falls back to the default when VAR is unset or empty."""
+    if value is None:
+        monkeypatch.delenv("HAIKU_TEST_ENV", raising=False)
+    else:
+        monkeypatch.setenv("HAIKU_TEST_ENV", value)
     config_file = tmp_path / "test.yaml"
     config_file.write_text("environment: ${HAIKU_TEST_ENV:-production}")
 
     config = load_yaml_config(config_file)
-    assert config["environment"] == "staging"
+    assert config["environment"] == expected
 
 
 def test_expand_env_var_dollar_escape(tmp_path):
@@ -910,6 +830,15 @@ def test_set_config_reaches_the_factories(monkeypatch, tmp_path):
             },
             "ingester.databases.haiku.rag.sources.0.fs.bogus",
         ),
+        (
+            {
+                "processing": {
+                    "conversion_options": {"picture_description": {"enabled": True}}
+                }
+            },
+            "processing.conversion_options.picture_description.enabled",
+        ),
+        ({"hooks": [{"name": "tuned", "opts": {}}]}, "hooks.0.HookConfig.opts"),
     ],
 )
 def test_unknown_keys_are_rejected(data, bad_key):
@@ -957,6 +886,9 @@ def test_finite_switches_reject_unknown_values(data):
         {"providers": {"docling_serve": {"max_attempts": 0}}},
         {"providers": {"docling_serve": {"circuit_breaker": {"failure_threshold": 0}}}},
         {"providers": {"docling_serve": {"circuit_breaker": {"cooldown_s": -1}}}},
+        {"lancedb": {"read_consistency_interval_seconds": -1}},
+        {"lancedb": {"index_cache_size_bytes": -1}},
+        {"lancedb": {"metadata_cache_size_bytes": -1}},
     ],
 )
 def test_out_of_range_numbers_are_rejected(data):

@@ -10,12 +10,9 @@ def test_get_logger():
     assert len(logger.handlers) == 1
     assert logger.propagate is False
 
-
-def test_get_logger_idempotent():
-    logger1 = get_logger()
-    logger2 = get_logger()
-    assert logger1 is logger2
-    assert len(logger2.handlers) == 1
+    again = get_logger()
+    assert again is logger
+    assert len(again.handlers) == 1
 
 
 def test_configure_cli_logging():
