@@ -4,6 +4,7 @@ allowBuilds:
   sharp: true
 overrides:
   sharp: '>=0.35.4'
-  qs: '>=6.16.0'
+  qs: '>=6.16.1'
+  systeminformation: '>=5.33.16'
   ip-address: '^10.7.1'
   fast-uri: '^3.1.9'
