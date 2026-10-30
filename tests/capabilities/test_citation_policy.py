@@ -459,8 +459,8 @@ async def test_an_undeclared_structured_answer_is_recorded_not_redirected(
 ):
     """A structured answer is recorded, never asked to cite.
 
-    The invalid candidate comes first: it used to queue a redirect of its own, and
-    the valid answer a second one.
+    An invalid candidate comes first, so the run holds a rejected and an accepted
+    answer.
     """
     result, deps, sent = await run_structured(
         temp_db_path,
