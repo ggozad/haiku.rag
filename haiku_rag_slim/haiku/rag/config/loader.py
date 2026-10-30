@@ -103,13 +103,64 @@ def find_config_file(cli_path: Path | None = None) -> Path | None:
     return None
 
 
-def load_yaml_config(path: Path) -> dict:
-    """Load YAML with environment and file references expanded."""
+def _read_yaml(path: Path, config_dir: Path) -> Any:
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
-    return expand_env_vars(
-        data or {}, {"HAIKU_RAG_CONFIG_DIR": str(path.resolve().parent)}
-    )
+    return expand_env_vars(data or {}, {"HAIKU_RAG_CONFIG_DIR": str(config_dir)})
+
+
+def load_yaml_config(path: Path) -> dict:
+    """Load YAML with environment and file references expanded, merging the
+    database fragments in the `databases_include` directory."""
+    config_dir = path.resolve().parent
+    data = _read_yaml(path, config_dir)
+    if isinstance(data, dict) and (include := data.pop("databases_include", None)):
+        _merge_fragments(data, path, config_dir / include, config_dir)
+    return data
+
+
+_FRAGMENT_SECTIONS = ("lancedb", "ingester")
+
+
+def _merge_fragments(data: dict, path: Path, directory: Path, config_dir: Path) -> None:
+    """Add the database maps of every `*.yaml` in `directory` to `data`.
+    A fragment's `${HAIKU_RAG_CONFIG_DIR}` is the main file's directory."""
+    defined = {
+        (section, name): path
+        for section in _FRAGMENT_SECTIONS
+        for name in ((data.get(section) or {}).get("databases") or {})
+    }
+    if not directory.is_dir():
+        return
+    for fragment in sorted(directory.glob("*.yaml")):
+        if fragment.name.startswith(".") or not fragment.is_file():
+            continue
+        try:
+            content = _read_yaml(fragment, config_dir)
+        except (OSError, ValueError, yaml.YAMLError) as error:
+            raise ValueError(f"{fragment}: {error}") from None
+        if not isinstance(content, dict) or not all(
+            section in _FRAGMENT_SECTIONS
+            and isinstance(value, dict)
+            and set(value) <= {"databases"}
+            and isinstance(value.get("databases") or {}, dict)
+            for section, value in content.items()
+        ):
+            raise ValueError(
+                f"{fragment}: a database fragment may set only lancedb.databases "
+                "and ingester.databases"
+            )
+        for section, value in content.items():
+            for name, entry in (value.get("databases") or {}).items():
+                if (earlier := defined.get((section, name))) is not None:
+                    raise ValueError(
+                        f"{section}.databases {name!r} is defined in both "
+                        f"{earlier} and {fragment}"
+                    )
+                defined[section, name] = fragment
+                target = data[section] = data.get(section) or {}
+                target["databases"] = target.get("databases") or {}
+                target["databases"][name] = entry
 
 
 def generate_default_config() -> dict:

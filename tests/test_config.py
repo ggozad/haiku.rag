@@ -1257,3 +1257,141 @@ def test_validation_errors_hide_config_values(tmp_path, body):
         AppConfig.model_validate(load_yaml_config(config_file))
 
     assert "S3NTINEL" not in str(exc.value)
+
+
+def _fragment(directory: Path, name: str, body: str) -> None:
+    directory.mkdir(exist_ok=True)
+    (directory / name).write_text(body, encoding="utf-8")
+
+
+def test_fragments_add_databases_in_sorted_order(tmp_path):
+    (tmp_path / "haiku.rag.yaml").write_text("""
+databases_include: databases.d
+lancedb:
+  databases:
+    main: /data/main.lancedb
+""")
+    fragments = tmp_path / "databases.d"
+    _fragment(
+        fragments,
+        "b.yaml",
+        """
+lancedb:
+  databases:
+    notes: ${HAIKU_RAG_CONFIG_DIR}/notes.lancedb
+ingester:
+  databases:
+    notes:
+      sources:
+        - type: fs
+          root: /uploads/notes
+""",
+    )
+    _fragment(fragments, "a.yaml", "lancedb:\n  databases:\n    wiki: /data/wiki\n")
+    _fragment(fragments, ".hidden.yaml", "processing:\n  chunk_size: 1\n")
+    _fragment(fragments, "notes.txt", "processing:\n  chunk_size: 1\n")
+    _fragment(fragments, "empty.yaml", "")
+
+    data = load_yaml_config(tmp_path / "haiku.rag.yaml")
+    config = AppConfig.model_validate(data)
+
+    assert list(config.lancedb.databases) == ["main", "wiki", "notes"]
+    assert config.lancedb.databases["notes"] == f"{tmp_path.resolve()}/notes.lancedb"
+    assert list(config.ingester.databases) == ["notes"]
+
+
+@pytest.mark.parametrize("make_directory", [False, True])
+def test_a_missing_or_empty_include_directory_adds_nothing(tmp_path, make_directory):
+    if make_directory:
+        (tmp_path / "databases.d").mkdir()
+    (tmp_path / "haiku.rag.yaml").write_text("databases_include: databases.d\n")
+
+    assert load_yaml_config(tmp_path / "haiku.rag.yaml") == {}
+
+
+def test_an_absolute_include_directory(tmp_path):
+    fragments = tmp_path / "elsewhere"
+    _fragment(fragments, "a.yaml", "lancedb:\n  databases:\n    wiki: /data/wiki\n")
+    (tmp_path / "project").mkdir()
+    (tmp_path / "project" / "haiku.rag.yaml").write_text(
+        f"databases_include: {fragments}\n"
+    )
+
+    data = load_yaml_config(tmp_path / "project" / "haiku.rag.yaml")
+    assert data == {"lancedb": {"databases": {"wiki": "/data/wiki"}}}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "processing:\n  chunk_size: 128\n",
+        "lancedb:\n  api_key: secret\n",
+        "ingester:\n  workers:\n    worker_count: 3\n",
+        "lancedb: /data/wiki\n",
+        "lancedb:\n  databases: /data/wiki\n",
+        "- lancedb\n",
+    ],
+)
+def test_a_fragment_may_set_only_the_database_maps(tmp_path, body):
+    (tmp_path / "haiku.rag.yaml").write_text("databases_include: databases.d\n")
+    _fragment(tmp_path / "databases.d", "bad.yaml", body)
+
+    with pytest.raises(ValueError, match=r"bad\.yaml.*lancedb\.databases"):
+        load_yaml_config(tmp_path / "haiku.rag.yaml")
+
+
+@pytest.mark.parametrize("section", ["lancedb", "ingester"])
+def test_a_name_defined_twice_is_refused(tmp_path, section):
+    entry = (
+        "/data/notes" if section == "lancedb" else "{sources: [{type: fs, root: /x}]}"
+    )
+    body = f"{section}:\n  databases:\n    notes: {entry}\n"
+    (tmp_path / "haiku.rag.yaml").write_text("databases_include: databases.d\n")
+    _fragment(tmp_path / "databases.d", "a.yaml", body)
+    _fragment(tmp_path / "databases.d", "b.yaml", body)
+
+    with pytest.raises(
+        ValueError, match=rf"{section}\.databases.*'notes'.*a\.yaml.*b\.yaml"
+    ):
+        load_yaml_config(tmp_path / "haiku.rag.yaml")
+
+
+def test_a_fragment_redefining_a_main_file_database_is_refused(tmp_path):
+    (tmp_path / "haiku.rag.yaml").write_text("""
+databases_include: databases.d
+lancedb:
+  databases:
+    notes: /data/notes
+""")
+    _fragment(
+        tmp_path / "databases.d",
+        "a.yaml",
+        "lancedb:\n  databases:\n    notes: /data/other\n",
+    )
+
+    with pytest.raises(ValueError, match=r"'notes'.*haiku\.rag\.yaml.*a\.yaml"):
+        load_yaml_config(tmp_path / "haiku.rag.yaml")
+
+
+def test_an_unreadable_fragment_error_names_the_file(tmp_path):
+    (tmp_path / "haiku.rag.yaml").write_text("databases_include: databases.d\n")
+    _fragment(
+        tmp_path / "databases.d",
+        "a.yaml",
+        "lancedb:\n  databases:\n    notes: ${HAIKU_RAG_UNSET_FOR_TEST}\n",
+    )
+
+    with pytest.raises(ValueError, match=r"a\.yaml.*HAIKU_RAG_UNSET_FOR_TEST"):
+        load_yaml_config(tmp_path / "haiku.rag.yaml")
+
+
+def test_a_fragment_ingesting_an_unplaced_database_fails_validation(tmp_path):
+    (tmp_path / "haiku.rag.yaml").write_text("databases_include: databases.d\n")
+    _fragment(
+        tmp_path / "databases.d",
+        "a.yaml",
+        "ingester:\n  databases:\n    notes:\n      sources: []\n",
+    )
+
+    with pytest.raises(ValidationError, match="notes"):
+        AppConfig.model_validate(load_yaml_config(tmp_path / "haiku.rag.yaml"))

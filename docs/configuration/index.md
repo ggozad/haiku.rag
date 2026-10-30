@@ -44,6 +44,37 @@ ingester:
 
 Substitution happens after the YAML is parsed, so a value containing `:`, `@`, or `#` fills the string verbatim and never changes the document structure.
 
+## Database fragments
+
+`databases_include` names a directory of files that each add databases, so a provisioner can own one file per database and leave the main file alone:
+
+```yaml
+# haiku.rag.yaml
+databases_include: databases.d
+```
+
+```yaml
+# databases.d/notes.yaml
+lancedb:
+  databases:
+    notes: ${HAIKU_RAG_CONFIG_DIR}/notes.lancedb
+ingester:
+  databases:
+    notes:
+      sources:
+        - type: fs
+          root: /uploads/notes
+```
+
+- A relative directory is relative to the main file's directory. A missing or empty directory adds nothing.
+- Every `*.yaml` file in it loads in name order. Dotfiles and other extensions are skipped.
+- A fragment may set only `lancedb.databases` and `ingester.databases`. Any other key fails loading with an error naming the file.
+- A database name defined twice, in two fragments or in a fragment and the main file, fails loading with an error naming both files.
+- Environment variables and `${file:path}` expand in a fragment as in the main file, and `${HAIKU_RAG_CONFIG_DIR}` is the main file's directory.
+- The ingester's [reload](../ingester.md#reloading-databases) reads the directory again, so adding or deleting a fragment adds or removes its database.
+
+Only configuration loaded from a file reads fragments. A host that builds `AppConfig` itself places no fragment databases.
+
 ## File-based secrets
 
 Use `${file:path}` in any string value to read a mounted secret:

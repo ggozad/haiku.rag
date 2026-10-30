@@ -320,6 +320,8 @@ Adding a field or sub-model to `AppConfig` needs no plumbing: the loader validat
 
 **Search order:** `--config` / `HAIKU_RAG_CONFIG_PATH` → `./haiku.rag.yaml` → platform user directory
 
+**Database fragments:** `load_yaml_config` pops the top-level `databases_include` and merges every `*.yaml` in that directory (`_merge_fragments`): only the two database maps, a name defined twice raises, `${HAIKU_RAG_CONFIG_DIR}` is the main file's directory. It is not an `AppConfig` field, so `AppConfig.model_validate` on a dict reads no fragments. Reload goes through the loader, so it re-reads them.
+
 **Global CLI options:** `--db-name NAME` selects one entry from
 `lancedb.databases` and is global, so it precedes the command. `--db PATH` is
 per-subcommand and follows it. They are mutually exclusive. `search`, `ask`,
