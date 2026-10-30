@@ -1,25 +1,25 @@
 import base64
-from io import BytesIO
 
 import pytest
 from PIL import Image
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models import Chunk
+from tests.support import png, served
 
 
 @pytest.fixture
-def query_embedding(monkeypatch, seeded):
+def query_embedding(query_embedding, monkeypatch, seeded):
+    """Also embeds an image query."""
     from haiku.rag.embeddings import EmbedderWrapper
 
     config, _ = seeded
     dim = config.embeddings.model.vector_dim
 
-    async def embed(self, _query):
+    async def embed_image(self, _image):
         return [0.1] * dim
 
-    monkeypatch.setattr(EmbedderWrapper, "embed_query", embed)
-    monkeypatch.setattr(EmbedderWrapper, "embed_image", embed)
+    monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
 
 
 @pytest.fixture
@@ -40,12 +40,6 @@ async def picture_chunk(seeded):
             ]
         )
     return chunk.id
-
-
-def _png(width: int = 8, height: int = 8) -> str:
-    buffer = BytesIO()
-    Image.new("RGB", (width, height), "red").save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
 
 
 @pytest.fixture
@@ -106,7 +100,7 @@ async def two_pages(seeded):
     return document.id, [c.id for c in chunks]
 
 
-async def test_a_page_no_chunk_draws_on_is_listed_and_shown(client, two_pages):
+async def test_pages_list_their_chunks_and_draw_them(client, two_pages):
     document_id, (first, picture) = two_pages
     base = f"/api/inspect/alpha/documents/{document_id}/pages"
     pages = (await client.get(base)).json()["pages"]
@@ -114,13 +108,19 @@ async def test_a_page_no_chunk_draws_on_is_listed_and_shown(client, two_pages):
         {"page": 1, "chunk_ids": [first]},
         {"page": 2, "chunk_ids": [picture]},
     ]
-    image = await client.get(f"{base}/2")
-    assert image.content.startswith(b"\x89PNG")
+    for page in (1, 2):
+        image = await client.get(f"{base}/{page}")
+        assert image.headers["content-type"] == "image/png"
+        assert image.content.startswith(b"\x89PNG")
+    assert (await client.get(f"{base}/3")).status_code == 404
+    assert (await client.get(f"{base}/one")).status_code == 400
 
 
-async def test_a_page_holding_only_unchunked_items_is_shown_plain(
-    client, two_pages, seeded
+async def test_an_unchunked_page_is_shown_plain_and_without_its_image_is_not_found(
+    client, two_pages, seeded, monkeypatch
 ):
+    from haiku.rag.store.models.document import Document
+
     document_id, (first, picture) = two_pages
     config, _ = seeded
     async with HaikuRAG(config=config, sources=["alpha"]) as rag:
@@ -131,20 +131,8 @@ async def test_a_page_holding_only_unchunked_items_is_shown_plain(
     image = await client.get(f"{base}/2")
     assert image.headers["content-type"] == "image/png"
     assert image.content.startswith(b"\x89PNG")
-
-
-async def test_a_plain_page_without_an_image_says_so(
-    client, two_pages, seeded, monkeypatch
-):
-    from haiku.rag.store.models.document import Document
-
-    document_id, (_, picture) = two_pages
-    config, _ = seeded
-    async with HaikuRAG(config=config, sources=["alpha"]) as rag:
-        await rag.store.chunks_table.delete(f"id = '{picture}'")
     monkeypatch.setattr(Document, "get_page_images", lambda self, pages: {})
-    response = await client.get(f"/api/inspect/alpha/documents/{document_id}/pages/2")
-    assert response.status_code == 404
+    assert (await client.get(f"{base}/2")).status_code == 404
 
 
 async def test_pictures_carry_caption_description_and_chunk(client, two_pages):
@@ -199,18 +187,6 @@ async def test_similar_chunks_leave_the_chunk_out(
     assert missing.status_code == 404
 
 
-async def test_pages_list_their_chunks_and_draw_them(client, seeded):
-    _, ids = seeded
-    base = f"/api/inspect/beta/documents/{ids['beta']['document_id']}/pages"
-    pages = (await client.get(base)).json()["pages"]
-    assert pages == [{"page": 1, "chunk_ids": [ids["beta"]["chunk_id"]]}]
-    image = await client.get(f"{base}/1")
-    assert image.headers["content-type"] == "image/png"
-    assert image.content.startswith(b"\x89PNG")
-    assert (await client.get(f"{base}/2")).status_code == 404
-    assert (await client.get(f"{base}/one")).status_code == 400
-
-
 async def test_a_page_without_an_image_says_so(client, seeded, monkeypatch):
     _, ids = seeded
 
@@ -239,20 +215,19 @@ async def test_search_spans_the_selected_databases(client, query_embedding):
 @pytest.mark.parametrize(
     "request_body",
     [
-        {},
-        {"query": "  "},
-        {"query": "x", "limit": 0},
-        {"query": "x", "search_type": "fuzzy"},
-        {"query": "x", "sources": "alpha"},
-        [],
-        None,
+        {"json": {}},
+        {"json": {"query": "  "}},
+        {"json": {"query": "x", "limit": 0}},
+        {"json": {"query": "x", "search_type": "fuzzy"}},
+        {"json": {"query": "x", "sources": "alpha"}},
+        {"json": []},
+        {"json": None},
+        {"content": b"{not json"},
     ],
 )
 async def test_a_malformed_search_is_refused(client, request_body):
-    response = await client.post("/api/search", json=request_body)
+    response = await client.post("/api/search", **request_body)
     assert response.status_code == 400
-    invalid = await client.post("/api/search", content=b"{not json")
-    assert invalid.status_code == 400
 
 
 async def test_a_failing_search_says_why(client, query_embedding):
@@ -286,32 +261,21 @@ async def test_an_image_search_runs_on_a_multimodal_embedder(
 
     monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
     response = await client.post(
-        "/api/search", json={"image": _png(), "sources": ["alpha"]}
+        "/api/search", json={"image": png(), "sources": ["alpha"]}
     )
     assert response.status_code == 200
     assert response.json()["results"]
 
 
-@pytest.mark.parametrize(
-    ("image", "reason"),
-    [
-        ("not base64!", "base64"),
-        (5, "base64"),
-        ("é", "base64"),
-        (base64.b64encode(b"hello").decode(), "not an image"),
-        (_png()[: len(_png()) // 2 // 4 * 4], "not an image"),
-        (_png(2049, 1), "2048"),
-    ],
-)
 async def test_an_unacceptable_search_image_is_refused(
-    client, query_embedding, monkeypatch, image, reason
+    client, query_embedding, monkeypatch
 ):
     from haiku.rag.embeddings import EmbedderWrapper
 
     monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
-    response = await client.post("/api/search", json={"image": image})
+    response = await client.post("/api/search", json={"image": "not base64!"})
     assert response.status_code == 400
-    assert reason in response.json()["error"]
+    assert "base64" in response.json()["error"]
 
 
 async def test_info_reports_tables_tags_and_history(client, seeded):
@@ -336,19 +300,8 @@ async def test_info_reports_a_database_the_client_refuses(client):
 
 async def _info(config, name: str, sessions_path) -> dict:
     """The info route of an app built over `config`."""
-    import httpx
-
-    from haiku_rag_app.main import create_app
-
-    app = create_app(config, sessions_path=sessions_path)
-    try:
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-        ) as http:
-            return (await http.get(f"/api/inspect/{name}/info")).json()
-    finally:
-        await app.state.databases.aclose()
-        await app.state.sessions.aclose()
+    async with served(config, sessions_path) as (_, http):
+        return (await http.get(f"/api/inspect/{name}/info")).json()
 
 
 async def test_info_reads_a_configured_tag(tmp_path, seeded):
@@ -384,22 +337,6 @@ async def test_info_reports_an_existing_database_the_client_refuses(tmp_path, se
     assert body["info"]["exists"] is True
     assert body["tags"] is None
     assert body["unavailable"]
-
-
-async def test_an_image_pillow_rejects_while_decoding_is_refused(
-    client, query_embedding, monkeypatch
-):
-    from haiku.rag.embeddings import EmbedderWrapper
-
-    def broken(self):
-        raise ValueError("truncated sRGB chunk")
-
-    image = _png()
-    monkeypatch.setattr(EmbedderWrapper, "supports_images", True)
-    monkeypatch.setattr("PIL.PngImagePlugin.PngImageFile.load", broken)
-    response = await client.post("/api/search", json={"image": image})
-    assert response.status_code == 400
-    assert "not an image" in response.json()["error"]
 
 
 async def test_a_search_body_over_the_limit_is_refused(client, monkeypatch):

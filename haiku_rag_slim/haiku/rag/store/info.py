@@ -16,7 +16,7 @@ from haiku.rag.store.engine import (
     require_complete_tag,
     require_current_tag,
 )
-from haiku.rag.store.schema import REQUIRED_TABLES, has_vector_index
+from haiku.rag.store.schema import REQUIRED_TABLES, vector_index_name
 
 
 async def get_database_stats(
@@ -63,11 +63,11 @@ async def get_database_stats(
 
     if stats["chunks"]["exists"]:
         chunks_tbl = tables["chunks"]
-        indexed = await has_vector_index(chunks_tbl)
-        stats["chunks"]["has_vector_index"] = indexed
-        if indexed:
-            index_stats = await chunks_tbl.index_stats("vector_idx")
-            if index_stats is not None:
+        vector_index = await vector_index_name(chunks_tbl)
+        stats["chunks"]["has_vector_index"] = vector_index is not None
+        if vector_index is not None:
+            index_stats = await chunks_tbl.index_stats(vector_index)
+            if index_stats is not None:  # pragma: no branch - the index exists
                 stats["chunks"]["num_indexed_rows"] = index_stats.num_indexed_rows
                 stats["chunks"]["num_unindexed_rows"] = index_stats.num_unindexed_rows
 

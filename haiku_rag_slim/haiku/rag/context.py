@@ -96,14 +96,13 @@ def _evidence_anchors(content: str, max_chars: int) -> list[str]:
     anchors: list[str] = []
     if len(content) <= max_chars:
         anchors.append(content)
-    if max_chars > 0:
-        min_anchor = min(_MIN_ANCHOR, max_chars, len(content))
-        target = min(max_chars // 2, len(content) // 2)
-        target = min(max(target, min_anchor), max_chars, len(content))
-        if target < len(content):
-            mid = len(content) // 2
-            start = max(0, mid - target // 2)
-            anchors.append(content[start : start + target])
+    min_anchor = min(_MIN_ANCHOR, max_chars, len(content))
+    target = min(max_chars // 2, len(content) // 2)
+    target = min(max(target, min_anchor), max_chars, len(content))
+    if target < len(content):
+        mid = len(content) // 2
+        start = max(0, mid - target // 2)
+        anchors.append(content[start : start + target])
     return anchors
 
 
@@ -241,11 +240,9 @@ def _find_expansion_range(
         sections.append((h, end))
 
     # Find which section contains the center match
-    current = 0
-    for j, (start, end) in enumerate(sections):
-        if start <= center_idx <= end:
-            current = j
-            break
+    current = next(
+        j for j, (start, end) in enumerate(sections) if start <= center_idx <= end
+    )
 
     sec_start, sec_end = sections[current]
     sec_chars = sum(

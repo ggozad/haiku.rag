@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any
 from unittest.mock import patch
 
@@ -23,11 +23,7 @@ from haiku.rag.capabilities.ledger import (
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.citation import Citation
-
-
-@dataclass
-class Deps:
-    state: dict[str, Any] = field(default_factory=dict)
+from tests.capabilities.helpers import Deps
 
 
 def citation(chunk_id: str, content: str = "evidence body", pictures=()) -> Citation:
@@ -81,21 +77,6 @@ def discovered(
     )
 
 
-def test_a_retained_picture_carries_the_source_it_came_from():
-    """A retained picture carries its database: compaction re-fetches cited
-    pictures through it."""
-    found = discovered(cited={"c1": [2]}, pictures={"c1": ["#/pictures/0"]})
-    found = replace(
-        found,
-        citations={"c1": replace_citation(found.citations["c1"], source="beta")},
-    )
-
-    capsule = build_capsule([found])
-
-    [picture] = capsule.pictures
-    assert picture.source == "beta"
-
-
 def test_the_capsule_names_the_collection_evidence_came_from():
     found = discovered(cited={"a": [2], "b": [2]})
     found = replace(
@@ -121,7 +102,8 @@ def test_the_capsule_names_the_collection_evidence_came_from():
 
 
 def test_evidence_from_one_collection_does_not_name_it():
-    found = discovered(cited={"a": [2], "b": [2]})
+    """Neither the capsule text nor the label of a retained picture names it."""
+    found = discovered(cited={"a": [2], "b": [2]}, pictures={"a": ["#/pictures/0"]})
     found = replace(
         found,
         citations={
@@ -130,10 +112,13 @@ def test_evidence_from_one_collection_does_not_name_it():
         },
     )
 
-    lines = build_capsule([found]).text.splitlines()
+    capsule = build_capsule([found])
+    lines = capsule.text.splitlines()
 
     assert not [line for line in lines if line.startswith("Collection:")]
     assert '[a] Source: "Title a" (test://a)' in lines
+    [picture] = capsule.pictures
+    assert "Collection" not in picture.label
 
 
 def test_a_picture_in_two_collections_is_retained_from_each():
@@ -194,18 +179,6 @@ def test_one_chunk_id_cited_from_two_collections_labels_each_picture():
     assert "Collection: wiki." in labels[1]
 
 
-def test_a_picture_from_one_collection_is_not_labelled_with_it():
-    found = discovered(cited={"c1": [2]}, pictures={"c1": ["#/pictures/0"]})
-    found = replace(
-        found,
-        citations={"c1": replace_citation(found.citations["c1"], source="papers")},
-    )
-
-    [picture] = build_capsule([found]).pictures
-
-    assert "Collection" not in picture.label
-
-
 def test_nothing_cited_produces_no_capsule():
     capsule = build_capsule([discovered()])
 
@@ -243,20 +216,8 @@ def test_every_cited_entry_is_kept_whole():
     assert body in capsule.text
 
 
-def test_both_capabilities_share_one_capsule():
-    capsule = build_capsule(
-        [
-            discovered("rag", cited={"from-rag": [4]}),
-            discovered("analysis", cited={"from-analysis": [6]}),
-        ]
-    )
-
-    assert capsule.text.count(CAPSULE_HEADER) == 1
-    assert "[from-rag]" in capsule.text
-    assert "[from-analysis]" in capsule.text
-
-
 def test_the_same_chunk_id_under_two_capabilities_is_kept_apart():
+    """Each capability's entry keeps its own body, under one shared capsule."""
     capsule = build_capsule(
         [
             discovered("rag", cited={"shared": [4]}, contents={"shared": "rag body"}),
@@ -266,6 +227,7 @@ def test_the_same_chunk_id_under_two_capabilities_is_kept_apart():
         ]
     )
 
+    assert capsule.text.count(CAPSULE_HEADER) == 1
     assert "rag body" in capsule.text
     assert "analysis body" in capsule.text
 
@@ -414,27 +376,9 @@ async def _answer(_messages, _info):
     return ModelResponse(parts=[TextPart("answer")])
 
 
-async def test_the_compactor_discovers_the_evidence_capability(temp_db_path):
-    """Discovery runs one way through the registry, so nothing needs wiring."""
-    compactor = create_compaction()
-    rag = create_rag(db_path=temp_db_path, config=AppConfig())
-    found: list[list[DiscoveredEvidence]] = []
-
-    with _spy_discovery(found):
-        agent = Agent(
-            FunctionModel(_answer),
-            deps_type=Deps,
-            capabilities=[rag, compactor],
-        )
-        await agent.run("a question", deps=Deps())
-
-    assert {evidence.capability: set(evidence.tool_names) for evidence in found[0]} == {
-        "rag": {"search", "execute_code"},
-    }
-
-
 async def test_discovery_sees_the_run_instances_not_the_registered_ones(temp_db_path):
-    """A registered capability holds no state; only its per-run copy does."""
+    """Discovery runs one way through the registry, so nothing needs wiring. A
+    registered capability holds no state. Only its per-run copy does."""
     compactor = create_compaction()
     rag = create_rag(db_path=temp_db_path, config=AppConfig())
     found: list[list[DiscoveredEvidence]] = []
@@ -446,6 +390,9 @@ async def test_discovery_sees_the_run_instances_not_the_registered_ones(temp_db_
         await agent.run("a question", deps=Deps())
 
     assert rag.state is None
+    assert {evidence.capability: set(evidence.tool_names) for evidence in found[0]} == {
+        "rag": {"search", "execute_code"},
+    }
     assert found[0][0].record.question == 0
 
 

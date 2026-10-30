@@ -740,50 +740,6 @@ def test_get_package_versions():
         assert len(value) > 0
 
 
-# --- apply_common_settings tests ---
-
-
-def test_apply_common_settings_no_settings():
-    from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils.models import apply_common_settings
-
-    mc = ModelConfig(provider="openai", name="gpt-4o")
-    result = apply_common_settings(None, mc)
-    assert result is None
-
-
-def test_apply_common_settings_temperature():
-    from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils.models import apply_common_settings
-
-    mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.7)
-    result = apply_common_settings(None, mc)
-    assert result is not None
-    assert result["temperature"] == 0.7
-
-
-def test_apply_common_settings_max_tokens():
-    from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils.models import apply_common_settings
-
-    mc = ModelConfig(provider="openai", name="gpt-4o", max_tokens=500)
-    result = apply_common_settings(None, mc)
-    assert result is not None
-    assert result["max_tokens"] == 500
-
-
-def test_apply_common_settings_existing():
-    from haiku.rag.config.models import ModelConfig
-    from haiku.rag.utils.models import apply_common_settings
-
-    mc = ModelConfig(provider="openai", name="gpt-4o", temperature=0.5)
-    existing = {"some_key": "value"}
-    result = apply_common_settings(existing, mc)
-    assert result is not None
-    assert result["temperature"] == 0.5
-    assert result["some_key"] == "value"
-
-
 # --- format_bytes tests ---
 
 
@@ -1128,37 +1084,23 @@ def test_get_package_versions_reports_missing_docling(monkeypatch):
     assert get_package_versions()["docling"] == "not installed"
 
 
-def test_get_model_openai_api_key_from_config():
-    """A config-supplied api_key reaches the client, so several
-    openai-compatible endpoints can each carry their own key."""
+@pytest.mark.parametrize(
+    "provider, name, base_url, api_key",
+    [
+        ("openai", "qwen3.6", "http://vllm:8000/v1", "sk-vendor-a"),
+        ("openai", "gpt-4o", None, "sk-vendor-b"),
+        ("ollama", "gpt-oss", "http://remote-ollama:11434/v1", "sk-proxy"),
+        ("openrouter", "openai/gpt-4o-mini", None, "sk-or-x"),
+    ],
+)
+def test_get_model_api_key_from_config(monkeypatch, provider, name, base_url, api_key):
+    """The configured api_key reaches the client, and the environment's key does
+    not."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-env")
     result = get_model(
-        ModelConfig(
-            provider="openai",
-            name="qwen3.6",
-            base_url="http://vllm:8000/v1",
-            api_key="sk-vendor-a",
-        )
+        ModelConfig(provider=provider, name=name, base_url=base_url, api_key=api_key)
     )
-    assert result.client.api_key == "sk-vendor-a"
-
-
-def test_get_model_openai_api_key_without_base_url_overrides_env():
-    result = get_model(
-        ModelConfig(provider="openai", name="gpt-4o", api_key="sk-vendor-b")
-    )
-    assert result.client.api_key == "sk-vendor-b"
-
-
-def test_get_model_ollama_api_key_from_config():
-    result = get_model(
-        ModelConfig(
-            provider="ollama",
-            name="gpt-oss",
-            base_url="http://remote-ollama:11434/v1",
-            api_key="sk-proxy",
-        )
-    )
-    assert result.client.api_key == "sk-proxy"
+    assert result.client.api_key == api_key
 
 
 def test_get_model_api_key_rejected_on_unplumbed_provider():
@@ -1259,14 +1201,6 @@ def test_get_model_openrouter_thinking_travels_unified():
         ModelConfig(provider="openrouter", name="openai/gpt-5", thinking=False)
     )
     assert result.settings == {"thinking": False}
-
-
-def test_get_model_openrouter_api_key_from_config(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-env")
-    result = get_model(
-        ModelConfig(provider="openrouter", name="openai/gpt-4o-mini", api_key="sk-or-x")
-    )
-    assert result.client.api_key == "sk-or-x"
 
 
 def test_get_model_openrouter_api_key_from_environment(monkeypatch):

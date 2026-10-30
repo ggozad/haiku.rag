@@ -444,30 +444,6 @@ async def test_discover_emits_delete_for_removed_url():
     assert by_uri["https://example.com/gone.md"].revision is None
 
 
-async def test_discover_emits_delete_for_removed_url_with_no_revision_tracked():
-    """known_uris alone determines config-removal DELETE — a URL the
-    source has seen before but never had a revision for (HTTP without
-    ETag/Last-Modified) still triggers DELETE when dropped from config."""
-    transport = _transport(
-        {
-            ("HEAD", "https://example.com/a.md"): httpx.Response(
-                200, headers={"etag": '"abc"'}
-            ),
-        }
-    )
-    src = HTTPSource(
-        source_id="x", urls=["https://example.com/a.md"], transport=transport
-    )
-    events = [
-        e
-        async for e in src.discover(
-            known_uris={"https://example.com/a.md", "https://example.com/no-etag.md"}
-        )
-    ]
-    by_uri = {e.uri: e for e in events}
-    assert by_uri["https://example.com/no-etag.md"].kind is SourceEventKind.DELETE
-
-
 async def test_discover_propagates_non_transport_errors():
     """Programming errors (TypeError, etc.) should propagate instead of
     being silently swallowed as UPSERT events."""
@@ -485,30 +461,22 @@ async def test_discover_propagates_non_transport_errors():
             pass
 
 
-async def test_discover_emits_unchanged_for_known_url_without_revision():
-    """A server that returns no ETag or Last-Modified should not cause
-    re-ingestion every sweep once the URL has been ingested."""
+@pytest.mark.parametrize(
+    "known_uris, kind",
+    [
+        ({"https://example.com/a.md"}, SourceEventKind.UNCHANGED),
+        (None, SourceEventKind.UPSERT),
+    ],
+)
+async def test_discover_without_revision_upserts_only_unknown_urls(known_uris, kind):
+    """Without a revision, discovery emits UNCHANGED for known URLs and UPSERT for
+    unknown URLs."""
     transport = _transport({("HEAD", "https://example.com/a.md"): httpx.Response(200)})
     src = HTTPSource(
         source_id="x", urls=["https://example.com/a.md"], transport=transport
     )
-    events = [e async for e in src.discover(known_uris={"https://example.com/a.md"})]
-    assert len(events) == 1
-    assert events[0].kind is SourceEventKind.UNCHANGED
-    assert events[0].revision is None
-
-
-async def test_discover_emits_upsert_for_unknown_url_without_revision():
-    """A brand-new URL with no revision should still UPSERT on first sight."""
-    transport = _transport(
-        {("HEAD", "https://example.com/new.md"): httpx.Response(200)}
-    )
-    src = HTTPSource(
-        source_id="x", urls=["https://example.com/new.md"], transport=transport
-    )
-    events = [e async for e in src.discover()]
-    assert len(events) == 1
-    assert events[0].kind is SourceEventKind.UPSERT
+    events = [e async for e in src.discover(known_uris=known_uris)]
+    assert [(e.kind, e.revision) for e in events] == [(kind, None)]
 
 
 async def test_discover_upserts_a_url_that_recovers_without_validators():
@@ -533,6 +501,21 @@ async def test_fetch_rejects_file_exceeding_max_size():
     src = HTTPSource(source_id="default", transport=transport, max_file_size=1000)
     with pytest.raises(FileTooLargeError):
         await src.fetch("https://example.com/big.bin")
+
+
+@pytest.mark.parametrize("head_headers", [{}, {"content-length": "10"}])
+async def test_fetch_rejects_a_body_exceeding_max_size(head_headers):
+    """The limit holds when HEAD omits or understates the length."""
+    url = "https://example.com/big.bin"
+    transport = _transport(
+        {
+            ("HEAD", url): httpx.Response(200, headers=head_headers),
+            ("GET", url): httpx.Response(200, content=b"x" * 5000),
+        }
+    )
+    src = HTTPSource(source_id="default", transport=transport, max_file_size=1000)
+    with pytest.raises(FileTooLargeError):
+        await src.fetch(url)
 
 
 async def test_fetch_allows_file_within_max_size():

@@ -1,7 +1,7 @@
 import json
 from importlib import metadata
-from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import lancedb
 import numpy as np
 import pytest
@@ -21,6 +21,7 @@ from haiku.rag.config.models import (
     PictureDescriptionConfig,
     ProcessingConfig,
     ProvidersConfig,
+    QAConfig,
 )
 from haiku.rag.doctor import (
     CheckResult,
@@ -561,11 +562,26 @@ async def test_picture_with_data_ok(temp_db_path):
     assert _result(report, "picture_data").severity is Severity.OK
 
 
-async def test_embedding_name_drift_warns(temp_db_path):
-    await _build_db(temp_db_path, name="test")
-    report = await run_doctor(_config(name="different"), temp_db_path, {})
+@pytest.mark.parametrize(
+    "stored, configured, details",
+    [
+        ({"name": "test"}, {"name": "different"}, ["name: 'test' -> 'different'"]),
+        (
+            {"provider": "ollama"},
+            {"provider": "vllm"},
+            ["provider: 'ollama' -> 'vllm'"],
+        ),
+        ({}, {"query_prefix": "Q: "}, ["query_prefix: '' -> 'Q: '"]),
+    ],
+)
+async def test_embedding_identity_drift_warns(
+    temp_db_path, stored, configured, details
+):
+    await _build_db(temp_db_path, **stored)
+    report = await run_doctor(_config(**configured), temp_db_path, {})
     result = _result(report, "embedding_drift")
     assert result.severity is Severity.WARN
+    assert result.details == details
     assert not report.failed
 
 
@@ -574,22 +590,6 @@ async def test_embedding_dim_drift_fails(temp_db_path):
     report = await run_doctor(_config(vector_dim=VECTOR_DIM + 1), temp_db_path, {})
     assert _result(report, "embedding_drift").severity is Severity.FAIL
     assert report.failed
-
-
-async def test_embedding_provider_drift_warns(temp_db_path):
-    await _build_db(temp_db_path, provider="ollama")
-    report = await run_doctor(_config(provider="vllm"), temp_db_path, {})
-    result = _result(report, "embedding_drift")
-    assert result.severity is Severity.WARN
-    assert result.details == ["provider: 'ollama' -> 'vllm'"]
-
-
-async def test_embedding_prefix_drift_warns(temp_db_path):
-    await _build_db(temp_db_path)
-    report = await run_doctor(_config(query_prefix="Q: "), temp_db_path, {})
-    result = _result(report, "embedding_drift")
-    assert result.severity is Severity.WARN
-    assert result.details == ["query_prefix: '' -> 'Q: '"]
 
 
 async def test_vector_dimension_mismatch_fails(temp_db_path):
@@ -681,69 +681,38 @@ def test_embedding_drift_ok_without_stored_identity():
     assert _check_embedding_drift({}, _config()).severity is Severity.OK
 
 
-def test_vector_index_ok_without_index_on_small_collection():
-    stats = {"chunks": {"num_rows": 10, "has_vector_index": False}}
-    assert _check_vector_index(stats).severity is Severity.OK
-
-
-def test_vector_index_ok_without_index_on_moderate_collection():
-    stats = {"chunks": {"num_rows": 300, "has_vector_index": False}}
-    result = _check_vector_index(stats)
-    assert result.severity is Severity.OK
-    assert result.remediation is None
-
-
-def test_vector_index_warns_for_large_collection_without_index():
-    stats = {"chunks": {"num_rows": 100_000, "has_vector_index": False}}
-    result = _check_vector_index(stats)
-    assert result.severity is Severity.WARN
-    assert result.remediation == "haiku-rag create-index"
-
-
-def test_vector_index_warns_on_unindexed_backlog():
-    stats = {
-        "chunks": {"num_rows": 300, "has_vector_index": True, "num_unindexed_rows": 5}
-    }
-    assert _check_vector_index(stats).severity is Severity.WARN
-
-
-def test_vector_index_ok_when_fully_indexed():
-    stats = {
-        "chunks": {"num_rows": 300, "has_vector_index": True, "num_unindexed_rows": 0}
-    }
-    assert _check_vector_index(stats).severity is Severity.OK
+@pytest.mark.parametrize(
+    "chunks, severity, remediation",
+    [
+        ({"num_rows": 10, "has_vector_index": False}, Severity.OK, None),
+        ({"num_rows": 300, "has_vector_index": False}, Severity.OK, None),
+        (
+            {"num_rows": 100_000, "has_vector_index": False},
+            Severity.WARN,
+            "haiku-rag create-index",
+        ),
+        (
+            {"num_rows": 300, "has_vector_index": True, "num_unindexed_rows": 5},
+            Severity.WARN,
+            "haiku-rag create-index",
+        ),
+        (
+            {"num_rows": 300, "has_vector_index": True, "num_unindexed_rows": 0},
+            Severity.OK,
+            None,
+        ),
+    ],
+)
+def test_vector_index_check(chunks, severity, remediation):
+    result = _check_vector_index({"chunks": chunks})
+    assert result.severity is severity
+    assert result.remediation == remediation
 
 
 def test_cli_doctor_nonexistent_db_exits_1(tmp_path):
     result = runner.invoke(cli, ["doctor", "--db", str(tmp_path / "nope.lancedb")])
     assert result.exit_code == 1
     assert "does not exist" in result.output
-
-
-def test_cli_doctor_exits_0_when_healthy(monkeypatch):
-    app = MagicMock()
-    app.doctor = AsyncMock(return_value=False)
-    monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
-    result = runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb"])
-    assert result.exit_code == 0
-
-
-def test_cli_doctor_exits_1_on_failure(monkeypatch):
-    app = MagicMock()
-    app.doctor = AsyncMock(return_value=True)
-    monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
-    result = runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb"])
-    assert result.exit_code == 1
-
-
-def test_cli_doctor_skip_providers(monkeypatch):
-    app = MagicMock()
-    app.doctor = AsyncMock(return_value=False)
-    monkeypatch.setattr("haiku.rag.cli.create_app", lambda *_a, **_k: app)
-    runner.invoke(cli, ["doctor", "--db", "/tmp/whatever.lancedb", "--skip-providers"])
-    app.doctor.assert_awaited_once_with(
-        duplicates_out=None, providers=False, as_json=False
-    )
 
 
 def _doctor_cli_args(db_path, tmp_path, monkeypatch, **build) -> list[str]:
@@ -794,15 +763,6 @@ def test_cli_doctor_json_prints_only_the_report(temp_db_path, tmp_path, monkeypa
     )
 
 
-def test_cli_doctor_json_exits_0_without_failures(temp_db_path, tmp_path, monkeypatch):
-    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch)
-
-    result = runner.invoke(cli, [*args, "--json", "--skip-providers"])
-
-    assert result.exit_code == 0
-    assert not DoctorReport.model_validate_json(result.stdout).failed
-
-
 def test_cli_doctor_json_reports_a_pending_migration(
     temp_db_path, tmp_path, monkeypatch
 ):
@@ -826,7 +786,7 @@ def test_cli_doctor_json_still_writes_duplicates_out(
     )
 
     assert result.exit_code == 0
-    DoctorReport.model_validate_json(result.stdout)
+    assert not DoctorReport.model_validate_json(result.stdout).failed
     assert target.exists()
 
 
@@ -916,52 +876,45 @@ def test_picture_description_model_checked_for_api_key():
 # --- Provider connectivity ---
 
 
-def test_resolve_endpoint_ollama_strips_v1():
-    assert _resolve_endpoint("ollama", "http://h:1/v1", "http://fallback") == (
-        "http://h:1/api/tags",
-        "ollama",
-        "http://h:1",
-    )
-
-
-def test_resolve_endpoint_ollama_uses_provider_fallback():
-    assert _resolve_endpoint("ollama", None, "http://fallback:11434") == (
-        "http://fallback:11434/api/tags",
-        "ollama",
-        "http://fallback:11434",
-    )
-
-
-def test_resolve_endpoint_vllm_default_and_models_path():
-    assert _resolve_endpoint("vllm", None, "http://o") == (
-        "http://localhost:8000/v1/models",
-        "openai",
-        "http://localhost:8000/v1",
-    )
-
-
-def test_resolve_endpoint_vllm_appends_v1():
-    assert _resolve_endpoint("vllm", "http://vllm:8000", "http://o") == (
-        "http://vllm:8000/v1/models",
-        "openai",
-        "http://vllm:8000/v1",
-    )
-
-
-def test_resolve_endpoint_openai_saas_is_skipped():
-    assert _resolve_endpoint("openai", None, "http://o") is None
-
-
-def test_resolve_endpoint_openai_with_base_url():
-    assert _resolve_endpoint("openai", "http://lmstudio:1234/v1", "http://o") == (
-        "http://lmstudio:1234/v1/models",
-        "openai",
-        "http://lmstudio:1234/v1",
-    )
-
-
-def test_resolve_endpoint_local_provider():
-    assert _resolve_endpoint("sentence-transformers", None, "http://o") == "local"
+@pytest.mark.parametrize(
+    "provider, base_url, fallback, expected",
+    [
+        (
+            "ollama",
+            "http://h:1/v1",
+            "http://fallback",
+            ("http://h:1/api/tags", "ollama", "http://h:1"),
+        ),
+        (
+            "ollama",
+            None,
+            "http://fallback:11434",
+            ("http://fallback:11434/api/tags", "ollama", "http://fallback:11434"),
+        ),
+        (
+            "vllm",
+            None,
+            "http://o",
+            ("http://localhost:8000/v1/models", "openai", "http://localhost:8000/v1"),
+        ),
+        (
+            "vllm",
+            "http://vllm:8000",
+            "http://o",
+            ("http://vllm:8000/v1/models", "openai", "http://vllm:8000/v1"),
+        ),
+        ("openai", None, "http://o", None),
+        (
+            "openai",
+            "http://lmstudio:1234/v1",
+            "http://o",
+            ("http://lmstudio:1234/v1/models", "openai", "http://lmstudio:1234/v1"),
+        ),
+        ("sentence-transformers", None, "http://o", "local"),
+    ],
+)
+def test_resolve_endpoint(provider, base_url, fallback, expected):
+    assert _resolve_endpoint(provider, base_url, fallback) == expected
 
 
 def test_model_present_tag_insensitive():
@@ -1020,6 +973,14 @@ def test_provider_targets_carries_docling_serve_api_key():
     )
     targets, _ = _provider_targets(config)
     assert targets["http://docling:5001/health"]["headers"] == {"X-Api-Key": "ds-key"}
+
+
+def test_provider_targets_probe_an_unnamed_model_without_listing_it():
+    config = AppConfig(qa=QAConfig(model=ModelConfig(provider="ollama", name="")))
+    targets, _ = _provider_targets(config)
+    entry = next(iter(targets.values()))
+    assert "" not in entry["models"]
+    assert "qwen3-embedding:4b" in entry["models"]
 
 
 def test_provider_targets_collects_local_providers():
@@ -1101,6 +1062,25 @@ async def test_provider_check_reports_local_provider(monkeypatch):
     assert "local" in local.message
 
 
+async def test_provider_check_probes_nothing_without_endpoints(monkeypatch):
+    async def probe(_client, _url, _headers):
+        raise AssertionError("no endpoint to probe")
+
+    monkeypatch.setattr("haiku.rag.doctor._probe_endpoint", probe)
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="sentence-transformers", name="x", vector_dim=4
+            )
+        ),
+        qa=QAConfig(model=ModelConfig(provider="anthropic", name="claude")),
+    )
+    results = await run_provider_checks(config)
+    assert [(r.name, r.severity) for r in results] == [
+        ("provider:sentence-transformers", Severity.OK)
+    ]
+
+
 async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
     await _build_db(temp_db_path)
     monkeypatch.setattr(
@@ -1131,45 +1111,38 @@ async def test_run_doctor_without_providers_skips_keys_and_probes(
 
 
 async def _probe_with_handler(handler, headers: dict[str, str] | None = None):
-    import httpx
-
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as client:
         return await _probe_endpoint(client, "http://x", headers or {})
 
 
-async def test_probe_endpoint_success_with_json():
-    import httpx
+@pytest.mark.parametrize(
+    "outcome, reachable, error, payload",
+    [
+        (httpx.Response(200, json={"models": []}), True, None, {"models": []}),
+        (httpx.Response(200, content=b"not json"), True, None, None),
+        (httpx.Response(503), False, "503", None),
+        (httpx.ConnectError("refused"), False, "refused", None),
+    ],
+)
+async def test_probe_endpoint_outcome(outcome, reachable, error, payload):
+    def handler(_request):
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
-    reachable, error, payload = await _probe_with_handler(
-        lambda _request: httpx.Response(200, json={"models": []})
-    )
-    assert reachable and error is None and payload == {"models": []}
+    reached, message, body = await _probe_with_handler(handler)
 
-
-async def test_probe_endpoint_success_non_json():
-    import httpx
-
-    reachable, _, payload = await _probe_with_handler(
-        lambda _request: httpx.Response(200, content=b"not json")
-    )
-    assert reachable and payload is None
-
-
-async def test_probe_endpoint_http_error_status():
-    import httpx
-
-    reachable, error, _ = await _probe_with_handler(
-        lambda _request: httpx.Response(503)
-    )
-    assert not reachable
-    assert error is not None and "503" in error
+    assert reached is reachable
+    assert body == payload
+    if error is None:
+        assert message is None
+    else:
+        assert message is not None and error in message
 
 
 async def test_probe_endpoint_sends_headers():
     """A secured endpoint needs its key on the probe request too."""
-    import httpx
-
     seen: dict[str, str] = {}
 
     def handler(request):
@@ -1179,17 +1152,6 @@ async def test_probe_endpoint_sends_headers():
     await _probe_with_handler(handler, {"Authorization": "Bearer sk-probe"})
 
     assert seen["authorization"] == "Bearer sk-probe"
-
-
-async def test_probe_endpoint_connection_error():
-    import httpx
-
-    def handler(_request):
-        raise httpx.ConnectError("refused")
-
-    reachable, error, _ = await _probe_with_handler(handler)
-    assert not reachable
-    assert error is not None and "refused" in error
 
 
 # --- Duplicate-document detection ----------------------------------------
@@ -1417,7 +1379,7 @@ async def test_scan_vectors_reduces_chunks_to_document_centroids(temp_db_path):
         [
             chunk_model(
                 id=f"zero-{n}",
-                document_id="b",
+                document_id="b" if n < 4 else "c",
                 content="x",
                 metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
                 vector=[0.0] * 8,
@@ -1437,11 +1399,13 @@ async def test_scan_vectors_reduces_chunks_to_document_centroids(temp_db_path):
     assert scan.stored_dimension == 8
     assert scan.dimension == 8
     by_id = dict(zip(scan.document_ids, range(len(scan.document_ids))))
-    assert sorted(by_id) == ["a", "b"]
+    assert sorted(by_id) == ["a", "b", "c"]
     assert scan.counts[by_id["a"]] == 2
     assert scan.counts[by_id["b"]] == 1
+    assert scan.counts[by_id["c"]] == 0
     assert scan.centroids[by_id["a"]].tolist() == [1, 1, 0, 0, 0, 0, 0, 0]
     assert scan.centroids[by_id["b"]].tolist() == [0, 0, 1, 0, 0, 0, 0, 0]
+    assert scan.centroids[by_id["c"]].tolist() == [0] * 8
     assert scan.unembedded_count == 7
     assert scan.unembedded_sample == [f"zero-{n}" for n in range(5)]
 

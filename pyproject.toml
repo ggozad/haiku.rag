@@ -164,6 +164,7 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["haiku_rag_slim"]
+branch = true
 # aiosqlite runs sqlite (and the queue's PRAGMA connect listener) off the main
 # flow via a greenlet + worker thread; track both so that code isn't reported
 # as uncovered.

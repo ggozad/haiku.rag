@@ -145,7 +145,7 @@ class TestSharedChunkIds:
     async def test_an_unsearched_id_in_one_database_still_resolves(self, tmp_path):
         """The refusal is for a collision, not for looking through several
         databases: an id only one of them holds still resolves."""
-        from tests.capabilities.test_capabilities import (
+        from tests.capabilities.helpers import (
             Deps,
             make_context,
             send_first_request,
@@ -236,7 +236,7 @@ class TestSharedChunkIds:
         answer, so the retrieved one is the citation and its database is not a
         guess. A later question that does retrieve the twin is refused by the
         citation index."""
-        from tests.capabilities.test_capabilities import (
+        from tests.capabilities.helpers import (
             Deps,
             make_context,
             send_first_request,
@@ -322,7 +322,7 @@ class TestCiteFallback:
         """The fallback exists for a real id this run's searches did not return.
         Across databases it looks through the selected ones and records which
         held it."""
-        from tests.capabilities.test_capabilities import (
+        from tests.capabilities.helpers import (
             Deps,
             make_context,
             send_first_request,
@@ -362,7 +362,7 @@ class TestCiteFallback:
     ):
         """A question scoped to one database must not produce a citation from
         another: the fallback looks only where the question looked."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -386,7 +386,7 @@ class TestCiteFallback:
     async def test_selecting_no_databases_cites_nothing(self, tmp_path):
         """`sources=[]` selected nothing, which is not the same as everything:
         the fallback must not go looking where the question never looked."""
-        from tests.capabilities.test_capabilities import Deps, make_context
+        from tests.capabilities.helpers import Deps, make_context
 
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])

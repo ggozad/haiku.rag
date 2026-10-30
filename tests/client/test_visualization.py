@@ -10,32 +10,6 @@ from haiku.rag.store.models.document import Document
 from tests.platform import converts_pdf_locally
 
 
-@pytest.mark.vcr()
-async def test_client_visualize_chunk_no_document(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        chunk = Chunk(content="Orphan chunk", order=0)
-        images = await client.visualize_chunk(chunk)
-        assert images == []
-
-
-@pytest.mark.vcr()
-async def test_client_visualize_chunk_no_bounding_boxes(temp_db_path):
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(
-            content="Simple text content without structure",
-            uri="test://simple",
-        )
-
-        assert doc.id is not None
-        assert doc.docling_document is not None
-
-        chunks = await client.chunk_repository.get_by_document_id(doc.id)
-        assert len(chunks) >= 1
-
-        images = await client.visualize_chunk(chunks[0])
-        assert images == []
-
-
 @converts_pdf_locally
 @pytest.mark.vcr()
 async def test_client_visualize_chunk_with_pdf(temp_db_path, doclaynet_first_page_pdf):
@@ -69,49 +43,14 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path, doclaynet_first_pag
 
 
 async def test_client_visualize_chunk_multi_page(temp_db_path):
-    from docling_core.types.doc.base import BoundingBox, Size
-    from docling_core.types.doc.document import (
-        DoclingDocument,
-        ImageRef,
-        ProvenanceItem,
-    )
-    from docling_core.types.doc.labels import DocItemLabel
     from PIL import Image as PilImageModule
     from PIL.Image import Image as PILImage
 
-    docling_doc = DoclingDocument(name="multi-page-test")
-    page_size = Size(width=612.0, height=792.0)
-    img1 = PilImageModule.new("RGB", (612, 792), color="white")
-    img2 = PilImageModule.new("RGB", (612, 792), color="white")
-    docling_doc.add_page(
-        page_no=1, size=page_size, image=ImageRef.from_pil(img1, dpi=72)
-    )
-    docling_doc.add_page(
-        page_no=2, size=page_size, image=ImageRef.from_pil(img2, dpi=72)
-    )
-
-    docling_doc.add_text(
-        label=DocItemLabel.PARAGRAPH,
-        text="Content on page one.",
-        prov=ProvenanceItem(
-            page_no=1,
-            bbox=BoundingBox(l=50, t=700, r=550, b=650),
-            charspan=(0, 20),
-        ),
-    )
-    docling_doc.add_text(
-        label=DocItemLabel.PARAGRAPH,
-        text="Content on page two.",
-        prov=ProvenanceItem(
-            page_no=2,
-            bbox=BoundingBox(l=50, t=700, r=550, b=650),
-            charspan=(0, 20),
-        ),
-    )
+    docling_doc = _bbox_doc(with_page_image=True, pages=(1, 2))
 
     chunks = [
         Chunk(
-            content="Content on page one.\nContent on page two.",
+            content="Content on page 1.\nContent on page 2.",
             metadata={
                 "doc_item_refs": ["#/texts/0", "#/texts/1"],
                 "page_numbers": [1, 2],
@@ -289,43 +228,11 @@ async def test_client_visualize_chunk_two_tone_highlights(temp_db_path):
 
 async def test_client_visualize_chunk_uses_given_refs(temp_db_path):
     """Explicit refs restrict visualization without expanding chunk context."""
-    from docling_core.types.doc.base import BoundingBox, Size
-    from docling_core.types.doc.document import (
-        DoclingDocument,
-        ImageRef,
-        ProvenanceItem,
-    )
-    from docling_core.types.doc.labels import DocItemLabel
-    from PIL import Image as PilImageModule
-
-    docling_doc = DoclingDocument(name="refs-test")
-    page_size = Size(width=612.0, height=792.0)
-    for page_no in (1, 2):
-        docling_doc.add_page(
-            page_no=page_no,
-            size=page_size,
-            image=ImageRef.from_pil(
-                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
-            ),
-        )
-    docling_doc.add_text(
-        label=DocItemLabel.PARAGRAPH,
-        text="Content on page one.",
-        prov=ProvenanceItem(
-            page_no=1, bbox=BoundingBox(l=50, t=700, r=550, b=650), charspan=(0, 20)
-        ),
-    )
-    docling_doc.add_text(
-        label=DocItemLabel.PARAGRAPH,
-        text="Content on page two.",
-        prov=ProvenanceItem(
-            page_no=2, bbox=BoundingBox(l=50, t=700, r=550, b=650), charspan=(0, 20)
-        ),
-    )
+    docling_doc = _bbox_doc(with_page_image=True, pages=(1, 2))
 
     chunks = [
         Chunk(
-            content="Content on page one.\nContent on page two.",
+            content="Content on page 1.\nContent on page 2.",
             metadata={
                 "doc_item_refs": ["#/texts/0", "#/texts/1"],
                 "page_numbers": [1, 2],
@@ -346,39 +253,11 @@ async def test_client_visualize_chunk_uses_given_refs(temp_db_path):
 
 async def test_client_visualize_chunk_no_expand_shows_only_chunk(temp_db_path):
     """expand=False draws only the chunk's own items, not the expanded section."""
-    from docling_core.types.doc.base import BoundingBox, Size
-    from docling_core.types.doc.document import (
-        DoclingDocument,
-        ImageRef,
-        ProvenanceItem,
-    )
-    from docling_core.types.doc.labels import DocItemLabel
-    from PIL import Image as PilImageModule
-
-    docling_doc = DoclingDocument(name="no-expand-test")
-    page_size = Size(width=612.0, height=792.0)
-    for page_no in (1, 2):
-        docling_doc.add_page(
-            page_no=page_no,
-            size=page_size,
-            image=ImageRef.from_pil(
-                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
-            ),
-        )
-    for page_no in (1, 2):
-        docling_doc.add_text(
-            label=DocItemLabel.PARAGRAPH,
-            text=f"Short paragraph on page {page_no}.",
-            prov=ProvenanceItem(
-                page_no=page_no,
-                bbox=BoundingBox(l=50, t=700, r=550, b=650),
-                charspan=(0, 20),
-            ),
-        )
+    docling_doc = _bbox_doc(with_page_image=True, pages=(1, 2))
 
     chunks = [
         Chunk(
-            content="Short paragraph on page 1.",
+            content="Content on page 1.",
             metadata={
                 "doc_item_refs": ["#/texts/0"],
                 "page_numbers": [1],
@@ -578,20 +457,41 @@ async def test_visualize_chunk_skips_box_on_unstored_page(temp_db_path):
         assert await client.visualize_chunk(stored[0]) == []
 
 
-async def test_visualize_chunk_without_refs_falls_back_to_chunk_metadata(temp_db_path):
-    """A chunk carrying no doc_item_refs has nothing to expand from."""
-    docling_doc = _bbox_doc(with_page_image=True)
+def _doc_without_provenance():
+    doc = DoclingDocument(name="no-prov")
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Content on page 1.")
+    return doc
+
+
+@pytest.mark.parametrize(
+    "docling_doc, metadata",
+    [
+        (
+            _bbox_doc(with_page_image=True),
+            {"page_numbers": [1], "labels": ["paragraph"]},
+        ),
+        (
+            _doc_without_provenance(),
+            {"doc_item_refs": ["#/texts/0"], "labels": ["paragraph"]},
+        ),
+    ],
+    ids=["no-refs", "refs-without-provenance"],
+)
+async def test_visualize_chunk_returns_empty_without_boxes(
+    temp_db_path, docling_doc, metadata
+):
+    """A chunk whose items locate nothing on a page renders nothing."""
     chunks = [
         Chunk(
             content="Content on page 1.",
-            metadata={"page_numbers": [1], "labels": ["paragraph"]},
+            metadata=metadata,
             order=0,
             embedding=[0.1] * 2560,
         )
     ]
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.import_document(docling_doc, chunks, uri="test://no-refs")
+        doc = await client.import_document(docling_doc, chunks, uri="test://no-boxes")
         stored = await client.chunk_repository.get_by_document_id(doc.id)
 
         assert await client.visualize_chunk(stored[0]) == []
@@ -627,3 +527,35 @@ async def test_visualize_chunk_falls_back_when_expansion_drops_refs(temp_db_path
             images = await client.visualize_chunk(stored[0])
 
     assert len(images) == 1
+
+
+async def test_visualize_command_omits_the_document_line_without_a_uri(
+    temp_db_path, monkeypatch
+):
+    from rich.console import Console
+
+    from haiku.rag.app import HaikuRAGApp
+    from haiku.rag.config import AppConfig
+    from tests.conftest import for_path
+
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={"doc_item_refs": ["#/texts/0"], "page_numbers": [1]},
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(_bbox_doc(with_page_image=True), chunks)
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+    assert stored[0].id is not None
+    monkeypatch.setattr("textual_image.renderable.Image", lambda img: "<page image>")
+    app = HaikuRAGApp(scope=for_path(temp_db_path), config=AppConfig())
+    app.console = Console(record=True, width=200)
+
+    await app.visualize_chunk(stored[0].id)
+
+    printed = app.console.export_text()
+    assert "Page 1/1" in printed
+    assert "document:" not in printed

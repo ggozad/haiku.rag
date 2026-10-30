@@ -760,6 +760,34 @@ async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch)
         assert untouched.title is None
 
 
+async def test_rebuild_title_only_skips_a_blank_generated_title(
+    temp_db_path, monkeypatch
+):
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import FunctionModel
+
+    from haiku.rag.store.models.document import Document
+
+    monkeypatch.setattr(
+        "haiku.rag.utils.models.get_model",
+        lambda *a, **kw: FunctionModel(
+            lambda messages, info: ModelResponse(parts=[TextPart("   ")])
+        ),
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.document_repository.create(Document(content="body"))
+        assert doc.id is not None
+
+        processed = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY)
+        ]
+
+        assert processed == []
+        stored = await client.get_document_by_id(doc.id)
+        assert stored is not None and stored.title is None
+
+
 @pytest.mark.vcr()
 async def test_rebuild_full_source_failure_falls_back_to_stored_content(
     temp_db_path, monkeypatch
@@ -812,32 +840,37 @@ async def test_rebuild_full_source_failure_falls_back_to_stored_content(
 
 
 @pytest.mark.vcr()
-async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch):
-    """RECHUNK flushes in batches and yields every document.
-
-    Forces a tiny batch size so three docs trigger at least one mid-loop
-    flush plus the final flush. Regression guard for the batched-write path
-    in _rebuild_rechunk.
-    """
+@pytest.mark.parametrize(
+    "mode, content",
+    [
+        (RebuildMode.RECHUNK, "batch flush doc"),
+        (RebuildMode.FULL, "full batch doc"),
+    ],
+    ids=["rechunk", "full"],
+)
+async def test_rebuild_batch_size_flush(temp_db_path, monkeypatch, mode, content):
+    """RECHUNK and FULL flush a full batch and the partial remainder, and yield
+    every document."""
     from haiku.rag.client import rebuild as rebuild_module
 
     monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
+    flushes = _count_flushes(monkeypatch, rebuild_module)
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         ids: list[str] = []
         for i in range(3):
-            doc = await client.create_document(content=f"batch flush doc {i}")
+            doc = await client.create_document(content=f"{content} {i}")
             assert doc.id is not None
             ids.append(doc.id)
 
-        processed = [
-            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.RECHUNK)
-        ]
+        processed = [doc_id async for doc_id in client.rebuild_database(mode=mode)]
 
         assert sorted(processed) == sorted(ids)
         for doc_id in ids:
             chunks = await client.chunk_repository.get_by_document_id(doc_id)
             assert len(chunks) > 0
+
+    assert len(flushes) == 2
 
 
 async def test_rebuild_descriptions_requires_description_mode(temp_db_path):
@@ -867,9 +900,9 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
 
     config = AppConfig()
     config.processing.pictures = "description"
@@ -882,7 +915,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         )
         assert created.id is not None
 
-        # _docling_doc_with_picture has no PageItems, so set_docling leaves
+        # docling_doc_with_picture has no PageItems, so set_docling leaves
         # docling_pages as None. Inject sentinel bytes to stand in for what
         # a real ingest with generate_page_images=True would store.
         sentinel_pages = b"\x80SENTINEL_PAGE_BYTES"
@@ -946,9 +979,9 @@ async def test_rebuild_descriptions_skips_already_described(temp_db_path, monkey
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
 
     # Pre-populate the description directly on the docling document
     from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
@@ -1024,9 +1057,9 @@ async def test_patch_picture_descriptions_warns_on_missing_bytes(temp_db_path):
     from haiku.rag.client.rebuild import _patch_picture_descriptions
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     config = AppConfig()
     config.processing.pictures = "description"
 
@@ -1065,9 +1098,9 @@ async def test_patch_picture_descriptions_skips_when_all_already_described(
     from haiku.rag.client.rebuild import _patch_picture_descriptions
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     docling_doc.pictures[0].meta = PictureMeta(
         description=DescriptionMetaField(text="Pre-described.")
     )
@@ -1108,9 +1141,9 @@ async def test_rebuild_descriptions_raises_when_blob_is_missing(
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     config = AppConfig()
     config.processing.pictures = "description"
 
@@ -1154,30 +1187,6 @@ async def _stored_embedding_name(client: HaikuRAG) -> str:
     return settings["embeddings"]["model"]["name"]
 
 
-async def test_rebuild_set_embedder_adopts_identity_without_reembedding(temp_db_path):
-    """SET_EMBEDDER updates stored embedder identity and leaves vectors untouched."""
-    from haiku.rag.config import AppConfig
-
-    dim = AppConfig().embeddings.model.vector_dim
-    sentinel = [0.5] * dim
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        await _add_chunk(client, sentinel)
-
-    drift = AppConfig()
-    drift.embeddings.model.name = "different-model"
-
-    async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
-        async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
-            pass
-
-        assert await _stored_embedding_name(client) == "different-model"
-
-        rows = (await client.store.chunks_table.query().to_arrow()).to_pylist()
-        assert len(rows) == 1
-        assert rows[0]["vector"] == pytest.approx(sentinel)
-
-
 async def test_rebuild_set_embedder_works_on_empty_database(temp_db_path):
     """SET_EMBEDDER reconciles even with no documents (preflight must be bypassed)."""
     from haiku.rag.app import HaikuRAGApp
@@ -1194,6 +1203,23 @@ async def test_rebuild_set_embedder_works_on_empty_database(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=drift, skip_validation=True) as client:
         assert await _stored_embedding_name(client) == "different-model"
+
+
+async def test_rebuild_set_embedder_records_an_embedder_where_none_was(
+    temp_db_path,
+):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        settings = dict(client.store.stored_settings)
+        del settings["embeddings"]
+        await client.store.settings_table.update({"settings": json.dumps(settings)})
+
+    async with HaikuRAG(temp_db_path, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
+            pass
+
+        assert await _stored_embedding_name(client) == (
+            get_config().embeddings.model.name
+        )
 
 
 async def test_rebuild_set_embedder_raises_on_vector_dim_mismatch(temp_db_path):
@@ -1314,7 +1340,7 @@ async def test_flush_rebuild_batch_writes_items_in_few_versions(
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
     from haiku.rag.store.repositories.document_item import DocumentItemRepository
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     config = AppConfig()
     config.storage.auto_vacuum = False
@@ -1322,7 +1348,7 @@ async def test_flush_rebuild_batch_writes_items_in_few_versions(
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         created = []
         for i in range(5):
-            docling_doc = _docling_doc_with_picture()
+            docling_doc = docling_doc_with_picture()
             document = Document(content=f"doc {i}", uri=f"test://doc-{i}")
             document.set_docling(docling_doc)
             created.append(
@@ -1436,9 +1462,9 @@ async def test_apply_descriptions_writes_only_non_empty_text(
     is written through to the picture meta."""
     from haiku.rag.client.rebuild import _apply_descriptions_sync
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     ref = docling_doc.pictures[0].self_ref
     document = Document(content="x", uri="test://doc")
 
@@ -1451,6 +1477,23 @@ async def test_apply_descriptions_writes_only_non_empty_text(
     assert document.docling_document is not None
 
 
+def test_apply_descriptions_replaces_an_existing_description():
+    from haiku.rag.client.rebuild import _apply_descriptions_sync
+    from haiku.rag.store.models.document import Document
+    from tests.documents import docling_doc_with_picture
+
+    docling_doc = docling_doc_with_picture()
+    ref = docling_doc.pictures[0].self_ref
+    document = Document(content="x", uri="test://doc")
+
+    _apply_descriptions_sync(docling_doc, document, {ref: "a red square"})
+    _apply_descriptions_sync(docling_doc, document, {ref: "a blue square"})
+
+    meta = docling_doc.pictures[0].meta
+    assert meta is not None and meta.description is not None
+    assert meta.description.text == "a blue square"
+
+
 async def test_patch_picture_descriptions_returns_zero_without_descriptions(
     temp_db_path, monkeypatch
 ):
@@ -1459,9 +1502,9 @@ async def test_patch_picture_descriptions_returns_zero_without_descriptions(
     from haiku.rag.client.rebuild import _patch_picture_descriptions
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     config = AppConfig()
     config.processing.pictures = "description"
 
@@ -1622,7 +1665,7 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     config = AppConfig()
     config.processing.pictures = "description"
@@ -1644,7 +1687,7 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
     monkeypatch.setattr(rebuild_module, "_flush_rebuild_batch", spy)
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
-        docling_doc = _docling_doc_with_picture()
+        docling_doc = docling_doc_with_picture()
         document = Document(content="picture doc", uri="test://doc")
         document.set_docling(docling_doc)
         created = await _store_document_with_chunks(
@@ -1665,29 +1708,6 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
         assert after is not None
         assert after.content == "picture doc"
         assert after.docling_pages == pages
-
-
-@pytest.mark.vcr()
-async def test_rebuild_full_flushes_in_batches(temp_db_path, monkeypatch):
-    from haiku.rag.client import rebuild as rebuild_module
-
-    monkeypatch.setattr(rebuild_module, "_REBUILD_BATCH_SIZE", 2)
-    flushes = _count_flushes(monkeypatch, rebuild_module)
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        ids = []
-        for i in range(3):
-            doc = await client.create_document(content=f"full batch doc {i}")
-            assert doc.id is not None
-            ids.append(doc.id)
-
-        processed = [
-            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
-        ]
-
-        assert sorted(processed) == sorted(ids)
-
-    assert len(flushes) == 2
 
 
 @pytest.mark.vcr()
@@ -1748,7 +1768,7 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     config = AppConfig()
     config.processing.pictures = "description"
@@ -1766,7 +1786,7 @@ async def test_rebuild_descriptions_flushes_in_batches(temp_db_path, monkeypatch
     async with HaikuRAG(temp_db_path, config=config, create=True) as rag:
         ids = []
         for i in range(2):
-            docling_doc = _docling_doc_with_picture()
+            docling_doc = docling_doc_with_picture()
             document = Document(content=f"picture doc {i}", uri=f"test://doc-{i}")
             document.set_docling(docling_doc)
             created = await _store_document_with_chunks(
@@ -1819,9 +1839,9 @@ async def test_rebuild_embed_only_recovers_picture_bytes(
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.store.models.chunk import Chunk
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
     ref = docling_doc.pictures[0].self_ref
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -2989,16 +3009,17 @@ async def test_rebuild_set_embedder_adopts_a_query_prefix_change(temp_db_path):
         pass
 
 
-async def test_rebuild_set_embedder_adopts_a_name_change_with_equal_prefixes(
+async def test_rebuild_set_embedder_adopts_a_name_change_and_keeps_vectors(
     temp_db_path,
 ):
     from haiku.rag.config import AppConfig
     from haiku.rag.store.repositories.settings import SettingsRepository
 
+    sentinel = [0.5] * AppConfig().embeddings.model.vector_dim
     prefixed = AppConfig()
     prefixed.embeddings.model.document_prefix = "D: "
-    async with HaikuRAG(temp_db_path, config=prefixed, create=True):
-        pass
+    async with HaikuRAG(temp_db_path, config=prefixed, create=True) as client:
+        await _add_chunk(client, sentinel)
 
     drift = prefixed.model_copy(deep=True)
     drift.embeddings.model.name = "different-model"
@@ -3006,9 +3027,11 @@ async def test_rebuild_set_embedder_adopts_a_name_change_with_equal_prefixes(
         async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
             pass
         recorded = await SettingsRepository(client.store).get_current_settings()
+        [row] = (await client.store.chunks_table.query().to_arrow()).to_pylist()
 
     model = recorded["embeddings"]["model"]
     assert (model["name"], model["document_prefix"]) == ("different-model", "D: ")
+    assert row["vector"] == pytest.approx(sentinel)
 
 
 async def test_rebuild_embed_only_adopts_prefixes(temp_db_path):

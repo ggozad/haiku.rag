@@ -4,7 +4,9 @@ import logging
 from typing import Any
 
 from haiku.rag.config import AppConfig
+from haiku.rag.providers import picture_description
 from haiku.rag.providers.picture_description import describe_pictures
+from tests.conftest import capture_logs
 
 
 class _StubAgent:
@@ -45,8 +47,10 @@ def _patch_agent(monkeypatch, outputs: list[Any]) -> _StubAgent:
 
 
 async def test_describe_pictures_returns_text_per_self_ref(monkeypatch):
-    """Happy path: each picture gets one VLM call and the response text
-    lands in the result map keyed by self_ref."""
+    """Each picture gets one VLM call carrying its bytes as a PNG BinaryContent
+    part, and the response text lands in the result map keyed by self_ref."""
+    from pydantic_ai.messages import BinaryContent
+
     stub = _patch_agent(
         monkeypatch,
         outputs=["A red square.", "A blue triangle."],
@@ -54,7 +58,7 @@ async def test_describe_pictures_returns_text_per_self_ref(monkeypatch):
 
     config = AppConfig()
     out = await describe_pictures(
-        {"#/pictures/0": b"red-bytes", "#/pictures/1": b"blue-bytes"},
+        {"#/pictures/0": b"\x89PNG\r\n\x1a\nred", "#/pictures/1": b"blue-bytes"},
         config=config,
     )
 
@@ -63,6 +67,11 @@ async def test_describe_pictures_returns_text_per_self_ref(monkeypatch):
         "#/pictures/1": "A blue triangle.",
     }
     assert len(stub.calls) == 2
+    parts = stub.calls[0]
+    assert isinstance(parts, list) and len(parts) == 1
+    assert isinstance(parts[0], BinaryContent)
+    assert parts[0].data == b"\x89PNG\r\n\x1a\nred"
+    assert parts[0].media_type == "image/png"
 
 
 async def test_describe_pictures_drops_empty_output(monkeypatch):
@@ -83,7 +92,7 @@ async def test_describe_pictures_drops_empty_output(monkeypatch):
     assert out == {"#/pictures/0": "A real description."}
 
 
-async def test_describe_pictures_swallows_exceptions(monkeypatch, caplog):
+async def test_describe_pictures_swallows_exceptions(monkeypatch):
     """A failing VLM call is logged as a warning and the picture is
     skipped — the rest of the batch still gets described."""
     _patch_agent(
@@ -94,17 +103,16 @@ async def test_describe_pictures_swallows_exceptions(monkeypatch, caplog):
         ],
     )
 
-    with caplog.at_level(
-        logging.WARNING, logger="haiku.rag.providers.picture_description"
-    ):
+    with capture_logs(picture_description.logger, logging.WARNING) as records:
         out = await describe_pictures(
             {"#/pictures/0": b"a", "#/pictures/1": b"b"},
             config=AppConfig(),
         )
 
     assert out == {"#/pictures/1": "After the failure."}
-    # caplog may not catch records due to project-wide propagate=False on the
-    # haiku.rag logger; fall back to checking the result reflects the skip.
+    assert [r.getMessage() for r in records] == [
+        "VLM call failed for #/pictures/0: boom"
+    ]
 
 
 async def test_describe_pictures_empty_input(monkeypatch):
@@ -115,22 +123,3 @@ async def test_describe_pictures_empty_input(monkeypatch):
 
     assert out == {}
     assert stub.calls == []
-
-
-async def test_describe_pictures_passes_binary_content(monkeypatch):
-    """The VLM call receives the picture bytes as a BinaryContent part with
-    media_type=image/png so model providers route the request correctly."""
-    from pydantic_ai.messages import BinaryContent
-
-    stub = _patch_agent(monkeypatch, outputs=["ok"])
-
-    await describe_pictures(
-        {"#/pictures/0": b"\x89PNG\r\n\x1a\nfake"}, config=AppConfig()
-    )
-
-    assert len(stub.calls) == 1
-    parts = stub.calls[0]
-    assert isinstance(parts, list) and len(parts) == 1
-    assert isinstance(parts[0], BinaryContent)
-    assert parts[0].data == b"\x89PNG\r\n\x1a\nfake"
-    assert parts[0].media_type == "image/png"

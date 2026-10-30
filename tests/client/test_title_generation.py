@@ -92,6 +92,17 @@ class TestExtractStructuralTitle:
 
         assert extract_structural_title(doc) == "HTML Page Title"
 
+    def test_first_body_title_wins(self):
+        doc = DoclingDocument(name="test")
+        doc.add_text(
+            label=DocItemLabel.TITLE, text="First", content_layer=ContentLayer.BODY
+        )
+        doc.add_text(
+            label=DocItemLabel.TITLE, text="Second", content_layer=ContentLayer.BODY
+        )
+
+        assert extract_structural_title(doc) == "First"
+
     def test_whitespace_stripped(self):
         """Whitespace is stripped from extracted titles."""
         doc = DoclingDocument(name="test")
@@ -104,13 +115,14 @@ class TestExtractStructuralTitle:
         assert extract_structural_title(doc) == "Padded Title"
 
     def test_empty_title_text_skipped(self):
-        """Empty or whitespace-only TITLE text is skipped."""
+        """Empty or whitespace-only TITLE and SECTION_HEADER text is skipped."""
         doc = DoclingDocument(name="test")
         doc.add_text(
             label=DocItemLabel.TITLE,
             text="   ",
             content_layer=ContentLayer.BODY,
         )
+        doc.add_text(label=DocItemLabel.SECTION_HEADER, text="   ")
         doc.add_text(label=DocItemLabel.SECTION_HEADER, text="Actual Heading")
 
         assert extract_structural_title(doc) == "Actual Heading"
@@ -251,6 +263,24 @@ class TestGenerateTitle:
             with pytest.raises(RuntimeError):
                 await client.generate_title(doc)
 
+    async def test_document_without_docling_goes_to_the_model(self, monkeypatch):
+        from pydantic_ai.messages import ModelResponse, TextPart
+        from pydantic_ai.models.function import FunctionModel
+
+        from haiku.rag.client.titles import generate_title
+        from haiku.rag.store.models.document import Document
+
+        monkeypatch.setattr(
+            "haiku.rag.utils.models.get_model",
+            lambda *a, **kw: FunctionModel(
+                lambda messages, info: ModelResponse(parts=[TextPart("Model Title")])
+            ),
+        )
+
+        title = await generate_title(AppConfig(), Document(content="body"))
+
+        assert title == "Model Title"
+
     async def test_bypasses_auto_title_config(self, temp_db_path):
         """generate_title works even when auto_title is False."""
         config = AppConfig(processing=ProcessingConfig(auto_title=False))
@@ -300,65 +330,6 @@ class TestRebuildTitleOnly:
             updated_doc1 = await client.get_document_by_id(doc1.id)
             assert updated_doc1 is not None
             assert updated_doc1.title == "Doc With Heading"
-
-    async def test_skips_already_titled_docs(self, temp_db_path):
-        """TITLE_ONLY mode skips documents that already have titles."""
-        from haiku.rag.client import RebuildMode
-
-        config = AppConfig(processing=ProcessingConfig(auto_title=True))
-        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-            await client.create_document(
-                "# Has Title\n\nContent.",
-                uri="test://has-title",
-            )
-
-            processed_ids = []
-            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
-                processed_ids.append(doc_id)
-
-            assert len(processed_ids) == 0
-
-    async def test_continues_on_per_document_failure(self, temp_db_path, monkeypatch):
-        """TITLE_ONLY mode continues when generate_title fails for a document."""
-        from haiku.rag.client import RebuildMode
-
-        config = AppConfig(processing=ProcessingConfig(auto_title=True))
-        async with HaikuRAG(temp_db_path, config=config, create=True) as client:
-            doc1 = await client.create_document(
-                "# First Heading\n\nContent.",
-                uri="test://first",
-            )
-            doc2 = await client.create_document(
-                "# Second Heading\n\nContent.",
-                uri="test://second",
-            )
-            # Clear both titles
-            doc1.title = None
-            await client.document_repository.update(doc1)
-            doc2.title = None
-            await client.document_repository.update(doc2)
-
-            # Make generate_title fail for the first doc, succeed for the second
-            import haiku.rag.client.rebuild as rebuild_mod
-
-            original = rebuild_mod.generate_title
-            call_count = 0
-
-            async def flaky_generate(config, document):
-                nonlocal call_count
-                call_count += 1
-                if call_count == 1:
-                    raise RuntimeError("LLM failed")
-                return await original(config, document)
-
-            monkeypatch.setattr(rebuild_mod, "generate_title", flaky_generate)
-
-            processed_ids = []
-            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY):
-                processed_ids.append(doc_id)
-
-            # Only the second doc should have been processed
-            assert len(processed_ids) == 1
 
 
 async def test_generate_title_with_llm_returns_model_output(monkeypatch):

@@ -35,17 +35,13 @@ from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
 from haiku.rag.store.models.chunk import SearchResult
+from tests.capabilities.helpers import Deps, scripted
 
 STORED = json.loads(
     (Path(__file__).parents[1] / "data" / "agui_stored_conversations.json").read_text(
         encoding="utf-8"
     )
 )
-
-
-@dataclass
-class Deps:
-    state: dict[str, Any] = field(default_factory=dict)
 
 
 async def stub_search(
@@ -107,16 +103,6 @@ class OpeningRequest(AbstractCapability[Any]):
             (ctx.deps.state["rag"]["evidence"]["question"], list(ctx.messages))
         )
         return request_context
-
-
-def scripted(responses: list[list[Any]], sent: list[list[ModelMessage]]):
-    turns = iter(responses)
-
-    async def model(messages, _info):
-        sent.append(list(messages))
-        return ModelResponse(parts=next(turns))
-
-    return FunctionModel(model)
 
 
 def streamed(responses: list[list[Any]], sent: list[list[ModelMessage]]):

@@ -10,6 +10,7 @@ from haiku.rag.config import get_config
 from haiku.rag.store.exceptions import UnknownDatabaseError
 from haiku.rag.store.models import Chunk
 from haiku.rag.store.models.document_item import DocumentItem
+from tests.documents import docling_doc
 from tests.multi_db.helpers import (
     _config,
     _seed,
@@ -316,22 +317,13 @@ class TestWritesNameTheirDatabase:
     """A write returns the document it wrote, and it came from a database. A
     read of the same document names it, so the write has to as well."""
 
-    @staticmethod
-    def _doc(text: str):
-        from docling_core.types.doc.document import DoclingDocument
-        from docling_core.types.doc.labels import DocItemLabel
-
-        doc = DoclingDocument(name=text)
-        doc.add_text(label=DocItemLabel.TEXT, text=text)
-        return doc
-
     async def test_import_names_the_database(self, tmp_path):
         config = _config(tmp_path, ["alpha"])
         dim = get_config().embeddings.model.vector_dim
 
         async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
             written = await rag.import_document(
-                self._doc("cats"),
+                docling_doc("cats", "cats"),
                 [Chunk(content="cats", embedding=[0.1] * dim, order=0)],
                 uri="test://alpha/cats",
             )
@@ -351,7 +343,7 @@ class TestWritesNameTheirDatabase:
             written = await rag.import_documents(
                 [
                     DocumentImport(
-                        docling_document=self._doc(text),
+                        docling_document=docling_doc(text, text),
                         chunks=[Chunk(content=text, embedding=[0.1] * dim, order=0)],
                         uri=f"test://alpha/{text}",
                     )
@@ -369,7 +361,7 @@ class TestWritesNameTheirDatabase:
 
         async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
             stored = await rag.import_document(
-                self._doc("cats"),
+                docling_doc("cats", "cats"),
                 [Chunk(content="cats", embedding=[0.1] * dim, order=0)],
                 uri="test://alpha/cats",
             )
@@ -393,7 +385,7 @@ class TestWritesNameTheirDatabase:
 
         async with HaikuRAG(config=config, create=True, sources=["alpha"]) as rag:
             stored = await rag.import_document(
-                self._doc("cats"),
+                docling_doc("cats", "cats"),
                 [Chunk(content="cats", embedding=[0.1] * dim, order=0)],
                 uri="test://alpha/cats",
             )

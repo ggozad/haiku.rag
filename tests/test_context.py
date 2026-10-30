@@ -1,16 +1,16 @@
 from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.context import (
     _clip_to_budget,
+    _collect_meta,
     _evidence_anchors,
     _expand_outward,
     _find_expansion_range,
     _merge_ranges,
-    expand_with_items,
-    window_for,
 )
 from haiku.rag.store.models.chunk import SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from tests.conftest import writing
+from tests.documents import fetch_and_expand
 
 
 def _item(
@@ -285,6 +285,15 @@ class TestFindExpansionRange:
         assert lo < 2 or hi > 3
 
 
+class TestCollectMeta:
+    def test_unlabelled_items_add_no_label(self):
+        items = [_item(0, label="section_header"), _item(1, label="")]
+        pages, refs, labels = _collect_meta([(0, 1, item) for item in items])
+        assert pages == {1}
+        assert refs == ["#/texts/0", "#/texts/1"]
+        assert labels == {"section_header"}
+
+
 class TestEvidenceAnchors:
     def test_empty_content(self):
         assert _evidence_anchors("", 5000) == []
@@ -327,22 +336,6 @@ class TestClipToBudget:
         assert marker in clipped
 
 
-async def _fetch_and_expand(repo, document_id, results, max_chars):
-    """Do the fetching `expand_context` does, for tests exercising the
-    expansion logic rather than the batched fetch."""
-    positions = (
-        await repo.resolve_refs_grouped(
-            {document_id: [ref for r in results for ref in r.doc_item_refs]}
-        )
-    ).get(document_id, {})
-    items: list = []
-    if positions:
-        items = (
-            await repo.get_items_in_ranges({document_id: window_for(positions)})
-        ).get(document_id, [])
-    return expand_with_items(results, max_chars, positions, items)
-
-
 class TestExpandWithItems:
     async def test_unresolvable_refs_returns_original(self, temp_db_path):
         from haiku.rag.client import HaikuRAG
@@ -365,7 +358,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/999999"],
             )
             assert doc.id is not None
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, doc.id, [result], 5000
             )
             assert len(expanded) == 1
@@ -414,7 +407,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/1"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -456,7 +449,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/1"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -505,7 +498,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/1"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -541,7 +534,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/1"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -618,7 +611,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/pictures/0"],
                 page_numbers=[13],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -680,7 +673,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/1", "#/texts/2", "#/texts/3", "#/texts/4"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -712,7 +705,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/tables/0"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 10_000
             )
             assert len(expanded) == 1
@@ -750,7 +743,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/0"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 10_000
             )
             assert len(expanded) == 1
@@ -793,7 +786,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/1"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -828,7 +821,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/0"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -858,7 +851,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/2"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -894,7 +887,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/3"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r1, r2], 5000
             )
             # Ranges around positions 1 and 3 overlap → one merged result.
@@ -929,7 +922,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/1"],
                 document_meta={"source_url": "https://example.org/report/view"},
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r1], 5000
             )
             assert len(expanded) == 1
@@ -970,7 +963,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/3"],
                 chunk_meta={"para_no": "14"},
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r1, r2], 5000
             )
             assert len(expanded) == 1
@@ -1011,7 +1004,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/3"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r_early, r_best], 5000
             )
             assert len(expanded) == 1
@@ -1072,7 +1065,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/2"],
                 page_numbers=[3],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r_low, r_high], 500
             )
             # The clip window around HIGHMARK cannot contain LOWMARK's item,
@@ -1128,7 +1121,7 @@ class TestExpandWithItems:
                     page_numbers=[2],
                 ),
             ]
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", inputs, 100
             )
             assert len(expanded) == 2
@@ -1175,7 +1168,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/texts/5"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r1, r2], 400
             )
             assert len(expanded) == 1
@@ -1227,7 +1220,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/1"],
                 page_numbers=[2],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r1, r2], 5000
             )
             assert len(expanded) == 2
@@ -1281,7 +1274,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/1"],
                 page_numbers=[8],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository,
                 "doc-1",
                 [r_missing_item_page, r_with_item_page],
@@ -1328,7 +1321,7 @@ class TestExpandWithItems:
                 doc_item_refs=["#/texts/0", "#/texts/1"],
                 page_numbers=[1, 2],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 100
             )
 
@@ -1364,7 +1357,7 @@ class TestExpandWithItems:
                 document_id="doc-1",
                 doc_item_refs=["#/tables/0"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 10_000
             )
             assert len(expanded) == 1
@@ -1426,7 +1419,7 @@ class TestExpandWithItemsPictureBytes:
                 image_data={"#/pictures/0": "BASE64BYTES"},
                 picture_captions={"#/pictures/0": "Figure 1 caption."},
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [result], 5000
             )
             assert len(expanded) == 1
@@ -1465,7 +1458,7 @@ class TestExpandWithItemsPictureBytes:
                 doc_item_refs=["#/pictures/3"],
                 image_data={"#/pictures/3": "B"},
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r1, r2], 5000
             )
             # Ranges around positions 1 and 3 overlap → one merged result.
@@ -1526,7 +1519,7 @@ class TestExpandWithItemsPictureBytes:
                 doc_item_refs=["#/pictures/1"],
                 image_data={"#/pictures/1": "HIGHBYTES"},
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, "doc-1", [r_low, r_high], 500
             )
             assert len(expanded) == 2
@@ -1593,7 +1586,7 @@ class TestExpandWithItemsWindowEdges:
                 document_id=doc.id,
                 doc_item_refs=["#/texts/0"],
             )
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, doc.id, [result], 5000
             )
 
@@ -1638,7 +1631,7 @@ class TestExpandWithItemsWindowEdges:
                 doc_item_refs=["#/texts/404"],
             )
 
-            expanded = await _fetch_and_expand(
+            expanded = await fetch_and_expand(
                 rag.document_item_repository, doc.id, [resolvable, unmatched], 5000
             )
 

@@ -139,7 +139,7 @@ async def _apply_split_pages_zstd(store: Store) -> None:
                         .to_arrow()
                     ).to_pylist()
                     records = [copy_staging_row(row) for row in batch]
-                    if records:
+                    if records:  # pragma: no branch - the ids come from this table
                         await store.documents_table.add(records)
                         logger.info("Recovered batch %d/%d", batch_num, total_batches)
                 await store.db.drop_table(staging_name)
@@ -180,7 +180,7 @@ async def _apply_split_pages_zstd(store: Store) -> None:
         ).to_pylist()
 
         migrated_batch = [migrate_row(row) for row in batch]
-        if migrated_batch:
+        if migrated_batch:  # pragma: no branch - the ids come from this table
             await staging_table.add(migrated_batch)
 
         logger.info(
@@ -192,7 +192,9 @@ async def _apply_split_pages_zstd(store: Store) -> None:
 
     # Replace old table with staging table
     del store.documents_table
-    if "documents" in (await store.db.list_tables()).tables:
+    if (
+        "documents" in (await store.db.list_tables()).tables
+    ):  # pragma: no branch - documents was just read
         await store.db.drop_table("documents")
     store.documents_table = await store.db.create_table(
         "documents", schema=get_documents_arrow_schema_v5()
@@ -212,12 +214,14 @@ async def _apply_split_pages_zstd(store: Store) -> None:
             await staging_table.query().where(f"id IN ({id_list})").to_arrow()
         ).to_pylist()
         records = [copy_staging_row(row) for row in batch]
-        if records:
+        if records:  # pragma: no branch - the ids come from this table
             await store.documents_table.add(records)
             logger.info("Copied batch %d/%d", batch_num, total_batches)
 
     # Cleanup staging table
-    if staging_name in (await store.db.list_tables()).tables:
+    if (
+        staging_name in (await store.db.list_tables()).tables
+    ):  # pragma: no branch - staging was created above
         await store.db.drop_table(staging_name)
 
     # Vacuum all tables

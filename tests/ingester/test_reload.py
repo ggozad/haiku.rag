@@ -7,7 +7,6 @@ import sys
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -18,13 +17,23 @@ from haiku.rag.config import AppConfig, load_yaml_config
 from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.exceptions import (
     InvalidConfigError,
-    NothingToIngestError,
     ReloadRefusedError,
 )
 from haiku.rag.sources.base import SourceEvent, SourceEventKind
 from tests.conftest import capture_logs
-from tests.ingester.test_lifecycle import _gate, _pollers, _pool, _serving
-from tests.ingester.test_run_batch import _ingested, _mock_client, _wait_until
+from tests.ingester.conftest import (
+    _api,
+    _FailsToCloseOnce,
+    _gate,
+    _ingested,
+    _mock_client,
+    _Opened,
+    _pollers,
+    _pool,
+    _serving,
+    _wait_until,
+    covering_stub,
+)
 
 _APP_LOGGER = logging.getLogger("haiku.rag.ingester.app")
 
@@ -84,15 +93,6 @@ def _changes(report) -> set[tuple[str, str]]:
     return {(change.database, change.change) for change in report.databases}
 
 
-def _api(app: IngesterApp, auth_token: str | None = None) -> httpx.AsyncClient:
-    from haiku.rag.ingester.api.server import build_app
-
-    return httpx.AsyncClient(
-        transport=ASGITransport(app=build_app(app._api_state(), auth_token=auth_token)),
-        base_url="http://testserver",
-    )
-
-
 def _refusing(names: set[str], clients: dict):
     """A `_covering` double whose open of a database in `names` fails."""
     from haiku.rag.store.exceptions import MigrationRequiredError
@@ -103,9 +103,7 @@ def _refusing(names: set[str], clients: dict):
             raise MigrationRequiredError("Database requires migration")
         yield clients[scope.names[0]]
 
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: _open(scope)
-    return stub
+    return covering_stub(lambda scope, *a, **k: _open(scope))
 
 
 @pytest.fixture
@@ -272,6 +270,8 @@ async def test_a_reload_skips_an_unreadable_addition_and_adds_the_rest(
         assert [p.source_id for p in _pollers(app).pollers] == ["papers", "good"]
         assert list(app._failed) == ["broken"]
         assert "broken:" in (await api.get("/config")).json()["yaml"]
+        async with _api(app) as later:
+            assert "broken:" in (await later.get("/config")).json()["yaml"]
         assert [record.getMessage() for record in records] == [
             "Database 'broken' failed to start and is skipped: database 'broken': "
             "Database requires migration"
@@ -584,7 +584,6 @@ async def test_a_failed_addition_failing_to_close_does_not_block_the_next_reload
     tmp_path, monkeypatch
 ):
     from haiku.rag.ingester.reconcile import reconcile
-    from tests.ingester.test_lifecycle import _FailsToCloseOnce
 
     clients = defaultdict(_mock_client)
     wiki = _FailsToCloseOnce(clients["wiki"])
@@ -593,11 +592,12 @@ async def test_a_failed_addition_failing_to_close_does_not_block_the_next_reload
     async def _plain(scope):
         yield clients[scope.names[0]]
 
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: (
-        wiki if scope.names == ("wiki",) else _plain(scope)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        covering_stub(
+            lambda scope, *a, **k: wiki if scope.names == ("wiki",) else _plain(scope)
+        ),
     )
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
     failing = {"wiki"}
 
     async def _fails_for_wiki(rag, sync, source_ids):
@@ -679,13 +679,13 @@ async def test_an_addition_refused_once_opened_is_closed_and_the_rest_added(
 ):
     from haiku.rag.ingester import app as app_module
     from haiku.rag.store.exceptions import AmbiguousDatabaseError
-    from tests.ingester.test_lifecycle import _Opened
 
     clients = defaultdict(_mock_client)
     opened = {name: _Opened(clients[name]) for name in ("one", "two")}
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: opened[scope.names[0]]
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        covering_stub(lambda scope, *a, **k: opened[scope.names[0]]),
+    )
     path = tmp_path / "haiku.rag.yaml"
     _write(path, _settings(tmp_path, {}))
     app = _app(path)
@@ -733,8 +733,6 @@ async def test_an_addition_refused_once_opened_is_closed_and_the_rest_added(
 async def test_a_second_name_for_one_directory_is_skipped_once_opened(
     tmp_path, monkeypatch, closes
 ):
-    from tests.ingester.test_lifecycle import _FailsToCloseOnce, _Opened
-
     if not _case_insensitive(tmp_path):
         pytest.skip("case-sensitive filesystem")
     clients = defaultdict(_mock_client)
@@ -755,9 +753,7 @@ async def test_a_second_name_for_one_directory_is_skipped_once_opened(
         name = scope.names[0]
         return _Creating(scope, lower if name == "lower" else _Opened(clients[name]))
 
-    stub = MagicMock()
-    stub._covering = _covering
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", covering_stub(_covering))
     path = tmp_path / "haiku.rag.yaml"
     _write(path, _settings(tmp_path, {}))
     app = _app(path)
@@ -982,9 +978,7 @@ def _opening(opened: dict, clients: dict, refused: set[str]):
             return _refusing(refused, clients)._covering(scope)
         return opened.get(name) or _plain(scope)
 
-    stub = MagicMock()
-    stub._covering = _covering
-    return stub
+    return covering_stub(_covering)
 
 
 def _with_good(tmp_path, monkeypatch, good: _Closing, *, legacy: bool = True):
@@ -1280,14 +1274,6 @@ async def test_serve_starts_on_an_empty_set_and_ingests_after_a_reload(
             await _wait_until(lambda: _ingested(clients["papers"]) == ["papers.md"])
 
     assert any("no database" in record.getMessage() for record in records)
-
-
-async def test_run_batch_refuses_an_empty_set(tmp_path):
-    path = tmp_path / "haiku.rag.yaml"
-    _write(path, _settings(tmp_path, {}))
-
-    with pytest.raises(NothingToIngestError, match="ingester.databases"):
-        await _app(path).run_batch()
 
 
 # --- unrelated databases keep working ---

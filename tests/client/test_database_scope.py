@@ -60,11 +60,13 @@ class TestResolution:
 
     def test_an_unknown_name_is_refused(self):
         """The message lists the databases there are, configured or default."""
-        config = _config(databases={"alpha": "/data/alpha.lancedb"})
+        config = _config(
+            databases={"alpha": "/data/alpha.lancedb", "beta": "/data/beta.lancedb"}
+        )
 
         with pytest.raises(
             UnknownDatabaseError,
-            match="unknown database 'nope'.*the databases are alpha",
+            match="unknown database 'nope'.*the databases are alpha, beta",
         ):
             DatabaseScope.resolve(config, database_name="nope")
 

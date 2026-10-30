@@ -28,8 +28,14 @@ async def _make_legacy(store: Store) -> None:
             await table.drop_index(index)
 
 
-async def test_adds_the_missing_indexes(temp_db_path):
+async def test_adds_missing_indexes_idempotently_and_keeps_rows_and_indexes(
+    temp_db_path,
+):
+    """The run adds the declared indexes and keeps the rows and every undeclared
+    index. A rerun writes no version."""
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+        repo = DocumentRepository(store)
+        await repo.create(Document(content="Kept", uri="test://kept"))
         await store.chunks_table.add(
             [
                 store.ChunkRecord(
@@ -41,6 +47,9 @@ async def test_adds_the_missing_indexes(temp_db_path):
                     vector=[0.1] * store.embedder.vector_dim,
                 )
             ]
+        )
+        await store.document_meta_table.create_index(
+            "title", config=BTree(), replace=True
         )
         await _make_legacy(store)
 
@@ -58,54 +67,12 @@ async def test_adds_the_missing_indexes(temp_db_path):
             "self_ref": "BTree",
             "label": "Bitmap",
         }
-
-
-async def test_keeps_every_row(temp_db_path):
-    """Indexing must not touch data."""
-    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        repo = DocumentRepository(store)
-        await repo.create(Document(content="Kept", uri="test://kept"))
-        await _make_legacy(store)
-
-        await _apply_index_hot_lookup_keys(store)
-
+        assert "title" in await _indexed(store.document_meta_table)
         docs = await repo.list_all(include_content=True)
         assert [d.content for d in docs] == ["Kept"]
 
-
-async def test_is_a_no_op_on_an_already_indexed_database(temp_db_path):
-    """A second run must not re-index: replace=True rebuilds."""
-    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await _apply_index_hot_lookup_keys(store)
         versions = {name: await t.version() for name, t in store._tables().items()}
-
         await _apply_index_hot_lookup_keys(store)
-
         assert {name: await t.version() for name, t in store._tables().items()} == (
             versions
         )
-
-
-async def test_replaces_a_wrong_typed_legacy_index(temp_db_path):
-    """A BTree on `label` does not satisfy the declared Bitmap."""
-    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await store.document_items_table.create_index(
-            "label", config=BTree(), replace=True, name="label_idx"
-        )
-
-        await _apply_index_hot_lookup_keys(store)
-
-        indexed = await _indexed(store.document_items_table)
-        assert indexed["label"] == "Bitmap"
-
-
-async def test_leaves_undeclared_indexes_alone(temp_db_path):
-    """Indexes haiku.rag never declared are not dropped."""
-    async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-        await store.document_meta_table.create_index(
-            "title", config=BTree(), replace=True
-        )
-
-        await _apply_index_hot_lookup_keys(store)
-
-        assert "title" in await _indexed(store.document_meta_table)

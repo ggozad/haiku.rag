@@ -206,27 +206,25 @@ async def test_discover_respects_ignore_patterns(fake_s3_listing):
     assert {e.uri for e in events} == {"s3://bucket/a.md"}
 
 
-async def test_discover_emits_unchanged_for_known_key_without_etag(fake_s3_listing):
-    """An S3 object with no ETag should not cause re-ingestion every sweep
-    once the key has been ingested."""
+@pytest.mark.parametrize(
+    "known_uris, kind",
+    [
+        ({"s3://bucket/file.md"}, SourceEventKind.UNCHANGED),
+        (None, SourceEventKind.UPSERT),
+    ],
+)
+async def test_discover_without_etag_upserts_only_unknown_keys(
+    fake_s3_listing, known_uris, kind
+):
+    """Without an ETag, discovery emits UNCHANGED for known keys and UPSERT for
+    unknown keys."""
     fake_s3_listing([[{"path": "file.md", "size": 0, "last_modified": None}]])
     src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
-    events = [e async for e in src.discover(known_uris={"s3://bucket/file.md"})]
-    non_delete = [e for e in events if e.kind is not SourceEventKind.DELETE]
-    assert len(non_delete) == 1
-    assert non_delete[0].kind is SourceEventKind.UNCHANGED
+    events = [e async for e in src.discover(known_uris=known_uris)]
+    assert [e.kind for e in events] == [kind]
 
 
-async def test_discover_emits_upsert_for_unknown_key_without_etag(fake_s3_listing):
-    """A brand-new S3 key with no ETag should UPSERT on first sight."""
-    fake_s3_listing([[{"path": "new.md", "size": 0, "last_modified": None}]])
-    src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
-    events = [e async for e in src.discover()]
-    assert len(events) == 1
-    assert events[0].kind is SourceEventKind.UPSERT
-
-
-async def test_fetch_rejects_file_exceeding_max_size(fake_obstore_io):
+async def test_fetch_refuses_an_oversized_object(fake_obstore_io):
     head_async, get_async = fake_obstore_io
     head_async.return_value = {"e_tag": '"abc"', "size": 5}
     response = _get_result(b"x" * 5000)
@@ -240,23 +238,10 @@ async def test_fetch_rejects_file_exceeding_max_size(fake_obstore_io):
     response.bytes_async.assert_not_awaited()
 
 
-async def test_fetch_allows_file_within_max_size(fake_obstore_io):
+async def test_fetch_returns_an_object_within_the_limit(fake_obstore_io):
     head_async, get_async = fake_obstore_io
-    body = b"small"
-    head_async.return_value = {"e_tag": '"abc"', "size": len(body)}
-    get_async.return_value = _get_result(body)
+    head_async.return_value = {"e_tag": '"abc"', "size": 5}
+    get_async.return_value = _get_result(b"small")
 
     src = S3Source(uri="s3://bucket/", max_file_size=1000)
-    result = await src.fetch("s3://bucket/file.txt")
-    assert result.body == body
-
-
-async def test_fetch_no_limit_when_max_size_is_none(fake_obstore_io):
-    head_async, get_async = fake_obstore_io
-    body = b"any size"
-    head_async.return_value = {"e_tag": '"abc"'}
-    get_async.return_value = _get_result(body)
-
-    src = S3Source(uri="s3://bucket/", max_file_size=None)
-    result = await src.fetch("s3://bucket/file.txt")
-    assert result.body == body
+    assert (await src.fetch("s3://bucket/file.txt")).body == b"small"

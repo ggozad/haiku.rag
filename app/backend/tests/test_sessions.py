@@ -72,20 +72,6 @@ async def test_a_session_held_by_a_run_refuses_changes(app, client):
     assert (await client.delete(f"/api/sessions/{session_id}")).status_code == 204
 
 
-async def test_a_hold_whose_response_never_streamed_is_released(tmp_path):
-    import gc
-
-    sessions = Sessions(tmp_path / "sessions.db")
-    guard = Guard()
-    sessions.admit("s", "run-1")
-    sessions.tie("s", "run-1", guard)
-    sessions.release("s", "run-other")
-    assert sessions.in_flight("s") == "run-1"
-    del guard
-    gc.collect()
-    assert sessions.in_flight("s") is None
-
-
 async def test_a_change_holds_the_session_against_a_run(app, client, monkeypatch):
     session_id = (await client.post("/api/sessions")).json()["id"]
     sessions: Sessions = app.state.sessions
@@ -181,7 +167,7 @@ def test_text_is_read_from_strings_and_text_parts():
     assert text_of(None) == ""
 
 
-async def test_the_same_run_id_on_two_sessions_is_two_holds(tmp_path):
+async def test_a_hold_is_per_session_and_released_only_by_its_run(tmp_path):
     import gc
 
     sessions = Sessions(tmp_path / "sessions.db")
@@ -195,6 +181,8 @@ async def test_the_same_run_id_on_two_sessions_is_two_holds(tmp_path):
     commit = sessions.start_commit("one", "run-1", held_write())
     guard = Guard()
     sessions.tie("two", "run-1", guard)
+    sessions.release("two", "run-other")
+    assert sessions.in_flight("two") == "run-1"
     del guard
     gc.collect()
     assert sessions.in_flight("two") is None

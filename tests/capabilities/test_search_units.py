@@ -1,11 +1,7 @@
-import base64
-from dataclasses import dataclass, field
-from io import BytesIO
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from PIL import Image as PILImage
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
     BinaryContent,
@@ -21,12 +17,7 @@ from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
 from haiku.rag.capabilities.rag import RAGState
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.models.chunk import SearchResult
-
-
-@dataclass
-class Deps:
-    state: dict[str, Any] = field(default_factory=dict)
+from tests.capabilities.helpers import Deps, make_result, png, stub_client
 
 
 def burst_model(bursts: list[list[str]]) -> FunctionModel:
@@ -94,39 +85,50 @@ async def test_a_burst_in_one_response_consumes_one_unit(rag_db):
     ]
 
 
-async def test_sequential_searches_pay_one_unit_each(rag_db):
-    agent = burst_agent([["ai"], ["machine learning"]], rag_db, 1)
+@pytest.mark.parametrize(
+    ("bursts", "max_searches", "expected"),
+    [
+        pytest.param(
+            [["ai"], ["machine learning"]],
+            1,
+            ["ok", "failed"],
+            id="sequential searches pay one unit each",
+        ),
+        pytest.param(
+            [["ai", "machine learning", "deep learning"]],
+            0,
+            ["failed", "failed", "failed"],
+            id="no budget fails every sibling",
+        ),
+        pytest.param(
+            [["ai"], ["ml", "deep learning", "supervised"]],
+            1,
+            ["ok", "failed", "failed", "failed"],
+            id="a rejected round fails all its siblings",
+        ),
+        pytest.param(
+            [["ai", "machine learning", "deep learning", "supervised learning"]],
+            2,
+            ["ok", "ok", "ok", "ok"],
+            id="a fourth sibling fits a second unit",
+        ),
+        pytest.param(
+            [["ai", "machine learning", "deep learning", "supervised learning"]],
+            1,
+            ["ok", "ok", "ok", "failed"],
+            id="a fourth sibling fails without a second unit",
+        ),
+    ],
+)
+async def test_search_units_price_each_burst(rag_db, bursts, max_searches, expected):
+    result = await burst_agent(bursts, rag_db, max_searches).run(
+        "question", deps=Deps()
+    )
 
-    result = await agent.run("question", deps=Deps())
-
-    assert outcomes(result) == ["ok", "failed"]
-    assert "Search limit reached" in str(search_returns(result)[1].content)
-
-
-async def test_max_searches_zero_fails_every_sibling(rag_db):
-    agent = burst_agent([["ai", "machine learning", "deep learning"]], rag_db, 0)
-
-    result = await agent.run("question", deps=Deps())
-
-    assert outcomes(result) == ["failed", "failed", "failed"]
-
-
-async def test_a_rejected_round_fails_all_its_siblings(rag_db):
-    agent = burst_agent([["ai"], ["ml", "deep learning", "supervised"]], rag_db, 1)
-
-    result = await agent.run("question", deps=Deps())
-
-    assert outcomes(result) == ["ok", "failed", "failed", "failed"]
-
-
-async def test_a_sibling_past_the_allowance_pays_its_own_unit(rag_db):
-    burst = [["ai", "machine learning", "deep learning", "supervised learning"]]
-
-    within = await burst_agent(burst, rag_db, 2).run("question", deps=Deps())
-    over = await burst_agent(burst, rag_db, 1).run("question", deps=Deps())
-
-    assert outcomes(within) == ["ok", "ok", "ok", "ok"]
-    assert outcomes(over) == ["ok", "ok", "ok", "failed"]
+    assert outcomes(result) == expected
+    for part in search_returns(result):
+        if part.outcome == "failed":
+            assert "Search limit reached" in str(part.content)
 
 
 async def test_unit_tracking_resets_between_runs(rag_db):
@@ -156,35 +158,6 @@ async def test_unit_tracking_resets_between_runs(rag_db):
 
     assert outcomes(first) == ["ok", "ok", "ok"]
     assert outcomes(second)[-3:] == ["ok", "ok", "ok"]
-
-
-def _png() -> str:
-    buffer = BytesIO()
-    PILImage.new("RGB", (4, 4), "red").save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
-
-
-def make_result(**overrides: Any) -> SearchResult:
-    fields: dict[str, Any] = {
-        "content": "body",
-        "score": 0.9,
-        "source": "main",
-        "chunk_id": "c1",
-        "document_id": "d1",
-        "image_data": {"#/pictures/0": _png()},
-    }
-    fields.update(overrides)
-    return SearchResult(**fields)
-
-
-def stub_client(
-    *batches: list[SearchResult], sources: list[str] | None = None
-) -> AsyncMock:
-    client = AsyncMock()
-    client.search.side_effect = list(batches)
-    client.expand_context.side_effect = lambda results: results
-    client.source_names = sources or ["main"]
-    return client
 
 
 def dedup_capability(client: AsyncMock, temp_db_path, *, vision: bool = True):
@@ -251,7 +224,7 @@ async def test_same_chunk_id_from_another_collection_is_not_elided(temp_db_path)
 
 
 async def test_same_anchor_with_new_evidence_formats_in_full(temp_db_path):
-    shared, extra = _png(), _png()
+    shared, extra = png(), png()
     client = stub_client(
         [make_result(content="c1 with c2", image_data={"#/pictures/1": shared})],
         [
@@ -281,7 +254,7 @@ async def test_same_anchor_with_new_evidence_formats_in_full(temp_db_path):
         ({"headings": ["Heading"]}, False),
         ({"labels": ["table"]}, False),
         ({"picture_captions": {"#/pictures/0": "A caption"}}, False),
-        ({"image_data": {"#/pictures/9": _png()}}, False),
+        ({"image_data": {"#/pictures/9": png()}}, False),
     ],
 )
 async def test_equivalence_follows_the_rendered_evidence(

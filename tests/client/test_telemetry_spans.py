@@ -1,8 +1,6 @@
 import asyncio
 
 import logfire
-from docling_core.types.doc.document import DoclingDocument
-from docling_core.types.doc.labels import DocItemLabel
 from logfire.testing import TestExporter
 
 from haiku.rag.client import HaikuRAG
@@ -10,6 +8,7 @@ from haiku.rag.client.documents import DocumentImport
 from haiku.rag.config import get_config
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.store.models.chunk import Chunk
+from tests.documents import docling_doc
 from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
@@ -21,12 +20,6 @@ class _StubEmbedder(EmbedderWrapper):
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [[0.1] * self.vector_dim for _ in texts]
-
-
-def _docling_doc(name: str, text: str) -> DoclingDocument:
-    doc = DoclingDocument(name=name)
-    doc.add_text(label=DocItemLabel.TEXT, text=text)
-    return doc
 
 
 class Tree:
@@ -62,44 +55,43 @@ class Tree:
         return dict(self.one(name).attributes or {})
 
 
-async def test_embed_items_and_store_are_siblings(temp_db_path, exporter):
-    """No phase's duration contains another's."""
+async def test_import_spans_report_each_phase(temp_db_path, exporter):
+    """Embed, items and store are sibling phases, each counting its own work."""
     dim = get_config().embeddings.model.vector_dim
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         with logfire.span("test.parent"):
-            await client.import_document(
-                _docling_doc("a", "Alpha document body"),
-                [Chunk(content="Alpha document body", order=0)],
+            doc = await client.import_document(
+                docling_doc("a", "Alpha document body"),
+                [
+                    Chunk(content="Alpha document body", order=0),
+                    Chunk(content="Beta document body", order=1),
+                ],
                 uri="mem://a",
             )
 
     tree = Tree(exporter)
-    assert tree.parent_of("document.embed") == "test.parent"
-    assert tree.parent_of("document.items") == "test.parent"
-    assert tree.parent_of("document.store") == "test.parent"
+    for name in ("document.embed", "document.items", "document.store"):
+        assert tree.parent_of(name) == "test.parent"
+        assert tree.one(name).instrumentation_scope.name == "haiku.rag"
 
-
-async def test_embed_span_counts_what_it_embedded(temp_db_path, exporter):
-    dim = get_config().embeddings.model.vector_dim
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        client.store.embedder = _StubEmbedder(dim)
-        await client.import_document(
-            _docling_doc("a", "Alpha document body"),
-            [
-                Chunk(content="Alpha document body", order=0),
-                Chunk(content="Beta document body", order=1),
-            ],
-            uri="mem://a",
-        )
-
-    attrs = Tree(exporter).attrs("document.embed")
+    attrs = tree.attrs("document.embed")
     assert attrs["chunks"] == 2
     assert attrs["chunks_embedded"] == 2
     assert attrs["images"] == 0
     assert attrs["batch_size"] == get_config().embeddings.batch_size
+
+    attrs = tree.attrs("document.items")
+    assert attrs["uri"] == "mem://a"
+    assert attrs["pictures"] == 0
+    assert attrs["items"] == 1
+
+    attrs = tree.attrs("document.store")
+    assert attrs["op"] == "create"
+    assert attrs["document_id"] == doc.id
+    assert attrs["uri"] == "mem://a"
+    assert attrs["chunks"] == 2
 
 
 async def test_embed_span_is_emitted_when_nothing_needs_embedding(
@@ -111,7 +103,7 @@ async def test_embed_span_is_emitted_when_nothing_needs_embedding(
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", embedding=[0.1] * dim, order=0)],
             uri="mem://a",
         )
@@ -119,24 +111,6 @@ async def test_embed_span_is_emitted_when_nothing_needs_embedding(
     attrs = Tree(exporter).attrs("document.embed")
     assert attrs["chunks"] == 1
     assert attrs["chunks_embedded"] == 0
-
-
-async def test_store_span_reports_create(temp_db_path, exporter):
-    dim = get_config().embeddings.model.vector_dim
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        client.store.embedder = _StubEmbedder(dim)
-        doc = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
-            [Chunk(content="Alpha document body", order=0)],
-            uri="mem://a",
-        )
-
-    attrs = Tree(exporter).attrs("document.store")
-    assert attrs["op"] == "create"
-    assert attrs["document_id"] == doc.id
-    assert attrs["uri"] == "mem://a"
-    assert attrs["chunks"] == 1
 
 
 async def test_store_span_reports_update_when_the_uri_is_already_taken(
@@ -148,13 +122,13 @@ async def test_store_span_reports_update_when_the_uri_is_already_taken(
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         first = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://a",
         )
         exporter.clear()
         await client.import_document(
-            _docling_doc("a", "Alpha document body, revised"),
+            docling_doc("a", "Alpha document body, revised"),
             [Chunk(content="Alpha document body, revised", order=0)],
             uri="mem://a",
         )
@@ -170,7 +144,7 @@ async def test_update_path_store_span(temp_db_path, exporter):
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         doc = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://a",
         )
@@ -178,7 +152,7 @@ async def test_update_path_store_span(temp_db_path, exporter):
         await client.update_document(
             doc.id,
             chunks=[Chunk(content="Revised body", order=0)],
-            docling_document=_docling_doc("a", "Revised body"),
+            docling_document=docling_doc("a", "Revised body"),
         )
 
     tree = Tree(exporter)
@@ -197,7 +171,7 @@ async def test_update_without_a_docling_document_skips_the_items_phase(
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = _StubEmbedder(dim)
         doc = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://a",
         )
@@ -220,7 +194,7 @@ async def test_batch_store_span(temp_db_path, exporter):
         await client.import_documents(
             [
                 DocumentImport(
-                    docling_document=_docling_doc(name, text),
+                    docling_document=docling_doc(name, text),
                     chunks=[Chunk(content=text, order=0)],
                     uri=f"mem://{name}",
                 )
@@ -234,39 +208,6 @@ async def test_batch_store_span(temp_db_path, exporter):
     assert attrs["documents"] == 2
     assert attrs["chunks"] == 2
     assert tree.attrs("document.items")["documents"] == 2
-
-
-async def test_items_span_counts_what_it_extracted(temp_db_path, exporter):
-    dim = get_config().embeddings.model.vector_dim
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        client.store.embedder = _StubEmbedder(dim)
-        await client.import_document(
-            _docling_doc("a", "Alpha document body"),
-            [Chunk(content="Alpha document body", order=0)],
-            uri="mem://a",
-        )
-
-    attrs = Tree(exporter).attrs("document.items")
-    assert attrs["uri"] == "mem://a"
-    assert attrs["pictures"] == 0
-    assert attrs["items"] == 1
-
-
-async def test_spans_carry_the_haiku_rag_scope(temp_db_path, exporter):
-    dim = get_config().embeddings.model.vector_dim
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        client.store.embedder = _StubEmbedder(dim)
-        await client.import_document(
-            _docling_doc("a", "Alpha document body"),
-            [Chunk(content="Alpha document body", order=0)],
-            uri="mem://a",
-        )
-
-    tree = Tree(exporter)
-    for name in ("document.embed", "document.items", "document.store"):
-        assert tree.one(name).instrumentation_scope.name == "haiku.rag"
 
 
 async def test_ingest_phases_report_the_fetched_uri(temp_db_path, tmp_path, exporter):
@@ -314,7 +255,7 @@ async def test_store_span_reports_time_waiting_for_the_write_lock(
         async with lock:
             write = asyncio.create_task(
                 client.import_document(
-                    _docling_doc("a", "Alpha document body"),
+                    docling_doc("a", "Alpha document body"),
                     [Chunk(content="Alpha document body", order=0)],
                     uri="mem://a",
                 )

@@ -501,11 +501,8 @@ async def _drop_staging_tables(session: SingleDatabaseSession) -> None:
     leak a marker pointing at nothing.
     """
     db = session.store.db
-    tables = (await db.list_tables()).tables
-    if _STAGING_MARKER_TABLE_NAME in tables:
-        await db.drop_table(_STAGING_MARKER_TABLE_NAME)
-    if _STAGING_TABLE_NAME in tables:
-        await db.drop_table(_STAGING_TABLE_NAME)
+    await db.drop_table(_STAGING_MARKER_TABLE_NAME)
+    await db.drop_table(_STAGING_TABLE_NAME)
 
 
 async def _read_chunks_from_staging(staging_table, document_id: str) -> list[Chunk]:

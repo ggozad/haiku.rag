@@ -20,13 +20,14 @@ from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
 async def test_create_and_list_tags(temp_db_path):
-    """create_tag tags every table at its current version; list_tags reports
-    the tag as complete with the exact versions."""
+    """A created tag is complete and records every table's current version."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="First document"))
 
         versions = await store.current_table_versions()
+        assert {"documents", "chunks", "settings"} <= set(versions)
+        assert all(isinstance(v, int) for v in versions.values())
         await store.create_tag("release-1")
 
         tags = await store.list_tags()
@@ -334,26 +335,6 @@ async def test_vacuum_reraises_runtime_error(temp_db_path, monkeypatch):
         await store.vacuum(retention_seconds=0)
 
 
-async def test_vacuum_keeps_every_tagged_version(temp_db_path):
-    """Every tagged version survives a zero-retention vacuum."""
-    async with Store(temp_db_path, create=True) as store:
-        repo = DocumentRepository(store)
-        await repo.create(Document(content="First document"))
-        await store.create_tag("old")
-
-        await asyncio.sleep(0.05)
-
-        await repo.create(Document(content="Second document"))
-        await store.create_tag("new")
-
-        await store.vacuum(retention_seconds=0)
-
-        tags = await store.list_tags()
-        remaining = [v["version"] for v in await store.list_table_versions("documents")]
-        assert tags["old"].tables["documents"] in remaining
-        assert tags["new"].tables["documents"] in remaining
-
-
 async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):
     """A partial tag still protects the versions of the tables it exists on,
     while untagged tables clean up normally."""
@@ -384,9 +365,8 @@ async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):
 
 
 async def test_deleting_oldest_tag_advances_cleanup(temp_db_path):
-    """Versions pinned by a tag become cleanable once the tag is deleted;
-    the cleanup cutoff advances to the next retained tag without removing
-    its version."""
+    """Vacuum keeps both tagged versions. After the oldest tag is deleted, vacuum
+    removes its version and keeps the next tag's."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
         await repo.create(Document(content="First document"))
@@ -400,7 +380,9 @@ async def test_deleting_oldest_tag_advances_cleanup(temp_db_path):
         new_version = (await store.list_tags())["new"].tables["documents"]
 
         await store.vacuum(retention_seconds=0)
-        remaining = [v["version"] for v in await store.list_table_versions("documents")]
+        history = await store.list_table_versions("documents")
+        assert all("timestamp" in v for v in history)
+        remaining = [v["version"] for v in history]
         assert old_version in remaining
         assert new_version in remaining
 
@@ -456,28 +438,6 @@ async def test_tag_writes_raise_when_read_only(temp_db_path):
 
         tags = await store.list_tags()
         assert tags["release-1"].complete is True
-
-
-async def test_current_table_versions_returns_versions(temp_db_path):
-    """current_table_versions returns dict of table versions."""
-    async with Store(temp_db_path, create=True) as store:
-        versions = await store.current_table_versions()
-
-        assert "documents" in versions
-        assert "chunks" in versions
-        assert "settings" in versions
-        assert all(isinstance(v, int) for v in versions.values())
-
-
-async def test_list_table_versions_returns_history(temp_db_path):
-    """list_table_versions returns version history for a table."""
-    async with Store(temp_db_path, create=True) as store:
-        versions = await store.list_table_versions("documents")
-
-        assert len(versions) >= 1
-        for v in versions:
-            assert "version" in v
-            assert "timestamp" in v
 
 
 async def test_delete_tag_reports_listing_failures(temp_db_path, monkeypatch):

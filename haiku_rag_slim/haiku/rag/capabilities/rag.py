@@ -352,7 +352,8 @@ class RAGCapability(AbstractCapability[Any]):
         self.open_question(ctx.messages)
         if instruction := self._budget_notice():
             current_request = request_context.messages[-1]
-            if isinstance(current_request, ModelRequest):
+            # pydantic-ai always ends the request messages with a ModelRequest.
+            if isinstance(current_request, ModelRequest):  # pragma: no branch
                 current_request.instructions = "\n\n".join(
                     part for part in (current_request.instructions, instruction) if part
                 )

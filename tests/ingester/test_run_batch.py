@@ -9,11 +9,10 @@ import re
 import sys
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from haiku.rag.client import HaikuRAG
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import (
     APIConfig,
@@ -37,8 +36,18 @@ from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
 from haiku.rag.uri import uri_to_path
 from tests.conftest import capture_logs
+from tests.ingester.conftest import (
+    _ingested,
+    _jobs_of,
+    _mock_client,
+    _seed_unconfigured_jobs,
+    _two_databases,
+    _wait_until,
+    covering_stub,
+)
 
 _POLLER_LOGGER = logging.getLogger("haiku.rag.ingester.pollers.base")
+_APP_LOGGER = logging.getLogger("haiku.rag.ingester.app")
 
 
 def _config(tmp_path, root=None, **worker_kwargs) -> AppConfig:
@@ -68,58 +77,6 @@ def _config(tmp_path, root=None, **worker_kwargs) -> AppConfig:
             api=APIConfig(enabled=False),
         ),
     )
-
-
-def _mock_client() -> AsyncMock:
-    """A HaikuRAG mock whose upserts return a fresh Document (with an md5 so
-    the worker records sync_state) and whose lookups return a Document with a
-    deterministic id so the DELETE path resolves.
-
-    It keeps the documents it was told to write, so `list_documents` answers
-    what the store holds: startup reconciliation reads it, and a double that
-    always answered "nothing" would invalidate every revision.
-    """
-    client = AsyncMock(spec=HaikuRAG)
-    counter = {"n": 0}
-    stored: dict[str, Document] = {}
-
-    async def _create(uri, *_, source_id=None, **__):
-        counter["n"] += 1
-        # Mirror the real client: persist the FS revision (mtime_ns) so the
-        # poller's change-detection skips unchanged files on the next sweep.
-        path = uri_to_path(uri)
-        metadata = {
-            "content_type": "text/markdown",
-            "md5": f"md5-{counter['n']}",
-            "source_revision": str(path.stat().st_mtime_ns),
-        }
-        if source_id is not None:
-            metadata["source_id"] = source_id
-        document = Document(
-            id=f"doc-{counter['n']}", content="x", uri=uri, metadata=metadata
-        )
-        stored[uri] = document
-        return document
-
-    async def _get_by_uri(uri):
-        return stored.get(uri) or Document(
-            id=f"doc-for-{uri}", content="x", uri=uri, metadata={}
-        )
-
-    async def _delete(document_id, *, source_id=None):
-        for uri, document in list(stored.items()):
-            if document.id == document_id:
-                del stored[uri]
-        return True
-
-    async def _list_documents(*_, **__):
-        return list(stored.values())
-
-    client._ingest_observed.side_effect = _create
-    client.get_document_by_uri.side_effect = _get_by_uri
-    client.delete_document.side_effect = _delete
-    client.list_documents.side_effect = _list_documents
-    return client
 
 
 def _manifest(*changes: BatchChange) -> BatchManifest:
@@ -879,19 +836,6 @@ async def test_run_batch_aborts_when_all_workers_die(
     assert "All workers have died" in caplog.text
 
 
-async def _wait_until(
-    predicate, *, timeout: float = 5.0, serving: asyncio.Task | None = None
-):
-    """Wait for `predicate`, raising the error of a `serving` task that ended."""
-    deadline = asyncio.get_running_loop().time() + timeout
-    while not predicate():
-        if serving is not None and serving.done():
-            serving.result()
-        if asyncio.get_running_loop().time() > deadline:
-            raise AssertionError("condition not reached within timeout")
-        await asyncio.sleep(0.02)
-
-
 async def test_waiting_on_a_serve_that_failed_raises_its_error():
     async def failing_serve():
         raise RuntimeError("queue unavailable")
@@ -902,32 +846,46 @@ async def test_waiting_on_a_serve_that_failed_raises_its_error():
         await _wait_until(lambda: False, serving=serving)
 
 
-@pytest.mark.parametrize("api", [True, False])
-async def test_serve_starts_workers_pollers_and_shuts_down(tmp_path, use_client, api):
+@pytest.mark.parametrize(
+    "api, auth_token, warnings",
+    [
+        (True, None, ["API auth_token is unset — control plane is unauthenticated"]),
+        (True, "secret", []),
+        (False, None, []),
+    ],
+)
+async def test_serve_starts_workers_pollers_and_shuts_down(
+    tmp_path, use_client, api, auth_token, warnings
+):
     """serve brings up pollers, workers and (when enabled) the HTTP API, then
     tears them all down. Shutdown is driven here by cancelling the serve task,
     which runs the same drain-and-close path as a SIGINT/SIGTERM."""
     use_client(_mock_client())
     config = _config(tmp_path)
-    config.ingester.api = APIConfig(enabled=api, host="127.0.0.1", port=0)
+    config.ingester.api = APIConfig(
+        enabled=api, host="127.0.0.1", port=0, auth_token=auth_token
+    )
     app = IngesterApp(config=config)
 
-    task = asyncio.create_task(app.serve(api=api))
-    try:
-        await _wait_until(
-            lambda: (
-                app._pool is not None
-                and app._pool.live_workers > 0
-                and app._pollers is not None
-                and app._pollers.live_pollers > 0
-            ),
-            serving=task,
-        )
-    finally:
-        task.cancel()
+    with capture_logs(_APP_LOGGER, logging.WARNING) as records:
+        task = asyncio.create_task(app.serve(api=api))
+        try:
+            await _wait_until(
+                lambda: (
+                    app._pool is not None
+                    and app._pool.live_workers > 0
+                    and app._pollers is not None
+                    and app._pollers.live_pollers > 0
+                ),
+                serving=task,
+            )
+        finally:
+            task.cancel()
 
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(task, timeout=5.0)
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=5.0)
+
+    assert [record.getMessage() for record in records] == warnings
 
     # Workers and pollers are stopped after the shutdown path runs.
     assert app._pool is not None and app._pollers is not None
@@ -1027,51 +985,6 @@ async def test_serve_closes_sources_after_pool_stops(tmp_path, use_client, monke
 # --- several databases ---
 
 
-def _two_databases(tmp_path) -> AppConfig:
-    for name in ("papers", "wiki"):
-        (tmp_path / name).mkdir()
-        (tmp_path / name / f"{name}.md").write_text(name)
-    return AppConfig.model_validate(
-        {
-            "lancedb": {
-                "databases": {
-                    name: str(tmp_path / f"{name}.lancedb")
-                    for name in ("papers", "wiki")
-                }
-            },
-            "ingester": {
-                "queue": {"path": str(tmp_path / "queue.db")},
-                "workers": {
-                    "worker_count": 2,
-                    "poll_idle_interval_s": 0.05,
-                    "retry": {"max_attempts": 1},
-                },
-                "api": {"enabled": False},
-                "databases": {
-                    name: {
-                        "sources": [
-                            {
-                                "type": "fs",
-                                "id": name,
-                                "root": str(tmp_path / name),
-                                "poll_interval_s": 3600.0,
-                            }
-                        ]
-                    }
-                    for name in ("papers", "wiki")
-                },
-            },
-        }
-    )
-
-
-def _ingested(client) -> list[str]:
-    return [
-        uri_to_path(call.args[0]).name
-        for call in client._ingest_observed.await_args_list
-    ]
-
-
 async def test_run_batch_ingests_each_database_through_its_own_client(
     tmp_path, use_client
 ):
@@ -1147,9 +1060,9 @@ async def test_a_lone_database_failing_to_open_is_named(tmp_path, monkeypatch):
             raise MigrationRequiredError("Database requires migration")
         yield _mock_client()
 
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: _open(scope)
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG", covering_stub(lambda scope, *a, **k: _open(scope))
+    )
 
     config = _two_databases(tmp_path)
     del config.ingester.databases["papers"]
@@ -1199,44 +1112,6 @@ def test_two_names_for_one_existing_directory_are_refused(tmp_path):
 
     with pytest.raises(AmbiguousDatabaseError, match="'papers' and 'wiki'"):
         IngesterApp(config=config)
-
-
-def test_two_spellings_of_an_existing_directory_are_refused(tmp_path):
-    (tmp_path / "shared.lancedb").mkdir()
-    config = _two_databases(tmp_path)
-    config.lancedb.databases["papers"] = str(tmp_path / "shared.lancedb")
-    config.lancedb.databases["wiki"] = str(
-        tmp_path / "papers" / ".." / "shared.lancedb"
-    )
-    from haiku.rag.store.exceptions import AmbiguousDatabaseError
-
-    with pytest.raises(AmbiguousDatabaseError, match="'papers' and 'wiki'"):
-        IngesterApp(config=config)
-
-
-async def _seed_unconfigured_jobs(config) -> JobRepo:
-    engine = await open_queue(config.ingester.queue)
-    jobs = JobRepo(engine)
-    claimed = await jobs.enqueue("removed", "claimed", JobOp.UPSERT)
-    assert claimed is not None
-    assert await jobs.claim_next("w") is not None
-    dead = await jobs.enqueue("removed", "dead", JobOp.UPSERT)
-    assert dead is not None and await jobs.claim_next("w") is not None
-    assert await jobs.mark_dead(dead.id, "boom", "w")
-    assert await jobs.enqueue("removed", "queued", JobOp.UPSERT) is not None
-    await engine.dispose()
-    return jobs
-
-
-async def _jobs_of(config, source_id: str) -> dict[str, JobStatus]:
-    engine = await open_queue(config.ingester.queue)
-    try:
-        return {
-            job.uri: job.status
-            for job in await JobRepo(engine).list_jobs(source_id=source_id)
-        }
-    finally:
-        await engine.dispose()
 
 
 async def test_startup_deletes_live_jobs_of_unconfigured_sources(tmp_path, use_client):

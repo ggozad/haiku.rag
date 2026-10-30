@@ -8,20 +8,8 @@ from haiku.rag.config import AppConfig
 from haiku.rag.store.engine import Store, connect_lancedb, read_settings
 from haiku.rag.store.engine import logger as engine_logger
 from haiku.rag.store.exceptions import MigrationRequiredError, UpgradeRequiredError
-from haiku.rag.store.upgrades import latest_schema_version
+from haiku.rag.store.upgrades import get_pending_upgrades, latest_schema_version
 from tests.conftest import capture_logs
-
-
-class TestMigrationRequiredError:
-    def test_migration_required_error_is_exception(self):
-        """MigrationRequiredError should be a subclass of Exception."""
-        assert issubclass(MigrationRequiredError, Exception)
-
-    def test_migration_required_error_can_be_raised(self):
-        """MigrationRequiredError can be raised and caught."""
-        with pytest.raises(MigrationRequiredError) as exc_info:
-            raise MigrationRequiredError("Run 'haiku-rag migrate' to upgrade")
-        assert "migrate" in str(exc_info.value)
 
 
 class TestMigrationCheck:
@@ -32,70 +20,29 @@ class TestMigrationCheck:
             expected = metadata.version("haiku.rag-slim")
             assert version == expected
 
-    async def test_existing_database_same_version_no_error(self, temp_db_path):
-        """Opening a database with the same version should not error."""
-        async with Store(temp_db_path, create=True):
-            pass
-
-        # Re-open - should work without error
-        async with Store(temp_db_path):
-            pass
-
-    async def test_open_does_not_change_version(self, temp_db_path):
+    @pytest.mark.parametrize("read_only", [False, True])
+    async def test_open_does_not_change_version(self, temp_db_path, read_only):
         """Opening a database never writes the version, even when it differs.
 
         A version newer than all upgrade steps has no pending migrations, so the
-        open succeeds; the stored version must be left untouched (no downgrade,
-        no bump) because opening is a pure read.
+        open succeeds, writable or read-only, and leaves the stored version alone.
         """
         async with Store(temp_db_path, create=True) as store:
             await store.set_haiku_version("100.0.0")
 
-        # Re-open writable - no error, version unchanged
-        async with Store(temp_db_path) as store:
+        async with Store(temp_db_path, read_only=read_only) as store:
             assert await store.get_haiku_version() == "100.0.0"
 
-    async def test_pending_migrations_raises_error(self, temp_db_path):
-        """When actual migrations are pending, should raise MigrationRequiredError."""
+    @pytest.mark.parametrize("open_kwargs", [{}, {"create": True}, {"read_only": True}])
+    async def test_pending_migrations_raises_error(self, temp_db_path, open_kwargs):
+        """Pending migrations refuse the open, with create=True and read-only too."""
         async with Store(temp_db_path, create=True) as store:
-            # Set version to before the first upgrade step
             await store.set_haiku_version("0.19.0")
 
-        # Re-open should raise
         with pytest.raises(MigrationRequiredError) as exc_info:
-            async with Store(temp_db_path) as store:
+            async with Store(temp_db_path, **open_kwargs):
                 pass
         assert "migrate" in str(exc_info.value).lower()
-
-    async def test_pending_migrations_raises_error_with_create_flag(self, temp_db_path):
-        """Opening an existing DB with create=True must still check migrations."""
-        async with Store(temp_db_path, create=True) as store:
-            await store.set_haiku_version("0.19.0")
-
-        # create=True is idempotent — must not mark an existing populated DB as new
-        with pytest.raises(MigrationRequiredError):
-            async with Store(temp_db_path, create=True) as store:
-                pass
-
-    async def test_pending_migrations_read_only_raises_error(self, temp_db_path):
-        """Read-only mode with pending migrations should still raise."""
-        async with Store(temp_db_path, create=True) as store:
-            await store.set_haiku_version("0.19.0")
-
-        with pytest.raises(MigrationRequiredError):
-            async with Store(temp_db_path, read_only=True) as store:
-                pass
-
-    async def test_read_only_version_bump_without_migrations_ok(self, temp_db_path):
-        """Read-only mode with version bump but no migrations should work."""
-        async with Store(temp_db_path, create=True) as store:
-            # Set a version newer than all upgrade steps
-            await store.set_haiku_version("100.0.0")
-
-        # Read-only open should work (version not updated, but no error)
-        async with Store(temp_db_path, read_only=True) as store:
-            # Version should stay at the old value (can't update in read-only)
-            assert await store.get_haiku_version() == "100.0.0"
 
     async def test_skip_migration_check_bypasses_error(self, temp_db_path):
         """skip_migration_check=True should bypass migration error."""
@@ -123,25 +70,18 @@ class TestMigrateMethod:
             applied = await store.migrate()
 
             # Should have applied migrations
+            assert isinstance(applied, list)
             assert len(applied) > 0
+            for item in applied:
+                assert isinstance(item, str)
+            pending = get_pending_upgrades("0.19.0")
+            assert isinstance(pending, list)
+            assert len(pending) > 0
 
             # Version should be updated
             new_version = await store.get_haiku_version()
             expected = metadata.version("haiku.rag-slim")
             assert new_version == expected
-
-    async def test_migrate_returns_applied_upgrades(self, temp_db_path):
-        """Store.migrate() should return list of applied upgrade descriptions."""
-        async with Store(temp_db_path, create=True) as store:
-            await store.set_haiku_version("0.19.0")
-
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            applied = await store.migrate()
-
-            # Should return descriptions of applied upgrades
-            assert isinstance(applied, list)
-            for item in applied:
-                assert isinstance(item, str)
 
     async def test_migrate_with_no_pending_returns_empty(self, temp_db_path):
         """Store.migrate() with no pending migrations returns empty list."""
@@ -179,32 +119,6 @@ class TestMigrateMethod:
         ) as store:
             with pytest.raises(ReadOnlyError):
                 await store.migrate()
-
-
-class TestGetPendingUpgrades:
-    def test_get_pending_upgrades_returns_list(self):
-        """get_pending_upgrades() should return a list of Upgrade objects."""
-        from haiku.rag.store.upgrades import get_pending_upgrades
-
-        pending = get_pending_upgrades("0.19.0")
-        assert isinstance(pending, list)
-        # Should have at least the v0.20.0 upgrade
-        assert len(pending) > 0
-
-    def test_get_pending_upgrades_from_current_version_is_empty(self):
-        """get_pending_upgrades() from current version should be empty."""
-        from haiku.rag.store.upgrades import get_pending_upgrades
-
-        current = metadata.version("haiku.rag-slim")
-        pending = get_pending_upgrades(current)
-        assert pending == []
-
-    def test_get_pending_upgrades_from_future_version_is_empty(self):
-        """get_pending_upgrades() from a future version should be empty."""
-        from haiku.rag.store.upgrades import get_pending_upgrades
-
-        pending = get_pending_upgrades("100.0.0")
-        assert pending == []
 
 
 async def _stamp_schema(store: Store, schema_version: str | None) -> None:

@@ -277,12 +277,10 @@ class IngesterApp:
         """Open the queue engine and build the ingestion around it. Yields with
         everything built but nothing started: callers own the start/stop
         lifecycle. Closes the clients and the queue engine on exit."""
-        self._engine = await open_queue(self._config.ingester.queue)
+        engine = self._engine = await open_queue(self._config.ingester.queue)
         try:
-            self._jobs = JobRepo(self._engine, self._config.ingester.queue.namespace)
-            self._sync = SyncStateRepo(
-                self._engine, self._config.ingester.queue.namespace
-            )
+            self._jobs = JobRepo(engine, self._config.ingester.queue.namespace)
+            self._sync = SyncStateRepo(engine, self._config.ingester.queue.namespace)
             async with self._ingestion():
                 yield
         finally:
@@ -290,9 +288,8 @@ class IngesterApp:
             # sqlite3 in a background thread; leaving the pool open holds the
             # event loop alive and blocks process exit on early failures (e.g.
             # HaikuRAG raising MigrationRequiredError).
-            if self._engine is not None:
-                await self._engine.dispose()
-                self._engine = None
+            await engine.dispose()
+            self._engine = None
 
     @asynccontextmanager
     async def _ingestion(self):
@@ -606,19 +603,18 @@ class IngesterApp:
         Dry-runs must not create/open the LanceDB document store or worker
         pool because they are upstream checks only."""
         ingester_cfg = self._config.ingester
-        self._engine = await open_queue(ingester_cfg.queue)
+        engine = self._engine = await open_queue(ingester_cfg.queue)
         try:
-            self._jobs = JobRepo(self._engine, ingester_cfg.queue.namespace)
-            self._sync = SyncStateRepo(self._engine, ingester_cfg.queue.namespace)
+            self._jobs = JobRepo(engine, ingester_cfg.queue.namespace)
+            self._sync = SyncStateRepo(engine, ingester_cfg.queue.namespace)
             self._pollers = await self._build_pollers()
             yield
         finally:
             if self._pollers is not None:
                 await self._pollers.close_sources()
                 self._pollers = None
-            if self._engine is not None:
-                await self._engine.dispose()
-                self._engine = None
+            await engine.dispose()
+            self._engine = None
 
     async def _stop_pool(self) -> None:
         """Stop the worker pool, honouring the shutdown grace, then drain any
@@ -734,7 +730,7 @@ class IngesterApp:
                 signal.SIGINT: stop_event.set,
                 signal.SIGTERM: stop_event.set,
             }
-            if sys.platform != "win32":
+            if sys.platform != "win32":  # pragma: no branch - Windows has no coverage
                 handlers[signal.SIGHUP] = self._reload_on_signal
             installed = []
             for sig, handler in handlers.items():

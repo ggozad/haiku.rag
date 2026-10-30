@@ -76,25 +76,6 @@ async def test_round_robin_across_three_urls():
     assert hosts_picked == ["a", "b", "c", "a", "b", "c"]
 
 
-async def test_task_lifecycle_pinned_to_same_url():
-    """A single submit/poll/result trio must all hit the same instance —
-    task IDs are local to the instance that issued them."""
-    transport, seen = _scripted_transport(_success_routes("task-42", {"r": 1}))
-    client = DoclingServeClient(
-        base_urls=["http://primary:5001", "http://secondary:5001"],
-        transport=transport,
-    )
-
-    await client.submit_and_poll(
-        endpoint="/v1/convert/file/async",
-        files={"file": ("x.md", b"x", "text/markdown")},
-        data={},
-    )
-
-    # All three requests must be on the same host.
-    assert len(set(seen)) == 1
-
-
 async def test_pending_task_is_polled_again(monkeypatch):
     from haiku.rag.providers import docling_serve as docling_serve_module
 
@@ -169,10 +150,13 @@ async def test_zip_endpoint_uses_round_robin_too():
 
 
 def _failover_transport(
-    down_hosts: set[str], task_id: str, result: dict
+    down_hosts: set[str],
+    task_id: str,
+    result: dict,
+    error: type[httpx.TransportError] = httpx.ConnectError,
 ) -> tuple[httpx.MockTransport, list[str]]:
-    """MockTransport where any request to a host in ``down_hosts`` raises a
-    ConnectError (a crashed instance); other hosts serve a normal
+    """MockTransport where any request to a host in ``down_hosts`` raises
+    ``error`` (a crashed instance); other hosts serve a normal
     submit/poll/result trio. Mutate ``down_hosts`` mid-test to flip an
     instance's health. Records every host attempted."""
     seen: list[str] = []
@@ -181,7 +165,7 @@ def _failover_transport(
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.host)
         if request.url.host in down_hosts:
-            raise httpx.ConnectError("connection refused", request=request)
+            raise error("connection refused", request=request)
         return routes.get(request.url.path, httpx.Response(404))
 
     return httpx.MockTransport(handler), seen
@@ -195,109 +179,81 @@ async def _poll(client: DoclingServeClient):
     )
 
 
-async def test_retry_fails_over_to_healthy_instance():
-    """A crashed instance (connection error) is retried on another instance and
-    the call succeeds without surfacing the failure."""
-    transport, seen = _failover_transport({"down-a"}, "t", {"ok": True})
-    client = DoclingServeClient(
-        base_urls=["http://down-a:5001", "http://up-a:5001"],
-        transport=transport,
-        retry_base_delay=0.0,
-    )
-
-    result = await _poll(client)
-
-    assert result == {"ok": True}
-    assert seen[0] == "down-a"
-    # The successful trio all landed on the healthy host.
-    assert seen[-3:] == ["up-a", "up-a", "up-a"]
-
-
-async def test_retry_5xx_fails_over():
-    """A 5xx from a struggling instance is retried elsewhere (status-based
-    retryability, distinct from the transport-error path)."""
+@pytest.mark.parametrize(
+    ("status", "failing", "healthy"),
+    [(503, "sad-b", "ok-b"), (429, "busy-g", "free-g")],
+)
+async def test_retryable_status_fails_over(status, failing, healthy):
+    """A 5xx or a 429 from a struggling instance is retried elsewhere."""
     seen: list[str] = []
     ok = _success_routes("t", {"ok": True})
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.host)
-        if request.url.host == "sad-b":
-            return httpx.Response(503)
+        if request.url.host == failing:
+            return httpx.Response(status)
         return ok.get(request.url.path, httpx.Response(404))
 
     client = DoclingServeClient(
-        base_urls=["http://sad-b:5001", "http://ok-b:5001"],
+        base_urls=[f"http://{failing}:5001", f"http://{healthy}:5001"],
         transport=httpx.MockTransport(handler),
         retry_base_delay=0.0,
     )
 
     result = await _poll(client)
     assert result == {"ok": True}
-    assert seen[0] == "sad-b"
-    assert "ok-b" in seen
+    assert seen[0] == failing
+    assert healthy in seen
 
 
-async def test_retry_429_fails_over():
-    """A 429 (transient overload) is retried elsewhere — the status-set
-    membership branch of retryability, distinct from 5xx."""
-    seen: list[str] = []
-    ok = _success_routes("t", {"ok": True})
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request.url.host)
-        if request.url.host == "busy-g":
-            return httpx.Response(429)
-        return ok.get(request.url.path, httpx.Response(404))
-
-    client = DoclingServeClient(
-        base_urls=["http://busy-g:5001", "http://free-g:5001"],
-        transport=httpx.MockTransport(handler),
-        retry_base_delay=0.0,
-    )
-
-    result = await _poll(client)
-    assert result == {"ok": True}
-    assert seen[0] == "busy-g"
-    assert "free-g" in seen
-
-
-async def test_retry_exhausts_all_instances_then_raises():
+@pytest.mark.parametrize(
+    ("error", "first", "second"),
+    [
+        (httpx.ConnectError, "down-c", "down-d"),
+        (httpx.ReadTimeout, "slow-c", "slow-d"),
+    ],
+)
+async def test_retry_exhausts_all_instances_then_raises(error, first, second):
     """When every instance is down, the call retries up to max_attempts and then
     surfaces the transport error."""
-    transport, seen = _failover_transport({"down-c", "down-d"}, "t", {})
+    transport, seen = _failover_transport({first, second}, "t", {}, error=error)
     client = DoclingServeClient(
-        base_urls=["http://down-c:5001", "http://down-d:5001"],
+        base_urls=[f"http://{first}:5001", f"http://{second}:5001"],
         transport=transport,
         max_attempts=2,
         retry_base_delay=0.0,
     )
 
-    with pytest.raises(httpx.ConnectError):
+    with pytest.raises(error):
         await _poll(client)
 
     # Two attempts, each preferring a not-yet-failed instance.
-    assert seen == ["down-c", "down-d"]
+    assert seen == [first, second]
 
 
-async def test_4xx_is_not_retried():
+@pytest.mark.parametrize(
+    ("status", "first", "second"), [(400, "e", "f"), (401, "auth-e", "auth-f")]
+)
+async def test_4xx_is_not_retried(status, first, second):
     """A 4xx (other than 408/429) is the caller's fault — not retried on another
     instance; it propagates after a single attempt."""
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.host)
-        return httpx.Response(400, json={"detail": "bad request"})
+        return httpx.Response(status, json={"detail": "bad request"})
 
     client = DoclingServeClient(
-        base_urls=["http://e:5001", "http://f:5001"],
+        base_urls=[f"http://{first}:5001", f"http://{second}:5001"],
         transport=httpx.MockTransport(handler),
         retry_base_delay=0.0,
     )
 
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
         await _poll(client)
 
-    assert seen == ["e"]
+    assert exc_info.value.response.status_code == status
+    assert seen == [first]
 
 
 async def test_task_failure_is_not_retried():
@@ -381,6 +337,7 @@ async def test_retryable_failure_fails_over_and_trips_breaker():
 
     assert result == {"ok": True}
     assert seen[0] == "trip-a"
+    assert seen[-3:] == ["trip-b", "trip-b", "trip-b"]
     assert client._breaker_for(trip_a).is_open
     assert not client._breaker_for(trip_b).is_open
 

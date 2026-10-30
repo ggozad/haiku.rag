@@ -280,23 +280,8 @@ def test_search_result_from_chunk_preserves_chunk_meta():
     }
 
 
-def test_search_result_format_for_agent_omits_chunk_meta():
-    """Test that chunk_meta is never shown to the model"""
-    result = SearchResult(
-        content="Some content.",
-        score=0.9,
-        chunk_id="chunk-1",
-        chunk_meta={"para_no": "12"},
-    )
-
-    formatted = result.format_for_agent(rank=1, total=1)
-
-    assert "para_no" not in formatted
-
-
 def test_search_result_format_for_agent_chunk_meta_is_opt_in():
-    """A caller that asks sees the chunk's own metadata, never the structural
-    keys haiku.rag stores beside it."""
+    """Chunk metadata requires opt-in and excludes structural keys."""
     result = SearchResult(
         content="Some content.",
         score=0.9,
@@ -309,6 +294,8 @@ def test_search_result_format_for_agent_chunk_meta_is_opt_in():
             "labels": ["paragraph"],
         },
     )
+
+    assert "para_no" not in result.format_for_agent(rank=1, total=1)
 
     opted = result.format_for_agent(rank=1, total=1, include_chunk_meta=True)
 
@@ -414,24 +401,28 @@ def test_search_result_format_for_agent_picture_captions():
     assert "Figure 2. Projected annual emissions." in formatted
 
 
-def test_search_result_format_for_agent_no_captions_no_line():
-    """Without picture_captions, no caption lines appear (zero-overhead for text chunks)."""
+def test_search_result_format_for_agent_skips_empty_label_and_caption():
     result = SearchResult(
-        content="prose",
+        content="body",
         score=0.5,
-        chunk_id="chunk-abc",
-        labels=["text"],
+        chunk_id="chunk-empty",
+        labels=[""],
+        picture_captions={"#/pictures/0": "", "#/pictures/1": "Figure 2."},
     )
-    formatted = result.format_for_agent(rank=1, total=1)
-    assert "Figure caption" not in formatted
+
+    formatted = result.format_for_agent()
+
+    assert "Type:" not in formatted
+    assert "(#/pictures/0)" not in formatted
+    assert "Figure caption (#/pictures/1): Figure 2." in formatted
 
 
 @pytest.mark.parametrize(
     "kwargs,present,absent",
     [
-        ({"rank": 2}, "[rank 2]", ["score:"]),
+        ({"rank": 2}, "[rank 2]", ["score:", "Figure caption"]),
         # No structural metadata at all, so no Source:/Type: lines are emitted.
-        ({}, "(score: 0.72)", ["[rank", "Source:", "Type:"]),
+        ({}, "(score: 0.72)", ["[rank", "Source:", "Type:", "Figure caption"]),
     ],
     ids=["rank_only", "minimal"],
 )

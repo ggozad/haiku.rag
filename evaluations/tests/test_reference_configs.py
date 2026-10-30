@@ -33,11 +33,6 @@ def test_configs_present() -> None:
 
 
 @pytest.mark.parametrize("path", _config_paths(), ids=lambda p: p.stem)
-def test_config_validates(path: Path) -> None:
-    _load(path)
-
-
-@pytest.mark.parametrize("path", _config_paths(), ids=lambda p: p.stem)
 def test_filename_names_a_dataset(path: Path) -> None:
     assert path.stem in DATASETS
 

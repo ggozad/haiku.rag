@@ -59,26 +59,10 @@ class TestSearchPictureRefs:
 
         sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
         external = sandbox._build_external_functions()
+        assert set(external) == {"search", "list_documents"}
         results = await external["search"]("anything")
 
         assert len(results) == 2
         assert results[0]["picture_refs"] == ["#/pictures/0", "#/pictures/1"]
         assert results[1]["picture_refs"] == []
         assert "image_data" not in results[0]
-
-
-class TestExternalFunctionsShape:
-    """Sandbox externals expose exactly ``search`` and ``list_documents``.
-
-    Pictures reach the driving model through the skill's own ``search``
-    tool (BinaryContent auto-attach for picture chunks) and surface in
-    the UI as citations with ``picture_refs`` populated by
-    ``resolve_citations``.
-    """
-
-    async def test_externals_are_search_and_list_documents_only(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True):
-            pass
-        sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
-        external = sandbox._build_external_functions()
-        assert set(external) == {"search", "list_documents"}

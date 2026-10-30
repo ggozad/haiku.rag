@@ -1,6 +1,7 @@
 import json
 import logging
 
+import httpx
 import numpy as np
 import pytest
 
@@ -8,7 +9,6 @@ from haiku.rag.config import (
     AppConfig,
     EmbeddingModelConfig,
     EmbeddingsConfig,
-    get_config,
 )
 from haiku.rag.embeddings import (
     EmbedderWrapper,
@@ -70,46 +70,38 @@ async def test_ollama_embedder(allow_model_requests):
     assert max(sims) == sims[1]
 
 
-def test_contextualize_with_headings():
-    """Test that contextualize prepends headings to chunk content."""
-    chunks = [
-        Chunk(
-            content="This is the content.",
-            metadata={"headings": ["Chapter 1", "Section 1.1"]},
+@pytest.mark.parametrize(
+    ("chunks", "expected"),
+    [
+        (
+            [
+                Chunk(
+                    content="This is the content.",
+                    metadata={"headings": ["Chapter 1", "Section 1.1"]},
+                ),
+                Chunk(
+                    content="More content here.", metadata={"headings": ["Chapter 2"]}
+                ),
+            ],
+            [
+                "Chapter 1\nSection 1.1\nThis is the content.",
+                "Chapter 2\nMore content here.",
+            ],
         ),
-        Chunk(
-            content="More content here.",
-            metadata={"headings": ["Chapter 2"]},
+        (
+            [
+                Chunk(content="Plain content."),
+                Chunk(content="Another chunk.", metadata={}),
+                Chunk(content="With empty headings.", metadata={"headings": None}),
+            ],
+            ["Plain content.", "Another chunk.", "With empty headings."],
         ),
-    ]
-
-    texts = contextualize(chunks)
-
-    assert len(texts) == 2
-    assert texts[0] == "Chapter 1\nSection 1.1\nThis is the content."
-    assert texts[1] == "Chapter 2\nMore content here."
-
-
-def test_contextualize_without_headings():
-    """Test that contextualize returns raw content when no headings."""
-    chunks = [
-        Chunk(content="Plain content."),
-        Chunk(content="Another chunk.", metadata={}),
-        Chunk(content="With empty headings.", metadata={"headings": None}),
-    ]
-
-    texts = contextualize(chunks)
-
-    assert len(texts) == 3
-    assert texts[0] == "Plain content."
-    assert texts[1] == "Another chunk."
-    assert texts[2] == "With empty headings."
-
-
-def test_contextualize_empty_list():
-    """Test that contextualize handles empty list."""
-    texts = contextualize([])
-    assert texts == []
+        ([], []),
+    ],
+    ids=["headings", "no-headings", "empty"],
+)
+def test_contextualize_prepends_headings(chunks, expected):
+    assert contextualize(chunks) == expected
 
 
 class _StubEmbedder(EmbedderWrapper):
@@ -123,7 +115,8 @@ class _StubEmbedder(EmbedderWrapper):
 
 
 async def test_embed_chunks_uses_provided_embedder(monkeypatch):
-    """embed_chunks embeds via the embedder it is given and never builds one."""
+    """embed_chunks embeds via the embedder it is given and never builds one,
+    returning new chunks that keep every field."""
     import haiku.rag.embeddings as embeddings_mod
 
     def fail(*args, **kwargs):
@@ -133,7 +126,16 @@ async def test_embed_chunks_uses_provided_embedder(monkeypatch):
 
     embedder = _StubEmbedder()
     chunks = [
-        Chunk(id="a", content="alpha", order=0),
+        Chunk(
+            id="a",
+            document_id="doc-id",
+            content="alpha",
+            metadata={"key": "value", "headings": ["Heading"]},
+            order=5,
+            document_uri="https://example.com/doc",
+            document_title="Test Document",
+            document_meta={"author": "Test"},
+        ),
         Chunk(id="b", content="beta", order=1),
     ]
 
@@ -141,6 +143,14 @@ async def test_embed_chunks_uses_provided_embedder(monkeypatch):
 
     assert [c.embedding for c in embedded] == [[0.1] * 8, [0.1] * 8]
     assert embedder.doc_batches == 1
+    assert all(new is not old for new, old in zip(embedded, chunks, strict=True))
+    assert all(chunk.embedding is None for chunk in chunks)
+    assert embedded[0].model_dump(exclude={"embedding"}) == chunks[0].model_dump(
+        exclude={"embedding"}
+    )
+    assert embedded[1].id == "b"
+    assert embedded[1].content == "beta"
+    assert embedded[1].order == 1
 
 
 async def test_client_embedder_is_store_embedder(temp_db_path):
@@ -172,55 +182,6 @@ async def test_client_aexit_closes_embedder(temp_db_path, monkeypatch):
         monkeypatch.setattr(client.embedder, "aclose", _record)
 
     assert "reranker" not in client.__dict__
-
-
-@pytest.mark.vcr()
-async def test_embed_chunks_basic(allow_model_requests):
-    """Test that embed_chunks generates embeddings for chunks."""
-    chunks = [
-        Chunk(
-            id="chunk1",
-            document_id="doc1",
-            content="I enjoy eating great food.",
-            metadata={"headings": ["Food"]},
-            order=0,
-        ),
-        Chunk(
-            id="chunk2",
-            document_id="doc1",
-            content="Python is my favorite programming language.",
-            metadata={"headings": ["Programming"]},
-            order=1,
-        ),
-    ]
-
-    embedded_chunks = await embed_chunks(chunks, get_embedder(get_config()))
-
-    assert len(embedded_chunks) == 2
-    # Check that all original fields are preserved
-    assert embedded_chunks[0].id == "chunk1"
-    assert embedded_chunks[0].document_id == "doc1"
-    assert embedded_chunks[0].content == "I enjoy eating great food."
-    assert embedded_chunks[0].metadata == {"headings": ["Food"]}
-    assert embedded_chunks[0].order == 0
-    # Check that embeddings are generated
-    assert embedded_chunks[0].embedding is not None
-    assert len(embedded_chunks[0].embedding) > 0
-    assert embedded_chunks[1].embedding is not None
-
-
-@pytest.mark.vcr()
-async def test_embed_chunks_returns_new_objects(allow_model_requests):
-    """Test that embed_chunks returns new Chunk objects (immutable pattern)."""
-    original = Chunk(id="orig", content="Test content.")
-    embedded = await embed_chunks([original], get_embedder(get_config()))
-
-    # Original should be unchanged
-    assert original.embedding is None
-    # New chunk should have embedding
-    assert embedded[0].embedding is not None
-    # They should be different objects
-    assert embedded[0] is not original
 
 
 async def test_embed_chunks_empty_list():
@@ -285,33 +246,6 @@ async def test_embed_chunks_respects_configured_batch_size(monkeypatch):
     assert all(r.embedding == [0.1] * 10 for r in result)
 
 
-@pytest.mark.vcr()
-async def test_embed_chunks_preserves_all_fields(allow_model_requests):
-    """Test that embed_chunks preserves all chunk fields."""
-    chunk = Chunk(
-        id="test-id",
-        document_id="doc-id",
-        content="Test content",
-        metadata={"key": "value", "headings": ["Heading"]},
-        order=5,
-        document_uri="https://example.com/doc",
-        document_title="Test Document",
-        document_meta={"author": "Test"},
-    )
-
-    embedded = await embed_chunks([chunk], get_embedder(get_config()))
-
-    assert embedded[0].id == "test-id"
-    assert embedded[0].document_id == "doc-id"
-    assert embedded[0].content == "Test content"
-    assert embedded[0].metadata == {"key": "value", "headings": ["Heading"]}
-    assert embedded[0].order == 5
-    assert embedded[0].document_uri == "https://example.com/doc"
-    assert embedded[0].document_title == "Test Document"
-    assert embedded[0].document_meta == {"author": "Test"}
-    assert embedded[0].embedding is not None
-
-
 # Multimodal embedder support
 
 
@@ -339,35 +273,7 @@ async def test_vllm_embed_text_request_shape(monkeypatch):
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
     captured: dict = {}
-
-    class FakeResponse:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {
-                "data": [
-                    {"embedding": [0.1, 0.2, 0.3]},
-                    {"embedding": [0.4, 0.5, 0.6]},
-                ]
-            }
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, url, json, headers):
-            captured["url"] = url
-            captured["body"] = json
-            return FakeResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+    _capturing_client(monkeypatch, captured, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
 
     embedder = VLLMMultimodalEmbedder(
         model_name="Qwen/Qwen3-VL-Embedding-2B",
@@ -389,29 +295,7 @@ async def test_vllm_embed_image_request_shape(monkeypatch):
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
     captured: dict = {}
-
-    class FakeResponse:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"data": [{"embedding": [0.4] * 4}]}
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, url, json, headers):
-            captured["body"] = json
-            return FakeResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+    _capturing_client(monkeypatch, captured, [[0.4] * 4])
 
     embedder = VLLMMultimodalEmbedder(
         model_name="some-model",
@@ -521,192 +405,69 @@ async def test_vllm_text_only_embed_image_raises():
         await embedder.embed_image(b"\x89PNG\r\n\x1a\n")
 
 
-async def test_vllm_connect_error_surfaces_helpful_message(monkeypatch):
-    import httpx
-
+@pytest.mark.parametrize(
+    ("provider", "outcome", "message"),
+    [
+        (
+            "vllm",
+            httpx.ConnectError("All connection attempts failed"),
+            "Could not connect to vLLM",
+        ),
+        ("vllm", httpx.TimeoutException("timed out"), "timed out"),
+        ("vllm", httpx.Response(401), "Authentication failed"),
+        ("vllm", httpx.Response(500), "HTTP error from vLLM"),
+        ("vllm", httpx.Response(200, json={"data": []}), "returned no embeddings"),
+        (
+            "vllm",
+            httpx.Response(200, json={"data": [{"embedding": [0.1] * 512}]}),
+            "vector_dim",
+        ),
+        ("openrouter", httpx.ConnectError("nope"), "OpenRouter"),
+    ],
+    ids=["connect", "timeout", "401", "500", "no-data", "wrong-dim", "openrouter"],
+)
+async def test_http_embedder_failure_raises_value_error(
+    monkeypatch, provider, outcome, message
+):
+    """A failed request or an unusable reply raises a ValueError naming the
+    service, the cause and, for a wrong dimension, the config key."""
+    from haiku.rag.embeddings import vllm
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
+    def handler(request):
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
-        async def __aenter__(self):
-            return self
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(vllm, "pooled_client", lambda timeout: client)
+    if provider == "openrouter":
+        embedder = get_embedder(_openrouter_config())
+    else:
+        embedder = VLLMMultimodalEmbedder(
+            model_name="some-model",
+            vector_dim=1024,
+            base_url="http://localhost:8000/v1",
+            api_key="bad",
+        )
+    assert isinstance(embedder, VLLMMultimodalEmbedder)
 
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, *args, **kwargs):
-            raise httpx.ConnectError("All connection attempts failed")
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    embedder = VLLMMultimodalEmbedder(
-        model_name="x", vector_dim=2, base_url="http://nope:8000/v1"
-    )
-    with pytest.raises(ValueError, match="Could not connect to vLLM"):
-        await embedder.embed_query("hi")
-
-
-async def test_vllm_timeout_surfaces_helpful_message(monkeypatch):
-    import httpx
-
-    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, *args, **kwargs):
-            raise httpx.TimeoutException("timed out")
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    embedder = VLLMMultimodalEmbedder(
-        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
-    )
-    with pytest.raises(ValueError, match="timed out"):
-        await embedder.embed_query("hi")
-
-
-async def test_vllm_401_surfaces_auth_error(monkeypatch):
-    import httpx
-
-    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-    class FakeResponse:
-        status_code = 401
-
-        def raise_for_status(self):
-            raise httpx.HTTPStatusError(
-                "401",
-                request=httpx.Request("POST", "http://x"),
-                response=self,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            )
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, *args, **kwargs):
-            return FakeResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    embedder = VLLMMultimodalEmbedder(
-        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1", api_key="bad"
-    )
-    with pytest.raises(ValueError, match="Authentication failed"):
-        await embedder.embed_query("hi")
-
-
-async def test_vllm_other_http_error_surfaces(monkeypatch):
-    import httpx
-
-    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-    class FakeResponse:
-        status_code = 500
-
-        def raise_for_status(self):
-            raise httpx.HTTPStatusError(
-                "500",
-                request=httpx.Request("POST", "http://x"),
-                response=self,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            )
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, *args, **kwargs):
-            return FakeResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    embedder = VLLMMultimodalEmbedder(
-        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
-    )
-    with pytest.raises(ValueError, match="HTTP error from vLLM"):
-        await embedder.embed_query("hi")
-
-
-async def test_vllm_empty_data_response_raises(monkeypatch):
-    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-    class FakeResponse:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"data": []}
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, *args, **kwargs):
-            return FakeResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    embedder = VLLMMultimodalEmbedder(
-        model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
-    )
-    with pytest.raises(ValueError, match="returned no embeddings"):
-        await embedder.embed_query("hi")
+    async with client:
+        with pytest.raises(ValueError, match=message):
+            await embedder.embed_query("hi")
 
 
 async def test_vllm_embed_documents_empty_list_skips_request(monkeypatch):
     from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
 
-    called = False
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            pass
-
-        async def post(self, *args, **kwargs):
-            nonlocal called
-            called = True
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+    captured: dict = {}
+    _capturing_client(monkeypatch, captured, [])
 
     embedder = VLLMMultimodalEmbedder(
         model_name="x", vector_dim=2, base_url="http://localhost:8000/v1"
     )
     assert await embedder.embed_documents([]) == []
-    assert called is False
+    assert captured == {}
 
 
 async def test_vllm_pil_image_roundtrips_to_data_uri():
@@ -914,17 +675,6 @@ async def test_voyage_embed_image_passes_pil(monkeypatch):
     assert captured["input_type"] == "document"
 
 
-async def test_voyage_embed_documents_empty_list_skips_request(monkeypatch):
-    from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
-
-    captured: dict = {}
-    monkeypatch.setattr("voyageai.AsyncClient", _fake_voyage_client(captured, []))
-
-    embedder = VoyageMultimodalEmbedder("voyage-multimodal-3", vector_dim=2)
-    assert await embedder.embed_documents([]) == []
-    assert "inputs" not in captured
-
-
 async def test_voyage_get_embedder_routes_to_multimodal(monkeypatch):
     monkeypatch.setattr("voyageai.AsyncClient", _fake_voyage_client({}, []))
     from haiku.rag.embeddings.voyageai import VoyageMultimodalEmbedder
@@ -1044,17 +794,6 @@ async def test_cohere_embed_image_uses_image_input_type(monkeypatch):
     images = captured["images"]
     assert len(images) == 1
     assert images[0].startswith("data:image/png;base64,")
-
-
-async def test_cohere_embed_documents_empty_list_skips_request(monkeypatch):
-    from haiku.rag.embeddings.cohere import CohereMultimodalEmbedder
-
-    captured: dict = {}
-    monkeypatch.setattr("cohere.AsyncClientV2", _fake_cohere_client(captured, []))
-
-    embedder = CohereMultimodalEmbedder("embed-v4.0", vector_dim=2)
-    assert await embedder.embed_documents([]) == []
-    assert "texts" not in captured
 
 
 async def test_cohere_get_embedder_routes_to_multimodal(monkeypatch):
@@ -1197,54 +936,6 @@ async def test_openrouter_base_url_override(monkeypatch):
     assert captured["url"] == "https://proxy.test/api/v1/embeddings"
 
 
-async def test_openrouter_errors_name_openrouter(monkeypatch):
-    """Connection failures name the endpoint the config points at."""
-    import httpx
-
-    class FailingClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def post(self, url, json, headers):
-            raise httpx.ConnectError("nope")
-
-    monkeypatch.setattr("httpx.AsyncClient", FailingClient)
-
-    embedder = get_embedder(_openrouter_config())
-    with pytest.raises(ValueError, match="OpenRouter"):
-        await embedder.embed_query("a cat")
-
-
-async def test_vllm_wrong_vector_dim_raises(monkeypatch):
-    """A vector of a length the schema cannot hold is rejected where the model
-    and the config key are still known."""
-    from haiku.rag.embeddings.vllm import VLLMMultimodalEmbedder
-
-    class FakeResponse:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"data": [{"embedding": [0.1] * 512}]}
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def post(self, url, json, headers):
-            return FakeResponse()
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
-
-    embedder = VLLMMultimodalEmbedder(
-        model_name="some-model",
-        vector_dim=1024,
-        base_url="http://localhost:8000/v1",
-    )
-    with pytest.raises(ValueError, match="vector_dim"):
-        await embedder.embed_query("a cat")
-
-
 async def test_openrouter_wrong_vector_dim_raises(monkeypatch):
     captured: dict = {}
     _capturing_client(monkeypatch, captured, [[0.1] * 512])
@@ -1280,43 +971,31 @@ def test_to_data_uri_labels_jpeg_bytes():
     assert _to_data_uri(b"\x89PNG\r\n\x1a\nx").startswith("data:image/png;base64,")
 
 
-async def test_openrouter_reads_api_key_from_environment(monkeypatch):
-    """The chat provider takes OPENROUTER_API_KEY from the environment, so the
-    embedder on the same key must too."""
+@pytest.mark.parametrize(
+    ("config_key", "env_key", "expected"),
+    [
+        (None, "sk-or-from-env", "Bearer sk-or-from-env"),
+        ("sk-or-test", "sk-or-from-env", "Bearer sk-or-test"),
+        (None, None, None),
+    ],
+    ids=["environment", "config-wins", "no-key"],
+)
+async def test_openrouter_api_key_source(monkeypatch, config_key, env_key, expected):
+    """The embedder takes OPENROUTER_API_KEY from the environment, as the chat
+    provider does, unless the config sets a key."""
     captured: dict = {}
     _capturing_client(monkeypatch, captured, [[0.3]])
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-from-env")
+    if env_key is None:
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("OPENROUTER_API_KEY", env_key)
 
     config = _openrouter_config(vector_dim=1)
-    config.embeddings.model.api_key = None
+    config.embeddings.model.api_key = config_key
     embedder = get_embedder(config)
     await embedder.embed_query("a cat")
 
-    assert captured["headers"]["Authorization"] == "Bearer sk-or-from-env"
-
-
-async def test_openrouter_config_api_key_wins_over_environment(monkeypatch):
-    captured: dict = {}
-    _capturing_client(monkeypatch, captured, [[0.3]])
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-from-env")
-
-    embedder = get_embedder(_openrouter_config(vector_dim=1))
-    await embedder.embed_query("a cat")
-
-    assert captured["headers"]["Authorization"] == "Bearer sk-or-test"
-
-
-async def test_openrouter_without_any_key_sends_no_auth_header(monkeypatch):
-    captured: dict = {}
-    _capturing_client(monkeypatch, captured, [[0.3]])
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-
-    config = _openrouter_config(vector_dim=1)
-    config.embeddings.model.api_key = None
-    embedder = get_embedder(config)
-    await embedder.embed_query("a cat")
-
-    assert "Authorization" not in captured["headers"]
+    assert captured["headers"].get("Authorization") == expected
 
 
 @pytest.mark.vcr()

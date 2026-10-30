@@ -1,6 +1,3 @@
-from io import BytesIO
-
-import httpx
 import pytest
 from docling_core.types.doc.base import BoundingBox, Size
 from docling_core.types.doc.document import DoclingDocument, ImageRef, ProvenanceItem
@@ -12,15 +9,9 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.models import Chunk
 from haiku.rag.store.models.document_item import DocumentItem
-from haiku_rag_app.main import create_app
+from tests.support import image_bytes, served
 
 models.ALLOW_MODEL_REQUESTS = False
-
-
-def image_bytes(fmt: str) -> bytes:
-    buffer = BytesIO()
-    Image.new("RGB", (8, 8), "red").save(buffer, format=fmt)
-    return buffer.getvalue()
 
 
 def paged_document(text: str) -> DoclingDocument:
@@ -113,17 +104,30 @@ async def seeded(tmp_path):
 
 
 @pytest.fixture
-async def app(seeded, tmp_path):
+def query_embedding(monkeypatch, seeded):
+    from haiku.rag.embeddings import EmbedderWrapper
+
     config, _ = seeded
-    application = create_app(config, sessions_path=tmp_path / "sessions.db")
-    yield application
-    await application.state.databases.aclose()
-    await application.state.sessions.aclose()
+    dim = config.embeddings.model.vector_dim
+
+    async def embed_query(self, text):
+        return [0.1] * dim
+
+    monkeypatch.setattr(EmbedderWrapper, "embed_query", embed_query)
 
 
 @pytest.fixture
-async def client(app):
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    ) as http:
-        yield http
+async def app_with_client(seeded, tmp_path):
+    config, _ = seeded
+    async with served(config, tmp_path / "sessions.db") as pair:
+        yield pair
+
+
+@pytest.fixture
+def app(app_with_client):
+    return app_with_client[0]
+
+
+@pytest.fixture
+def client(app_with_client):
+    return app_with_client[1]

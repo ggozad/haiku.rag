@@ -1,8 +1,10 @@
-import httpx
+from contextlib import nullcontext
+
+import pytest
 
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku_rag_app import main
-from haiku_rag_app.main import create_app
+from tests.support import served
 
 
 async def test_health_names_the_databases_and_the_model(client):
@@ -84,33 +86,22 @@ async def test_one_database_is_read_without_a_name(tmp_path, seed_database):
         lancedb=LanceDBConfig(databases={"only": str(tmp_path / "only.lancedb")})
     )
     ids = await seed_database(config, "only")
-    app = create_app(config, sessions_path=tmp_path / "sessions.db")
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    ) as http:
+    async with served(config, tmp_path / "sessions.db") as (_, http):
         response = await http.get(
             "/api/pictures",
             params={"document_id": ids["document_id"], "ref": "#/pictures/0"},
         )
-    await app.state.databases.aclose()
     assert response.status_code == 200
 
 
-async def test_the_lifespan_closes_the_databases(app, client):
+@pytest.mark.parametrize("error", [None, RuntimeError("shutdown")])
+async def test_the_lifespan_closes_the_databases(app, client, error):
     await client.get("/api/databases")
     assert app.state.databases._client is not None
-    async with app.router.lifespan_context(app):
-        pass
-    assert app.state.databases._client is None
-
-
-async def test_the_lifespan_closes_the_databases_on_an_error(app, client):
-    import pytest
-
-    await client.get("/api/databases")
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError) if error else nullcontext():
         async with app.router.lifespan_context(app):
-            raise RuntimeError("shutdown")
+            if error:
+                raise error
     assert app.state.databases._client is None
 
 

@@ -26,6 +26,8 @@ async def test_documents_are_paged_and_counted_per_database(client, manual):
             "/api/documents", params={"source": "alpha", "limit": 1, "offset": 1}
         )
     ).json()
+    assert [doc["source"] for doc in rest["documents"]] == ["alpha"]
+    assert rest["errors"] == {}
     shown = {doc["id"] for doc in body["documents"] + rest["documents"]}
     assert manual in shown and len(shown) == 3
 
@@ -51,12 +53,6 @@ async def test_documents_of_every_database_with_failures_named(client):
     assert alpha["uri"] == "test://alpha/doc"
     assert alpha["metadata"]["team"] == "alpha"
     assert list(body["errors"]) == ["missing"]
-
-
-async def test_documents_of_one_database(client):
-    body = (await client.get("/api/documents", params={"source": "beta"})).json()
-    assert [doc["source"] for doc in body["documents"]] == ["beta"]
-    assert body["errors"] == {}
 
 
 async def test_a_read_failing_in_one_database_is_reported_alone(monkeypatch, client):

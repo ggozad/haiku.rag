@@ -11,6 +11,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import AppConfig
 from haiku.rag.store.engine import Store
 from haiku.rag.store.repositories import ChunkRepository, DocumentRepository
+from tests.specs import stub_spec
 
 
 def _spec(corpus: Dataset, **kwargs: object) -> DatasetSpec:
@@ -21,11 +22,8 @@ def _spec(corpus: Dataset, **kwargs: object) -> DatasetSpec:
         "document_mapper": lambda doc: DocumentPayload(
             uri=doc["uri"], content=doc["content"]
         ),
-        "qa_loader": lambda: None,
-        "qa_case_builder": lambda index, doc: None,
     }
-    defaults.update(kwargs)
-    return DatasetSpec(**defaults)  # ty: ignore[invalid-argument-type]
+    return stub_spec(**{**defaults, **kwargs})
 
 
 def _contexts(rag: MagicMock, progress: MagicMock) -> tuple[MagicMock, MagicMock]:
@@ -181,7 +179,11 @@ class TestThroughput:
         assert "ETA unknown" in line
 
 
-def _resuming_rag(complete_uris: list[str]) -> MagicMock:
+def _resuming_rag(
+    complete_uris: list[str], chunkless_uris: list[str] | None = None
+) -> MagicMock:
+    chunkless_uris = chunkless_uris or []
+
     def _table(rows: list[dict]) -> MagicMock:
         table = MagicMock()
         table.query.return_value.select.return_value.to_list = AsyncMock(
@@ -191,7 +193,7 @@ def _resuming_rag(complete_uris: list[str]) -> MagicMock:
 
     rag = MagicMock()
     rag.store.document_meta_table = _table(
-        [{"id": f"id-{u}", "uri": u} for u in complete_uris]
+        [{"id": f"id-{u}", "uri": u} for u in complete_uris + chunkless_uris]
     )
     rag.store.chunks_table = _table([{"document_id": f"id-{u}"} for u in complete_uris])
     rag.store.vacuum = AsyncMock()
@@ -203,37 +205,62 @@ def _resuming_rag(complete_uris: list[str]) -> MagicMock:
 
 
 def _resuming_spec(batch_size: int | None = None) -> DatasetSpec:
-    return DatasetSpec(
-        key="test",
-        db_filename="test.lancedb",
+    return stub_spec(
         document_loader=lambda: [
             {"uri": "u0"},
             {"uri": "u1"},
             {"uri": "bad"},
             {"uri": "u2"},
-        ],  # type: ignore[arg-type,return-value]  # ty: ignore[invalid-argument-type]
+        ],
         document_mapper=lambda doc: (
             None
             if doc["uri"] == "bad"
             else DocumentPayload(uri=doc["uri"], content=f"text {doc['uri']}")
         ),
-        qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         ingest_batch_size=batch_size,
     )
 
 
 class TestIngestReportsWhatItIngested:
     async def test_batched_ingest_tells_skipped_from_ingested(self) -> None:
+        """Complete and unmapped documents are skipped, the rest imported."""
+        rag = _resuming_rag(complete_uris=["u1"])
         seen: list[bool] = []
         await _ingest_batched(
-            _resuming_rag(complete_uris=["u1"]),
+            rag,
             _resuming_spec(),
             [{"uri": "u0"}, {"uri": "u1"}, {"uri": "bad"}, {"uri": "u2"}],
             batch_size=10,
             on_document=seen.append,
         )
         assert seen == [False, False, True, True]
+        (batch,), _ = rag.import_documents.call_args
+        assert [imp.uri for imp in batch] == ["u0", "u2"]
+        assert rag.convert.await_count == 2
+        rag.delete_document.assert_not_awaited()
+
+    async def test_imports_in_bounded_batches(self) -> None:
+        rag = _resuming_rag(complete_uris=[])
+        corpus = [{"uri": f"u{i}"} for i in range(5)]
+
+        await _ingest_batched(rag, _resuming_spec(), corpus, batch_size=2)
+
+        batch_uris = [
+            [imp.uri for imp in call.args[0]]
+            for call in rag.import_documents.call_args_list
+        ]
+        assert batch_uris == [["u0", "u1"], ["u2", "u3"], ["u4"]]
+
+    async def test_resume_reimports_chunkless_documents(self) -> None:
+        """Resume deletes and re-imports a document that has no chunks."""
+        rag = _resuming_rag(complete_uris=["u0"], chunkless_uris=["u1"])
+        corpus = [{"uri": "u0"}, {"uri": "u1"}]
+
+        await _ingest_batched(rag, _resuming_spec(), corpus, batch_size=10)
+
+        rag.delete_document.assert_awaited_once_with("id-u1")
+        (batch,), _ = rag.import_documents.call_args
+        assert [imp.uri for imp in batch] == ["u1"]
 
     async def test_a_document_counts_as_ingested_once_its_batch_is_written(
         self,

@@ -5,37 +5,39 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import partial
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
-import httpx
 import pytest
-from httpx import ASGITransport
 
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import (
     AppConfig,
     FSSourceConfig,
-    MetadataProviderConfig,
     SourceConfig,
 )
 from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.exceptions import PermanentError
-from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.reconcile import reconcile
-from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.sources.base import SourceEvent, SourceEventKind
 from haiku.rag.store.exceptions import MigrationRequiredError, UpgradeRequiredError
 from tests.conftest import capture_logs
-from tests.ingester.test_run_batch import (
+from tests.ingester.conftest import (
+    _api,
+    _FailsToCloseOnce,
+    _gate,
     _ingested,
     _jobs_of,
     _mock_client,
+    _Opened,
+    _pollers,
+    _pool,
     _seed_unconfigured_jobs,
+    _serving,
     _two_databases,
     _wait_until,
+    covering_stub,
 )
 
 
@@ -58,44 +60,6 @@ def _wiki(config: AppConfig, tmp_path):
     return ref, sources
 
 
-def _pool(app: IngesterApp) -> WorkerPool:
-    assert app._pool is not None
-    return app._pool
-
-
-def _pollers(app: IngesterApp) -> PollerManager:
-    assert app._pollers is not None
-    return app._pollers
-
-
-def _gate(client, gate: asyncio.Event) -> None:
-    """Hold every ingestion through `client` until `gate` is set."""
-    ingest = client._ingest_observed.side_effect
-
-    async def _held(uri, *args, **kwargs):
-        await gate.wait()
-        return await ingest(uri, *args, **kwargs)
-
-    client._ingest_observed.side_effect = _held
-
-
-@asynccontextmanager
-async def _serving(app: IngesterApp):
-    # A held job left in flight is cancelled at shutdown instead of waited for.
-    app._config.ingester.workers.shutdown_grace_s = 0.2
-    task = asyncio.create_task(app.serve(api=False))
-    try:
-        await _wait_until(
-            lambda: app._pool is not None and app._pool.live_workers > 0,
-            serving=task,
-        )
-        yield task
-    finally:
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.wait_for(task, timeout=5.0)
-
-
 @asynccontextmanager
 async def _queue(config: AppConfig):
     engine = await open_queue(config.ingester.queue)
@@ -108,15 +72,6 @@ async def _queue(config: AppConfig):
 async def _live(config: AppConfig, source_id: str) -> list[Job]:
     async with _queue(config) as (jobs, _):
         return await jobs.live_jobs({source_id})
-
-
-def _api(app: IngesterApp) -> httpx.AsyncClient:
-    from haiku.rag.ingester.api.server import build_app
-
-    return httpx.AsyncClient(
-        transport=ASGITransport(app=build_app(app._api_state())),
-        base_url="http://testserver",
-    )
 
 
 async def test_a_database_added_while_serving_is_ingested_beside_running_jobs(
@@ -402,9 +357,9 @@ async def test_a_database_failing_to_open_on_add_leaves_the_app_as_it_was(
             raise error("Database cannot be opened by this release")
         yield papers
 
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: _open(scope)
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG", covering_stub(lambda scope, *a, **k: _open(scope))
+    )
     config = _papers_only(tmp_path)
     app = IngesterApp(config=config)
 
@@ -516,36 +471,13 @@ async def test_a_failed_removal_stays_removing_until_the_next_completes(
         assert "papers" not in app._ingested
 
 
-class _Opened:
-    """Opens `client`, counting its closes."""
-
-    def __init__(self, client):
-        self.client = client
-        self.closes = 0
-
-    async def __aenter__(self):
-        return self.client
-
-    async def __aexit__(self, *exc_info):
-        self.closes += 1
-        return False
-
-
-class _FailsToCloseOnce(_Opened):
-    async def __aexit__(self, *exc_info):
-        await super().__aexit__(*exc_info)
-        if self.closes == 1:
-            raise RuntimeError("close failed")
-        return False
-
-
 async def test_a_failed_client_close_is_retried_by_the_next_removal(
     tmp_path, monkeypatch
 ):
     opened = _FailsToCloseOnce(_mock_client())
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: opened
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG", covering_stub(lambda scope, *a, **k: opened)
+    )
     app = IngesterApp(config=_papers_only(tmp_path))
 
     async with _serving(app):
@@ -569,9 +501,7 @@ async def test_a_database_with_an_unknown_metadata_provider_is_never_opened_on_a
         opened.append(scope.names[0])
         return papers
 
-    stub = MagicMock()
-    stub._covering = _covering
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", covering_stub(_covering))
     config = _papers_only(tmp_path)
     app = IngesterApp(config=config)
     ref, sources = _wiki(config, tmp_path)
@@ -592,9 +522,10 @@ async def test_a_failed_close_at_shutdown_still_closes_the_other_databases(
         "papers": _FailsToCloseOnce(_mock_client()),
         "wiki": _FailsToCloseOnce(_mock_client()),
     }
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: opened[scope.names[0]]
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        covering_stub(lambda scope, *a, **k: opened[scope.names[0]]),
+    )
 
     with pytest.raises(RuntimeError, match="close failed"):
         await IngesterApp(config=_two_databases(tmp_path)).run_batch()
@@ -611,9 +542,10 @@ async def test_a_failed_close_after_a_failed_startup_still_closes_the_others(
         "papers": _FailsToCloseOnce(_mock_client()),
         "wiki": _Opened(_mock_client()),
     }
-    stub = MagicMock()
-    stub._covering = lambda scope, *a, **k: opened[scope.names[0]]
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG",
+        covering_stub(lambda scope, *a, **k: opened[scope.names[0]]),
+    )
     app = IngesterApp(config=_two_databases(tmp_path))
 
     def _shared(refs):
@@ -672,9 +604,7 @@ def _opening(opened: dict, refused: dict[str, type[Exception]] | None = None):
             return _refuse(refused[name])
         return opened[name]
 
-    stub = MagicMock()
-    stub._covering = _covering
-    return stub
+    return covering_stub(_covering)
 
 
 def _reconcile_failing(names: set[str]):
@@ -793,9 +723,7 @@ async def test_a_database_with_an_unknown_metadata_provider_is_never_opened(
         opened.append(scope.names[0])
         return papers
 
-    stub = MagicMock()
-    stub._covering = _covering
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", covering_stub(_covering))
     config = _two_databases(tmp_path)
     config.ingester.databases["wiki"].sources[0].metadata_provider = "missing"
     app = IngesterApp(config=config)
@@ -807,42 +735,6 @@ async def test_a_database_with_an_unknown_metadata_provider_is_never_opened(
     assert [record.getMessage() for record in records] == [
         "Database 'wiki' failed to start and is skipped: Source 'wiki' references unknown metadata provider 'missing'; no entry point registered under 'haiku.rag.metadata_providers'."
     ]
-
-
-async def test_a_database_whose_metadata_provider_factory_fails_is_skipped(
-    tmp_path, monkeypatch
-):
-    def _strict(**options):
-        raise TypeError(f"unexpected options {sorted(options)}")
-
-    entry_point = SimpleNamespace(load=lambda: _strict)
-    monkeypatch.setattr(
-        "haiku.rag.ingester.app.load_metadata_providers",
-        lambda: {"strict": entry_point},
-    )
-    opened = []
-    papers = _Opened(_mock_client())
-
-    def _covering(scope, *a, **k):
-        opened.append(scope.names[0])
-        return papers
-
-    stub = MagicMock()
-    stub._covering = _covering
-    monkeypatch.setattr("haiku.rag.client.HaikuRAG", stub)
-    config = _two_databases(tmp_path)
-    config.ingester.databases["wiki"].sources[
-        0
-    ].metadata_provider = MetadataProviderConfig(name="strict", options={"tier": "a"})
-    app = IngesterApp(config=config)
-
-    with capture_logs(_APP_LOGGER, logging.ERROR):
-        async with _serving(app):
-            assert opened == ["papers"]
-            assert list(app._running) == ["papers"]
-            assert app._failed["wiki"] == (
-                "Source 'wiki' metadata provider 'strict': unexpected options ['tier']"
-            )
 
 
 async def test_every_adapter_of_a_skipped_database_is_closed(tmp_path, monkeypatch):

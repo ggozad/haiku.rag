@@ -127,14 +127,17 @@ async def test_ensure_indexes_keeps_an_operator_index_on_a_declared_column(
         assert covering == {"label_idx": "Bitmap", "operator_label": "BTree"}
 
 
-async def test_delete_all_restores_the_full_index_set(temp_db_path):
+@pytest.mark.parametrize("documents", [1, 0])
+async def test_delete_all_restores_the_full_index_set(temp_db_path, documents):
     """Recreated tables come back with the full index set."""
     async with Store(temp_db_path, create=True) as store:
         repo = DocumentRepository(store)
-        await repo.create(Document(content="A document"))
+        for _ in range(documents):
+            await repo.create(Document(content="A document"))
 
         await repo.delete_all()
 
+        assert await store.documents_table.count_rows() == 0
         for name, table in store._tables().items():
             expected = EXPECTED_INDEXED_COLUMNS.get(name, set())
             assert await _indexed_columns(table) == expected, name

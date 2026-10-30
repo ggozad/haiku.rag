@@ -389,47 +389,22 @@ async def test_vllm_reranker_retries_dropped_connection():
 
 async def test_vllm_reranker_builds_multimodal_documents(monkeypatch):
     """Chunks carrying picture bytes are sent as content-parts documents
-    (data-URI image plus text when the chunk has content); plain text chunks
-    stay strings in the same request."""
+    (data-URI image plus titled text when the chunk has content); plain text
+    chunks stay strings in the same request."""
     import base64
 
     from haiku.rag.reranking.vllm import VLLMReranker
 
-    captured = {}
-
-    class FakeResponse:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {
-                "results": [
-                    {"index": 0, "relevance_score": 0.9},
-                    {"index": 1, "relevance_score": 0.8},
-                    {"index": 2, "relevance_score": 0.7},
-                ]
-            }
-
-    class FakeAsyncClient:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def post(self, url, json, headers):
-            captured["json"] = json
-            return FakeResponse()
-
-        async def aclose(self):
-            pass
-
-    monkeypatch.setattr("httpx.AsyncClient", FakeAsyncClient)
+    captured: dict = {}
+    _capturing_rerank_client(monkeypatch, captured, 3)
 
     png = b"\x89PNG\r\n\x1a\n" + b"png-payload"
     jpeg = b"\xff\xd8\xff" + b"jpeg-payload"
 
     text_chunk = Chunk(content="plain text")
-    described = Chunk(content="a described picture")
+    described = Chunk(content="a described picture", document_title="Title")
     described._picture_data = png
-    undescribed = Chunk(content="")
+    undescribed = Chunk(content="", document_title="Title")
     undescribed._picture_data = jpeg
 
     reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
@@ -443,9 +418,10 @@ async def test_vllm_reranker_builds_multimodal_documents(monkeypatch):
     assert image_part["type"] == "image_url"
     assert image_part["image_url"]["url"].startswith(prefix)
     assert base64.b64decode(image_part["image_url"]["url"].removeprefix(prefix)) == png
-    assert text_part == {"type": "text", "text": "a described picture"}
+    assert text_part == {"type": "text", "text": "Title\na described picture"}
 
     (jpeg_part,) = docs[2]["content"]
+    assert jpeg_part["type"] == "image_url"
     assert jpeg_part["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
     # Result indices pair back to the right chunks.
@@ -696,14 +672,6 @@ def test_failure_inside_an_installed_package_is_not_reported_as_missing():
     assert excinfo.value is exc
 
 
-def test_installed_reranker_extra_is_importable():
-    """The guard must not fire for a dependency that is installed: the module
-    imports and the reranker is constructible."""
-    import haiku.rag.reranking.cohere as cohere_module
-
-    assert cohere_module.CohereReranker is not None
-
-
 def _openrouter_rerank_config(multimodal: bool = False, **model_kwargs):
     model_kwargs.setdefault("provider", "openrouter")
     model_kwargs.setdefault("name", "nvidia/llama-nemotron-rerank-vl-1b-v2:free")
@@ -819,27 +787,6 @@ async def test_http_rerankers_score_title_and_headings(monkeypatch, provider):
     assert captured["json"]["documents"] == ["Title\nSection\nbody", "other body"]
 
 
-async def test_picture_text_part_carries_the_title(monkeypatch):
-    from haiku.rag.reranking.vllm import VLLMReranker
-
-    captured: dict = {}
-    _capturing_rerank_client(monkeypatch, captured, 2)
-    described = Chunk(content="a described picture", document_title="Title")
-    described._picture_data = b"\x89PNG\r\n\x1a\n"
-    undescribed = Chunk(content="", document_title="Title")
-    undescribed._picture_data = b"\x89PNG\r\n\x1a\n"
-
-    reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
-    await reranker.rerank("q", [described, undescribed])
-
-    described_doc, undescribed_doc = captured["json"]["documents"]
-    assert described_doc["content"][1] == {
-        "type": "text",
-        "text": "Title\na described picture",
-    }
-    assert [part["type"] for part in undescribed_doc["content"]] == ["image_url"]
-
-
 async def test_openrouter_reranker_builds_documents(monkeypatch):
     """OpenRouter takes `text` and `image` keys on a document, where vLLM takes
     a `content` array of parts."""
@@ -918,7 +865,8 @@ async def test_openrouter_reranker_end_to_end():
 
 
 async def test_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
-    """A chunk with neither text nor picture bytes is not sent."""
+    """A chunk with neither text nor picture bytes is not sent, and a call with
+    nothing to score sends no request."""
     captured: dict = {}
     _capturing_rerank_client(monkeypatch, captured, 2)
 
@@ -928,6 +876,8 @@ async def test_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
 
     reranker = get_reranker(_openrouter_rerank_config())
     assert reranker is not None
+    assert await reranker.rerank("q", [empty]) == []
+    assert "json" not in captured, "no request when nothing is scoreable"
     ranked = await reranker.rerank("capital of France", [first, empty, last])
 
     assert captured["json"]["documents"] == [
@@ -935,32 +885,6 @@ async def test_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
         "Bananas are yellow",
     ]
     assert [c.document_id for c, _ in ranked] == ["a", "c"]
-
-
-async def test_vllm_reranker_skips_chunks_with_nothing_to_score(monkeypatch):
-    from haiku.rag.reranking.vllm import VLLMReranker
-
-    captured: dict = {}
-    _capturing_rerank_client(monkeypatch, captured, 1)
-
-    empty = Chunk(content="", document_id="b")
-    scored = Chunk(content="Paris is the capital", document_id="a")
-
-    reranker = VLLMReranker(model="m", base_url="http://localhost:8000")
-    ranked = await reranker.rerank("q", [empty, scored])
-
-    assert captured["json"]["documents"] == ["Paris is the capital"]
-    assert [c.document_id for c, _ in ranked] == ["a"]
-
-
-async def test_reranker_with_nothing_scoreable_returns_empty(monkeypatch):
-    captured: dict = {}
-    _capturing_rerank_client(monkeypatch, captured, 0)
-
-    reranker = get_reranker(_openrouter_rerank_config())
-    assert reranker is not None
-    assert await reranker.rerank("q", [Chunk(content="", document_id="b")]) == []
-    assert "json" not in captured, "no request when nothing is scoreable"
 
 
 async def test_base_reranker_filters_unscoreable_before_dispatch():

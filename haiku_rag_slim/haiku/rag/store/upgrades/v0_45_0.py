@@ -175,7 +175,7 @@ async def _apply_extract_picture_bytes(store: Store) -> None:
 
             if wrote_items:
                 backfilled += 1
-            else:  # pragma: no cover
+            else:
                 blob_only += 1
 
             done = batch_start + (batch_ids.index(doc_id) + 1)

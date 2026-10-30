@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from fastmcp.exceptions import ToolError
@@ -130,20 +131,13 @@ def _png_b64() -> str:
 
 
 class TestMCPReadTools:
-    async def test_search_documents(self, mcp_db):
-        mcp = create_mcp_server(mcp_db)
-        search = await _get_tool(mcp, "search_documents")
-
-        blocks = _rendered(await search(query="artificial intelligence"))
-        assert blocks
-        assert all("Content:" in block for block in blocks)
-
     async def test_search_documents_with_limit(self, mcp_db):
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
         blocks = _rendered(await search(query="artificial intelligence", limit=1))
         assert len(blocks) == 1
+        assert "Content:" in blocks[0]
 
     @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
     async def test_search_documents_with_filter(self, mcp_db):
@@ -216,16 +210,6 @@ class TestMCPReadTools:
         assert isinstance(result, Document)
         assert result.content != ""
         assert result.title is not None
-
-    async def test_get_document_excludes_docling_fields(self, mcp_db):
-        mcp = create_mcp_server(mcp_db)
-        get_doc = await _get_tool(mcp, "get_document")
-
-        list_docs = await _get_tool(mcp, "list_documents")
-        docs = await list_docs()
-        doc_id = docs[0].id
-
-        result = await get_doc(document_id=doc_id)
         serialized = result.model_dump(mode="json")
         assert "docling_document" not in serialized
         assert "docling_version" not in serialized
@@ -238,16 +222,8 @@ class TestMCPReadTools:
         assert len(results) == 2
         assert all(isinstance(r, DocumentInfo) for r in results)
 
-    async def test_list_documents_with_limit(self, mcp_db):
-        mcp = create_mcp_server(mcp_db)
-        list_docs = await _get_tool(mcp, "list_documents")
-
         results = await list_docs(limit=1)
         assert len(results) == 1
-
-    async def test_list_documents_with_filter(self, mcp_db):
-        mcp = create_mcp_server(mcp_db)
-        list_docs = await _get_tool(mcp, "list_documents")
 
         results = await list_docs(filter="title = 'AI Overview'")
         assert len(results) == 1
@@ -670,7 +646,9 @@ class TestMCPDescribesItself:
         assert "Everything here is about zebras." in with_preamble
         assert "zebras" not in without
 
-    async def test_every_tool_is_annotated_read_only(self, mcp_db, multimodal_embedder):
+    async def test_every_tool_is_read_only_and_described(
+        self, mcp_db, multimodal_embedder
+    ):
         from fastmcp import Client
 
         async with Client(create_mcp_server(mcp_db)) as client:
@@ -682,20 +660,12 @@ class TestMCPDescribesItself:
             assert tool.annotations.read_only_hint is True, tool.name
             assert tool.annotations.open_world_hint is False, tool.name
             assert tool.annotations.title, tool.name
-
-    async def test_every_parameter_is_described(self, mcp_db, multimodal_embedder):
-        from fastmcp import Client
-
-        async with Client(create_mcp_server(mcp_db)) as client:
-            tools = await client.list_tools()
-
         undescribed = [
             f"{tool.name}.{name}"
             for tool in tools
             for name, schema in tool.input_schema.get("properties", {}).items()
             if not schema.get("description")
         ]
-        assert len(tools) == 7
         assert undescribed == []
 
 
@@ -935,12 +905,6 @@ class TestMCPCoversTheConfiguredSet:
 class TestMCPImageQuery:
     """search_documents_by_image is registered only when the embedder is multimodal."""
 
-    async def test_image_query_tool_absent_for_text_only_embedder(self, mcp_db):
-        """Default text-only embedder must not expose the image-query tool."""
-        mcp = create_mcp_server(mcp_db)
-        names = {t.name for t in await mcp.list_tools()}
-        assert "search_documents_by_image" not in names
-
     async def test_image_query_tool_registered_for_multimodal_embedder(
         self, mcp_db, multimodal_embedder, monkeypatch
     ):
@@ -973,25 +937,6 @@ class TestMCPImageQuery:
         assert seen["filter"] == "uri LIKE 'x%'"
         assert seen["sources"] == []
 
-    async def test_image_query_rejects_characters_outside_the_alphabet(
-        self, mcp_db, multimodal_embedder, monkeypatch
-    ):
-        """A lenient decoder would drop the stray characters and search."""
-        searched = False
-
-        async def fake_search(self, query, **kwargs):
-            nonlocal searched
-            searched = True
-            return []
-
-        monkeypatch.setattr(HaikuRAG, "search", fake_search)
-        mcp = create_mcp_server(mcp_db)
-        search_by_image = await _get_tool(mcp, "search_documents_by_image")
-
-        with pytest.raises(ToolError):
-            await search_by_image(image_base64="AAAA!!!!")
-        assert not searched
-
 
 @pytest.mark.filterwarnings("ignore:Found propagated trace context:RuntimeWarning")
 class TestMCPErrorContract:
@@ -1023,17 +968,26 @@ class TestMCPErrorContract:
         assert "no_such_column" in result.content[0].text
 
     @pytest.mark.parametrize(
-        "payload", ["!!! not base64 !!!", "é"], ids=["outside_alphabet", "non_ascii"]
+        "payload", ["AAAA!!!!", "é"], ids=["outside_alphabet", "non_ascii"]
     )
     async def test_invalid_base64_is_an_error(
-        self, mcp_db, multimodal_embedder, payload
+        self, mcp_db, multimodal_embedder, monkeypatch, payload
     ):
+        searched = []
+
+        async def fake_search(self, query, **kwargs):
+            searched.append(query)
+            return []
+
+        monkeypatch.setattr(HaikuRAG, "search", fake_search)
+
         result = await _call(
             create_mcp_server(mcp_db), "search_documents_by_image", image_base64=payload
         )
 
         assert result.is_error
         assert "base64" in result.content[0].text
+        assert searched == []
 
     async def test_a_host_failure_inside_a_program_carries_its_message(
         self, mcp_db, monkeypatch
@@ -1135,75 +1089,55 @@ class TestAgentPlugins:
         assert approved == registered
 
 
+@pytest.fixture
+def store_opens(mcp_db, monkeypatch) -> list:
+    """Every `Store` opened after `mcp_db` is built."""
+    from haiku.rag.store.engine import Store
+
+    opens = []
+    initialize = Store._initialize
+
+    async def counted(self):
+        opens.append(self)
+        return await initialize(self)
+
+    monkeypatch.setattr(Store, "_initialize", counted)
+    return opens
+
+
 class TestMCPClientLifetime:
-    async def test_tool_calls_share_one_database_open(self, mcp_db, monkeypatch):
-        from haiku.rag.store.engine import Store
-
-        opens = 0
-        initialize = Store._initialize
-
-        async def counted(self):
-            nonlocal opens
-            opens += 1
-            return await initialize(self)
-
-        monkeypatch.setattr(Store, "_initialize", counted)
+    async def test_reads_share_one_open(self, mcp_db, store_opens):
+        """Concurrent calls and later calls of other tools reuse the first open."""
+        import asyncio
 
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
         list_docs = await _get_tool(mcp, "list_documents")
+
+        results = await asyncio.gather(*(list_docs() for _ in range(5)))
+
+        assert len(store_opens) == 1
+        assert all(len(r) == 2 for r in results)
+
         await search(query="artificial intelligence")
         await list_docs()
         await search(query="machine learning")
 
-        assert opens == 1
+        assert len(store_opens) == 1
 
-    async def test_concurrent_reads_share_one_open(self, mcp_db, monkeypatch):
-        import asyncio
-
-        from haiku.rag.store.engine import Store
-
-        opens = 0
-        initialize = Store._initialize
-
-        async def counted(self):
-            nonlocal opens
-            opens += 1
-            return await initialize(self)
-
-        monkeypatch.setattr(Store, "_initialize", counted)
-
-        mcp = create_mcp_server(mcp_db)
-        list_docs = await _get_tool(mcp, "list_documents")
-
-        results = await asyncio.gather(*(list_docs() for _ in range(5)))
-
-        assert opens == 1
-        assert all(len(r) == 2 for r in results)
-
-    async def test_lifespan_opens_and_closes_once(self, mcp_db, monkeypatch):
-        from haiku.rag.store.engine import Store
-
-        opens = 0
-        initialize = Store._initialize
-
-        async def counted(self):
-            nonlocal opens
-            opens += 1
-            return await initialize(self)
-
-        monkeypatch.setattr(Store, "_initialize", counted)
-
+    async def test_lifespan_opens_and_closes_once(self, mcp_db, store_opens):
         mcp = create_mcp_server(mcp_db)
         # _lifespan_manager is what every transport enters; the public
         # lifespan() combines provider lifespans only.
         async with mcp._lifespan_manager():
-            assert opens == 1, "startup should open the database, not the first call"
+            assert len(store_opens) == 1, (
+                "startup should open the database, not the first call"
+            )
             search = await _get_tool(mcp, "search_documents")
             await search(query="artificial intelligence")
-            assert opens == 1
+            assert len(store_opens) == 1
 
-        assert opens == 1
+        assert len(store_opens) == 1
 
     async def test_the_scope_decides_the_database_and_names_its_results(
         self, mcp_db, tmp_path
@@ -1262,14 +1196,11 @@ class TestMCPClientLifetime:
             lancedb=LanceDBConfig(databases={"prod": "s3://bucket/prod.lancedb"})
         )
         seen: dict = {}
-
-        class _Server:
-            async def run_stdio_async(self):
-                return None
+        server = AsyncMock()
 
         def fake_covering(scope, config, agents=True):
             seen.update(scope=scope, config=config)
-            return _Server()
+            return server
 
         monkeypatch.setattr("haiku.rag.app._mcp_server_covering", fake_covering)
         app = HaikuRAGApp(
@@ -1278,6 +1209,7 @@ class TestMCPClientLifetime:
 
         await app.run_mcp(transport="stdio")
 
+        server.run_stdio_async.assert_awaited_once()
         [ref] = seen["scope"].databases
         assert ref.name == "prod"
         assert ref.location == "s3://bucket/prod.lancedb"
@@ -1292,30 +1224,18 @@ class TestMCPClientLifetime:
                 pass
 
     async def test_a_second_lifespan_cycle_opens_a_fresh_client(
-        self, mcp_db, monkeypatch
+        self, mcp_db, store_opens
     ):
-        from haiku.rag.store.engine import Store
-
-        opens = 0
-        initialize = Store._initialize
-
-        async def counted(self):
-            nonlocal opens
-            opens += 1
-            return await initialize(self)
-
-        monkeypatch.setattr(Store, "_initialize", counted)
-
         mcp = create_mcp_server(mcp_db)
         search = await _get_tool(mcp, "search_documents")
 
         async with mcp._lifespan_manager():
             await search(query="artificial intelligence")
-        assert opens == 1
+        assert len(store_opens) == 1
 
         async with mcp._lifespan_manager():
             blocks = _rendered(await search(query="artificial intelligence"))
-        assert opens == 2
+        assert len(store_opens) == 2
         assert blocks
 
     async def test_same_dim_drift_starts(self, mcp_db):

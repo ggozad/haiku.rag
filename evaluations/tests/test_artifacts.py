@@ -1,6 +1,8 @@
+from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import create_autospec, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
+import pytest
 from huggingface_hub import HfApi
 
 from evaluations.artifacts import (
@@ -9,17 +11,21 @@ from evaluations.artifacts import (
     upload_dataset_db,
 )
 from evaluations.config import DatasetSpec
+from tests.specs import stub_spec
 
 
 def _spec() -> DatasetSpec:
-    return DatasetSpec(
-        key="sample",
-        db_filename="sample.lancedb",
-        document_loader=lambda: None,  # ty: ignore[invalid-argument-type]
-        document_mapper=lambda doc: None,
-        qa_loader=lambda: None,  # ty: ignore[invalid-argument-type]
-        qa_case_builder=lambda index, doc: None,  # ty: ignore[invalid-argument-type]
-    )
+    return stub_spec(key="sample", db_filename="sample.lancedb")
+
+
+@pytest.fixture
+def console(tmp_path: Path) -> Iterator[MagicMock]:
+    """Places the data directory under tmp_path and yields the patched console."""
+    with (
+        patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
+        patch("evaluations.artifacts.console") as console,
+    ):
+        yield console
 
 
 def _db_path(root: Path) -> Path:
@@ -27,20 +33,20 @@ def _db_path(root: Path) -> Path:
 
 
 class TestDownloadDatasetDb:
-    def test_existing_database_is_preserved(self, tmp_path: Path) -> None:
+    def test_existing_database_is_preserved(
+        self, tmp_path: Path, console: MagicMock
+    ) -> None:
         db = _db_path(tmp_path)
         db.mkdir(parents=True)
 
-        with (
-            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
-            patch("evaluations.artifacts.snapshot_download") as download,
-            patch("evaluations.artifacts.console"),
-        ):
+        with patch("evaluations.artifacts.snapshot_download") as download:
             download_dataset_db(_spec())
 
         download.assert_not_called()
 
-    def test_download_replaces_database_when_forced(self, tmp_path: Path) -> None:
+    def test_download_replaces_database_when_forced(
+        self, tmp_path: Path, console: MagicMock
+    ) -> None:
         db = _db_path(tmp_path)
         db.mkdir(parents=True)
         (db / "stale").write_text("old")
@@ -49,13 +55,9 @@ class TestDownloadDatasetDb:
         source.mkdir(parents=True)
         (source / "data").write_text("new")
 
-        with (
-            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
-            patch(
-                "evaluations.artifacts.snapshot_download", return_value=str(snapshot)
-            ) as download,
-            patch("evaluations.artifacts.console"),
-        ):
+        with patch(
+            "evaluations.artifacts.snapshot_download", return_value=str(snapshot)
+        ) as download:
             download_dataset_db(_spec(), force=True)
 
         download.assert_called_once_with(
@@ -66,30 +68,26 @@ class TestDownloadDatasetDb:
         assert (db / "data").read_text() == "new"
         assert not (db / "stale").exists()
 
-    def test_download_failure_leaves_no_database(self, tmp_path: Path) -> None:
-        with (
-            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
-            patch(
-                "evaluations.artifacts.snapshot_download",
-                side_effect=RuntimeError("offline"),
-            ),
-            patch("evaluations.artifacts.console") as console,
+    def test_download_failure_leaves_no_database(
+        self, tmp_path: Path, console: MagicMock
+    ) -> None:
+        with patch(
+            "evaluations.artifacts.snapshot_download",
+            side_effect=RuntimeError("offline"),
         ):
             download_dataset_db(_spec())
 
         assert "offline" in console.print.call_args.args[0]
         assert not _db_path(tmp_path).exists()
 
-    def test_missing_database_in_snapshot_is_reported(self, tmp_path: Path) -> None:
+    def test_missing_database_in_snapshot_is_reported(
+        self, tmp_path: Path, console: MagicMock
+    ) -> None:
         snapshot = tmp_path / "snapshot"
         snapshot.mkdir()
 
-        with (
-            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
-            patch(
-                "evaluations.artifacts.snapshot_download", return_value=str(snapshot)
-            ),
-            patch("evaluations.artifacts.console") as console,
+        with patch(
+            "evaluations.artifacts.snapshot_download", return_value=str(snapshot)
         ):
             download_dataset_db(_spec())
 
@@ -99,17 +97,17 @@ class TestDownloadDatasetDb:
 
 
 class TestUploadDatasetDb:
-    def test_missing_database_is_not_uploaded(self, tmp_path: Path) -> None:
-        with (
-            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
-            patch("evaluations.artifacts.HfApi") as api,
-            patch("evaluations.artifacts.console"),
-        ):
+    def test_missing_database_is_not_uploaded(
+        self, tmp_path: Path, console: MagicMock
+    ) -> None:
+        with patch("evaluations.artifacts.HfApi") as api:
             upload_dataset_db(_spec())
 
         api.assert_not_called()
 
-    def test_upload_stages_database_under_its_remote_name(self, tmp_path: Path) -> None:
+    def test_upload_stages_database_under_its_remote_name(
+        self, tmp_path: Path, console: MagicMock
+    ) -> None:
         db = _db_path(tmp_path)
         (db / "nested").mkdir(parents=True)
         (db / "root.lance").write_text("root")
@@ -123,11 +121,7 @@ class TestUploadDatasetDb:
 
         api = create_autospec(HfApi, instance=True)
         api.upload_large_folder.side_effect = capture_upload
-        with (
-            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
-            patch("evaluations.artifacts.HfApi", return_value=api),
-            patch("evaluations.artifacts.console"),
-        ):
+        with patch("evaluations.artifacts.HfApi", return_value=api):
             upload_dataset_db(_spec())
 
         api.delete_folder.assert_called_once_with(
@@ -139,18 +133,16 @@ class TestUploadDatasetDb:
         assert api.upload_large_folder.call_args.kwargs["repo_id"] == HF_REPO_ID
         assert api.upload_large_folder.call_args.kwargs["repo_type"] == "dataset"
 
-    def test_missing_remote_folder_does_not_block_upload(self, tmp_path: Path) -> None:
+    def test_missing_remote_folder_does_not_block_upload(
+        self, tmp_path: Path, console: MagicMock
+    ) -> None:
         db = _db_path(tmp_path)
         db.mkdir(parents=True)
         (db / "data").write_text("content")
         api = create_autospec(HfApi, instance=True)
         api.delete_folder.side_effect = RuntimeError("not found")
 
-        with (
-            patch("haiku.rag.utils.paths.get_default_data_dir", return_value=tmp_path),
-            patch("evaluations.artifacts.HfApi", return_value=api),
-            patch("evaluations.artifacts.console"),
-        ):
+        with patch("evaluations.artifacts.HfApi", return_value=api):
             upload_dataset_db(_spec())
 
         api.upload_large_folder.assert_called_once()

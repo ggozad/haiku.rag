@@ -1,7 +1,6 @@
 import asyncio
 import json
 import sys
-import warnings
 from importlib.metadata import version
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -213,10 +212,6 @@ def main(
     )
     if ctx.invoked_subcommand not in _LONG_RUNNING:
         ctx.with_resource(attach_env_context())
-
-    if get_config().environment != "development":
-        # Suppress warnings in production
-        warnings.filterwarnings("ignore")
 
     # Run version check before any command
     try:

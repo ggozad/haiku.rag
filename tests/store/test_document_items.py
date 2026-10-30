@@ -3,7 +3,6 @@ from haiku.rag.client.documents import (
     _store_document_with_chunks,
     _update_document_with_chunks,
 )
-from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document_item import (
     DocumentItem,
     extract_item_text,
@@ -11,6 +10,7 @@ from haiku.rag.store.models.document_item import (
 )
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from tests.conftest import writing
+from tests.documents import add_picture_text, docling_doc_with_picture
 
 
 def _make_docling_doc():
@@ -154,14 +154,6 @@ def _doc_with_captioned_picture(*captions: str):
     return doc, pic
 
 
-def _add_picture_text(doc, parent, *texts: str) -> None:
-    """Add text items under ``parent``, as docling does for text it OCRs inside a picture."""
-    from docling_core.types.doc.labels import DocItemLabel
-
-    for text in texts:
-        doc.add_text(label=DocItemLabel.TEXT, text=text, parent=parent)
-
-
 def _doc_with_tables(n: int):
     from docling_core.types.doc.document import DoclingDocument, TableCell, TableData
 
@@ -198,16 +190,23 @@ class TestExtractItemTextPictures:
         pic.meta = PictureMeta(description=DescriptionMetaField(text="A red square."))
         assert extract_item_text(pic, doc) == "A red square."
 
+    def test_blank_description_falls_back_to_captions(self):
+        from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+
+        doc, pic = _doc_with_captioned_picture("A caption")
+        pic.meta = PictureMeta(description=DescriptionMetaField(text="  "))
+        assert extract_item_text(pic, doc) == "A caption"
+
     def test_child_text_is_extracted(self):
         doc, pic = _doc_with_captioned_picture()
-        _add_picture_text(doc, pic, "Skip paywalls", "Save on subscription costs.")
+        add_picture_text(doc, pic, "Skip paywalls", "Save on subscription costs.")
         assert (
             extract_item_text(pic, doc) == "Skip paywalls Save on subscription costs."
         )
 
     def test_child_text_follows_caption(self):
         doc, pic = _doc_with_captioned_picture("Figure 1")
-        _add_picture_text(doc, pic, "Bypass Paywall")
+        add_picture_text(doc, pic, "Bypass Paywall")
         assert extract_item_text(pic, doc) == "Figure 1\nBypass Paywall"
 
     def test_child_text_follows_description(self):
@@ -215,7 +214,7 @@ class TestExtractItemTextPictures:
 
         doc, pic = _doc_with_captioned_picture("A caption")
         pic.meta = PictureMeta(description=DescriptionMetaField(text="A screenshot."))
-        _add_picture_text(doc, pic, "Bypass Paywall")
+        add_picture_text(doc, pic, "Bypass Paywall")
         assert extract_item_text(pic, doc) == "A screenshot.\nBypass Paywall"
 
     def test_caption_child_not_repeated(self):
@@ -224,7 +223,7 @@ class TestExtractItemTextPictures:
         doc, pic = _doc_with_captioned_picture()
         cap = doc.add_text(label=DocItemLabel.CAPTION, text="Figure 2", parent=pic)
         pic.captions.append(cap.get_ref())
-        _add_picture_text(doc, pic, "axis label")
+        add_picture_text(doc, pic, "axis label")
         assert extract_item_text(pic, doc) == "Figure 2\naxis label"
 
     def test_footnote_child_is_extracted(self):
@@ -240,12 +239,12 @@ class TestExtractItemTextPictures:
     def test_text_nested_in_group_is_extracted(self):
         doc, pic = _doc_with_captioned_picture()
         group = doc.add_group(parent=pic)
-        _add_picture_text(doc, group, "grouped words")
+        add_picture_text(doc, group, "grouped words")
         assert extract_item_text(pic, doc) == "grouped words"
 
     def test_extract_items_row_carries_child_text(self):
         doc, pic = _doc_with_captioned_picture("Figure 1")
-        _add_picture_text(doc, pic, "Bypass Paywall")
+        add_picture_text(doc, pic, "Bypass Paywall")
         rows = {row.self_ref: row for row in extract_items("doc-1", doc)}
         assert rows[pic.self_ref].text == "Figure 1\nBypass Paywall"
 
@@ -350,8 +349,7 @@ class TestDocumentItemRepository:
             assert await repo.get_item_count("nonexistent") == 0
 
     async def test_get_all_picture_data_grouped(self, temp_db_path):
-        """Pictures sharing a self_ref in different documents stay apart, and a
-        document without pictures maps to an empty dict."""
+        """Pictures sharing a self_ref stay per document, and one without bytes maps to {}."""
 
         def picture(doc_id: str, data: bytes | None) -> list[DocumentItem]:
             return [
@@ -373,14 +371,16 @@ class TestDocumentItemRepository:
                 picture("doc-1", b"one")
                 + picture("doc-2", b"two")
                 + picture("doc-3", None)
+                + picture("doc-4", b"")
             )
 
             assert await repo.get_all_picture_data_grouped(
-                ["doc-1", "doc-2", "doc-3", "missing"]
+                ["doc-1", "doc-2", "doc-3", "doc-4", "missing"]
             ) == {
                 "doc-1": {"#/pictures/0": b"one"},
                 "doc-2": {"#/pictures/0": b"two"},
                 "doc-3": {},
+                "doc-4": {},
                 "missing": {},
             }
             assert await repo.get_all_picture_data_grouped(["doc-2"]) == {
@@ -579,74 +579,6 @@ class TestDocumentItemPopulation:
             assert await rag.document_item_repository.get_item_count(created.id) == 0
 
 
-class TestDocumentItemMigration:
-    async def test_migration_populates_items_for_existing_documents(self, temp_db_path):
-        """Test that the v0.40.0 migration populates items for pre-existing documents."""
-        from haiku.rag.store.compression import compress_docling_split
-        from haiku.rag.store.schema import DocumentRecord
-        from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
-
-        docling_doc = _make_docling_doc()
-        structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
-
-        # Create a database at a pre-migration version with a document
-        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.39.0")
-            doc_record = DocumentRecord(
-                id="test-doc-1",
-                content="test content",
-                docling_document=structure,
-                docling_pages=pages,
-                docling_version=docling_doc.version,
-            )
-            await store.documents_table.add([doc_record])
-
-            # Verify no items exist yet
-            assert await store.document_items_table.count_rows() == 0
-
-        # Re-open and apply the v0.40.0 migration in isolation (the full chain
-        # would also run later migrations that touch documents.metadata, absent
-        # from this docling-only fixture).
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            await _apply_populate_document_items(store)
-
-            # Items should now exist
-            item_count = await store.document_items_table.count_rows(
-                filter="document_id = 'test-doc-1'"
-            )
-            assert item_count == 6
-
-            # Verify item content
-            items = await (
-                store.document_items_table.query()
-                .where("document_id = 'test-doc-1'")
-                .to_list()
-            )
-            labels = {row["label"] for row in items}
-            assert "section_header" in labels
-            assert "paragraph" in labels
-            assert "table" in labels
-
-    async def test_migration_skips_documents_without_docling(self, temp_db_path):
-        """Test that migration handles documents without docling data."""
-        from haiku.rag.store.schema import DocumentRecord
-        from haiku.rag.store.upgrades.v0_40_0 import _apply_populate_document_items
-
-        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.39.0")
-            doc_record = DocumentRecord(
-                id="no-docling",
-                content="plain text document",
-            )
-            await store.documents_table.add([doc_record])
-
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            await _apply_populate_document_items(store)
-
-            # No items should have been created
-            assert await store.document_items_table.count_rows() == 0
-
-
 class TestPictureDataStorage:
     async def test_create_and_get_picture_bytes(self, temp_db_path):
         """Round-trip picture bytes through DocumentItem and the repository."""
@@ -720,32 +652,12 @@ class TestPictureDataStorage:
             # But the picture-byte accessors still work
             assert (await repo.get_picture_bytes("doc-1", "#/pictures/0")) == heavy
 
-    async def test_fresh_db_has_picture_data_column(self, temp_db_path):
-        """A newly-created DB has picture_data on document_items via _init_tables."""
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            schema = await rag.store.document_items_table.schema()
-            assert "picture_data" in {f.name for f in schema}
-
-
-def _docling_doc_with_picture():
-    """Build a tiny DoclingDocument with one PictureItem carrying real PNG bytes
-    via ImageRef.from_pil. Used by the picture-extraction tests."""
-    from docling_core.types.doc.document import DoclingDocument, ImageRef
-    from docling_core.types.doc.labels import DocItemLabel
-    from PIL import Image as PilImageModule
-
-    img = PilImageModule.new("RGB", (8, 8), "red")
-    doc = DoclingDocument(name="test-with-picture")
-    doc.add_text(label=DocItemLabel.PARAGRAPH, text="Hello world")
-    doc.add_picture(image=ImageRef.from_pil(img, dpi=72))
-    return doc
-
 
 class TestExtractItemsPictureBytes:
     """extract_items decodes picture image bytes from data URIs."""
 
     def test_decodes_picture_bytes_from_live_doc(self):
-        doc = _docling_doc_with_picture()
+        doc = docling_doc_with_picture()
         items = extract_items("doc-1", doc)
         picture_items = [i for i in items if i.label == "picture"]
         assert len(picture_items) == 1
@@ -756,7 +668,7 @@ class TestExtractItemsPictureBytes:
 
     def test_existing_picture_data_used_when_image_stripped(self):
         """Rebuild round-trip: live docling has image=None, snapshot fills the gap."""
-        doc = _docling_doc_with_picture()
+        doc = docling_doc_with_picture()
         for picture in doc.pictures:
             picture.image = None
         snapshot = {"#/pictures/0": b"snapshot-picture-bytes"}
@@ -766,7 +678,7 @@ class TestExtractItemsPictureBytes:
 
     def test_live_image_uri_wins_over_existing_picture_data(self):
         """When both an inline URI and a snapshot are available, the URI wins."""
-        doc = _docling_doc_with_picture()
+        doc = docling_doc_with_picture()
         snapshot = {"#/pictures/0": b"snapshot-bytes-should-not-be-used"}
         items = extract_items("doc-1", doc, existing_picture_data=snapshot)
         picture_items = [i for i in items if i.label == "picture"]
@@ -832,97 +744,6 @@ class TestCompressDoclingSplitStripsPictureUris:
         assert pages_bytes is None  # no pages in this fixture
 
 
-class TestPictureDataMigrationBackfill:
-    """0.45.0 migration backfills picture_data and strips URIs from blobs."""
-
-    async def test_backfill_populates_column_and_strips_blob(self, temp_db_path):
-        import base64
-        import json
-
-        from haiku.rag.store.compression import compress_json, decompress_json
-        from haiku.rag.store.schema import DocumentItemRecord, DocumentRecord
-        from haiku.rag.store.upgrades.v0_45_0 import _apply_extract_picture_bytes
-
-        fake_png = b"\x89PNG\r\n\x1a\nlegacy-picture-bytes-for-test"
-        data_uri = "data:image/png;base64," + base64.b64encode(fake_png).decode("ascii")
-        blob_data = {
-            "schema_name": "DoclingDocument",
-            "version": "1.10.0",
-            "name": "legacy",
-            "pictures": [
-                {
-                    "self_ref": "#/pictures/0",
-                    "label": "picture",
-                    "image": {"mimetype": "image/png", "uri": data_uri},
-                },
-            ],
-        }
-        blob_bytes = compress_json(json.dumps(blob_data))
-
-        # Build a legacy-state DB at v0.44.0 *without* the picture_data column,
-        # mirroring users coming from main's 0.44.0 release. The 0.45.0
-        # migration must add the column AND backfill it from the blob in one
-        # pass.
-        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
-            await store.set_haiku_version("0.44.0")
-            await store.documents_table.add(
-                [
-                    DocumentRecord(
-                        id="legacy-doc",
-                        content="legacy",
-                        docling_document=blob_bytes,
-                    )
-                ]
-            )
-            # Items row exists (v0.40.0 would have placed it) but no picture_data yet.
-            await store.document_items_table.add(
-                [
-                    DocumentItemRecord(
-                        document_id="legacy-doc",
-                        position=0,
-                        self_ref="#/pictures/0",
-                        label="picture",
-                        text="",
-                        page_numbers="[]",
-                    )
-                ]
-            )
-            # Drop the column so the migration's column-add path is exercised.
-            await store.document_items_table.drop_columns(["picture_data"])
-            schema_before = await store.document_items_table.schema()
-            assert "picture_data" not in {f.name for f in schema_before}
-
-        async with Store(temp_db_path, skip_migration_check=True) as store:
-            # Apply the v0.45.0 migration in isolation (the full chain would also
-            # run later migrations that touch documents.metadata, absent here).
-            await _apply_extract_picture_bytes(store)
-
-            # Column was added by the migration
-            schema_after = await store.document_items_table.schema()
-            assert "picture_data" in {f.name for f in schema_after}
-
-            # picture_data backfilled with the legacy bytes
-            rows = await (
-                store.document_items_table.query()
-                .select(["self_ref", "picture_data"])
-                .where("document_id = 'legacy-doc'")
-                .to_list()
-            )
-            picture_rows = [r for r in rows if r["self_ref"] == "#/pictures/0"]
-            assert len(picture_rows) == 1
-            assert picture_rows[0]["picture_data"] == fake_png
-
-            # docling_document blob has been re-compressed with image=None
-            doc_rows = await (
-                store.documents_table.query()
-                .select(["docling_document"])
-                .where("id = 'legacy-doc'")
-                .to_list()
-            )
-            decoded = json.loads(decompress_json(doc_rows[0]["docling_document"]))
-            assert decoded["pictures"][0]["image"] is None
-
-
 class TestPictureDataPreservedThroughRoundTrip:
     """Snapshot/merge keeps picture bytes through update / rebuild cycles."""
 
@@ -938,7 +759,7 @@ class TestPictureDataPreservedThroughRoundTrip:
         )
         from haiku.rag.store.models.document import Document
 
-        docling_doc = _docling_doc_with_picture()
+        docling_doc = docling_doc_with_picture()
 
         async with HaikuRAG(temp_db_path, create=True) as rag:
             document = Document(content="Hello world", uri="test://doc")

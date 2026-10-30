@@ -17,7 +17,6 @@ from evaluations.datasets.mtrag import (
     map_mtrag_retrieval,
 )
 from evaluations.evaluators import (
-    CitationMAPEvaluator,
     MAPEvaluator,
     NDCGEvaluator,
     RecallEvaluator,
@@ -115,12 +114,40 @@ class TestRetrievalMapper:
 
 
 class TestSpecs:
-    def test_registered(self) -> None:
+    def test_registered_variants_share_one_database(self) -> None:
+        uncompacted = DATASETS["mtrag_clapnq_live_uncompacted"]
         assert DATASETS["mtrag_clapnq"] is MTRAG_CLAPNQ_SPEC
         assert DATASETS["mtrag_clapnq_rewrite"] is MTRAG_CLAPNQ_REWRITE_SPEC
+        assert DATASETS["mtrag_clapnq_live"] is MTRAG_CLAPNQ_LIVE_SPEC
+        assert {
+            spec.db_filename
+            for spec in (
+                MTRAG_CLAPNQ_SPEC,
+                MTRAG_CLAPNQ_REWRITE_SPEC,
+                MTRAG_CLAPNQ_LIVE_SPEC,
+                uncompacted,
+            )
+        } == {MTRAG_CLAPNQ_SPEC.db_filename}
+        assert MTRAG_CLAPNQ_SPEC.experiment_metadata == {"mtrag_mode": "gold_prefix"}
 
-    def test_variants_share_db(self) -> None:
-        assert MTRAG_CLAPNQ_SPEC.db_filename == MTRAG_CLAPNQ_REWRITE_SPEC.db_filename
+    def test_live_arms_differ_only_in_compaction(self) -> None:
+        uncompacted = DATASETS["mtrag_clapnq_live_uncompacted"]
+        assert MTRAG_CLAPNQ_LIVE_SPEC.key == "mtrag_clapnq_live"
+        assert uncompacted.key == "mtrag_clapnq_live_uncompacted"
+        assert MTRAG_CLAPNQ_LIVE_SPEC.live is True
+        assert uncompacted.live is True
+        assert MTRAG_CLAPNQ_LIVE_SPEC.retrieval_loader is None
+        assert uncompacted.qa_case_builder is MTRAG_CLAPNQ_LIVE_SPEC.qa_case_builder
+        assert MTRAG_CLAPNQ_LIVE_SPEC.compaction is True
+        assert uncompacted.compaction is False
+        assert MTRAG_CLAPNQ_LIVE_SPEC.experiment_metadata == {
+            "mtrag_mode": "live_session",
+            "compaction": True,
+        }
+        assert uncompacted.experiment_metadata == {
+            "mtrag_mode": "live_session",
+            "compaction": False,
+        }
 
     def test_retrieval_configuration(self) -> None:
         for spec in (MTRAG_CLAPNQ_SPEC, MTRAG_CLAPNQ_REWRITE_SPEC):
@@ -137,7 +164,6 @@ class TestSpecs:
                 (NDCGEvaluator, 10),
                 (MAPEvaluator, None),
             }
-            assert isinstance(spec.citation_evaluator, CitationMAPEvaluator)
 
 
 class TestGenerationTasks:
@@ -253,26 +279,3 @@ class TestLiveConversations:
         other_case = build_mtrag_live_case(2, conversations[1])
         assert other_case.metadata is not None
         assert other_case.metadata["turns"][0]["relevant_uris"] == []
-
-    def test_live_spec(self) -> None:
-        assert DATASETS["mtrag_clapnq_live"] is MTRAG_CLAPNQ_LIVE_SPEC
-        assert MTRAG_CLAPNQ_LIVE_SPEC.db_filename == MTRAG_CLAPNQ_SPEC.db_filename
-        assert MTRAG_CLAPNQ_LIVE_SPEC.live is True
-        assert MTRAG_CLAPNQ_LIVE_SPEC.retrieval_loader is None
-        assert MTRAG_CLAPNQ_LIVE_SPEC.experiment_metadata == {
-            "mtrag_mode": "live_session",
-            "compaction": True,
-        }
-        assert MTRAG_CLAPNQ_SPEC.experiment_metadata == {"mtrag_mode": "gold_prefix"}
-
-    def test_live_compaction_arms(self) -> None:
-        assert MTRAG_CLAPNQ_LIVE_SPEC.compaction is True
-        uncompacted = DATASETS["mtrag_clapnq_live_uncompacted"]
-        assert uncompacted.compaction is False
-        assert uncompacted.live is True
-        assert uncompacted.db_filename == MTRAG_CLAPNQ_LIVE_SPEC.db_filename
-        assert uncompacted.qa_case_builder is MTRAG_CLAPNQ_LIVE_SPEC.qa_case_builder
-        assert uncompacted.experiment_metadata == {
-            "mtrag_mode": "live_session",
-            "compaction": False,
-        }

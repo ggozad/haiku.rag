@@ -53,6 +53,7 @@ async def test_download_models_ollama_pulls_models(mock_to_thread):
         '{"status": "downloading", "digest": "sha256:abc", "total": 1000, "completed": 500}',
         '{"status": "downloading", "digest": "sha256:abc", "total": 1000, "completed": 1000}',
         "not valid json",
+        '{"digest": "sha256:abc"}',
         '{"status": "verifying sha256 digest"}',
         '{"status": "writing manifest"}',
         '{"status": "success"}',
@@ -92,6 +93,16 @@ async def test_download_models_ollama_pulls_models(mock_to_thread):
         assert de.digest == "sha256:abc"
         assert de.total == 1000
         assert de.completed > 0
+    assert [e.status for e in events if e.model == "qwen3.8"] == [
+        "pulling",
+        "pulling manifest",
+        "downloading",
+        "downloading",
+        "verifying sha256 digest",
+        "writing manifest",
+        "success",
+        "done",
+    ]
 
 
 async def test_download_models_no_ollama_models(mock_to_thread):

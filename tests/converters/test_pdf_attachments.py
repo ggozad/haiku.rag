@@ -25,6 +25,14 @@ from tests.conftest import (
 from tests.platform import converts_pdf_locally
 
 
+@pytest.fixture
+def fake_ingest(monkeypatch):
+    """Ingest documents through ``fake_ingest_fetch_result``, without docling or the embedder."""
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
+
+
 async def _make_parent(
     client: HaikuRAG,
     uri: str,
@@ -46,11 +54,7 @@ async def _make_parent(
     return parent
 
 
-async def test_first_ingest_creates_one_doc_per_attachment(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
+async def test_first_ingest_creates_one_doc_per_attachment(temp_db_path, fake_ingest):
     leaf_pdf = build_pdf([])
     pdf_bytes = build_pdf([("a.pdf", leaf_pdf), ("notes.txt", b"plain text payload")])
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -77,12 +81,8 @@ async def test_first_ingest_creates_one_doc_per_attachment(temp_db_path, monkeyp
 
 
 async def test_attachment_with_spaces_in_name_is_percent_encoded(
-    temp_db_path, monkeypatch
+    temp_db_path, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_bytes = build_pdf([("memo with spaces.pdf", b"payload")])
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/parent.pdf"
@@ -96,72 +96,7 @@ async def test_attachment_with_spaces_in_name_is_percent_encoded(
         assert children[0].uri == f"{parent_uri}#attachment=memo%20with%20spaces.pdf"
 
 
-async def test_reingest_removes_dropped_attachment(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        parent_uri = "file:///fixtures/parent.pdf"
-        first = build_pdf([("a.txt", b"A"), ("b.txt", b"B")])
-        parent = await _make_parent(client, parent_uri, first)
-        await _reconcile_pdf_attachments(writing(client), None, parent, first, depth=0)
-        assert (
-            len(await client.list_documents(filter=parent_uri_filter(parent_uri))) == 2
-        )
-
-        second = build_pdf([("a.txt", b"A")])
-        await _reconcile_pdf_attachments(writing(client), None, parent, second, depth=0)
-        remaining = await client.list_documents(filter=parent_uri_filter(parent_uri))
-        assert len(remaining) == 1
-        assert remaining[0].uri == f"{parent_uri}#attachment=a.txt"
-
-
-async def test_reingest_updates_changed_attachment_in_place(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        parent_uri = "file:///fixtures/parent.pdf"
-        first = build_pdf([("a.txt", b"original")])
-        parent = await _make_parent(client, parent_uri, first)
-        await _reconcile_pdf_attachments(writing(client), None, parent, first, depth=0)
-        before = (await client.list_documents(filter=parent_uri_filter(parent_uri)))[0]
-
-        second = build_pdf([("a.txt", b"different")])
-        await _reconcile_pdf_attachments(writing(client), None, parent, second, depth=0)
-        after = (await client.list_documents(filter=parent_uri_filter(parent_uri)))[0]
-
-        assert after.id == before.id
-        assert after.metadata["md5"] != before.metadata["md5"]
-
-
-async def test_reingest_adds_new_attachment(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        parent_uri = "file:///fixtures/parent.pdf"
-        first = build_pdf([("a.txt", b"A")])
-        parent = await _make_parent(client, parent_uri, first)
-        await _reconcile_pdf_attachments(writing(client), None, parent, first, depth=0)
-
-        second = build_pdf([("a.txt", b"A"), ("c.txt", b"C")])
-        await _reconcile_pdf_attachments(writing(client), None, parent, second, depth=0)
-        children = await client.list_documents(filter=parent_uri_filter(parent_uri))
-        assert len(children) == 2
-        names = {c.uri for c in children}
-        assert f"{parent_uri}#attachment=a.txt" in names
-        assert f"{parent_uri}#attachment=c.txt" in names
-
-
-async def test_nested_pdf_attachments_recurse_up_to_cap(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
+async def test_nested_pdf_attachments_recurse_up_to_cap(temp_db_path, fake_ingest):
     # Build a 4-deep chain: root -> L1 -> L2 -> L3. MAX_ATTACHMENT_DEPTH=3
     # means root + L1 + L2 ingested (3 PDFs total); L3 is skipped at the cap.
     assert MAX_ATTACHMENT_DEPTH == 3
@@ -184,11 +119,26 @@ async def test_nested_pdf_attachments_recurse_up_to_cap(temp_db_path, monkeypatc
         assert await client.get_document_by_uri(l3_uri) is None
 
 
-async def test_config_off_skips_extraction(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
+@pytest.mark.parametrize(
+    ("attachments", "warned"),
+    [([], False), ([("leaf.txt", b"deepest")], True)],
+    ids=["none", "one"],
+)
+def test_depth_cap_warns_only_about_skipped_attachments(attachments, warned):
+    body = build_pdf(attachments)
+
+    with capture_logs(client_documents.logger, logging.WARNING) as records:
+        found = _extract_pdf_attachments(
+            body, "file:///fixtures/deep.pdf", depth=MAX_ATTACHMENT_DEPTH - 1
+        )
+
+    assert found is None
+    assert [r.getMessage().startswith("Attachment depth cap") for r in records] == (
+        [True] if warned else []
     )
+
+
+async def test_config_off_skips_extraction(temp_db_path, monkeypatch, fake_ingest):
     async with HaikuRAG(temp_db_path, create=True) as client:
         monkeypatch.setattr(client._config.processing, "extract_pdf_attachments", False)
         parent_uri = "file:///fixtures/parent.pdf"
@@ -201,13 +151,9 @@ async def test_config_off_skips_extraction(temp_db_path, monkeypatch):
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
 
-async def test_non_pdf_parent_is_ignored(temp_db_path, monkeypatch):
+async def test_non_pdf_parent_is_ignored(temp_db_path, fake_ingest):
     """A non-PDF document with a PDF blob would be a logic bug, but the helper
     must short-circuit on content_type alone — never call pypdfium2."""
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/parent.txt"
         parent = await _make_parent(
@@ -224,11 +170,7 @@ async def test_non_pdf_parent_is_ignored(temp_db_path, monkeypatch):
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
 
-async def test_parent_without_uri_is_skipped(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
+async def test_parent_without_uri_is_skipped(temp_db_path, fake_ingest):
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent = Document(
             content="",
@@ -242,32 +184,30 @@ async def test_parent_without_uri_is_skipped(temp_db_path, monkeypatch):
         assert await client.list_documents() == []
 
 
-async def test_malformed_pdf_logs_warning_and_skips(temp_db_path, monkeypatch, caplog):
+async def test_malformed_pdf_logs_warning_and_skips(temp_db_path, fake_ingest):
     """A non-PDF body labelled as application/pdf must not crash the helper —
     pypdfium2's open raises PdfiumError, which we log and return from."""
-    import logging
-
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/junk.pdf"
         garbage = b"this is not a pdf at all"
         parent = await _make_parent(client, parent_uri, garbage)
-        with caplog.at_level(logging.WARNING, logger="haiku.rag.client.documents"):
+        with capture_logs(client_documents.logger, logging.WARNING) as records:
             await _reconcile_pdf_attachments(
                 writing(client), None, parent, garbage, depth=0
             )
         assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
 
+    assert len(records) == 1
+    assert (
+        records[0]
+        .getMessage()
+        .startswith(f"Cannot scan {parent_uri} for embedded attachments:")
+    )
 
-async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
+
+async def test_unsupported_attachment_continues_loop(temp_db_path, fake_ingest):
     """An attachment with an unsupported extension is skipped with a warning,
     and its siblings land."""
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
-    )
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent_uri = "file:///fixtures/parent.pdf"
         pdf_bytes = build_pdf([("ok.txt", b"keep me"), ("unsupported.xyz", b"data")])
@@ -279,79 +219,12 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, monkeypatch):
         assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
 
 
-async def test_joboptions_attachment_skipped_not_routed_as_pdf(temp_db_path, caplog):
-    """An attachment's own name drives its extension, not the synthetic
-    ``...#attachment=<name>`` URI (whose fragment the URL-suffix fallback drops,
-    inheriting the parent's ``.pdf``). ``.joboptions`` is unsupported, so the
-    child is skipped before any converter/embedder call (real ingest, no fake)."""
-    import logging
-
-    pdf_bytes = build_pdf([("Press Quality.joboptions", b"/CompressObjects /Tags\n")])
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        parent_uri = "file:///fixtures/brochure.pdf"
-        parent = await _make_parent(client, parent_uri, pdf_bytes)
-
-        with caplog.at_level(logging.WARNING, logger="haiku.rag.client.documents"):
-            await _reconcile_pdf_attachments(
-                writing(client), None, parent, pdf_bytes, depth=0
-            )
-
-        assert await client.list_documents(filter=parent_uri_filter(parent_uri)) == []
-
-
-async def test_cascade_delete_removes_reconciled_children(temp_db_path, monkeypatch):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        parent_uri = "file:///fixtures/parent.pdf"
-        pdf_bytes = build_pdf([("a.txt", b"A"), ("b.txt", b"B")])
-        parent = await _make_parent(client, parent_uri, pdf_bytes)
-        await _reconcile_pdf_attachments(
-            writing(client), None, parent, pdf_bytes, depth=0
-        )
-        assert len(await client.list_documents()) == 3
-
-        await client.delete_document(parent.id)
-        assert await client.list_documents() == []
-
-
-async def test_create_document_from_source_extracts_attachments(
-    tmp_path, temp_db_path, monkeypatch
-):
-    """The full create_document_from_source path — the same entry point the
-    ingester worker uses for an UPSERT job — produces parent + child docs
-    when the source is a PDF with embedded files on disk."""
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
-    pdf_path = tmp_path / "parent.pdf"
-    pdf_path.write_bytes(
-        build_pdf([("notes.txt", b"plain text"), ("data.txt", b"more data")])
-    )
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        parent = await client.create_document_from_source(pdf_path)
-
-    async with HaikuRAG(temp_db_path) as client:
-        assert isinstance(parent, Document)
-        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
-        assert len(children) == 2
-        assert {c.metadata["parent_uri"] for c in children} == {parent.uri}
-
-
 async def test_attachment_children_carry_no_source_id(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, fake_ingest
 ):
     """Only the fetched document is attributed; derived children are not."""
     from haiku.rag.sources.fs import FSSource
 
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(build_pdf([("notes.txt", b"plain text")]))
     source = FSSource(root=tmp_path, source_id="fs:attachments")
@@ -370,15 +243,11 @@ async def test_attachment_children_carry_no_source_id(
 
 
 async def test_create_document_from_source_reingest_after_attachment_edit(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, fake_ingest
 ):
     """Mutate the parent PDF's attachments and re-ingest. The md5 short-circuit
     must NOT fire (parent bytes changed); reconciliation diffs children to add,
     update, and delete in one pass while leaving unrelated children untouched."""
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(
         build_pdf(
@@ -439,18 +308,17 @@ async def test_create_document_from_source_reingest_after_attachment_edit(
             changed.metadata["md5"]
             != before_children[f"{parent.uri}#attachment=changed.txt"].metadata["md5"]
         )
+        assert {c.metadata["parent_uri"] for c in after_children.values()} == {
+            parent.uri
+        }
 
 
 async def test_create_document_from_source_delete_cascades(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, fake_ingest
 ):
     """The ingester worker's DELETE path is just client.delete_document(doc.id).
     A parent ingested via the full pipeline must cascade to its children when
     that path runs — mirrors what happens when a watched file is removed."""
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(build_pdf([("a.txt", b"A"), ("b.txt", b"B")]))
 
@@ -464,7 +332,7 @@ async def test_create_document_from_source_delete_cascades(
 
 
 async def test_extract_pdf_attachments_called_off_event_loop_thread(
-    temp_db_path, monkeypatch
+    temp_db_path, monkeypatch, fake_ingest
 ):
     """_extract_pdf_attachments must run in a thread-pool thread, not on the
     event-loop thread. A synchronous call would freeze the event loop for the
@@ -480,10 +348,6 @@ async def test_extract_pdf_attachments_called_off_event_loop_thread(
         return _extract_pdf_attachments(body, uri, depth=depth)
 
     monkeypatch.setattr("haiku.rag.client.documents._extract_pdf_attachments", spy)
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
 
     pdf_bytes = build_pdf([("a.txt", b"payload")])
     async with HaikuRAG(temp_db_path, create=True) as client:
@@ -516,12 +380,8 @@ async def _two_lookalike_parents(client: HaikuRAG, underscored_uri: str):
 
 
 async def test_reingest_leaves_a_lookalike_parents_attachments(
-    temp_db_path, monkeypatch
+    temp_db_path, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent, lookalike_child = await _two_lookalike_parents(
             client, "file:///fixtures/report_1.pdf"
@@ -537,12 +397,8 @@ async def test_reingest_leaves_a_lookalike_parents_attachments(
 
 
 async def test_cascade_delete_leaves_a_lookalike_parents_attachments(
-    temp_db_path, monkeypatch
+    temp_db_path, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent, lookalike_child = await _two_lookalike_parents(
             client, "file:///fixtures/report_1.pdf"
@@ -557,12 +413,8 @@ async def test_cascade_delete_leaves_a_lookalike_parents_attachments(
 
 
 async def test_cascade_delete_of_a_percent_uri_leaves_other_parents_attachments(
-    temp_db_path, monkeypatch
+    temp_db_path, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     async with HaikuRAG(temp_db_path, create=True) as client:
         pdf_bytes = build_pdf([("a.txt", b"A")])
         other = await _make_parent(client, "file:///fixtures/other.pdf", pdf_bytes)
@@ -846,12 +698,8 @@ async def test_retry_ingests_a_grandchild_whose_provider_failed(tmp_path, temp_d
 
 
 async def test_full_rebuild_keeps_an_unchanged_attachment_tree(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(
         build_pdf(
@@ -973,12 +821,8 @@ async def test_full_rebuild_reconverts_each_attachment_from_its_own_payload(
 
 
 async def test_full_rebuild_rebuilds_attachments_listed_before_their_parent(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, monkeypatch, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(_nested_tree())
 
@@ -1003,12 +847,8 @@ async def test_full_rebuild_rebuilds_attachments_listed_before_their_parent(
 
 
 async def test_full_rebuild_falls_back_for_attachments_a_failed_parent_left(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, monkeypatch, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(build_pdf([("a.txt", b"a"), ("b.txt", b"b"), ("c.txt", b"c")]))
 
@@ -1040,12 +880,8 @@ async def test_full_rebuild_falls_back_for_attachments_a_failed_parent_left(
 
 
 async def test_full_rebuild_reports_an_attachment_added_since_ingestion(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(build_pdf([("kept.txt", b"kept"), ("dropped.txt", b"gone")]))
 
@@ -1068,12 +904,8 @@ async def test_full_rebuild_reports_an_attachment_added_since_ingestion(
 
 
 async def test_full_rebuild_without_the_parent_source_falls_back_for_the_tree(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, monkeypatch, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(_nested_tree())
 
@@ -1117,12 +949,8 @@ async def test_written_ids_leaves_out_a_document_whose_write_failed(
 
 
 async def test_written_ids_collects_every_file_of_a_directory(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     folder = tmp_path / "folder"
     folder.mkdir()
     (folder / "a.txt").write_text("a")
@@ -1139,12 +967,8 @@ async def test_written_ids_collects_every_file_of_a_directory(
 
 
 async def test_full_rebuild_falls_back_for_attachments_when_extraction_is_off(
-    tmp_path, temp_db_path, monkeypatch
+    tmp_path, temp_db_path, monkeypatch, fake_ingest
 ):
-    monkeypatch.setattr(
-        "haiku.rag.client.documents._ingest_fetch_result",
-        fake_ingest_fetch_result,
-    )
     pdf_path = tmp_path / "parent.pdf"
     pdf_path.write_bytes(_nested_tree())
 

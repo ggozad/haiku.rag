@@ -6,16 +6,8 @@ from haiku.rag.client.documents import _refresh_doc_metadata
 from haiku.rag.config import get_config
 from haiku.rag.store.models.chunk import Chunk
 from tests.conftest import writing
+from tests.documents import docling_doc
 from tests.locks import ObservedLock, assert_waiting_for_lock
-
-
-def _docling_doc(name: str, text: str):
-    from docling_core.types.doc.document import DoclingDocument
-    from docling_core.types.doc.labels import DocItemLabel
-
-    doc = DoclingDocument(name=name)
-    doc.add_text(label=DocItemLabel.TEXT, text=text)
-    return doc
 
 
 async def test_schedule_vacuum_is_debounced(temp_db_path, monkeypatch):
@@ -73,7 +65,7 @@ async def test_metadata_refresh_sweep_schedules_vacuum(temp_db_path):
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://sweep",
             metadata={"source_revision": "r1"},
@@ -98,7 +90,7 @@ async def test_metadata_refresh_waits_for_write_lock(temp_db_path, monkeypatch):
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://sweep",
             metadata={"source_revision": "r1"},

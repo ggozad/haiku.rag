@@ -19,6 +19,7 @@ from haiku.rag.sources.plugins import (
     ENTRY_POINT_GROUP,
     load_source_factories,
 )
+from tests.ingester.conftest import FakeEntryPoint
 
 
 class _MemorySource:
@@ -69,17 +70,6 @@ class _MemorySource:
             )
 
 
-class _FakeEntryPoint:
-    def __init__(self, name, factory):
-        self.name = name
-        self._factory = factory
-        self.loaded = False
-
-    def load(self):
-        self.loaded = True
-        return self._factory
-
-
 def _register(monkeypatch, *eps):
     captured: dict = {}
 
@@ -92,7 +82,7 @@ def _register(monkeypatch, *eps):
 
 
 def test_load_keys_entry_points_by_name_without_loading(monkeypatch):
-    ep = _FakeEntryPoint("memory", _MemorySource)
+    ep = FakeEntryPoint("memory", _MemorySource)
     captured = _register(monkeypatch, ep)
 
     discovered = load_source_factories()
@@ -118,7 +108,7 @@ def _config(**overrides):
 
 
 def test_build_source_loads_referenced_plugin_with_kwargs(monkeypatch):
-    ep = _FakeEntryPoint("memory", _MemorySource)
+    ep = FakeEntryPoint("memory", _MemorySource)
     _register(monkeypatch, ep)
 
     source = build_source(_config(max_file_size=1024), supported_extensions=[".md"])
@@ -133,7 +123,7 @@ def test_build_source_loads_referenced_plugin_with_kwargs(monkeypatch):
 
 
 def test_build_source_raises_on_unknown_plugin(monkeypatch):
-    _register(monkeypatch, _FakeEntryPoint("memory", _MemorySource))
+    _register(monkeypatch, FakeEntryPoint("memory", _MemorySource))
 
     cfg = _config().model_copy(update={"plugin": "missing"})
     with pytest.raises(ValueError, match="unknown source plugin 'missing'"):
@@ -141,7 +131,7 @@ def test_build_source_raises_on_unknown_plugin(monkeypatch):
 
 
 def test_build_source_raises_when_plugin_returns_non_source(monkeypatch):
-    _register(monkeypatch, _FakeEntryPoint("memory", lambda **kw: object()))
+    _register(monkeypatch, FakeEntryPoint("memory", lambda **kw: object()))
 
     with pytest.raises(TypeError, match="does not satisfy the Source protocol"):
         build_source(_config())
@@ -151,8 +141,8 @@ def test_build_source_does_not_load_unreferenced_plugins(monkeypatch):
     def _explode(**kw):
         raise ImportError("optional dependency missing")
 
-    used = _FakeEntryPoint("memory", _MemorySource)
-    unused = _FakeEntryPoint("broken", _explode)
+    used = FakeEntryPoint("memory", _MemorySource)
+    unused = FakeEntryPoint("broken", _explode)
     _register(monkeypatch, used, unused)
 
     build_source(_config())
@@ -161,7 +151,7 @@ def test_build_source_does_not_load_unreferenced_plugins(monkeypatch):
 
 
 async def test_plugin_source_drives_poller_and_fetch(monkeypatch, jobs, sync):
-    _register(monkeypatch, _FakeEntryPoint("memory", _MemorySource))
+    _register(monkeypatch, FakeEntryPoint("memory", _MemorySource))
     cfg = _config()
     source = build_source(cfg)
 

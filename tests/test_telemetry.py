@@ -21,40 +21,28 @@ def captured_configure(monkeypatch):
     return captured
 
 
-def test_default_service_name_used_when_env_unset(captured_configure, monkeypatch):
+@pytest.mark.parametrize("variable", ["OTEL_SERVICE_NAME", "LOGFIRE_SERVICE_NAME"])
+def test_service_name_variable_overrides_default(
+    captured_configure, monkeypatch, variable
+):
+    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
+    monkeypatch.delenv("LOGFIRE_SERVICE_NAME", raising=False)
+    monkeypatch.setenv(variable, "customer-ingester")
+
+    telemetry.configure(service_name="haiku-ingester")
+
+    # service_name=None lets logfire read the variable, so the variable wins over
+    # the default.
+    assert captured_configure["service_name"] is None
+
+
+def test_service_name_and_version_without_env(captured_configure, monkeypatch):
     monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
     monkeypatch.delenv("LOGFIRE_SERVICE_NAME", raising=False)
 
     telemetry.configure(service_name="haiku-ingester")
 
     assert captured_configure["service_name"] == "haiku-ingester"
-
-
-def test_otel_service_name_overrides_default(captured_configure, monkeypatch):
-    monkeypatch.setenv("OTEL_SERVICE_NAME", "customer-ingester")
-
-    telemetry.configure(service_name="haiku-ingester")
-
-    # Deferring to logfire (service_name=None) lets it read the env var,
-    # so the customer's OTEL_SERVICE_NAME wins over our default.
-    assert captured_configure["service_name"] is None
-
-
-def test_logfire_service_name_overrides_default(captured_configure, monkeypatch):
-    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
-    monkeypatch.setenv("LOGFIRE_SERVICE_NAME", "customer-ingester")
-
-    telemetry.configure(service_name="haiku-ingester")
-
-    assert captured_configure["service_name"] is None
-
-
-def test_service_version_is_package_version(captured_configure, monkeypatch):
-    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
-    monkeypatch.delenv("LOGFIRE_SERVICE_NAME", raising=False)
-
-    telemetry.configure(service_name="haiku-rag")
-
     assert captured_configure["service_version"] == metadata.version("haiku.rag-slim")
 
 

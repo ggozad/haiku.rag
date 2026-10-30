@@ -89,6 +89,16 @@ class TestDoclingCompressionSplit:
         assert structure_bytes is not None
         assert pages_bytes is None
 
+    def test_split_drops_picture_images_and_keeps_other_entries(self):
+        data = {
+            "name": "test_doc",
+            "pictures": [{"image": {"uri": "data:image/png;base64,AAAA"}}, None],
+        }
+        structure_bytes, _ = compress_docling_split(data)
+
+        structure = json.loads(decompress_json(structure_bytes))
+        assert structure["pictures"] == [{"image": None}, None]
+
 
 def _cv2_page_png() -> bytes:
     """A PNG encoded the way docling-core does, with no compression level."""

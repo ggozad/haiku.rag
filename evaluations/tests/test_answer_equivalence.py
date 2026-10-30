@@ -18,6 +18,7 @@ from evaluations.evaluators.answer_equivalence import (
 from evaluations.evaluators.system_one import SystemOneEndpoint
 from evaluations.qa import run_qa_benchmark
 from haiku.rag.config.models import AppConfig, SystemOneConfig
+from tests.specs import stub_spec
 from tests.test_system_one import Endpoint, FixedJudge, _ctx
 
 
@@ -96,12 +97,8 @@ class TestSystemOneEndpoint:
 
 
 def _spec() -> DatasetSpec:
-    return DatasetSpec(
-        key="test",
-        db_filename="test.lancedb",
-        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        document_mapper=lambda doc: None,
-        qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+    return stub_spec(
+        qa_loader=lambda: [{"id": "t1"}],
         qa_case_builder=lambda idx, doc: Case(
             name="c1", inputs="q1", expected_output="ref", metadata={"id": "t1"}
         ),
@@ -119,8 +116,12 @@ class TestRunWithSystemOne:
     async def test_confident_cases_are_decided_by_the_endpoint(
         self, tmp_path: Path
     ) -> None:
+        from rich.console import Console
+
+        console = Console(record=True, width=200)
         endpoint = Endpoint(p=0.95)
         with (
+            patch("evaluations.qa.console", console),
             patch(
                 "evaluations.qa.system_one_endpoint",
                 return_value=SystemOneEndpoint(endpoint.client()),
@@ -147,28 +148,9 @@ class TestRunWithSystemOne:
         assert row["system_one_model"] == "jev-latest"
         # One readiness check plus one judged case.
         assert len(endpoint.requests) == 2
+        assert "Judge decided by: system_one 1" in console.export_text()
 
-    async def test_an_unreachable_endpoint_stops_the_run_before_any_case(
-        self, tmp_path: Path
-    ) -> None:
-        with (
-            patch(
-                "evaluations.qa.system_one_endpoint",
-                return_value=SystemOneEndpoint(Endpoint(status=503).client()),
-            ),
-            patch("evaluations.qa.get_model", return_value="fake-model"),
-            patch(
-                "evaluations.qa.run_capability_question", new_callable=AsyncMock
-            ) as run_question,
-            pytest.raises(RuntimeError, match="did not answer"),
-        ):
-            await run_qa_benchmark(
-                _spec(), _config(), db_path=tmp_path / "test.lancedb"
-            )
-
-        run_question.assert_not_awaited()
-
-    async def test_a_failed_check_closes_the_client_and_writes_no_file(
+    async def test_a_failed_check_runs_no_case_and_closes_the_client(
         self, tmp_path: Path
     ) -> None:
         client = Endpoint(status=503).client()
@@ -179,6 +161,9 @@ class TestRunWithSystemOne:
             ),
             patch.object(client, "aclose", wraps=client.aclose) as aclose,
             patch("evaluations.qa.get_model", return_value="fake-model"),
+            patch(
+                "evaluations.qa.run_capability_question", new_callable=AsyncMock
+            ) as run_question,
             pytest.raises(RuntimeError, match="did not answer"),
         ):
             await run_qa_benchmark(
@@ -188,31 +173,9 @@ class TestRunWithSystemOne:
                 results_dir=tmp_path / "results",
             )
 
+        run_question.assert_not_awaited()
         aclose.assert_awaited_once()
         assert not list(tmp_path.glob("results/*"))
-
-    async def test_the_run_prints_who_decided(self, tmp_path: Path) -> None:
-        from rich.console import Console
-
-        console = Console(record=True, width=200)
-        with (
-            patch("evaluations.qa.console", console),
-            patch(
-                "evaluations.qa.system_one_endpoint",
-                return_value=SystemOneEndpoint(Endpoint(p=0.95).client()),
-            ),
-            patch("evaluations.qa.get_model", return_value="fake-model"),
-            patch(
-                "evaluations.qa.run_capability_question",
-                new_callable=AsyncMock,
-                return_value=CapabilityRunResult(answer="answer"),
-            ),
-        ):
-            await run_qa_benchmark(
-                _spec(), _config(), db_path=tmp_path / "test.lancedb"
-            )
-
-        assert "Judge decided by: system_one 1" in console.export_text()
 
     async def test_metadata_records_the_endpoint_and_bands(
         self, tmp_path: Path

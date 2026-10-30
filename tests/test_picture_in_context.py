@@ -15,7 +15,7 @@ from haiku.rag.config import AppConfig
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document_item import DocumentItem
 from tests.conftest import writing
-from tests.test_context import _fetch_and_expand
+from tests.documents import fetch_and_expand
 
 
 def _make_png(color: str = "red", size: tuple[int, int] = (4, 4)) -> bytes:
@@ -211,7 +211,7 @@ async def test_expand_context_preserves_picture_refs_with_empty_text(temp_db_pat
             doc_item_refs=["#/texts/1"],
             labels=["paragraph"],
         )
-        expanded = await _fetch_and_expand(
+        expanded = await fetch_and_expand(
             rag.document_item_repository, "doc-1", [seed], 10_000
         )
         assert len(expanded) == 1
@@ -228,9 +228,9 @@ async def test_rechunk_preserves_picture_data(temp_db_path):
     from haiku.rag.client import RebuildMode
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
         document = Document(content="x", uri="test://doc")
@@ -258,7 +258,7 @@ async def test_embed_only_preserves_picture_vectors(temp_db_path, monkeypatch):
     from haiku.rag.config import EmbeddingModelConfig, EmbeddingsConfig
     from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     TEXT_VEC = [0.1, 0.1, 0.1, 0.1]
     IMAGE_VEC = [0.9, 0.9, 0.9, 0.9]
@@ -288,7 +288,7 @@ async def test_embed_only_preserves_picture_vectors(temp_db_path, monkeypatch):
     # The fixture picture is 8x8; disable the size filter so it still chunks.
     config.processing.min_picture_size = 0
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
 
     async def _picture_chunk_row(rag):
         rows = await rag.chunk_repository.store.chunks_table.query().to_list()
@@ -370,9 +370,9 @@ async def test_expand_context_does_not_attach_expansion_added_pictures(temp_db_p
 
 def test_build_picture_chunks_uses_live_uri():
     from haiku.rag.client.processing import build_picture_chunks
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    doc = _docling_doc_with_picture()
+    doc = docling_doc_with_picture()
     chunks = build_picture_chunks(doc, document_id="doc-1")
 
     assert len(chunks) == 1
@@ -388,9 +388,9 @@ def test_build_picture_chunks_falls_back_to_existing_picture_data():
     """When the live docling has its picture URIs stripped, the snapshot
     fills the gap so rebuild round-trips don't lose picture chunks."""
     from haiku.rag.client.processing import build_picture_chunks
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    doc = _docling_doc_with_picture()
+    doc = docling_doc_with_picture()
     for picture in doc.pictures:
         picture.image = None
 
@@ -406,9 +406,9 @@ def test_build_picture_chunks_falls_back_to_existing_picture_data():
 
 def test_build_picture_chunks_skips_pictures_without_bytes():
     from haiku.rag.client.processing import build_picture_chunks
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    doc = _docling_doc_with_picture()
+    doc = docling_doc_with_picture()
     for picture in doc.pictures:
         picture.image = None
 
@@ -449,10 +449,10 @@ def test_build_picture_chunks_content_carries_picture_text():
     from PIL import Image as PILImageModule
 
     from haiku.rag.client.processing import build_picture_chunks
-    from tests.store.test_document_items import _add_picture_text
+    from tests.documents import add_picture_text
 
     doc = _doc_with_picture_images(PILImageModule.new("RGB", (100, 100), "red"))
-    _add_picture_text(doc, doc.pictures[0], "Skip paywalls")
+    add_picture_text(doc, doc.pictures[0], "Skip paywalls")
 
     chunks = build_picture_chunks(doc, document_id="doc-1")
 
@@ -465,11 +465,11 @@ def test_skipped_picture_text_reaches_its_row_but_no_chunk():
 
     from haiku.rag.client.processing import build_picture_chunks
     from haiku.rag.store.models.document_item import extract_items
-    from tests.store.test_document_items import _add_picture_text
+    from tests.documents import add_picture_text
 
     doc = _doc_with_picture_images(PILImageModule.new("RGB", (16, 16), "red"))
     icon = doc.pictures[0]
-    _add_picture_text(doc, icon, "Skip paywalls")
+    add_picture_text(doc, icon, "Skip paywalls")
 
     chunks = build_picture_chunks(doc, document_id="doc-1", min_picture_size=64)
     rows = {row.self_ref: row for row in extract_items("doc-1", doc)}
@@ -522,9 +522,9 @@ def test_build_picture_chunks_keeps_unmeasurable_bytes():
     """Bytes PIL can't parse are kept — the filter only drops what it can
     measure."""
     from haiku.rag.client.processing import build_picture_chunks
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    doc = _docling_doc_with_picture()
+    doc = docling_doc_with_picture()
     for picture in doc.pictures:
         picture.image = None
 
@@ -543,7 +543,7 @@ async def test_chunk_filters_small_pictures_by_config(monkeypatch):
     from haiku.rag.client.processing import chunk
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.store.models.chunk import Chunk
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     class StubMultimodalEmbedder(EmbedderWrapper):
         supports_images = True
@@ -559,7 +559,7 @@ async def test_chunk_filters_small_pictures_by_config(monkeypatch):
         "haiku.rag.chunkers.get_chunker", lambda *a, **kw: StubChunker()
     )
 
-    doc = _docling_doc_with_picture()  # 8x8 picture, below the 64px default
+    doc = docling_doc_with_picture()  # 8x8 picture, below the 64px default
     chunks = await chunk(AppConfig(), doc, embedder=StubMultimodalEmbedder())
 
     assert [c.content for c in chunks] == ["text"]
@@ -696,7 +696,7 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.embeddings import EmbedderWrapper, embed_chunks
     from haiku.rag.store.models.document import Document
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
     class StubMultimodalEmbedder(EmbedderWrapper):
         supports_images = True
@@ -715,7 +715,7 @@ async def test_ingest_emits_picture_chunks_with_multimodal_embedder(
         lambda *a, **kw: StubMultimodalEmbedder(),
     )
 
-    docling_doc = _docling_doc_with_picture()
+    docling_doc = docling_doc_with_picture()
 
     from haiku.rag.config import EmbeddingModelConfig, EmbeddingsConfig
 
@@ -782,9 +782,9 @@ def test_build_picture_chunks_records_provenance_pages():
     from docling_core.types.doc.document import ProvenanceItem
 
     from haiku.rag.client.processing import build_picture_chunks
-    from tests.store.test_document_items import _docling_doc_with_picture
+    from tests.documents import docling_doc_with_picture
 
-    doc = _docling_doc_with_picture()
+    doc = docling_doc_with_picture()
     picture = doc.pictures[0]
     picture.prov = [
         ProvenanceItem(

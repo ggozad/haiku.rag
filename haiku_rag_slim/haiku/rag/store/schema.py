@@ -215,9 +215,16 @@ async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str
     return applied
 
 
+async def vector_index_name(table: lancedb.AsyncTable) -> str | None:
+    """The name of the index covering the table's `vector` column, if any."""
+    return next(
+        (i.name for i in await table.list_indices() if "vector" in i.columns), None
+    )
+
+
 async def has_vector_index(table: lancedb.AsyncTable) -> bool:
     """Whether an index covers the table's `vector` column."""
-    return any("vector" in index.columns for index in await table.list_indices())
+    return await vector_index_name(table) is not None
 
 
 async def rebuild_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str]:

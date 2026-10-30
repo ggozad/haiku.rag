@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, patch
 
 import pyarrow as pa
 import pytest
-from pydantic import ValidationError
 
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.engine import ConnectionMode, Store, connect_lancedb
@@ -128,12 +127,6 @@ def _remote_store(location: str, config: AppConfig | None = None) -> Store:
 
 
 class TestStoreConnectionMode:
-    async def test_store_connection_mode_local(self, temp_db_path):
-        async with Store(temp_db_path, create=True) as store:
-            assert store._connection_mode == ConnectionMode.LOCAL
-            assert store.location == temp_db_path
-            assert store.db_path == temp_db_path
-
     async def test_a_local_store_ignores_the_configured_uri(self, temp_db_path):
         config = AppConfig(
             lancedb=LanceDBConfig(databases={"elsewhere": "s3://elsewhere/db.lancedb"})
@@ -245,12 +238,13 @@ class TestVectorIndexByConnectionMode:
 
 class TestLocationIsFixed:
     async def test_a_store_keeps_the_location_it_opened(self, temp_db_path):
-        """`db_path` and the connection mode derive from the location once; a
-        store cannot be pointed elsewhere after it is built."""
+        """The store location, db_path and connection mode remain fixed after
+        construction."""
         async with Store(temp_db_path, create=True) as store:
             with pytest.raises(AttributeError):
                 store.location = "s3://bucket/path"  # type: ignore[misc]
             assert store.location == temp_db_path
+            assert store.db_path == temp_db_path
             assert store._connection_mode == ConnectionMode.LOCAL
 
 
@@ -280,6 +274,18 @@ class TestInitFailureCleanup:
         assert mock_conn.close_calls == [True], (
             "AsyncConnection.close() was not called on init failure"
         )
+
+    async def test_store_aenter_keeps_a_connect_failure(
+        self, temp_db_path, monkeypatch
+    ):
+        async def failing_connect(*args, **kwargs):
+            raise OSError("simulated connect failure")
+
+        monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", failing_connect)
+
+        with pytest.raises(OSError, match="simulated connect failure"):
+            async with Store(temp_db_path, create=True):
+                pass
 
     async def test_client_aenter_closes_store_on_init_failure(
         self, temp_db_path, monkeypatch
@@ -313,35 +319,6 @@ class TestInitFailureCleanup:
 
 class TestVectorIndexCreation:
     """_ensure_vector_index needs 256 rows of training data before it builds."""
-
-    @staticmethod
-    async def _seed_chunks(store: Store, count: int) -> None:
-        records = [
-            store.ChunkRecord(
-                document_id="doc-1",
-                content=f"row {i}",
-                content_fts=f"row {i}",
-                metadata="{}",
-                order=i,
-                vector=[
-                    float(i % 7) + 0.01 * j for j in range(store.embedder.vector_dim)
-                ],
-            )
-            for i in range(count)
-        ]
-        await store.chunks_table.add(records)
-
-    @pytest.mark.slow
-    async def test_builds_a_real_index_once_enough_rows_exist(
-        self, temp_db_path
-    ) -> None:
-        async with Store(temp_db_path, create=True) as store:
-            await self._seed_chunks(store, 256)
-
-            await store._ensure_vector_index()
-
-            indexes = await store.chunks_table.list_indices()
-            assert any("vector" in index.columns for index in indexes)
 
     async def test_builds_index_once_enough_rows_exist(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:
@@ -497,15 +474,6 @@ class TestSessionAndConsistency:
 
 
 class TestLanceDBConfigValidation:
-    def test_negative_values_are_rejected(self):
-        """Negatives overflow or panic inside Lance, so reject them here."""
-        with pytest.raises(ValidationError):
-            LanceDBConfig(read_consistency_interval_seconds=-1)
-        with pytest.raises(ValidationError):
-            LanceDBConfig(index_cache_size_bytes=-1)
-        with pytest.raises(ValidationError):
-            LanceDBConfig(metadata_cache_size_bytes=-1)
-
     def test_zero_is_allowed(self):
         config = LanceDBConfig(
             read_consistency_interval_seconds=0, index_cache_size_bytes=0

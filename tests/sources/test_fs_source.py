@@ -51,6 +51,7 @@ async def test_fs_source_fetch_returns_bytes_and_md5(fs_root: Path):
     assert result.content_type == "text/markdown"
     assert result.revision == str(target.stat().st_mtime_ns)
     assert result.disk_path == target
+    assert result.extra_metadata == {}
 
 
 async def test_fs_source_head_returns_mtime(fs_root: Path):
@@ -270,22 +271,14 @@ async def test_fs_source_discover_skips_symlinked_directories(
     assert not any("escape" in u for u in uris)
 
 
-async def test_fs_source_fetch_rejects_file_exceeding_max_size(fs_root: Path):
-    src = FSSource(root=fs_root, max_file_size=3)
+async def test_fs_source_fetch_enforces_max_size(fs_root: Path):
+    uri = (fs_root / "a.md").as_uri()  # "alpha" = 5 bytes
+    fits = FSSource(root=fs_root, max_file_size=100)
+    assert (await fits.fetch(uri)).body == b"alpha"
+
+    too_small = FSSource(root=fs_root, max_file_size=3)
     with pytest.raises(FileTooLargeError):
-        await src.fetch((fs_root / "a.md").as_uri())  # "alpha" = 5 bytes
-
-
-async def test_fs_source_fetch_allows_file_within_max_size(fs_root: Path):
-    src = FSSource(root=fs_root, max_file_size=100)
-    result = await src.fetch((fs_root / "a.md").as_uri())
-    assert result.body == b"alpha"
-
-
-async def test_fs_source_fetch_no_limit_when_max_size_is_none(fs_root: Path):
-    src = FSSource(root=fs_root, max_file_size=None)
-    result = await src.fetch((fs_root / "a.md").as_uri())
-    assert result.body == b"alpha"
+        await too_small.fetch(uri)
 
 
 async def test_fs_source_fetch_reads_off_event_loop_thread(fs_root: Path):

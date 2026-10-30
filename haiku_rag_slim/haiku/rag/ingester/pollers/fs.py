@@ -137,7 +137,10 @@ class FSPoller(BasePoller):
             )
             return
 
-        if change in (Change.added, Change.modified):
+        if change in (
+            Change.added,
+            Change.modified,
+        ):  # pragma: no branch - deleted returns above
             try:
                 revision = str(path.stat().st_mtime_ns)
             except FileNotFoundError:

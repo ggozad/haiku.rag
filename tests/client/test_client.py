@@ -27,7 +27,8 @@ from haiku.rag.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from tests.conftest import writing
+from tests.conftest import serving_url, writing
+from tests.documents import docling_doc, document_import
 from tests.locks import ObservedLock, assert_waiting_for_lock
 from tests.platform import requires_symlinks
 
@@ -115,6 +116,10 @@ async def test_client_document_crud(qa_corpus: list[dict[str, str]], temp_db_pat
         assert "Jakarta" in created_doc.content
         assert created_doc.uri == test_uri
         assert created_doc.metadata == test_metadata
+        assert created_doc.docling_document is not None
+        assert created_doc.docling_version is not None
+        parsed = json.loads(decompress_json(created_doc.docling_document))
+        assert parsed["version"] == created_doc.docling_version
 
         # Test get_document_by_id
         retrieved_doc = await client.get_document_by_id(created_doc.id)
@@ -226,6 +231,9 @@ async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_p
         assert updated_doc.content == "Updated content only"
         assert updated_doc.title == "Original Title"
         assert updated_doc.uri == test_uri
+        assert updated_doc.docling_document is not None
+        assert updated_doc.docling_version is not None
+        assert updated_doc.docling_document != created_doc.docling_document
 
         # Test updating only metadata
         new_metadata = {"source": "updated", "version": "2.0"}
@@ -250,6 +258,10 @@ async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_p
             Chunk(content="Custom chunk 1", order=0),
             Chunk(content="Custom chunk 2", order=1),
         ]
+        before_chunks = await client.document_repository.get_by_id(
+            original_id, include_blobs=True
+        )
+        assert before_chunks is not None
         updated_doc = await client.update_document(
             document_id=original_id,
             content="Content with custom chunks",
@@ -261,6 +273,7 @@ async def test_client_update_document(qa_corpus: list[dict[str, str]], temp_db_p
         assert updated_doc.content == "Content with custom chunks"
         assert updated_doc.title == "Final Title"
         assert updated_doc.metadata == {"final": "true"}
+        assert updated_doc.docling_document == before_chunks.docling_document
 
         # Verify the custom chunks were created
         doc_chunks = await client.chunk_repository.get_by_document_id(original_id)
@@ -298,6 +311,14 @@ async def test_client_create_document_from_source(temp_db_path):
             assert "content_type" in doc.metadata
             assert "md5" in doc.metadata
             assert doc.metadata["content_type"] == "text/plain"
+            assert doc.docling_document is not None
+            assert doc.docling_version is not None
+            retrieved = await client.document_repository.get_by_id(
+                doc.id, include_blobs=True
+            )
+            assert retrieved is not None
+            assert retrieved.docling_document == doc.docling_document
+            assert retrieved.docling_version == doc.docling_version
 
             # Test create_document_from_source with string path
             doc2 = await client.create_document_from_source(source=str(temp_path))
@@ -506,12 +527,11 @@ async def test_client_create_document_from_url(temp_db_path):
     """Test creating a document from a URL."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Mock the HTTP response
-        mock_response = AsyncMock()
-        mock_response.content = b"<html><body><h1>Test Page</h1><p>This is test content from a webpage.</p></body></html>"
-        mock_response.headers = {"content-type": "text/html"}
-        mock_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_response):
+        with serving_url(
+            b"<html><body><h1>Test Page</h1><p>This is test content from a webpage.</p></body></html>",
+            "text/html",
+        ):
             doc = await client.create_document_from_source(
                 source="https://example.com/test.html", metadata={"source_type": "web"}
             )
@@ -534,14 +554,11 @@ async def test_client_create_document_from_url_with_different_content_types(
     """Test creating documents from URLs with different content types."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Test JSON content
-        mock_json_response = AsyncMock()
-        mock_json_response.content = (
-            b'{"title": "Test JSON", "content": "This is JSON content"}'
-        )
-        mock_json_response.headers = {"content-type": "application/json"}
-        mock_json_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_json_response):
+        with serving_url(
+            (b'{"title": "Test JSON", "content": "This is JSON content"}'),
+            "application/json",
+        ):
             doc = await client.create_document_from_source(
                 "https://api.example.com/data.json"
             )
@@ -555,12 +572,8 @@ async def test_client_create_document_from_url_with_different_content_types(
             assert doc.metadata["content_type"] == "application/json"
 
         # Test plain text content
-        mock_text_response = AsyncMock()
-        mock_text_response.content = b"This is plain text content from a URL."
-        mock_text_response.headers = {"content-type": "text/plain"}
-        mock_text_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_text_response):
+        with serving_url(b"This is plain text content from a URL.", "text/plain"):
             doc = await client.create_document_from_source(
                 "https://example.com/readme.txt"
             )
@@ -579,12 +592,8 @@ async def test_client_create_document_from_url_unsupported_content(temp_db_path)
     """Test creating a document from URL with unsupported content type."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Mock response with unsupported content type
-        mock_response = AsyncMock()
-        mock_response.content = b"binary content"
-        mock_response.headers = {"content-type": "application/octet-stream"}
-        mock_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_response):
+        with serving_url(b"binary content", "application/octet-stream"):
             with pytest.raises(ValueError, match="Unsupported content type"):
                 await client.create_document_from_source(
                     "https://example.com/binary.bin"
@@ -595,13 +604,7 @@ async def test_client_create_document_from_url_unsupported_content(temp_db_path)
 async def test_client_create_document_from_url_http_error(temp_db_path):
     """Test handling HTTP errors when creating document from URL."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        with patch("httpx.AsyncClient.get") as mock_get:
-            mock_get.side_effect = httpx.HTTPStatusError(
-                "404 Not Found",
-                request=httpx.Request("GET", "https://example.com/notfound.html"),
-                response=httpx.Response(404),
-            )
-
+        with serving_url(b"", "text/html", status=404):
             with pytest.raises(httpx.HTTPStatusError):
                 await client.create_document_from_source(
                     "https://example.com/notfound.html"
@@ -660,12 +663,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
             assert doc.metadata["content_type"] == "text/plain"
             assert doc.metadata["md5"] == expected_md5
 
-            mock_response = AsyncMock()
-            mock_response.content = test_content.encode()
-            mock_response.headers = {"content-type": "text/plain"}
-            mock_response.raise_for_status = AsyncMock()
-
-            with patch("httpx.AsyncClient.get", return_value=mock_response):
+            with serving_url(test_content.encode(), "text/plain"):
                 url_doc = await client.create_document_from_source(
                     "https://example.com/test.txt"
                 )
@@ -692,6 +690,8 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             assert doc1.content == test_content
             original_id = doc1.id
             original_updated_at = doc1.updated_at
+            original_json = doc1.docling_document
+            original_version = doc1.docling_version
 
             # Second call with same content - should return existing document (no-op)
             doc2 = await client.create_document_from_source(temp_path)
@@ -709,6 +709,9 @@ async def test_client_create_update_no_op_behavior(temp_db_path):
             assert isinstance(doc3, Document)
             assert doc3.id == original_id  # Same document ID
             assert doc3.content == updated_content  # Updated content
+            assert doc3.docling_document is not None
+            assert doc3.docling_document != original_json
+            assert doc3.docling_version == original_version
 
             # Verify the document was actually updated in database
             retrieved_doc = await client.get_document_by_id(original_id)
@@ -725,12 +728,8 @@ async def test_client_url_create_update_no_op_behavior(temp_db_path):
         updated_content = b"Updated URL content"
 
         # Mock first response
-        mock_response1 = AsyncMock()
-        mock_response1.content = original_content
-        mock_response1.headers = {"content-type": "text/plain"}
-        mock_response1.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_response1):
+        with serving_url(original_content, "text/plain"):
             # First call - should create new document
             doc1 = await client.create_document_from_source(url)
             assert isinstance(doc1, Document)
@@ -742,12 +741,7 @@ async def test_client_url_create_update_no_op_behavior(temp_db_path):
             assert isinstance(doc2, Document)
             assert doc2.id == original_id  # Same document
 
-        mock_response2 = AsyncMock()
-        mock_response2.content = updated_content
-        mock_response2.headers = {"content-type": "text/plain"}
-        mock_response2.raise_for_status = AsyncMock()
-
-        with patch("httpx.AsyncClient.get", return_value=mock_response2):
+        with serving_url(updated_content, "text/plain"):
             # Third call with changed content - should update existing document
             doc3 = await client.create_document_from_source(url)
             assert isinstance(doc3, Document)
@@ -836,6 +830,11 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
 
         assert document.id is not None
         assert "Full document content" in document.content
+        assert document.docling_document is not None
+        assert document.docling_version == docling_doc.version
+        structure = json.loads(decompress_json(document.docling_document))
+        assert "pages" not in structure
+        assert structure["name"] == "test"
 
         # Verify the chunks were created correctly
         doc_chunks = await client.chunk_repository.get_by_document_id(document.id)
@@ -851,26 +850,6 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
             )  # Original metadata preserved
 
 
-def _docling_doc(name: str, text: str):
-    from docling_core.types.doc.document import DoclingDocument
-    from docling_core.types.doc.labels import DocItemLabel
-
-    doc = DoclingDocument(name=name)
-    doc.add_text(label=DocItemLabel.TEXT, text=text)
-    return doc
-
-
-def _import(name: str, text: str, **overrides) -> "DocumentImport":
-    """Build a DocumentImport with one pre-embedded chunk (no embedder call)."""
-    dim = get_config().embeddings.model.vector_dim
-    chunk = Chunk(content=text, embedding=[0.1] * dim, order=0)
-    return DocumentImport(
-        docling_document=_docling_doc(name, text),
-        chunks=[chunk],
-        **overrides,
-    )
-
-
 async def test_client_import_documents_single_version_per_table(temp_db_path):
     """import_documents writes documents/chunks/document_items once for the
     whole batch (issue #287)."""
@@ -879,9 +858,9 @@ async def test_client_import_documents_single_version_per_table(temp_db_path):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         imports = [
-            _import("a", "Alpha document body", uri="mem://a", title="Alpha"),
-            _import("b", "Beta document body", uri="mem://b", title="Beta"),
-            _import("c", "Gamma document body", uri="mem://c", title="Gamma"),
+            document_import("a", "Alpha document body", uri="mem://a", title="Alpha"),
+            document_import("b", "Beta document body", uri="mem://b", title="Beta"),
+            document_import("c", "Gamma document body", uri="mem://c", title="Gamma"),
         ]
 
         before = await client.store.current_table_versions()
@@ -900,7 +879,7 @@ async def test_client_import_documents_single_version_per_table(temp_db_path):
 
         # With the index in place, a further batch is one version per table.
         again = await client.import_documents(
-            [_import("d", "Delta document body", uri="mem://d", title="Delta")]
+            [document_import("d", "Delta document body", uri="mem://d", title="Delta")]
         )
         assert [d.title for d in again] == ["Delta"]
         latest = await client.store.current_table_versions()
@@ -923,9 +902,9 @@ async def test_client_import_documents_rolls_back_on_failure(temp_db_path):
     dim = get_config().embeddings.model.vector_dim
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        good = _import("good", "Good document body", uri="mem://good")
+        good = document_import("good", "Good document body", uri="mem://good")
         bad = DocumentImport(
-            docling_document=_docling_doc("bad", "Bad document body"),
+            docling_document=docling_doc("bad", "Bad document body"),
             chunks=[Chunk(content="bad", embedding=[0.1] * (dim + 1), order=0)],
             uri="mem://bad",
         )
@@ -968,7 +947,7 @@ async def test_client_import_documents_batches_embeddings(temp_db_path):
         client.store.embedder = embedder
         imports = [
             DocumentImport(
-                docling_document=_docling_doc(name, text),
+                docling_document=docling_doc(name, text),
                 chunks=[Chunk(content=text, order=0)],
                 uri=f"mem://{name}",
                 title=name,
@@ -1001,14 +980,14 @@ async def test_single_and_batch_import_store_the_same_document(temp_db_path):
         client.store.embedder = _CountingEmbedder(dim)
 
         single = await client.import_document(
-            _docling_doc("a", "Alpha document body"),
+            docling_doc("a", "Alpha document body"),
             [Chunk(content="Alpha document body", order=0)],
             uri="mem://single",
         )
         [batched] = await client.import_documents(
             [
                 DocumentImport(
-                    docling_document=_docling_doc("a", "Alpha document body"),
+                    docling_document=docling_doc("a", "Alpha document body"),
                     chunks=[Chunk(content="Alpha document body", order=0)],
                     uri="mem://batch",
                 )
@@ -1059,7 +1038,7 @@ async def test_client_import_documents_mixed_embeddings(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         client.store.embedder = embedder
         pre_embedded = DocumentImport(
-            docling_document=_docling_doc("b", "Beta document body"),
+            docling_document=docling_doc("b", "Beta document body"),
             chunks=[
                 Chunk(content="Beta document body", embedding=[0.5] * dim, order=0)
             ],
@@ -1068,7 +1047,7 @@ async def test_client_import_documents_mixed_embeddings(temp_db_path):
         )
         unembedded = [
             DocumentImport(
-                docling_document=_docling_doc(name, text),
+                docling_document=docling_doc(name, text),
                 chunks=[Chunk(content=text, order=0)],
                 uri=f"mem://{name}",
                 title=name,
@@ -1106,14 +1085,14 @@ async def test_client_update_document_replaces_rows_with_bounded_versions(
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         created = await client.import_document(
-            _docling_doc("original", "Original body"),
+            docling_doc("original", "Original body"),
             [Chunk(content="Original body", embedding=[0.1] * dim, order=0)],
             uri="mem://replace",
             title="Replace",
         )
         assert created.id is not None
 
-        updated_docling = _docling_doc("updated", "Updated body")
+        updated_docling = docling_doc("updated", "Updated body")
         updated_chunks = [
             Chunk(content="Updated body A", embedding=[0.2] * dim, order=0),
             Chunk(content="Updated body B", embedding=[0.3] * dim, order=1),
@@ -1158,7 +1137,7 @@ async def test_metadata_only_update_does_not_advance_documents_table(temp_db_pat
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         created = await client.import_document(
-            _docling_doc("doc", "Body text"),
+            docling_doc("doc", "Body text"),
             [Chunk(content="Body text", embedding=[0.1] * dim, order=0)],
             uri="mem://meta-bloat",
             title="Original",
@@ -1207,13 +1186,16 @@ async def test_close_releases_the_connection(temp_db_path):
     assert not store.db.is_open()
 
 
-async def test_delete_marks_vacuum_dirty(temp_db_path):
+@pytest.mark.parametrize("auto_vacuum", [True, False])
+async def test_delete_marks_vacuum_dirty(temp_db_path, auto_vacuum):
     """A delete adds tombstone/table versions, so it must enter the auto-vacuum
     lifecycle — otherwise a delete-only run closes without a final vacuum."""
-    dim = get_config().embeddings.model.vector_dim
-    async with HaikuRAG(temp_db_path, create=True) as client:
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = auto_vacuum
+    dim = config.embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://del",
         )
@@ -1221,7 +1203,20 @@ async def test_delete_marks_vacuum_dirty(temp_db_path):
         client._session._vacuum_dirty = False  # isolate the delete
 
         assert await client.delete_document(doc.id) is True
-        assert client._session._vacuum_dirty is True
+        assert client._session._vacuum_dirty is auto_vacuum
+
+
+async def test_delete_document_without_a_uri(temp_db_path):
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+        )
+        assert doc.id is not None and doc.uri is None
+
+        assert await client.delete_document(doc.id) is True
+        assert await client.get_document_by_id(doc.id) is None
 
 
 async def test_delete_document_for_a_source_skips_another_sources_document(
@@ -1230,7 +1225,7 @@ async def test_delete_document_for_a_source_skips_another_sources_document(
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://owned",
         )
@@ -1249,12 +1244,12 @@ async def test_delete_document_for_a_source_cascades_to_unattributed_attachments
     dim = get_config().embeddings.model.vector_dim
     async with HaikuRAG(temp_db_path, create=True) as client:
         parent = await client.import_document(
-            _docling_doc("p", "parent"),
+            docling_doc("p", "parent"),
             [Chunk(content="parent", embedding=[0.1] * dim, order=0)],
             uri="mem://parent.pdf",
         )
         child = await client.import_document(
-            _docling_doc("c", "child"),
+            docling_doc("c", "child"),
             [Chunk(content="child", embedding=[0.1] * dim, order=0)],
             uri="mem://parent.pdf#attachment",
         )
@@ -1284,7 +1279,7 @@ async def test_delete_rolls_back_on_partial_failure(temp_db_path, monkeypatch):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("d", "body"),
+            docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
             uri="mem://del",
             title="T",
@@ -1321,12 +1316,12 @@ async def test_cascade_delete_is_atomic(temp_db_path, monkeypatch):
 
     async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         parent = await client.import_document(
-            _docling_doc("p", "parent"),
+            docling_doc("p", "parent"),
             [Chunk(content="parent", embedding=[0.1] * dim, order=0)],
             uri="mem://parent",
         )
         child = await client.import_document(
-            _docling_doc("c", "child"),
+            docling_doc("c", "child"),
             [Chunk(content="child", embedding=[0.2] * dim, order=0)],
             uri="mem://child",
         )
@@ -1440,126 +1435,6 @@ async def test_client_ask_runs_code(allow_model_requests, temp_db_path):
 
 
 @pytest.mark.vcr()
-async def test_client_create_document_stores_docling_json(temp_db_path):
-    """Test that create_document stores DoclingDocument JSON."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        doc = await client.create_document(
-            content="Test content for docling storage",
-            uri="test://docling",
-            metadata={"test": "docling_storage"},
-        )
-
-        assert doc.id is not None
-        assert doc.docling_document is not None
-        assert doc.docling_version is not None
-
-        # Verify JSON is valid and can be parsed
-        import json
-
-        from haiku.rag.store.compression import decompress_json
-
-        parsed = json.loads(decompress_json(doc.docling_document))
-        assert "version" in parsed
-        assert parsed["version"] == doc.docling_version
-
-
-@pytest.mark.vcr()
-async def test_client_import_document_stores_docling_data(temp_db_path):
-    """Test that import_document stores DoclingDocument data correctly."""
-    from docling_core.types.doc.document import DoclingDocument
-    from docling_core.types.doc.labels import DocItemLabel
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create a docling document with some content
-        docling_doc = DoclingDocument(name="test")
-        docling_doc.add_text(
-            label=DocItemLabel.TEXT, text="Content from docling document"
-        )
-
-        custom_chunks = [Chunk(content="Chunk content", order=0)]
-
-        # Import with DoclingDocument
-        doc = await client.import_document(
-            docling_document=docling_doc,
-            chunks=custom_chunks,
-        )
-
-        assert doc.id is not None
-        assert "Content from docling document" in doc.content
-        assert doc.docling_document is not None
-        assert doc.docling_version == docling_doc.version
-        # Structure is stored without pages
-        structure = json.loads(decompress_json(doc.docling_document))
-        assert "pages" not in structure
-        assert structure["name"] == "test"
-
-
-@pytest.mark.vcr()
-async def test_client_create_document_from_file_stores_docling_json(temp_db_path):
-    """Test that create_document_from_source stores DoclingDocument JSON for files."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / "test.txt"
-            temp_path.write_text("Test file content")
-
-            doc = await client.create_document_from_source(temp_path)
-            assert isinstance(doc, Document)
-
-            assert doc.id is not None
-            assert doc.docling_document is not None
-            assert doc.docling_version is not None
-
-            # Verify the stored document also has the JSON
-            retrieved = await client.document_repository.get_by_id(
-                doc.id, include_blobs=True
-            )
-            assert retrieved is not None
-            assert retrieved.docling_document == doc.docling_document
-            assert retrieved.docling_version == doc.docling_version
-
-
-@pytest.mark.vcr()
-async def test_client_update_document_stores_docling_json(temp_db_path):
-    """Test that update_document stores DoclingDocument JSON when content changes."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create initial document
-        doc = await client.create_document(content="Initial content")
-        assert doc.id is not None
-        original_json = doc.docling_document
-
-        # Update content via update_document
-        updated_doc = await client.update_document(
-            document_id=doc.id, content="New content via fields update"
-        )
-
-        assert updated_doc.docling_document is not None
-        assert updated_doc.docling_version is not None
-        # JSON should be different because content changed
-        assert updated_doc.docling_document != original_json
-
-
-@pytest.mark.vcr()
-async def test_client_update_document_with_custom_chunks_no_docling_json(
-    temp_db_path,
-):
-    """Test that update_document with custom chunks does not update docling JSON."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create initial document
-        doc = await client.create_document(content="Initial content")
-        assert doc.id is not None
-        original_json = doc.docling_document
-
-        # Update with custom chunks
-        custom_chunks = [Chunk(content="Custom chunk", order=0)]
-        updated_doc = await client.update_document(
-            document_id=doc.id, content="New content", chunks=custom_chunks
-        )
-
-        # Docling JSON should remain unchanged (no conversion when custom chunks provided)
-        assert updated_doc.docling_document == original_json
-
-
-@pytest.mark.vcr()
 async def test_client_update_document_content_docling_mutually_exclusive(
     temp_db_path,
 ):
@@ -1662,80 +1537,6 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
         assert len(chunks) == 2
         assert chunks[0].content == "Custom chunk 1"
         assert chunks[1].content == "Custom chunk 2"
-
-
-@pytest.mark.vcr()
-async def test_client_file_update_stores_docling_json(temp_db_path):
-    """Test that updating a file re-stores DoclingDocument JSON."""
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir) / "test.txt"
-            temp_path.write_text("Original content")
-
-            # Create initial document
-            doc1 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc1, Document)
-            original_json = doc1.docling_document
-            original_version = doc1.docling_version
-
-            # Modify file
-            temp_path.write_text("Modified content")
-
-            # Update document from source
-            doc2 = await client.create_document_from_source(temp_path)
-            assert isinstance(doc2, Document)
-            assert doc2.id == doc1.id  # Same document
-
-            # Docling JSON should be updated
-            assert doc2.docling_document is not None
-            assert doc2.docling_document != original_json
-            assert doc2.docling_version == original_version  # Version stays same
-
-
-@pytest.mark.vcr()
-async def test_sql_injection_is_blocked_with_escaping(temp_db_path):
-    """SQL injection is blocked when using escape_sql_string.
-
-    This test verifies that escape_sql_string properly prevents SQL injection
-    by escaping single quotes in user input.
-    """
-    from haiku.rag.utils.sql import escape_sql_string
-
-    async with HaikuRAG(temp_db_path, create=True) as client:
-        # Create documents
-        await client.create_document(
-            content="Secret classified data XYZ",
-            uri="secret://doc",
-            title="Secret",
-        )
-        await client.create_document(
-            content="Public report about weather",
-            uri="public://report",
-            title="Weather Report",
-        )
-
-        # Without escaping, this injection would match all documents
-        # by breaking out of the string literal: title = 'x' OR title LIKE '%'
-        injection_payload = "x' OR title LIKE '%"
-
-        # With proper escaping, single quotes become double quotes
-        # so the filter becomes: title = 'x'' OR title LIKE ''%'
-        # which searches for a literal title containing the injection string
-        safe_payload = escape_sql_string(injection_payload)
-        docs = await client.list_documents(filter=f"title = '{safe_payload}'")
-
-        # Should find 0 documents (injection is escaped, searching for literal string)
-        assert len(docs) == 0
-
-        # Verify the escaping works correctly
-        assert safe_payload == "x'' OR title LIKE ''%"
-
-        # Verify unescaped injection would have matched documents (for test validity)
-        # This demonstrates that the injection works without escaping
-        docs_unescaped = await client.list_documents(
-            filter=f"title = '{injection_payload}'"
-        )
-        assert len(docs_unescaped) == 2  # SQL injection succeeds without escaping
 
 
 # =============================================================================
@@ -1964,6 +1765,68 @@ async def test_metadata_refresh_with_nothing_to_write_returns_the_stored_record(
 
     assert refreshed.metadata == {"k": "v"}
     assert refreshed.updated_at == stored.updated_at
+
+
+async def test_metadata_refresh_without_auto_vacuum_schedules_none(temp_db_path):
+    from haiku.rag.client.documents import _refresh_doc_metadata
+
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+    dim = config.embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        doc = await client.import_document(
+            docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+
+        refreshed = await _refresh_doc_metadata(
+            writing(client),
+            doc,
+            title="Renamed",
+            user_metadata={},
+            source_metadata=None,
+        )
+
+        assert refreshed.title == "Renamed"
+        assert client._session._vacuum_dirty is False
+
+
+async def test_metadata_refresh_of_a_document_deleted_while_it_waited_raises(
+    temp_db_path, monkeypatch
+):
+    from haiku.rag.client.documents import _refresh_doc_metadata
+
+    dim = get_config().embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+        assert doc.id is not None
+
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
+            task = asyncio.create_task(
+                _refresh_doc_metadata(
+                    writing(client),
+                    doc,
+                    title=None,
+                    user_metadata={"k": "v"},
+                    source_metadata=None,
+                )
+            )
+            await assert_waiting_for_lock(task, lock)
+            await writing(client).document_repository.delete(doc.id)
+        with pytest.raises(ValueError, match="not found"):
+            await task
+        assert await client.get_document_by_id(doc.id) is None
 
 
 @pytest.mark.parametrize(

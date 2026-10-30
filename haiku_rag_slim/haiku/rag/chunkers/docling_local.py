@@ -138,22 +138,19 @@ class DoclingLocalChunker(DocumentChunker):
             page_numbers: list[int] = []
             headings: list[str] | None = None
 
-            meta = cast("DocMeta | None", chunk.meta)
-            if meta and meta.doc_items:
-                for doc_item in meta.doc_items:
-                    if doc_item.self_ref:
-                        doc_item_refs.append(doc_item.self_ref)
-                    if doc_item.label:
-                        labels.append(doc_item.label)
-                    if doc_item.prov:
-                        for prov in doc_item.prov:
-                            if (
-                                prov.page_no is not None
-                                and prov.page_no not in page_numbers
-                            ):
-                                page_numbers.append(prov.page_no)
+            meta = cast("DocMeta", chunk.meta)
+            for doc_item in meta.doc_items:
+                doc_item_refs.append(doc_item.self_ref)
+                labels.append(doc_item.label)
+                if doc_item.prov:
+                    for prov in doc_item.prov:
+                        if (
+                            prov.page_no is not None
+                            and prov.page_no not in page_numbers
+                        ):
+                            page_numbers.append(prov.page_no)
 
-            if meta and meta.headings:
+            if meta.headings:
                 headings = list(meta.headings)
 
             chunk_metadata = ChunkMetadata(

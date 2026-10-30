@@ -5,14 +5,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, HookConfig
 from haiku.rag.hooks import ENTRY_POINT_GROUP, Hook, build_hooks
 from haiku.rag.store.models.chunk import Chunk
-from tests.client.test_client import _docling_doc, _import
+from tests.documents import docling_doc, document_import
 from tests.platform import converts_pdf_locally, requires_symlinks
 
 
@@ -102,11 +101,6 @@ def test_config_accepts_a_hook_name_or_a_name_with_options():
         HookConfig(name="tuned", options={"token": "syn"}),
     ]
     assert HookConfig(name="bare").options == {}
-
-
-def test_config_rejects_an_unknown_key_in_a_hook_entry():
-    with pytest.raises(ValidationError, match="opts"):
-        AppConfig.model_validate({"hooks": [{"name": "tuned", "opts": {}}]})
 
 
 def test_build_hooks_passes_options_to_the_factory():
@@ -271,7 +265,7 @@ async def test_after_ingest_fires_on_import_batch_update(temp_db_path):
         client._hooks = [spy]
 
         doc = await client.import_document(
-            _docling_doc("a", "Alpha body"),
+            docling_doc("a", "Alpha body"),
             [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
             uri="mem://a",
             title="Alpha",
@@ -282,8 +276,8 @@ async def test_after_ingest_fires_on_import_batch_update(temp_db_path):
         spy.events.clear()
         batch = await client.import_documents(
             [
-                _import("b", "Beta body", uri="mem://b", title="Beta"),
-                _import("c", "Gamma body", uri="mem://c", title="Gamma"),
+                document_import("b", "Beta body", uri="mem://b", title="Beta"),
+                document_import("c", "Gamma body", uri="mem://c", title="Gamma"),
             ]
         )
         assert spy.events == [
@@ -298,7 +292,7 @@ async def test_after_ingest_fires_on_import_batch_update(temp_db_path):
         assert doc.id is not None
         await client.update_document(
             doc.id,
-            docling_document=_docling_doc("a2", "Alpha updated"),
+            docling_document=docling_doc("a2", "Alpha updated"),
             chunks=[Chunk(content="Alpha updated", embedding=[0.2] * dim, order=0)],
         )
         assert spy.events == [("ingest", "update", ((doc.id, "mem://a"),))]
@@ -306,7 +300,7 @@ async def test_after_ingest_fires_on_import_batch_update(temp_db_path):
         # Creation against an already-stored URI updates in place.
         spy.events.clear()
         await client.import_document(
-            _docling_doc("a3", "Alpha again"),
+            docling_doc("a3", "Alpha again"),
             [Chunk(content="Alpha again", embedding=[0.3] * dim, order=0)],
             uri="mem://a",
             title="Alpha",
@@ -322,7 +316,7 @@ async def test_metadata_only_update_does_not_fire_after_ingest(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         client._hooks = [spy]
         doc = await client.import_document(
-            _docling_doc("a", "Alpha body"),
+            docling_doc("a", "Alpha body"),
             [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
             uri="mem://a",
             title="Alpha",
@@ -350,13 +344,13 @@ async def test_after_delete_fires_for_cascade(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         client._hooks = [spy, content_spy]
         parent = await client.import_document(
-            _docling_doc("p", "Parent body"),
+            docling_doc("p", "Parent body"),
             [Chunk(content="Parent body", embedding=[0.1] * dim, order=0)],
             uri="mem://parent",
             title="Parent",
         )
         child = await client.import_document(
-            _docling_doc("k", "Child body"),
+            docling_doc("k", "Child body"),
             [Chunk(content="Child body", embedding=[0.1] * dim, order=0)],
             uri="mem://child",
             title="Child",
@@ -486,7 +480,7 @@ async def test_after_ingest_hook_failure_is_logged_not_raised(temp_db_path, capl
 
         with caplog.at_level(logging.ERROR, logger="haiku.rag.hooks"):
             doc = await client.import_document(
-                _docling_doc("a", "Alpha body"),
+                docling_doc("a", "Alpha body"),
                 [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
                 uri="mem://a",
                 title="Alpha",
@@ -511,7 +505,7 @@ async def test_after_delete_hook_failure_is_logged_not_raised(temp_db_path, capl
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.import_document(
-            _docling_doc("a", "Alpha body"),
+            docling_doc("a", "Alpha body"),
             [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
             uri="mem://a",
             title="Alpha",
@@ -612,7 +606,7 @@ async def test_lifespan_can_use_the_store_on_entry_and_exit(temp_db_path):
 
     async with client:
         await client.import_document(
-            _docling_doc("a", "Alpha body"),
+            docling_doc("a", "Alpha body"),
             [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
             uri="mem://lifespan",
             title="Alpha",
@@ -754,7 +748,7 @@ async def test_default_lifespan_is_a_noop(temp_db_path):
 
     async with client:
         doc = await client.import_document(
-            _docling_doc("a", "Alpha body"),
+            docling_doc("a", "Alpha body"),
             [Chunk(content="Alpha body", embedding=[0.1] * dim, order=0)],
             uri="mem://default-lifespan",
             title="Alpha",
@@ -1083,7 +1077,7 @@ async def test_unchanged_bytes_keep_metadata_written_during_the_fetch(
     path.write_bytes(body)
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        seed = _import("notes", "Unchanged notes.")
+        seed = document_import("notes", "Unchanged notes.")
         doc = await client.import_document(
             seed.docling_document, seed.chunks, uri=path.as_uri()
         )
@@ -1167,7 +1161,7 @@ async def test_before_ingest_request_uri_finds_the_stored_document(
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         stored = await client.import_document(
-            _docling_doc("notes", "Body"),
+            docling_doc("notes", "Body"),
             [
                 Chunk(
                     content="Body",
@@ -1279,7 +1273,7 @@ async def test_full_rebuild_propagates_a_before_ingest_failure(temp_db_path, tmp
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         [doc] = await client.import_documents(
-            [_import("doc", "Body.", uri=path.as_uri())]
+            [document_import("doc", "Body.", uri=path.as_uri())]
         )
         client._hooks = [RaisingIngestHook()]
         with pytest.raises(HookError):
@@ -1306,11 +1300,13 @@ async def test_full_rebuild_leaves_other_clients_hooks_firing(temp_db_path, tmp_
 
         class _WritesElsewhere(Hook):
             async def before_ingest(self, client, request):
-                await other.import_documents([_import("side", "Side note.")])
+                await other.import_documents([document_import("side", "Side note.")])
                 return request
 
         async with HaikuRAG(temp_db_path, create=True) as client:
-            await client.import_documents([_import("doc", "Body.", uri=path.as_uri())])
+            await client.import_documents(
+                [document_import("doc", "Body.", uri=path.as_uri())]
+            )
             client._hooks = [_WritesElsewhere()]
             async for _ in client.rebuild_database(mode=RebuildMode.FULL):
                 pass
@@ -1430,7 +1426,7 @@ async def test_full_rebuild_keeps_a_rejected_documents_stored_content(
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         [doc] = await client.import_documents(
-            [_import("doc", "Body.", uri=path.as_uri())]
+            [document_import("doc", "Body.", uri=path.as_uri())]
         )
         client._hooks = [RejectHook("doc.md")]
         rebuilt = [

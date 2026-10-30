@@ -286,21 +286,6 @@ class TestReleasingAClient:
     """`async with` is the usual lifecycle, and `aclose` is it for a caller that
     owns the client some other way. `close` is a connection, not a lifecycle."""
 
-    async def test_aclose_releases_a_set(self, tmp_path):
-        config = _config(tmp_path, ["alpha", "beta"])
-        await _seed(config, "alpha", ["alpha document about cats"])
-        await _seed(config, "beta", ["beta document about cats"])
-
-        rag = HaikuRAG(config=config)
-        await rag.__aenter__()
-        alpha, beta = await rag.clients_for(["alpha", "beta"])
-        assert alpha.store.db.is_open()
-
-        await rag.aclose()
-
-        assert not alpha.store.db.is_open()
-        assert not beta.store.db.is_open()
-
     async def test_aclose_releases_one_database(self, tmp_path):
         config = _config(tmp_path, ["alpha"])
         await _seed(config, "alpha", ["alpha document about cats"])
@@ -320,15 +305,17 @@ class TestReleasingAClient:
 
         await HaikuRAG(config=config).aclose()
 
-    async def test_aclose_twice_releases_once(self, tmp_path):
+    async def test_aclose_twice_releases_every_database_once(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
+        await _seed(config, "beta", ["beta document about cats"])
 
         closed: list[str] = []
 
         rag = HaikuRAG(config=config)
         await rag.__aenter__()
-        (alpha,) = await rag.clients_for(["alpha"])
+        alpha, beta = await rag.clients_for(["alpha", "beta"])
+        assert alpha.store.db.is_open()
         session = rag._session
         assert isinstance(session, FederatedSession)
         real = session.aclose
@@ -344,6 +331,7 @@ class TestReleasingAClient:
 
         assert closed == ["set"]
         assert not alpha.store.db.is_open()
+        assert not beta.store.db.is_open()
 
     async def test_close_refuses_a_set_and_names_aclose(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -645,6 +633,7 @@ class TestDatabaseIndependentWork:
         rag = HaikuRAG(temp_db_path, create=True)
         async with rag:
             first = rag.embedder
+            assert first is rag.store.embedder
         async with rag:
             assert rag.embedder is rag.store.embedder
             assert rag.embedder is not first
@@ -656,7 +645,3 @@ class TestDatabaseIndependentWork:
 
         async with HaikuRAG(config=config, read_only=True) as rag:
             assert "embedder" not in rag.__dict__
-
-    async def test_one_database_still_uses_its_store_s_embedder(self, temp_db_path):
-        async with HaikuRAG(temp_db_path, create=True) as rag:
-            assert rag.embedder is rag.store.embedder
