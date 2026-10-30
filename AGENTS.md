@@ -162,7 +162,7 @@ app/                        # Web application: chat, ingestion, inspector, docto
   - `rag` lends an open client: it lands in `borrowed_rag`, which `_ensure_rag` prefers and `_close` never closes.
   - `from_spec` delegates here so agent specs can declare the capability. `db_path` accepts a `str`.
 - `create_capability()` → `EvidenceCompactionCapability` (capabilities/compaction.py). Optional, registering it is the only switch. Replaces earlier questions' evidence on the *request* with a capsule of what was cited (pictures included, fetched through the owning capability). Other earlier evidence returns as a receipt. No config, no budget: it reduces a request without bounding it.
-- `create_capability()` → `CitationPolicyCapability` (capabilities/policy.py). Optional. Requires every answer to declare its grounding, asks once per question, records failures in `CitationPolicyState.violations`, never asks the model to change its answer. Enforced when the question retrieved evidence or the conversation already cited something.
+- `create_capability()` → `CitationPolicyCapability` (capabilities/policy.py). Optional. Requires every answer to declare its grounding, asks a plain-text answer once per question, never asks a structured answer, records failures in `CitationPolicyState.violations`, never asks the model to change its answer. Enforced when the question retrieved evidence or the conversation already cited something.
 
 **Base Classes:**
 - `EmbedderWrapper` (embeddings/__init__.py) — wraps pydantic-ai `Embedder`
