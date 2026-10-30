@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.104.0] - 2026-10-30
+
 ### Added
 
 - `databases_include` names a directory of YAML fragments, each adding `lancedb.databases` and `ingester.databases` entries. The ingester's reload reads it again (#785).
@@ -3161,7 +3163,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.103.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.104.0...HEAD
+[0.104.0]: https://github.com/ggozad/haiku.rag/compare/0.103.0...0.104.0
 [0.103.0]: https://github.com/ggozad/haiku.rag/compare/0.102.0...0.103.0
 [0.102.0]: https://github.com/ggozad/haiku.rag/compare/0.101.2...0.102.0
 [0.101.2]: https://github.com/ggozad/haiku.rag/compare/0.101.1...0.101.2
