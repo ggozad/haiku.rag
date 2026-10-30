@@ -460,84 +460,91 @@ class TestT2RAGBench:
 
 
 class TestFrames:
-    def test_parse_wiki_links_plain(self) -> None:
-        raw = (
-            "['https://en.wikipedia.org/wiki/James_Buchanan', "
-            "'https://en.wikipedia.org/wiki/Harriet_Lane']"
-        )
-        assert parse_wiki_links(raw) == [
-            "https://en.wikipedia.org/wiki/James_Buchanan",
-            "https://en.wikipedia.org/wiki/Harriet_Lane",
-        ]
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (
+                "['https://en.wikipedia.org/wiki/James_Buchanan', "
+                "'https://en.wikipedia.org/wiki/Harriet_Lane']",
+                [
+                    "https://en.wikipedia.org/wiki/James_Buchanan",
+                    "https://en.wikipedia.org/wiki/Harriet_Lane",
+                ],
+            ),
+            (
+                "['https://en.wikipedia.org/wiki/Tim_Salmon, "
+                "https://en.wikipedia.org/wiki/Troy_Glaus, ']",
+                [
+                    "https://en.wikipedia.org/wiki/Tim_Salmon",
+                    "https://en.wikipedia.org/wiki/Troy_Glaus",
+                ],
+            ),
+            (
+                "['https://en.wikipedia.org/wiki/Lincoln,_Nebraska', "
+                "'https://en.wikipedia.org/wiki/Key_West#:~:text=The%20southernmost,"
+                "apart%20at%20their%20closest%20points.']",
+                [
+                    "https://en.wikipedia.org/wiki/Lincoln,_Nebraska",
+                    "https://en.wikipedia.org/wiki/Key_West#:~:text=The%20southernmost,"
+                    "apart%20at%20their%20closest%20points.",
+                ],
+            ),
+            (
+                "['https://en.wikipedia.org/wiki/Pok%C3%A9mon (NOT REQUIRED, BUT HELPFUL) ']",
+                ["https://en.wikipedia.org/wiki/Pok%C3%A9mon"],
+            ),
+        ],
+        ids=[
+            "plain",
+            "splits-comma-joined-urls",
+            "keeps-commas-inside-titles",
+            "strips-trailing-annotation",
+        ],
+    )
+    def test_parse_wiki_links(self, raw: str, expected: list[str]) -> None:
+        assert parse_wiki_links(raw) == expected
 
-    def test_parse_wiki_links_splits_comma_joined_urls(self) -> None:
-        raw = (
-            "['https://en.wikipedia.org/wiki/Tim_Salmon, "
-            "https://en.wikipedia.org/wiki/Troy_Glaus, ']"
-        )
-        assert parse_wiki_links(raw) == [
-            "https://en.wikipedia.org/wiki/Tim_Salmon",
-            "https://en.wikipedia.org/wiki/Troy_Glaus",
-        ]
-
-    def test_parse_wiki_links_keeps_commas_inside_titles(self) -> None:
-        raw = (
-            "['https://en.wikipedia.org/wiki/Lincoln,_Nebraska', "
-            "'https://en.wikipedia.org/wiki/Key_West#:~:text=The%20southernmost,"
-            "apart%20at%20their%20closest%20points.']"
-        )
-        assert parse_wiki_links(raw) == [
-            "https://en.wikipedia.org/wiki/Lincoln,_Nebraska",
-            "https://en.wikipedia.org/wiki/Key_West#:~:text=The%20southernmost,"
-            "apart%20at%20their%20closest%20points.",
-        ]
-
-    def test_parse_wiki_links_strips_trailing_annotation(self) -> None:
-        raw = "['https://en.wikipedia.org/wiki/Pok%C3%A9mon (NOT REQUIRED, BUT HELPFUL) ']"
-        assert parse_wiki_links(raw) == ["https://en.wikipedia.org/wiki/Pok%C3%A9mon"]
-
-    def test_normalize_strips_fragment_and_mobile_host(self) -> None:
-        assert (
-            normalize_wiki_url("https://en.m.wikipedia.org/wiki/World_War_I#Aftermath")
-            == "https://en.wikipedia.org/wiki/World_War_I"
-        )
-
-    def test_normalize_decodes_and_canonicalizes_title(self) -> None:
-        assert (
-            normalize_wiki_url("https://en.wikipedia.org/wiki/pain %26 Gain")
-            == "https://en.wikipedia.org/wiki/Pain_&_Gain"
-        )
-
-    def test_normalize_schemeless(self) -> None:
-        assert (
-            normalize_wiki_url("en.wikipedia.org/wiki/Grazia_Deledda")
-            == "https://en.wikipedia.org/wiki/Grazia_Deledda"
-        )
-
-    def test_normalize_index_php_title(self) -> None:
-        assert (
-            normalize_wiki_url(
-                "https://en.wikipedia.org/w/index.php?title=Bronco&redirect=no"
-            )
-            == "https://en.wikipedia.org/wiki/Bronco"
-        )
-
-    def test_normalize_search_url(self) -> None:
-        url = (
-            "https://en.wikipedia.org/w/index.php?search=Polytrichum+piliferum"
-            "&title=Special:Search&profile=advanced&fulltext=1&ns0=1"
-        )
-        assert (
-            normalize_wiki_url(url)
-            == "https://en.wikipedia.org/wiki/Polytrichum_piliferum"
-        )
-
-    def test_normalize_shortlink_passthrough(self) -> None:
-        assert normalize_wiki_url("https://w.wiki/ASFv") == "https://w.wiki/ASFv"
-
-    def test_normalize_rejects_non_article(self) -> None:
-        assert normalize_wiki_url("") is None
-        assert normalize_wiki_url("https://en.wikipedia.org/foo") is None
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            (
+                "https://en.m.wikipedia.org/wiki/World_War_I#Aftermath",
+                "https://en.wikipedia.org/wiki/World_War_I",
+            ),
+            (
+                "https://en.wikipedia.org/wiki/pain %26 Gain",
+                "https://en.wikipedia.org/wiki/Pain_&_Gain",
+            ),
+            (
+                "en.wikipedia.org/wiki/Grazia_Deledda",
+                "https://en.wikipedia.org/wiki/Grazia_Deledda",
+            ),
+            (
+                "https://en.wikipedia.org/w/index.php?title=Bronco&redirect=no",
+                "https://en.wikipedia.org/wiki/Bronco",
+            ),
+            (
+                "https://en.wikipedia.org/w/index.php?search=Polytrichum+piliferum"
+                "&title=Special:Search&profile=advanced&fulltext=1&ns0=1",
+                "https://en.wikipedia.org/wiki/Polytrichum_piliferum",
+            ),
+            ("https://w.wiki/ASFv", "https://w.wiki/ASFv"),
+            ("", None),
+            ("https://en.wikipedia.org/foo", None),
+        ],
+        ids=[
+            "strips-fragment-and-mobile-host",
+            "decodes-and-canonicalizes-title",
+            "schemeless",
+            "index-php-title",
+            "search-url",
+            "shortlink-passthrough",
+            "rejects-empty",
+            "rejects-non-article",
+        ],
+    )
+    def test_normalize_wiki_url(self, url: str, expected: str | None) -> None:
+        assert normalize_wiki_url(url) == expected
 
     def test_parse_revid(self) -> None:
         assert parse_revid('W/"1364811104/52cd04f4-864c-11f1"') == "1364811104"

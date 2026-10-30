@@ -19,6 +19,7 @@ from evaluations.results import (
     write_results,
 )
 from haiku.rag.config.models import AppConfig
+from tests.specs import stub_spec
 
 
 @dataclass
@@ -102,6 +103,7 @@ class TestWriteResults:
         )
 
         assert path.parent == tmp_path
+        assert path.name == f"run-x.{TRACE}.jsonl"
         lines = path.read_text().splitlines()
         assert [json.loads(line)["case_name"] for line in lines] == [
             "1_a",
@@ -124,6 +126,7 @@ class TestWriteResults:
         assert first["trace_id"] == TRACE
         assert first["answer"] == "answer"
         assert first["reason"] is None
+        assert first["judge_probability"] is None
         assert first["attributes"] == {"cited_uris": ["u1"]}
         assert isinstance(first["task_duration"], float)
         assert rows["2_b"]["passed"] is False
@@ -133,6 +136,7 @@ class TestWriteResults:
         assert failed["aborted"] is True
         assert failed["passed"] is None
         assert failed["cited_map"] is None
+        assert failed["judge_decided_by"] is None
         assert "dead" in failed["reason"]
         assert failed["attributes"] == {} and failed["task_duration"] is None
         assert rows["4_d"]["key"] is None
@@ -150,13 +154,6 @@ class TestWriteResults:
         )
         assert rows["1_a"]["passed"] is True
         assert rows["2_b"]["passed"] is False
-
-    async def test_the_file_name_carries_the_trace(self, tmp_path: Path) -> None:
-        report = _traced(await _report(), TRACE)
-        path = write_results(
-            report, name="run-x", pair_key="query_id", directory=tmp_path, run_id="r1"
-        )
-        assert path.name == f"run-x.{TRACE}.jsonl"
 
     async def test_the_all_zero_trace_of_a_run_without_telemetry_is_no_trace(
         self, tmp_path: Path
@@ -282,46 +279,32 @@ class TestPartialResults:
         )
         assert rows["1_a"]["passed"] is None
 
-    async def test_rows_record_who_decided_the_verdict(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("decider", ["system_one", "fallback"])
+    async def test_rows_record_who_decided_the_verdict(
+        self, tmp_path: Path, decider: str
+    ) -> None:
         @dataclass
         class Gated(Evaluator):
             def evaluate(self, ctx: EvaluatorContext) -> dict[str, bool | float | str]:
                 return {
                     "answer_equivalent": True,
                     "answer_equivalent_probability": 0.91,
-                    "answer_equivalent_decided_by": "system_one",
+                    "answer_equivalent_decided_by": decider,
                     "answer_equivalent_model": "jev-1.13.0",
                 }
 
-        rows = _rows(
-            write_results(
-                await _report(Gated()),
-                name="run-x",
-                pair_key="query_id",
-                directory=tmp_path,
-                run_id="r1",
-            )
+        path = write_results(
+            await _report(Gated()),
+            name="run-x",
+            pair_key="query_id",
+            directory=tmp_path,
+            run_id="r1",
         )
-        assert rows["1_a"]["judge_decided_by"] == "system_one"
+        rows = _rows(path)
+        assert rows["1_a"]["judge_decided_by"] == decider
         assert rows["1_a"]["judge_probability"] == 0.91
         assert rows["1_a"]["system_one_model"] == "jev-1.13.0"
-
-    async def test_rows_of_an_ungated_judge_record_no_decider(
-        self, tmp_path: Path
-    ) -> None:
-        rows = _rows(
-            write_results(
-                await _report(),
-                name="run-x",
-                pair_key="query_id",
-                directory=tmp_path,
-                run_id="r1",
-            )
-        )
-        assert rows["1_a"]["judge_decided_by"] is None
-        assert rows["1_a"]["judge_probability"] is None
-        assert rows["1_a"]["system_one_model"] is None
-        assert rows["3_c"]["judge_decided_by"] is None
+        assert read_results(path)[0].judge_decided_by == decider
 
     async def test_a_result_file_is_never_overwritten(self, tmp_path: Path) -> None:
         report = await _report()
@@ -363,7 +346,9 @@ class TestReadResults:
         assert outcomes[2].aborted is True
         assert outcomes[3].key is None
 
-    def test_skips_blank_lines(self, tmp_path: Path) -> None:
+    def test_skips_blank_lines_and_reads_a_missing_decider_as_none(
+        self, tmp_path: Path
+    ) -> None:
         path = tmp_path / "run-x.jsonl"
         row = {
             "case_name": "1_a",
@@ -374,16 +359,14 @@ class TestReadResults:
             "aborted": False,
         }
         path.write_text(json.dumps(row) + "\n\n")
-        assert [o.case_name for o in read_results(path)] == ["1_a"]
+        outcomes = read_results(path)
+        assert [o.case_name for o in outcomes] == ["1_a"]
+        assert outcomes[0].judge_decided_by is None
 
 
 def _spec() -> DatasetSpec:
-    return DatasetSpec(
-        key="test",
-        db_filename="test.lancedb",
-        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        document_mapper=lambda doc: None,
-        qa_loader=lambda: [{"q": "q", "a": "42"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+    return stub_spec(
+        qa_loader=lambda: [{"q": "q", "a": "42"}],
         qa_case_builder=lambda idx, doc: Case(
             name=f"case-{idx}",
             inputs=doc["q"],
@@ -425,25 +408,6 @@ class TestRunWritesResults:
                 _spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
             )
         assert not (tmp_path / "results").exists()
-
-    async def test_evaluate_dataset_threads_the_directory(self, tmp_path: Path) -> None:
-        from evaluations.benchmark import evaluate_dataset
-
-        with patch(
-            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
-        ) as qa:
-            await evaluate_dataset(
-                spec=_spec(),
-                config=AppConfig(),
-                skip_db=True,
-                skip_retrieval=True,
-                skip_qa=False,
-                limit=None,
-                name=None,
-                db_path=None,
-                results_dir=tmp_path / "results",
-            )
-        assert qa.call_args[1]["results_dir"] == tmp_path / "results"
 
     async def test_the_metadata_names_the_pairing_key(self, tmp_path: Path) -> None:
         from evaluations.qa import _prepare_qa_run

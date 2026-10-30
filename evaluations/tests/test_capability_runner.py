@@ -104,33 +104,30 @@ def test_count_tool_traffic_counts_attempts_not_distinct_queries():
 
 
 async def test_runs_rag_capability_without_legacy_capability_layer(tmp_path):
+    from evaluations.capability_runner import prefix_to_messages
+    from evaluations.config import Turn
+
+    history = prefix_to_messages(
+        [
+            Turn(speaker="user", text="who takes photos of planes?"),
+            Turn(speaker="agent", text="Ground-to-air photographers."),
+        ]
+    )
     result = await run_capability_question(
         create_rag,
         tmp_path / "rag.lancedb",
         AppConfig(),
-        "hello",
+        "No, I meant photos in the air.",
         TestModel(call_tools=[]),
         document_filter="uri = 'manual.pdf'",
+        message_history=history,
     )
 
     assert result.answer == "success (no tool calls)"
     assert result.cited_uris == []
     assert result.n_searches == 0
-    assert result.citation_status == "missing"
-
-
-async def test_runs_the_capability_with_a_request_limit(tmp_path):
-    result = await run_capability_question(
-        create_rag,
-        tmp_path / "rag.lancedb",
-        AppConfig(),
-        "hello",
-        TestModel(call_tools=[]),
-        request_limit=5,
-    )
-
-    assert result.answer == "success (no tool calls)"
     assert result.n_executions == 0
+    assert result.citation_status == "missing"
 
 
 @pytest.mark.parametrize(("override", "expected"), [(None, 30), (5, 5)])
@@ -202,12 +199,6 @@ class TestCitationStatusDerivation:
         )
         assert self._result(record).citation_status == "ungrounded"
 
-    def test_missing(self) -> None:
-        from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
-
-        record = CapabilityEvidenceRecord(question=2, latest_evidence_epoch=3)
-        assert self._result(record).citation_status == "missing"
-
     def test_none_without_a_question(self) -> None:
         """A record no run ever stamped (mocked runs) derives no status."""
         from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
@@ -275,18 +266,15 @@ async def test_message_history_passed_to_agent_run(tmp_path):
 
 
 async def test_conversation_threads_own_messages_across_turns(tmp_path):
-    """Each turn runs with the previous turn's full message history (including
-    tool traffic), so prior-turn compaction operates on real history."""
+    """Each turn runs with the previous turn's history and the one filtered state dict."""
     from evaluations.capability_runner import run_capability_conversation
 
-    capability = create_rag(
-        db_path=tmp_path / "rag.lancedb",
-        config=AppConfig(),
-    )
     histories: list[object] = []
+    deps_seen: list = []
 
     async def _run(question, deps=None, message_history=None):
         histories.append(message_history)
+        deps_seen.append(deps)
         return SimpleNamespace(
             output=f"answer to {question}",
             all_messages=lambda: [f"history after {question}"],
@@ -295,11 +283,12 @@ async def test_conversation_threads_own_messages_across_turns(tmp_path):
 
     with patch("evaluations.capability_runner.Agent.run", side_effect=_run):
         result = await run_capability_conversation(
-            lambda **_kwargs: capability,
+            create_rag,
             tmp_path / "rag.lancedb",
             AppConfig(),
             ["q1", "q2", "q3"],
             TestModel(call_tools=[]),
+            document_filter="uri = 'manual.pdf'",
         )
 
     assert [t.answer for t in result] == [
@@ -308,57 +297,8 @@ async def test_conversation_threads_own_messages_across_turns(tmp_path):
         "answer to q3",
     ]
     assert histories == [None, ["history after q1"], ["history after q2"]]
-
-
-async def test_conversation_applies_document_filter(tmp_path):
-    """The filter must reach the capability state so every search in the
-    conversation is restricted, same as the single-question runner."""
-    from evaluations.capability_runner import run_capability_conversation
-
-    deps_seen = []
-
-    async def _run(question, deps=None, message_history=None):
-        deps_seen.append(deps)
-        return SimpleNamespace(
-            output="a", all_messages=lambda: [], new_messages=lambda: []
-        )
-
-    with patch("evaluations.capability_runner.Agent.run", side_effect=_run):
-        await run_capability_conversation(
-            create_rag,
-            tmp_path / "rag.lancedb",
-            AppConfig(),
-            ["q1"],
-            TestModel(call_tools=[]),
-            document_filter="uri = 'manual.pdf'",
-        )
-
-    assert deps_seen[0].state["rag"]["document_filter"] == "uri = 'manual.pdf'"
-
-
-async def test_conversation_carries_one_state_dict_across_turns(tmp_path):
-    """Capabilities read and write state through the deps dict, and the same
-    dict is carried across every turn of a conversation."""
-    from evaluations.capability_runner import run_capability_conversation
-
-    deps_seen: list[object] = []
-
-    async def _run(question, deps=None, message_history=None):
-        deps_seen.append(deps)
-        return SimpleNamespace(
-            output="a", all_messages=lambda: [], new_messages=lambda: []
-        )
-
-    with patch("evaluations.capability_runner.Agent.run", side_effect=_run):
-        await run_capability_conversation(
-            create_rag,
-            tmp_path / "rag.lancedb",
-            AppConfig(),
-            ["q1", "q2", "q3"],
-            TestModel(call_tools=[]),
-        )
-
     assert deps_seen[0] is deps_seen[1] is deps_seen[2]
+    assert deps_seen[0].state["rag"]["document_filter"] == "uri = 'manual.pdf'"
 
 
 @pytest.mark.parametrize(("compaction", "expected"), [(False, 0), (True, 1)])
@@ -389,7 +329,8 @@ async def test_conversation_compaction_registration(tmp_path, compaction, expect
     assert len(capabilities) == 1 + expected
 
 
-async def test_conversation_end_to_end_with_compaction(tmp_path):
+@pytest.mark.parametrize("compaction", [False, True])
+async def test_conversation_end_to_end_with_test_model(tmp_path, compaction):
     from evaluations.capability_runner import run_capability_conversation
 
     result = await run_capability_conversation(
@@ -398,21 +339,7 @@ async def test_conversation_end_to_end_with_compaction(tmp_path):
         AppConfig(),
         ["first question", "follow-up"],
         TestModel(call_tools=[]),
-        compaction=True,
-    )
-
-    assert [turn.answer for turn in result] == ["success (no tool calls)"] * 2
-
-
-async def test_conversation_end_to_end_with_test_model(tmp_path):
-    from evaluations.capability_runner import run_capability_conversation
-
-    result = await run_capability_conversation(
-        create_rag,
-        tmp_path / "rag.lancedb",
-        AppConfig(),
-        ["first question", "follow-up"],
-        TestModel(call_tools=[]),
+        compaction=compaction,
     )
 
     assert len(result) == 2
@@ -420,31 +347,8 @@ async def test_conversation_end_to_end_with_test_model(tmp_path):
     assert all(turn.cited_uris == [] for turn in result)
 
 
-async def test_gold_prefix_run_answers_with_history(tmp_path):
-    """End-to-end through a real Agent: the prefix rides along as history."""
-    from evaluations.capability_runner import prefix_to_messages
-    from evaluations.config import Turn
-
-    history = prefix_to_messages(
-        [
-            Turn(speaker="user", text="who takes photos of planes?"),
-            Turn(speaker="agent", text="Ground-to-air photographers."),
-        ]
-    )
-    result = await run_capability_question(
-        create_rag,
-        tmp_path / "rag.lancedb",
-        AppConfig(),
-        "No, I meant photos in the air.",
-        TestModel(call_tools=[]),
-        message_history=history,
-    )
-
-    assert result.answer == "success (no tool calls)"
-
-
 def test_records_the_database_each_citation_came_from():
-    """A run over several databases records which one grounded the answer."""
+    """Each citation records its database, and a sourceless one an empty string."""
     from evaluations.capability_runner import ToolTraffic, _result_from_run
     from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
     from haiku.rag.capabilities.rag import RAGState
@@ -460,43 +364,19 @@ def test_records_the_database_each_citation_came_from():
         )
 
     state = RAGState(
-        citations=["a1", "b1", "a2"],
+        citations=["a1", "b1", "a2", "c1"],
         citation_index={
             "a1": cited("a1", "alpha"),
             "b1": cited("b1", "beta"),
             "a2": cited("a2", "alpha"),
+            "c1": cited("c1", None),
         },
         evidence=CapabilityEvidenceRecord(question=1),
     )
 
     result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
 
-    assert result.cited_sources == ["alpha", "beta", "alpha"]
-
-
-def test_a_hand_built_citation_without_a_source_records_an_empty_string():
-    """A citation built without a source is recorded as an empty string."""
-    from evaluations.capability_runner import ToolTraffic, _result_from_run
-    from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord
-    from haiku.rag.capabilities.rag import RAGState
-    from haiku.rag.store.models.citation import Citation
-
-    state = RAGState(
-        citations=["c1"],
-        citation_index={
-            "c1": Citation(
-                chunk_id="c1",
-                document_id="d1",
-                document_uri="test://one",
-                content="body",
-            )
-        },
-        evidence=CapabilityEvidenceRecord(question=1),
-    )
-
-    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
-
-    assert result.cited_sources == [""]
+    assert result.cited_sources == ["alpha", "beta", "alpha", ""]
 
 
 def test_in_code_search_calls_are_summed_across_executions():

@@ -10,8 +10,9 @@ from evaluations.experiment import (
     corpus_fingerprint,
 )
 from haiku.rag.client import HaikuRAG
-from haiku.rag.config.models import AppConfig
+from haiku.rag.config.models import AppConfig, ModelConfig
 from haiku.rag.store.models.chunk import Chunk
+from tests.specs import stub_spec
 
 
 def _git(path: Path, *args: str) -> str:
@@ -69,14 +70,87 @@ class TestConfigHash:
         assert config_hash(changed) != config_hash(AppConfig())
 
 
-class TestMetadataRecordsRunIdentity:
-    def test_records_revision_and_config_hash(self) -> None:
+class TestBuildExperimentMetadata:
+    def test_a_retrieval_run_records_config_and_run_identity(self) -> None:
         config = AppConfig()
-        result = build_experiment_metadata(dataset_key="t", test_cases=1, config=config)
+        result = build_experiment_metadata(
+            dataset_key="t", test_cases=42, config=config
+        )
+
+        assert result["dataset"] == "t"
+        assert result["test_cases"] == 42
+        assert result["embedder_provider"] == config.embeddings.model.provider
+        assert result["embedder_model"] == config.embeddings.model.name
+        assert result["embedder_dim"] == config.embeddings.model.vector_dim
+        assert result["chunk_size"] == config.processing.chunk_size
+        assert result["search_limit"] == config.search.limit
+        assert result["qa_max_searches"] == config.qa.max_searches
+        assert result["qa_max_executions"] == config.qa.max_executions
+        assert result["sandbox_code_timeout"] == config.sandbox.code_timeout
+        assert result["sandbox_max_output_chars"] == config.sandbox.max_output_chars
+        assert result["rerank_provider"] is None
+        assert result["rerank_model"] is None
+        assert result["document_filter"] is None
+        for absent in (
+            "qa_provider",
+            "qa_model",
+            "judge_provider",
+            "target",
+            "capability_provider",
+            "capability_model",
+        ):
+            assert absent not in result
         revision = code_revision()
         assert result["git_sha"] == revision["git_sha"]
         assert result["git_dirty"] == revision["git_dirty"]
         assert result["config_hash"] == config_hash(config)
+
+    def test_a_qa_run_records_judge_capability_reranker_and_filter(self) -> None:
+        config = AppConfig()
+        config.reranking.model = ModelConfig(
+            provider="vllm", name="Qwen/Qwen3-Reranker-4B"
+        )
+        judge = ModelConfig(
+            provider="ollama",
+            name="gpt-oss",
+            thinking=False,
+            temperature=0.0,
+            extra_body={"chat_template_kwargs": {"enable_thinking": True}},
+        )
+        capability = ModelConfig(
+            provider="ollama",
+            name="gpt-oss-large",
+            temperature=0.2,
+            thinking="low",
+            extra_body={"min_p": 0},
+        )
+        result = build_experiment_metadata(
+            dataset_key="t",
+            test_cases=1,
+            config=config,
+            judge_config=judge,
+            capability_config=capability,
+            document_filter="uri LIKE '%arxiv%'",
+        )
+
+        assert result["judge_provider"] == "ollama"
+        assert result["judge_model"] == "gpt-oss"
+        assert result["judge_temperature"] == 0.0
+        assert result["judge_thinking"] is False
+        assert result["judge_extra_body"] == {
+            "chat_template_kwargs": {"enable_thinking": True}
+        }
+        assert "judge_enable_thinking" not in result
+        assert result["capability_provider"] == "ollama"
+        assert result["capability_model"] == "gpt-oss-large"
+        assert result["capability_temperature"] == 0.2
+        assert result["capability_thinking"] == "low"
+        assert result["capability_extra_body"] == {"min_p": 0}
+        assert "capability_enable_thinking" not in result
+        assert "qa_extra_body" not in result
+        assert result["rerank_provider"] == "vllm"
+        assert result["rerank_model"] == "Qwen/Qwen3-Reranker-4B"
+        assert result["document_filter"] == "uri LIKE '%arxiv%'"
 
 
 class TestCorpusFingerprint:
@@ -163,16 +237,12 @@ class TestPopulationKeepsTheConfigHash:
     async def test_populating_leaves_the_callers_config_alone(
         self, tmp_path: Path
     ) -> None:
-        from evaluations.config import DatasetSpec
         from evaluations.population import populate_db
 
-        spec = DatasetSpec(
+        spec = stub_spec(
             key="empty",
             db_filename="empty.lancedb",
-            document_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            document_loader=lambda: [],
         )
         config = AppConfig()
         before = config_hash(config)

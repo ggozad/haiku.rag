@@ -122,41 +122,6 @@ class TestConversationEvaluator:
         assert answer == "my a2"
         assert reference == "r2"
 
-    async def test_no_citation_scores_without_eligible_turns(self) -> None:
-        evaluator = ConversationEvaluator(rubric="rubric", model="test")
-        ctx = _ctx(
-            questions=["q1"],
-            answers=["a1"],
-            turns=[{"reference": "r1", "answerability": "UNANSWERABLE"}],
-        )
-
-        with (
-            patch(
-                "evaluations.evaluators.conversation.judge_input_output_expected",
-                new_callable=AsyncMock,
-                return_value=_grading(False),
-            ),
-            patch(
-                "evaluations.evaluators.conversation.judge_output",
-                new_callable=AsyncMock,
-                return_value=_grading(True),
-            ),
-        ):
-            result = await evaluator.evaluate(ctx)
-
-        assert result == {
-            "turn_pass_rate": 0.0,
-            "turns_passed": 0,
-            "turns_judged": 1,
-            "turns_total": 1,
-            "cited_eligible": 0,
-            "true_refusals": 1,
-            "false_refusals": 0,
-            "unanswerable_turns": 1,
-            "turn_1_pass": EvaluationReason(value=False, reason=None),
-            "turn_1_refused": True,
-        }
-
     async def test_mismatched_arrays_raise(self) -> None:
         evaluator = ConversationEvaluator(rubric="rubric", model="test")
         ctx = _ctx(

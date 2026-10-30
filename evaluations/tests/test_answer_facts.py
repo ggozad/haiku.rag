@@ -62,43 +62,23 @@ class TestAnswerFactsJudge:
         assert "Owner is BETA." in completeness.reason
         assert "Rate is ALPHA." not in completeness.reason
         assert len(judged) == 4
-
-    async def test_each_fact_is_judged_alone(self) -> None:
-        judged: list[str] = []
-        facts = ["ALPHA.", "BETA."]
-
-        await AnswerFactsJudge(model=_judge(judged)).evaluate(
-            _ctx("ALPHA", {"answer_facts": facts})
-        )
-
-        assert sum("ALPHA" in r for r in judged) == 1
-        assert sum("BETA" in r for r in judged) == 1
-        assert not any("ALPHA" in r and "BETA" in r for r in judged)
-
-    async def test_every_fact_supported_is_complete(self) -> None:
-        result = await AnswerFactsJudge(model=_judge([])).evaluate(
-            _ctx("ALPHA BETA", {"answer_facts": ["ALPHA.", "BETA."]})
-        )
-
-        assert isinstance(result, dict)
-        completeness = result["answer_completeness"]
-        assert isinstance(completeness, EvaluationReason)
-        assert completeness.value == 1.0
+        assert sorted(judged) == sorted(facts)
 
     @pytest.mark.parametrize(
-        ("reply", "supported"),
+        ("reply", "facts", "supported"),
         [
-            ("Yes, it does.", 1.0),
-            ("yes", 1.0),
-            ("No\nyes on a later line", 0.0),
-            (" ", 0.0),
+            ("Yes, it does.", ["ALPHA."], 1.0),
+            ("yes", ["ALPHA."], 1.0),
+            ("No\nyes on a later line", ["ALPHA."], 0.0),
+            (" ", ["ALPHA."], 0.0),
+            ("yes", ["ALPHA.", "BETA."], 1.0),
         ],
     )
-    async def test_only_the_first_line_of_the_reply_decides(
-        self, reply: str, supported: float
+    async def test_only_the_first_line_of_each_reply_decides(
+        self, reply: str, facts: list[str], supported: float
     ) -> None:
         result = await AnswerFactsJudge(model=_judge([], reply=reply)).evaluate(
-            _ctx("ALPHA", {"answer_facts": ["ALPHA."]})
+            _ctx("ALPHA", {"answer_facts": facts})
         )
 
         assert isinstance(result, dict)

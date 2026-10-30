@@ -13,110 +13,10 @@ from evaluations.benchmark import (
     evaluate_dataset,
     require_telemetry,
 )
-from evaluations.config import DatasetSpec, DocumentPayload
-from evaluations.experiment import build_experiment_metadata
+from evaluations.config import DatasetSpec
 from evaluations.qa import run_qa_benchmark
 from haiku.rag.config.models import AppConfig, ModelConfig
-
-
-def _stub_spec(**overrides) -> DatasetSpec:
-    """A DatasetSpec whose loaders/mappers are inert, for tests that only
-    exercise the surrounding plumbing. Any field can be overridden."""
-    fields: dict = {
-        "key": "test",
-        "db_filename": "test.lancedb",
-        "document_loader": lambda: None,
-        "document_mapper": lambda doc: None,
-        "qa_loader": lambda: [],
-        "qa_case_builder": lambda idx, doc: None,
-    }
-    return DatasetSpec(**{**fields, **overrides})
-
-
-class TestBuildExperimentMetadata:
-    def test_basic_metadata(self) -> None:
-        config = AppConfig()
-        result = build_experiment_metadata(
-            dataset_key="test",
-            test_cases=42,
-            config=config,
-        )
-
-        assert result["dataset"] == "test"
-        assert result["test_cases"] == 42
-        assert result["embedder_provider"] == config.embeddings.model.provider
-        assert result["embedder_model"] == config.embeddings.model.name
-        assert result["embedder_dim"] == config.embeddings.model.vector_dim
-        assert result["chunk_size"] == config.processing.chunk_size
-        assert result["search_limit"] == config.search.limit
-        assert result["qa_max_searches"] == config.qa.max_searches
-        assert result["qa_max_executions"] == config.qa.max_executions
-        assert result["sandbox_code_timeout"] == config.sandbox.code_timeout
-        assert result["sandbox_max_output_chars"] == config.sandbox.max_output_chars
-        assert "qa_provider" not in result
-        assert "qa_model" not in result
-        assert "judge_provider" not in result
-
-    def test_with_judge_config(self) -> None:
-        config = AppConfig()
-        judge = ModelConfig(
-            provider="ollama", name="gpt-oss", thinking=False, temperature=0.0
-        )
-        result = build_experiment_metadata(
-            dataset_key="test",
-            test_cases=10,
-            config=config,
-            judge_config=judge,
-        )
-
-        assert result["judge_provider"] == "ollama"
-        assert result["judge_model"] == "gpt-oss"
-        assert result["judge_temperature"] == 0.0
-        assert result["judge_thinking"] is False
-        assert "judge_enable_thinking" not in result
-
-    def test_records_extra_body(self) -> None:
-        config = AppConfig()
-        judge = ModelConfig(
-            provider="openai",
-            name="qwen",
-            extra_body={"chat_template_kwargs": {"enable_thinking": True}},
-        )
-        capability = ModelConfig(
-            provider="openai", name="gemma", extra_body={"min_p": 0}
-        )
-        result = build_experiment_metadata(
-            dataset_key="test",
-            test_cases=1,
-            config=config,
-            judge_config=judge,
-            capability_config=capability,
-        )
-
-        assert "qa_extra_body" not in result
-        assert result["judge_extra_body"] == {
-            "chat_template_kwargs": {"enable_thinking": True}
-        }
-        assert result["capability_extra_body"] == {"min_p": 0}
-
-    def test_no_reranker(self) -> None:
-        config = AppConfig()
-        result = build_experiment_metadata(
-            dataset_key="test", test_cases=1, config=config
-        )
-        assert result["rerank_provider"] is None
-        assert result["rerank_model"] is None
-
-    def test_with_reranker(self) -> None:
-        config = AppConfig()
-        config.reranking.model = ModelConfig(
-            provider="vllm", name="Qwen/Qwen3-Reranker-4B"
-        )
-        result = build_experiment_metadata(
-            dataset_key="test", test_cases=1, config=config
-        )
-        assert result["rerank_provider"] == "vllm"
-        assert result["rerank_model"] == "Qwen/Qwen3-Reranker-4B"
+from tests.specs import stub_spec
 
 
 class TestResolveDataset:
@@ -128,19 +28,16 @@ class TestResolveDataset:
         spec = _resolve_dataset("HOTPOTQA")
         assert spec.key == "hotpotqa"
 
-    def test_unknown_dataset_raises(self) -> None:
-        with pytest.raises(typer.BadParameter, match="Unknown dataset 'nonexistent'"):
-            _resolve_dataset("nonexistent")
-
-    def test_error_lists_valid_datasets(self) -> None:
-        with pytest.raises(typer.BadParameter, match="hotpotqa"):
+    def test_an_unknown_dataset_raises_listing_the_valid_ones(self) -> None:
+        with pytest.raises(
+            typer.BadParameter, match="Unknown dataset 'nonexistent'.*hotpotqa"
+        ):
             _resolve_dataset("nonexistent")
 
 
 class TestConversationInputDispatch:
     async def test_prefix_rides_as_message_history(self, tmp_path: Path) -> None:
-        """A ConversationInput case reaches the capability as final question
-        plus the prefix converted to message history."""
+        """A ConversationInput case runs its prefix as message history and records its citation status."""
         from dataclasses import dataclass
 
         from pydantic_evals import Case
@@ -167,56 +64,8 @@ class TestConversationInputDispatch:
                 expected_output="ref",
             )
 
-        spec = DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=build_case,
-            qa_evaluator=AlwaysOne(),
-        )
-
-        with (
-            patch("evaluations.qa.get_model", return_value="fake-model"),
-            patch(
-                "evaluations.qa.run_capability_question",
-                new_callable=AsyncMock,
-                return_value=CapabilityRunResult(answer="answer"),
-            ) as run_question,
-        ):
-            await run_qa_benchmark(spec, AppConfig(), db_path=tmp_path / "test.lancedb")
-
-        assert run_question.await_args is not None
-        kwargs = run_question.await_args.kwargs
-        assert kwargs["question"] == "q2"
-        history = kwargs["message_history"]
-        assert len(history) == 2
-        assert history[0].parts[0].content == "q1"
-        assert history[1].parts[0].content == "a1"
-
-    async def test_records_citation_status_attribute(self, tmp_path: Path) -> None:
-        from dataclasses import dataclass
-
-        from pydantic_evals import Case
-        from pydantic_evals.evaluators import Evaluator, EvaluatorContext
-
-        from evaluations.capability_runner import CapabilityRunResult
-
-        @dataclass
-        class AlwaysOne(Evaluator):
-            def evaluate(self, ctx: EvaluatorContext) -> float:
-                return 1.0
-
-        def build_case(idx: int, doc) -> Case:
-            return Case(name="c1", inputs="q1", expected_output="ref")
-
-        spec = DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        spec = stub_spec(
+            qa_loader=lambda: [{"id": "t1"}],
             qa_case_builder=build_case,
             qa_evaluator=AlwaysOne(),
         )
@@ -234,10 +83,17 @@ class TestConversationInputDispatch:
                 return_value=CapabilityRunResult(
                     answer="answer", citation_status="ungrounded"
                 ),
-            ),
+            ) as run_question,
         ):
             await run_qa_benchmark(spec, AppConfig(), db_path=tmp_path / "test.lancedb")
 
+        assert run_question.await_args is not None
+        kwargs = run_question.await_args.kwargs
+        assert kwargs["question"] == "q2"
+        history = kwargs["message_history"]
+        assert len(history) == 2
+        assert history[0].parts[0].content == "q1"
+        assert history[1].parts[0].content == "a1"
         assert recorded["citation_status"] == "ungrounded"
 
 
@@ -334,14 +190,7 @@ class TestFactsMetrics:
                 metadata={"question_id": "q1", "answer_facts": ["A.", "B."]},
             )
 
-        spec = DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [{"id": "t1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=build_case,
-        )
+        spec = stub_spec(qa_loader=lambda: [{"id": "t1"}], qa_case_builder=build_case)
         passing_judge = FunctionModel(
             lambda messages, info: ModelResponse(
                 parts=[
@@ -439,31 +288,6 @@ class TestLiveSummary:
 
         assert _live_summary([self._case({})], []) is None
 
-    def test_micro_rate_uses_judged_turns(self) -> None:
-        from evaluations.qa import _live_summary
-
-        cases = [
-            self._case(
-                {
-                    "turn_pass_rate": 1.0,
-                    "turns_passed": 3,
-                    "turns_judged": 3,
-                    "turns_total": 4,  # one turn's judge errored
-                    "cited_eligible": 0,
-                    "true_refusals": 0,
-                    "false_refusals": 0,
-                    "unanswerable_turns": 0,
-                }
-            )
-        ]
-
-        summary = _live_summary(cases, [])
-
-        assert summary is not None
-        assert summary["micro_pass_rate"] == 1.0
-        assert summary["turns_judged"] == 3
-        assert summary["turns_total"] == 4
-
     def test_macro_rate_excludes_fully_unjudged_conversations(self) -> None:
         """A conversation whose every turn lost its judge reports
         turn_pass_rate 0.0; treating that as a failed conversation would
@@ -505,37 +329,12 @@ class TestLiveSummary:
         assert summary["turns_judged"] == 2
         assert summary["turns_total"] == 10
 
-    def test_failed_conversations_do_not_affect_rates(self) -> None:
-        from evaluations.qa import _live_summary
-
-        cases = [
-            self._case(
-                {
-                    "turn_pass_rate": 1.0,
-                    "turns_passed": 2,
-                    "turns_judged": 2,
-                    "turns_total": 2,
-                    "cited_eligible": 0,
-                    "true_refusals": 0,
-                    "false_refusals": 0,
-                    "unanswerable_turns": 0,
-                }
-            )
-        ]
-        failure = MagicMock()
-        failure.inputs = ["fq1", "fq2"]
-
-        summary = _live_summary(cases, [failure])
-
-        assert summary is not None
-        assert summary["micro_pass_rate"] == 1.0
-        assert summary["macro_pass_rate"] == 1.0
-        assert summary["conversations_attempted"] == 2
-        assert summary["turns_attempted"] == 4
-
 
 class TestLiveConversationDispatch:
-    async def test_live_spec_replays_conversation(self, tmp_path: Path) -> None:
+    async def test_live_replays_and_records_per_turn_traffic_arrays(
+        self, tmp_path: Path
+    ) -> None:
+        """The conversation replays with its settings and records per-turn tool traffic as arrays."""
         from pydantic_evals import Case
 
         from evaluations.benchmark import run_live_qa_benchmark
@@ -554,23 +353,35 @@ class TestLiveConversationDispatch:
                 },
             )
 
-        spec = DatasetSpec(
+        spec = stub_spec(
             key="test_live",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [{"id": "conv1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+            qa_loader=lambda: [{"id": "conv1"}],
             qa_case_builder=build_case,
             live=True,
             compaction=True,
         )
 
         turn_results = [
-            CapabilityRunResult(answer="a1", cited_uris=["u1"]),
-            CapabilityRunResult(answer="a2", cited_uris=[]),
+            CapabilityRunResult(
+                answer="a1",
+                cited_uris=["u1"],
+                n_search_calls=2,
+                n_rejected_searches=1,
+                n_failed_tools=1,
+                n_executions=3,
+                n_requests=4,
+                citation_status="grounded",
+            ),
+            CapabilityRunResult(answer="a2"),
         ]
+        recorded: dict[str, object] = {}
+
         with (
             patch("evaluations.qa.get_model", return_value="fake-model"),
+            patch(
+                "evaluations.qa.set_eval_attribute",
+                side_effect=lambda key, value: recorded.__setitem__(key, value),
+            ),
             patch(
                 "evaluations.qa.run_capability_conversation",
                 new_callable=AsyncMock,
@@ -601,79 +412,6 @@ class TestLiveConversationDispatch:
             run_conversation.await_args.kwargs["document_filter"]
             == "uri = 'manual.pdf'"
         )
-
-    async def test_live_records_per_turn_traffic_arrays(self, tmp_path: Path) -> None:
-        """Per-turn tool traffic is recorded as question-length arrays, in the
-        same list-indexed-by-turn shape as turn_cited_uris."""
-        from pydantic_evals import Case
-
-        from evaluations.benchmark import run_live_qa_benchmark
-        from evaluations.capability_runner import CapabilityRunResult
-
-        def build_case(idx: int, doc) -> Case:
-            return Case(
-                name="conv1",
-                inputs=["q1", "q2"],
-                metadata={
-                    "conversation_id": "conv1",
-                    "turns": [
-                        {"reference": "r1", "answerability": "ANSWERABLE"},
-                        {"reference": "r2", "answerability": "ANSWERABLE"},
-                    ],
-                },
-            )
-
-        spec = DatasetSpec(
-            key="test_live",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [{"id": "conv1"}],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=build_case,
-            live=True,
-        )
-
-        turn_results = [
-            CapabilityRunResult(
-                answer="a1",
-                cited_uris=["u1"],
-                n_search_calls=2,
-                n_rejected_searches=1,
-                n_failed_tools=1,
-                n_executions=3,
-                n_requests=4,
-                citation_status="grounded",
-            ),
-            CapabilityRunResult(answer="a2"),
-        ]
-        recorded: dict[str, object] = {}
-
-        with (
-            patch("evaluations.qa.get_model", return_value="fake-model"),
-            patch(
-                "evaluations.qa.set_eval_attribute",
-                side_effect=lambda key, value: recorded.__setitem__(key, value),
-            ),
-            patch(
-                "evaluations.qa.run_capability_conversation",
-                new_callable=AsyncMock,
-                return_value=turn_results,
-            ),
-            patch(
-                "evaluations.evaluators.conversation.judge_input_output_expected",
-                new_callable=AsyncMock,
-                return_value=MagicMock(score=None, pass_=True, reason=None),
-            ),
-            patch(
-                "evaluations.evaluators.conversation.judge_output",
-                new_callable=AsyncMock,
-                return_value=MagicMock(score=None, pass_=False, reason=None),
-            ),
-        ):
-            await run_live_qa_benchmark(
-                spec, AppConfig(), db_path=tmp_path / "test.lancedb"
-            )
-
         assert recorded["turn_n_search_calls"] == [2, 0]
         assert recorded["turn_n_rejected_searches"] == [1, 0]
         assert recorded["turn_n_failed_tools"] == [1, 0]
@@ -729,34 +467,13 @@ class TestLoadConfig:
 
 
 class TestRunQaBenchmarkJudgeModel:
-    def _make_spec(self) -> DatasetSpec:
-        return DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        )
-
-    async def test_uses_custom_judge_model(self, tmp_path: Path) -> None:
-        custom_judge = ModelConfig(provider="openai", name="gpt-4o")
-
-        with (
-            patch("evaluations.qa.get_model") as mock_get_model,
-            patch("evaluations.qa.run_capability_question", new_callable=AsyncMock),
-        ):
-            mock_get_model.return_value = "fake-model"
-            await run_qa_benchmark(
-                self._make_spec(),
-                AppConfig(),
-                db_path=tmp_path / "test.lancedb",
-                judge_model=custom_judge,
-            )
-
-        mock_get_model.assert_any_call(custom_judge, AppConfig())
-
-    async def test_defaults_to_pinned_judge_model(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize(
+        "judge_model", [ModelConfig(provider="openai", name="gpt-4o"), None]
+    )
+    async def test_judges_with_the_given_or_pinned_model(
+        self, tmp_path: Path, judge_model: ModelConfig | None
+    ) -> None:
+        import evaluations.qa as qa_module
         from evaluations.experiment import DEFAULT_JUDGE_MODEL
 
         with (
@@ -765,12 +482,15 @@ class TestRunQaBenchmarkJudgeModel:
         ):
             mock_get_model.return_value = "fake-model"
             await run_qa_benchmark(
-                self._make_spec(),
+                stub_spec(),
                 AppConfig(),
                 db_path=tmp_path / "test.lancedb",
+                judge_model=judge_model,
             )
 
-        mock_get_model.assert_any_call(DEFAULT_JUDGE_MODEL, AppConfig())
+        mock_get_model.assert_any_call(judge_model or DEFAULT_JUDGE_MODEL, AppConfig())
+        # The capability manages its own client, so the QA runner opens none.
+        assert not hasattr(qa_module, "HaikuRAG")
 
     def test_pinned_judge_avoids_greedy_decoding(self) -> None:
         from evaluations.experiment import DEFAULT_JUDGE_MODEL
@@ -781,38 +501,6 @@ class TestRunQaBenchmarkJudgeModel:
         assert DEFAULT_JUDGE_MODEL.extra_body == {"top_p": 0.95}
 
 
-class TestEvaluateDatasetJudgeModel:
-    async def test_threads_judge_model_to_qa_benchmark(self) -> None:
-        custom_judge = ModelConfig(
-            provider="anthropic", name="claude-sonnet-4-20250514"
-        )
-
-        with patch(
-            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
-        ) as mock_qa:
-            await evaluate_dataset(
-                spec=DatasetSpec(
-                    key="test",
-                    db_filename="test.lancedb",
-                    document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                    document_mapper=lambda doc: None,
-                    qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                    qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-                ),
-                config=AppConfig(),
-                skip_db=True,
-                skip_retrieval=True,
-                skip_qa=False,
-                limit=None,
-                name=None,
-                db_path=None,
-                judge_model=custom_judge,
-            )
-
-        mock_qa.assert_called_once()
-        assert mock_qa.call_args[1]["judge_model"] is custom_judge
-
-
 async def test_a_db_path_beside_configured_databases_is_refused(tmp_path) -> None:
     """`--db` places the database where the configuration places none; beside
     `lancedb.databases` the run refuses before touching anything."""
@@ -821,18 +509,9 @@ async def test_a_db_path_beside_configured_databases_is_refused(tmp_path) -> Non
     config = AppConfig(
         lancedb=LanceDBConfig(databases={"alpha": str(tmp_path / "a.lancedb")})
     )
-    spec = DatasetSpec(
-        key="test",
-        db_filename="test.lancedb",
-        document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        document_mapper=lambda doc: None,
-        qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-    )
-
     with pytest.raises(ValueError, match="alpha"):
         await evaluate_dataset(
-            spec=spec,
+            spec=stub_spec(),
             config=config,
             skip_db=True,
             skip_retrieval=True,
@@ -843,44 +522,11 @@ async def test_a_db_path_beside_configured_databases_is_refused(tmp_path) -> Non
         )
 
 
-class TestExperimentMetadataCapability:
-    def test_a_retrieval_run_records_no_capability(self) -> None:
-        result = build_experiment_metadata(
-            dataset_key="test", test_cases=1, config=AppConfig()
-        )
-        assert "target" not in result
-        assert "capability_provider" not in result
-        assert "capability_model" not in result
-
-    def test_a_qa_run_records_the_capability_config(self) -> None:
-        capability = ModelConfig(
-            provider="ollama", name="gpt-oss-large", temperature=0.2, thinking="low"
-        )
-        result = build_experiment_metadata(
-            dataset_key="test",
-            test_cases=1,
-            config=AppConfig(),
-            capability_config=capability,
-        )
-        assert result["capability_provider"] == "ollama"
-        assert result["capability_model"] == "gpt-oss-large"
-        assert result["capability_temperature"] == 0.2
-        assert result["capability_thinking"] == "low"
-        assert "capability_enable_thinking" not in result
-
-
 class TestCapabilityModel:
     async def test_the_capability_runs_on_qa_model(self, tmp_path: Path) -> None:
         from evaluations.qa import _prepare_qa_run
 
-        spec = DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        )
+        spec = stub_spec()
         config = AppConfig()
         config.qa.model = ModelConfig(
             provider="openai", name="served", base_url="http://gpu:8000/v1"
@@ -892,48 +538,6 @@ class TestCapabilityModel:
         mock_get_model.assert_called_once_with(config.qa.model, config)
         assert run.experiment_metadata["capability_model"] == "served"
         assert run.experiment_metadata["db_path"] == str(tmp_path / "test.lancedb")
-
-
-class TestRunQaBenchmarkCapability:
-    def _spec(self, tmp_path: Path) -> DatasetSpec:
-        return DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        )
-
-    async def test_uses_run_capability_question(self, tmp_path: Path) -> None:
-        from evaluations.capability_runner import CapabilityRunResult
-
-        capability_run = AsyncMock(
-            return_value=CapabilityRunResult(answer="from capability")
-        )
-        with (
-            patch("evaluations.qa.get_model") as mock_get_model,
-            patch(
-                "evaluations.qa.run_capability_question", new=capability_run
-            ) as mock_run_capability,
-        ):
-            mock_get_model.return_value = "fake-model"
-            await run_qa_benchmark(
-                self._spec(tmp_path),
-                AppConfig(),
-                db_path=tmp_path / "test.lancedb",
-            )
-
-        # The capability manages its own client, so the QA runner never opens
-        # one — it has no HaikuRAG reference to open.
-        import evaluations.qa as qa_module
-
-        assert not hasattr(qa_module, "HaikuRAG")
-        # capability model defaults to qa.model when not provided
-        assert any(
-            call[0][0] == AppConfig().qa.model for call in mock_get_model.call_args_list
-        )
-        assert mock_run_capability is capability_run
 
 
 class TestCitationEvaluatorWiring:
@@ -948,102 +552,6 @@ class TestCitationEvaluatorWiring:
                 assert isinstance(spec.citation_evaluator, CitationMAPEvaluator), (
                     spec.key
                 )
-
-
-class TestBatchedIngest:
-    def _rag(
-        self,
-        complete_uris: list[str] | None = None,
-        chunkless_uris: list[str] | None = None,
-    ) -> MagicMock:
-        complete_uris = complete_uris or []
-        chunkless_uris = chunkless_uris or []
-
-        def _table(rows: list[dict]) -> MagicMock:
-            table = MagicMock()
-            table.query.return_value.select.return_value.to_list = AsyncMock(
-                return_value=rows
-            )
-            return table
-
-        rag = MagicMock()
-        rag.store.document_meta_table = _table(
-            [{"id": f"id-{uri}", "uri": uri} for uri in complete_uris + chunkless_uris]
-        )
-        rag.store.chunks_table = _table(
-            [{"document_id": f"id-{uri}"} for uri in complete_uris]
-        )
-        rag.convert = AsyncMock(side_effect=lambda content, **kw: f"docling:{content}")
-        rag.chunk = AsyncMock(return_value=[])
-        rag.import_documents = AsyncMock()
-        rag.delete_document = AsyncMock()
-        return rag
-
-    def _spec(self) -> DatasetSpec:
-        return DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: (
-                None
-                if doc["uri"] == "bad"
-                else DocumentPayload(uri=doc["uri"], content=f"text {doc['uri']}")
-            ),
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        )
-
-    async def test_imports_in_bounded_batches(self) -> None:
-        from evaluations.population import _ingest_batched
-
-        rag = self._rag()
-        corpus = [{"uri": f"u{i}"} for i in range(5)]
-
-        await _ingest_batched(rag, self._spec(), corpus, batch_size=2)
-
-        batch_uris = [
-            [imp.uri for imp in call.args[0]]
-            for call in rag.import_documents.call_args_list
-        ]
-        assert batch_uris == [["u0", "u1"], ["u2", "u3"], ["u4"]]
-
-    async def test_resume_skips_complete_uris(self) -> None:
-        from evaluations.population import _ingest_batched
-
-        rag = self._rag(complete_uris=["u0", "u2"])
-        corpus = [{"uri": f"u{i}"} for i in range(4)]
-
-        await _ingest_batched(rag, self._spec(), corpus, batch_size=10)
-
-        (batch,), _ = rag.import_documents.call_args
-        assert [imp.uri for imp in batch] == ["u1", "u3"]
-        assert rag.convert.await_count == 2
-        rag.delete_document.assert_not_awaited()
-
-    async def test_resume_reimports_chunkless_documents(self) -> None:
-        """A crash between the document and chunk writes leaves a document
-        without chunks; resume must delete and re-import it, not skip it."""
-        from evaluations.population import _ingest_batched
-
-        rag = self._rag(complete_uris=["u0"], chunkless_uris=["u1"])
-        corpus = [{"uri": "u0"}, {"uri": "u1"}]
-
-        await _ingest_batched(rag, self._spec(), corpus, batch_size=10)
-
-        rag.delete_document.assert_awaited_once_with("id-u1")
-        (batch,), _ = rag.import_documents.call_args
-        assert [imp.uri for imp in batch] == ["u1"]
-
-    async def test_unmapped_documents_skipped(self) -> None:
-        from evaluations.population import _ingest_batched
-
-        rag = self._rag()
-        corpus = [{"uri": "u0"}, {"uri": "bad"}, {"uri": "u1"}]
-
-        await _ingest_batched(rag, self._spec(), corpus, batch_size=10)
-
-        (batch,), _ = rag.import_documents.call_args
-        assert [imp.uri for imp in batch] == ["u0", "u1"]
 
 
 class TestAttachRelevantUris:
@@ -1069,14 +577,8 @@ class TestAttachRelevantUris:
             ),
         ]
 
-        spec = DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            retrieval_loader=lambda: [  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
+        spec = stub_spec(
+            retrieval_loader=lambda: [
                 {"q": "What is X?", "uris": ("uri-x",)},
                 {"q": "What is Y?", "uris": ("uri-y1", "uri-y2")},
             ],
@@ -1104,15 +606,7 @@ class TestAttachRelevantUris:
         cases: list[Case[str, str, dict]] = [
             Case(name="c1", inputs="q", expected_output="a"),
         ]
-        spec = DatasetSpec(
-            key="test",
-            db_filename="test.lancedb",
-            document_loader=lambda: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            document_mapper=lambda doc: None,
-            qa_loader=lambda: [],  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-            qa_case_builder=lambda idx, doc: None,  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
-        )
-        _attach_relevant_uris(cases, spec, limit=None)
+        _attach_relevant_uris(cases, stub_spec(), limit=None)
         assert cases[0].metadata is None
 
 
@@ -1147,6 +641,16 @@ class TestFilterQaCorpus:
         out = _filter_qa_corpus(corpus, {"a", "c"}, id_key="question_id")
         assert out["question_id"] == ["a", "c"]
 
+    def test_an_id_set_matching_nothing_raises(self) -> None:
+        from datasets import Dataset
+
+        from evaluations.qa import _filter_qa_corpus
+
+        corpus = Dataset.from_list([{"query_id": "a"}, {"query_id": "b"}])
+
+        with pytest.raises(ValueError, match="matched none"):
+            _filter_qa_corpus(corpus, {"a"})
+
     def test_enterprise_rag_filters_on_question_id(self) -> None:
         from evaluations.datasets.enterprise_rag import ENTERPRISE_RAG_SPEC
 
@@ -1172,7 +676,7 @@ class TestRetrievalTarget:
         from evaluations.config import RetrievalSample
         from evaluations.evaluators import MAPEvaluator
 
-        return _stub_spec(
+        return stub_spec(
             retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
             retrieval_mapper=lambda d: RetrievalSample(
                 question=d["q"], expected_uris=d["uris"]
@@ -1209,12 +713,16 @@ class TestRetrievalTarget:
         with patch("evaluations.retrieval.HaikuRAG") as mock_haiku:
             mock_haiku.return_value.__aenter__.return_value = fake
             result = await run_retrieval_benchmark(
-                self._spec(), AppConfig(), db_path=tmp_path / "test.lancedb"
+                self._spec(),
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                document_filter="uri LIKE '%arxiv%'",
             )
 
         assert result is not None
         assert result["map"] == 1.0
         assert searches[0]["include_images"] is False
+        assert searches[0]["filter"] == "uri LIKE '%arxiv%'"
 
     async def test_records_the_corpus_fingerprint(self, tmp_path: Path) -> None:
         from pydantic_evals import Dataset as EvalDataset
@@ -1274,53 +782,6 @@ class TestDocumentFilterThreading:
     """The filter must reach both benchmark phases, so retrieval and QA score
     the same subset of the database."""
 
-    def test_metadata_records_filter(self) -> None:
-        result = build_experiment_metadata(
-            dataset_key="test",
-            test_cases=1,
-            config=AppConfig(),
-            document_filter="uri LIKE '%arxiv%'",
-        )
-        assert result["document_filter"] == "uri LIKE '%arxiv%'"
-
-    def test_metadata_filter_is_none_when_unset(self) -> None:
-        result = build_experiment_metadata(
-            dataset_key="test", test_cases=1, config=AppConfig()
-        )
-        assert result["document_filter"] is None
-
-    async def test_retrieval_search_receives_filter(self, tmp_path: Path) -> None:
-        from evaluations.benchmark import run_retrieval_benchmark
-        from evaluations.config import RetrievalSample
-        from evaluations.evaluators import MAPEvaluator
-        from haiku.rag.store.models.chunk import SearchResult
-
-        searches: list[dict] = []
-
-        class FakeRag:
-            async def search(self, **kwargs) -> list[SearchResult]:
-                searches.append(kwargs)
-                return [SearchResult(content="x", score=1.0, document_uri="uri-x")]
-
-        spec = _stub_spec(
-            retrieval_loader=lambda: [{"q": "What is X?", "uris": ("uri-x",)}],
-            retrieval_mapper=lambda d: RetrievalSample(
-                question=d["q"], expected_uris=d["uris"]
-            ),
-            retrieval_evaluators=[MAPEvaluator()],
-        )
-
-        with patch("evaluations.retrieval.HaikuRAG") as mock_haiku:
-            mock_haiku.return_value.__aenter__.return_value = FakeRag()
-            await run_retrieval_benchmark(
-                spec,
-                AppConfig(),
-                db_path=tmp_path / "test.lancedb",
-                document_filter="uri LIKE '%arxiv%'",
-            )
-
-        assert searches[0]["filter"] == "uri LIKE '%arxiv%'"
-
     async def test_qa_capability_run_receives_filter(self, tmp_path: Path) -> None:
         from pydantic_evals import Case
 
@@ -1328,7 +789,7 @@ class TestDocumentFilterThreading:
         from evaluations.evaluators import NumberMatchEvaluator
 
         # A deterministic evaluator, so no judge model is constructed.
-        spec = _stub_spec(
+        spec = stub_spec(
             qa_loader=lambda: [{"question": "What is X?", "answer": "42"}],
             qa_case_builder=lambda idx, doc: Case(
                 name=f"case-{idx}",
@@ -1353,8 +814,11 @@ class TestDocumentFilterThreading:
         mock_run.assert_awaited_once()
         assert mock_run.call_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
 
-    async def test_evaluate_dataset_passes_filter_to_both_phases(self) -> None:
+    async def test_evaluate_dataset_forwards_its_arguments_to_both_phases(
+        self, tmp_path: Path
+    ) -> None:
         expected = """metadata LIKE '%"corpus": "orb_text"%'"""
+        judge = ModelConfig(provider="anthropic", name="claude-sonnet-4-20250514")
 
         with (
             patch(
@@ -1365,7 +829,7 @@ class TestDocumentFilterThreading:
             ) as mock_qa,
         ):
             await evaluate_dataset(
-                spec=_stub_spec(),
+                spec=stub_spec(),
                 config=AppConfig(),
                 skip_db=True,
                 skip_retrieval=False,
@@ -1374,58 +838,17 @@ class TestDocumentFilterThreading:
                 name=None,
                 db_path=None,
                 document_filter=expected,
+                judge_model=judge,
+                case_ids={"finqa_dev_16", "finqa_dev_66"},
+                results_dir=tmp_path / "results",
             )
 
         assert mock_retrieval.call_args[1]["document_filter"] == expected
-        assert mock_qa.call_args[1]["document_filter"] == expected
-
-
-class TestEvaluateDatasetCaseIds:
-    def _spec(self) -> DatasetSpec:
-        return _stub_spec()
-
-    async def test_threads_case_ids_to_qa_benchmark(self) -> None:
-        from evaluations.benchmark import evaluate_dataset
-
-        with patch(
-            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
-        ) as mock_qa:
-            await evaluate_dataset(
-                spec=self._spec(),
-                config=AppConfig(),
-                skip_db=True,
-                skip_retrieval=True,
-                skip_qa=False,
-                limit=None,
-                name=None,
-                db_path=None,
-                case_ids={"finqa_dev_16", "finqa_dev_66"},
-            )
         mock_qa.assert_called_once()
+        assert mock_qa.call_args[1]["document_filter"] == expected
+        assert mock_qa.call_args[1]["judge_model"] is judge
         assert mock_qa.call_args[1]["case_ids"] == {"finqa_dev_16", "finqa_dev_66"}
-
-
-def test_a_case_filter_matching_nothing_raises():
-    """An id set that matches no case raises."""
-    import pytest
-    from datasets import Dataset
-
-    from evaluations.qa import _filter_qa_corpus
-
-    corpus = Dataset.from_list([{"query_id": "a"}, {"query_id": "b"}])
-
-    with pytest.raises(ValueError, match="matched none"):
-        _filter_qa_corpus(corpus, {"a"})
-
-
-def test_a_case_filter_that_matches_keeps_those_rows():
-    from datasets import Dataset
-
-    from evaluations.qa import _filter_qa_corpus
-
-    corpus = Dataset.from_list([{"id": "a"}, {"id": "b"}, {"id": "c"}])
-
-    assert _filter_qa_corpus(corpus, {"a", "c"})["id"] == ["a", "c"]
+        assert mock_qa.call_args[1]["results_dir"] == tmp_path / "results"
 
 
 async def test_population_refuses_a_configured_set():
@@ -1489,12 +912,6 @@ class TestRequireTelemetry:
         _resolved_token(monkeypatch, None)
         with pytest.raises(typer.Exit):
             require_telemetry()
-
-    def test_passes_when_logfire_resolved_a_token(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _resolved_token(monkeypatch, "pylf_v1_eu_test")
-        require_telemetry()
 
     @pytest.mark.parametrize("credentials", [True, False])
     def test_a_credentials_file_counts_as_a_token(

@@ -1,32 +1,37 @@
+import pytest
+
 from evaluations.submission import build_submission_rows, extract_prediction
 
 
-class TestExtractPrediction:
-    def test_answer_line_integer(self) -> None:
-        assert extract_prediction("...\n\nANSWER: 18.6") == "18.6"
-
-    def test_percent_becomes_fraction(self) -> None:
+@pytest.mark.parametrize(
+    ("output", "prediction"),
+    [
+        ("...\n\nANSWER: 18.6", "18.6"),
         # T² gold stores percentages as decimals.
-        assert extract_prediction("ANSWER: 93.5%") == "0.935"
-
-    def test_strips_currency_commas_and_scale_word(self) -> None:
-        # "$688 million" -> 688 (scale word not expanded; gold is the bare number)
-        assert extract_prediction("ANSWER: $688 million") == "688"
-        assert extract_prediction("ANSWER: $1,234.5") == "1234.5"
-
-    def test_unicode_minus(self) -> None:
-        assert extract_prediction("ANSWER: −1.9") == "-1.9"
-
-    def test_uses_answer_line_not_reasoning(self) -> None:
-        out = "We saw 72.8 in the table but recomputed.\nANSWER: 82.8"
-        assert extract_prediction(out) == "82.8"
-
-    def test_empty_output_is_blank(self) -> None:
-        assert extract_prediction("") == ""
-        assert extract_prediction(None) == ""
-
-    def test_no_number_is_blank(self) -> None:
-        assert extract_prediction("ANSWER: not reported") == ""
+        ("ANSWER: 93.5%", "0.935"),
+        # The scale word is not expanded, the gold is the bare number.
+        ("ANSWER: $688 million", "688"),
+        ("ANSWER: $1,234.5", "1234.5"),
+        ("ANSWER: −1.9", "-1.9"),
+        ("We saw 72.8 in the table but recomputed.\nANSWER: 82.8", "82.8"),
+        ("", ""),
+        (None, ""),
+        ("ANSWER: not reported", ""),
+    ],
+    ids=[
+        "answer-line",
+        "percent-becomes-fraction",
+        "strips-currency-and-scale-word",
+        "strips-currency-and-commas",
+        "unicode-minus",
+        "uses-answer-line-not-reasoning",
+        "empty-output",
+        "no-output",
+        "no-number",
+    ],
+)
+def test_extract_prediction(output: str | None, prediction: str) -> None:
+    assert extract_prediction(output) == prediction
 
 
 class TestBuildSubmissionRows:
