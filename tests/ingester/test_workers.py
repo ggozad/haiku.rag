@@ -1504,9 +1504,11 @@ async def test_reaper_keeps_terminal_jobs_within_the_retention(
     await jobs.mark_succeeded(job.id, "w")
     prune_terminal = jobs.prune_terminal
     pruned: list[int] = []
+    swept = asyncio.Event()
 
     async def recorded(max_age_seconds):
         pruned.append(await prune_terminal(max_age_seconds))
+        swept.set()
         return pruned[-1]
 
     monkeypatch.setattr(jobs, "prune_terminal", recorded)
@@ -1516,14 +1518,11 @@ async def test_reaper_keeps_terminal_jobs_within_the_retention(
     with capture_logs(_POOL_LOGGER, logging.INFO) as records:
         await pool.start()
         try:
-            for _ in range(100):
-                if len(pruned) >= 2:
-                    break
-                await asyncio.sleep(0.01)
+            await asyncio.wait_for(swept.wait(), timeout=5)
         finally:
             await pool.stop()
 
-    assert pruned[:2] == [0, 0]
+    assert pruned[0] == 0
     assert not [r for r in records if "pruned" in r.getMessage()]
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None

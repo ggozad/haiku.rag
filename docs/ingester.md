@@ -175,7 +175,7 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
 
 ### File size limits
 
-`max_file_size` (bytes) rejects oversized files without reading more than the limit into memory. They go straight to the dead-letter queue.
+`max_file_size` (bytes) rejects oversized files. An `http` or `webdav` download stops once it passes the limit. They go straight to the dead-letter queue.
 
 ```yaml
         - type: fs

@@ -13,7 +13,7 @@
 - `CitationPolicyCapability` no longer records a violation when a run pauses for deferred tool results.
 - The `http` and `webdav` sources enforce `max_file_size` while the GET body streams, when HEAD omits or understates `Content-Length`.
 - `haiku-rag info` and the inspector report indexed and unindexed rows for a vector index under any name, not only `vector_idx`.
-- A source re-ingest with unchanged bytes raises not-found when the document is deleted while it waits for the write lock.
+- `create_document_from_source` raises not-found when the document is deleted while its metadata refresh waits for the write lock.
 
 ## [0.103.0] - 2026-10-29
 

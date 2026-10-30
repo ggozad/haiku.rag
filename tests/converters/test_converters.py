@@ -789,10 +789,16 @@ class TestDoclingLocalConverter:
         with pytest.raises(ValueError, match="Failed to convert text"):
             await converter.convert_text("# Test", name="test.md")
 
-    async def test_convert_text_falls_back_when_format_not_inferable(self, converter):
-        """docling raises ConversionError for an extension it has no backend
-        for; the simple-document fallback keeps the text."""
-        doc = await converter.convert_text("just some prose", name="mystery.zzz")
+    @pytest.mark.parametrize(
+        "options",
+        [{"name": "mystery.zzz"}, {"format": "md"}],
+        ids=["unknown_extension", "markdown_without_syntax"],
+    )
+    async def test_convert_text_falls_back_when_format_not_inferable(
+        self, converter, options
+    ):
+        """Text docling cannot detect a format for keeps its content."""
+        doc = await converter.convert_text("just some prose", **options)
 
         assert isinstance(doc, DoclingDocument)
         assert "just some prose" in doc.export_to_markdown()
