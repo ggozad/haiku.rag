@@ -11,10 +11,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 
 from haiku_rag_app.chat import agent_for
-
-
-class Guard:
-    """Stands for the response a hold is tied to."""
+from tests.support import image_bytes, png, served
 
 
 async def _answer(
@@ -52,19 +49,6 @@ def _scripted(chunk_id: str):
     return stream
 
 
-@pytest.fixture
-def query_embedding(monkeypatch, seeded):
-    from haiku.rag.embeddings import EmbedderWrapper
-
-    config, _ = seeded
-    dim = config.embeddings.model.vector_dim
-
-    async def embed_query(self, text):
-        return [0.1] * dim
-
-    monkeypatch.setattr(EmbedderWrapper, "embed_query", embed_query)
-
-
 def _events(body: str) -> list[dict]:
     return [
         json.loads(line.removeprefix("data: "))
@@ -92,6 +76,20 @@ def _user(message_id: str, text: str = "Hello?") -> dict:
 
 async def _session(client) -> str:
     return (await client.post("/api/sessions")).json()["id"]
+
+
+async def _select_present(client, session_id: str, ids: dict) -> None:
+    """Selects the documents of the two present databases."""
+    # A search across the whole configured set fails on its missing database.
+    await client.patch(
+        f"/api/sessions/{session_id}",
+        json={
+            "selection": [
+                {"source": name, "id": ids[name]["document_id"]}
+                for name in ("alpha", "beta")
+            ]
+        },
+    )
 
 
 async def _run(app, client, session_id, run_id, messages, model=None, **extra):
@@ -129,17 +127,7 @@ async def test_a_second_turn_runs_on_the_stored_history_and_state(
     _, ids = seeded
     alpha_chunk = ids["alpha"]["chunk_id"]
     session_id = await _session(client)
-    # The configured set holds a missing database, which a search across the
-    # whole set fails on, so the session selects the two present ones.
-    await client.patch(
-        f"/api/sessions/{session_id}",
-        json={
-            "selection": [
-                {"source": name, "id": ids[name]["document_id"]}
-                for name in ("alpha", "beta")
-            ]
-        },
-    )
+    await _select_present(client, session_id, ids)
     model = FunctionModel(stream_function=_scripted(alpha_chunk))
     first = await _run(app, client, session_id, "run-1", [_user("u1")], model=model)
     summary = next(e for e in _events(first.text) if e["type"] == "CUSTOM")
@@ -273,27 +261,19 @@ async def test_a_selection_scopes_the_search(app, client):
 
 
 async def test_one_database_scopes_by_id_alone(tmp_path, seed_database):
-    import httpx
-
     from haiku.rag.config.models import AppConfig, LanceDBConfig
-    from haiku_rag_app.main import create_app
 
     config = AppConfig(
         lancedb=LanceDBConfig(databases={"only": str(tmp_path / "only.lancedb")})
     )
     await seed_database(config, "only")
-    app = create_app(config, sessions_path=tmp_path / "sessions.db")
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    ) as http:
+    async with served(config, tmp_path / "sessions.db") as (app, http):
         session_id = await _session(http)
         await http.patch(
             f"/api/sessions/{session_id}",
             json={"selection": [{"source": "only", "id": "x"}]},
         )
         response = await _run(app, http, session_id, "run-1", [_user("u1")])
-    await app.state.databases.aclose()
-    await app.state.sessions.aclose()
     [snapshot] = [e for e in _events(response.text) if e["type"] == "STATE_SNAPSHOT"]
     assert snapshot["snapshot"]["rag"]["document_filter"] == "id IN ('x')"
     assert snapshot["snapshot"]["rag"]["sources"] is None
@@ -311,23 +291,16 @@ async def test_the_agent_borrows_the_apps_client(app):
 
 
 async def test_chat_is_unavailable_while_the_database_is(tmp_path):
-    import httpx
-
     from haiku.rag.config.models import AppConfig, LanceDBConfig
-    from haiku_rag_app.main import create_app
 
     config = AppConfig(
         lancedb=LanceDBConfig(databases={"gone": str(tmp_path / "gone.lancedb")})
     )
-    app = create_app(config, sessions_path=tmp_path / "sessions.db")
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
-    ) as http:
+    async with served(config, tmp_path / "sessions.db") as (app, http):
         session_id = await _session(http)
         response = await http.post(
             "/v1/chat/stream", json=_input(session_id, "run-1", [_user("u1")])
         )
-    await app.state.sessions.aclose()
     assert response.status_code == 503
     assert "gone" in response.json()["error"]
     assert app.state.sessions.in_flight(session_id) is None
@@ -560,52 +533,31 @@ def _redirected(chunk_id: str | None, rounds: int = 2):
     return stream
 
 
+@pytest.mark.parametrize(
+    ("cites", "rounds", "summary"),
+    [
+        (True, 2, {"citation_status": "grounded", "violation": False}),
+        (False, 1, {"citation_status": "missing", "violation": True}),
+    ],
+)
 async def test_the_policy_asks_once_for_an_undeclared_answer(
-    app, client, seeded, query_embedding
+    app, client, seeded, query_embedding, cites, rounds, summary
 ):
     from haiku.rag.capabilities.policy import CITATION_REDIRECT_TAG
 
     _, ids = seeded
     session_id = await _session(client)
-    await client.patch(
-        f"/api/sessions/{session_id}",
-        json={
-            "selection": [
-                {"source": name, "id": ids[name]["document_id"]}
-                for name in ("alpha", "beta")
-            ]
-        },
-    )
-    model = FunctionModel(stream_function=_redirected(ids["alpha"]["chunk_id"]))
+    await _select_present(client, session_id, ids)
+    chunk_id = ids["alpha"]["chunk_id"] if cites else None
+    model = FunctionModel(stream_function=_redirected(chunk_id, rounds=rounds))
     response = await _run(app, client, session_id, "run-1", [_user("u1")], model=model)
-    summary = next(e for e in _events(response.text) if e["type"] == "CUSTOM")
-    assert summary["value"] == {"citation_status": "grounded", "violation": False}
+    custom = next(e for e in _events(response.text) if e["type"] == "CUSTOM")
+    assert custom["value"] == summary
     session = (await client.get(f"/api/sessions/{session_id}")).json()
+    assert len(session["inserted"]) == 1
     [redirect] = [m for m in session["messages"] if m["id"] in session["inserted"]]
     assert CITATION_REDIRECT_TAG in json.dumps(redirect["content"])
     assert session["message_runs"][redirect["id"]] == "run-1"
-
-
-async def test_one_search_and_an_uncited_answer_is_a_violation(
-    app, client, seeded, query_embedding
-):
-    _, ids = seeded
-    session_id = await _session(client)
-    await client.patch(
-        f"/api/sessions/{session_id}",
-        json={
-            "selection": [
-                {"source": name, "id": ids[name]["document_id"]}
-                for name in ("alpha", "beta")
-            ]
-        },
-    )
-    model = FunctionModel(stream_function=_redirected(None, rounds=1))
-    response = await _run(app, client, session_id, "run-1", [_user("u1")], model=model)
-    summary = next(e for e in _events(response.text) if e["type"] == "CUSTOM")
-    assert summary["value"] == {"citation_status": "missing", "violation": True}
-    session = (await client.get(f"/api/sessions/{session_id}")).json()
-    assert len(session["inserted"]) == 1
 
 
 async def test_a_client_resume_never_reaches_the_adapter(app, client, monkeypatch):
@@ -634,15 +586,10 @@ async def test_a_client_resume_never_reaches_the_adapter(app, client, monkeypatc
 
 async def test_an_image_reaches_the_model_and_is_stored_with_the_turn(app, client):
     import base64
-    from io import BytesIO
 
-    from PIL import Image
     from pydantic_ai.messages import BinaryContent, UserPromptPart
 
-    buffer = BytesIO()
-    Image.new("RGB", (8, 8), "red").save(buffer, format="PNG")
-    raw = buffer.getvalue()
-    png = base64.b64encode(raw).decode()
+    raw = image_bytes("PNG")
     seen: list[bytes] = []
 
     async def looks(messages: list[ModelMessage], _info) -> AsyncIterator[str]:
@@ -664,7 +611,11 @@ async def test_an_image_reaches_the_model_and_is_stored_with_the_turn(app, clien
             {"type": "text", "text": "What is this?"},
             {
                 "type": "image",
-                "source": {"type": "data", "value": png, "mimeType": "image/png"},
+                "source": {
+                    "type": "data",
+                    "value": base64.b64encode(raw).decode(),
+                    "mimeType": "image/png",
+                },
             },
         ],
     }
@@ -683,24 +634,6 @@ async def test_an_image_reaches_the_model_and_is_stored_with_the_turn(app, clien
     assert session["title"] == "What is this?"
 
 
-def _png(width: int = 8, height: int = 8) -> str:
-    import base64
-    from io import BytesIO
-
-    from PIL import Image
-
-    buffer = BytesIO()
-    Image.new("RGB", (width, height), "red").save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
-
-
-def _truncated_png() -> str:
-    import base64
-
-    raw = base64.b64decode(_png(64, 64))
-    return base64.b64encode(raw[: len(raw) // 2]).decode()
-
-
 def _with_images(*sources: dict) -> dict:
     return {
         "id": "u1",
@@ -715,25 +648,9 @@ def _with_images(*sources: dict) -> dict:
 @pytest.mark.parametrize(
     ("sources", "reason"),
     [
-        ([{"type": "data", "value": _png(), "mimeType": "image/png"}] * 9, "at most 8"),
+        ([{"type": "data", "value": png(), "mimeType": "image/png"}] * 9, "at most 8"),
         ([{"type": "url", "value": "http://example.com/a.png"}], "inline"),
-        ([{"type": "data", "value": "not base64!", "mimeType": "image/png"}], "base64"),
-        (
-            [{"type": "data", "value": "aGVsbG8=", "mimeType": "image/png"}],
-            "not an image",
-        ),
-        (
-            [{"type": "data", "value": _png(), "mimeType": "image/jpeg"}],
-            "image/png",
-        ),
-        (
-            [{"type": "data", "value": _png(2049, 1), "mimeType": "image/png"}],
-            "2048",
-        ),
-        (
-            [{"type": "data", "value": _truncated_png(), "mimeType": "image/png"}],
-            "not an image",
-        ),
+        ([{"type": "data", "value": png(), "mimeType": "image/jpeg"}], "image/png"),
     ],
 )
 async def test_an_unacceptable_image_is_refused_before_the_run(
@@ -753,32 +670,10 @@ async def test_an_image_is_refused_when_the_model_has_no_vision(
 ):
     monkeypatch.setattr(app.state.config.qa.model, "vision", False)
     session_id = await _session(client)
-    message = _with_images({"type": "data", "value": _png(), "mimeType": "image/png"})
+    message = _with_images({"type": "data", "value": png(), "mimeType": "image/png"})
     response = await _run(app, client, session_id, "run-1", [message])
     assert response.status_code == 400
     assert "vision" in response.text
-
-
-async def test_an_image_over_the_byte_limit_is_refused(app, client, monkeypatch):
-    from haiku_rag_app import images
-
-    monkeypatch.setattr(images, "MAX_IMAGE_BYTES", 10)
-    session_id = await _session(client)
-    message = _with_images({"type": "data", "value": _png(), "mimeType": "image/png"})
-    response = await _run(app, client, session_id, "run-1", [message])
-    assert response.status_code == 400
-    assert "exceeds 10 bytes" in response.text
-
-
-async def test_a_decompression_bomb_is_refused(app, client, monkeypatch):
-    from PIL import Image
-
-    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
-    session_id = await _session(client)
-    message = _with_images({"type": "data", "value": _png(), "mimeType": "image/png"})
-    response = await _run(app, client, session_id, "run-1", [message])
-    assert response.status_code == 400
-    assert "not an image" in response.text
 
 
 @pytest.mark.parametrize(

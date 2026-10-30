@@ -1,5 +1,3 @@
-import asyncio
-
 import numpy as np
 import pytest
 from docling_core.types.doc.document import DoclingDocument
@@ -10,6 +8,7 @@ from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.doctor import VectorScan
 from haiku.rag.store.models import Chunk
 from haiku_rag_app.projection import Retained, place, project, similarity
+from tests.support import settled
 
 
 def _scan(centroids, counts=None, ids=None) -> VectorScan:
@@ -36,18 +35,14 @@ def _clusters(per=12, dim=8, seed=3) -> tuple[np.ndarray, np.ndarray]:
     return unit / np.linalg.norm(unit, axis=1)[:, None], np.array(labels)
 
 
-def test_separated_clusters_stay_separated():
+def test_placement_is_deterministic_and_keeps_separated_clusters_apart():
     unit, labels = _clusters()
     coordinates = place(unit)
+    assert np.array_equal(coordinates, place(unit))
     assert coordinates.shape == (len(unit), 2)
     distance = np.linalg.norm(coordinates[:, None] - coordinates[None], axis=2)
     np.fill_diagonal(distance, np.inf)
     assert (labels[distance.argmin(axis=1)] == labels).all()
-
-
-def test_placement_is_deterministic():
-    unit, _ = _clusters()
-    assert np.array_equal(place(unit), place(unit))
 
 
 def test_copies_share_a_point():
@@ -68,26 +63,20 @@ def test_fewer_than_three_distinct_documents_lie_on_a_line(unit):
     assert len(np.unique(coordinates, axis=0)) == len(np.unique(unit, axis=0))
 
 
-def test_a_document_with_no_embedded_chunk_is_left_off():
+def test_documents_with_no_embedded_chunk_are_left_off():
     projection = project(
         _scan([[1, 0, 0, 0], [0, 0, 0, 0], [0, 1, 0, 0]], counts=[3, 0, 3]),
-        {"d0": {"title": "zero", "metadata": '{"content_type": "text/html"}'}},
+        {
+            "d0": {"title": "zero", "metadata": '{"content_type": "text/html"}'},
+            "chunkless": {},
+        },
         DuplicateDetectionConfig(),
     )
     assert [p["id"] for p in projection.points] == ["d0", "d2"]
-    assert projection.left_off == 1
+    assert projection.left_off == 2
     assert projection.points[0]["content_type"] == "text/html"
     assert projection.points[0]["title"] == "zero"
     assert all(np.isfinite([p["x"] for p in projection.points]))
-
-
-def test_documents_without_a_centroid_count_as_left_off():
-    projection = project(
-        _scan([[1, 0, 0, 0], [0, 1, 0, 0]]),
-        {"d0": {}, "d1": {}, "chunkless": {}},
-        DuplicateDetectionConfig(),
-    )
-    assert projection.left_off == 1
 
 
 def test_non_finite_centroids_are_left_off_and_large_ones_kept():
@@ -162,17 +151,6 @@ async def mapped(seeded):
     return ids
 
 
-async def _settled(client, source: str) -> dict:
-    for _ in range(600):
-        projection = (await client.get(f"/api/doctor/{source}/projection")).json()[
-            "projection"
-        ]
-        if projection and projection["status"] in ("done", "failed"):
-            return projection
-        await asyncio.sleep(0.02)
-    raise AssertionError("the projection did not settle")
-
-
 async def test_the_map_places_documents_and_their_families(client, mapped):
     assert (await client.get("/api/doctor/alpha/projection")).json() == {
         "projection": None
@@ -180,7 +158,7 @@ async def test_the_map_places_documents_and_their_families(client, mapped):
     assert (await client.get("/api/doctor/alpha/duplicates.yaml")).status_code == 404
     started = await client.post("/api/doctor/alpha/projection")
     assert started.status_code == 202
-    projection = await _settled(client, "alpha")
+    projection = await settled(client, "alpha", "/projection")
     result = projection["result"]
     by_title = {p["title"]: p for p in result["points"]}
     assert set(by_title) >= {"copy-a", "copy-b", "other"}
@@ -211,7 +189,7 @@ async def test_the_map_places_documents_and_their_families(client, mapped):
 async def test_a_changed_document_marks_the_map_stale(app, client, mapped, seeded):
     config, _ = seeded
     await client.post("/api/doctor/alpha/projection")
-    await _settled(client, "alpha")
+    await settled(client, "alpha", "/projection")
     async with HaikuRAG(config=config, sources=["alpha"]) as rag:
         document = await rag.get_document_by_id(mapped["other"])
         document.title = "renamed"
@@ -224,7 +202,7 @@ async def test_staleness_is_unknown_while_the_database_is_unavailable(
     app, client, mapped, monkeypatch
 ):
     await client.post("/api/doctor/alpha/projection")
-    await _settled(client, "alpha")
+    await settled(client, "alpha", "/projection")
 
     async def unavailable(name):
         raise HTTPException(503, "gone")
@@ -240,7 +218,7 @@ async def test_staleness_is_unknown_when_the_versions_cannot_be_read(
     import lancedb
 
     await client.post("/api/doctor/alpha/projection")
-    await _settled(client, "alpha")
+    await settled(client, "alpha", "/projection")
 
     async def unreadable(self):
         raise OSError("object store unreachable")
@@ -256,14 +234,14 @@ async def test_similarity_needs_a_kept_map_and_a_known_document(app, client, map
     assert (await client.get(url, params={"id": "x", **params})).status_code == 404
     app.state.retained = Retained(budget=1)
     await client.post("/api/doctor/alpha/projection")
-    projection = await _settled(client, "alpha")
+    projection = await settled(client, "alpha", "/projection")
     assert projection["result"]["neighbours"] is False
     params = {"generation": projection["result"]["generation"]}
     other = {"id": mapped["other"], **params}
     assert (await client.get(url, params=other)).status_code == 404
     app.state.retained = Retained()
     await client.post("/api/doctor/alpha/projection")
-    projection = await _settled(client, "alpha")
+    projection = await settled(client, "alpha", "/projection")
     params = {"generation": projection["result"]["generation"]}
     assert (await client.get(url, params={"id": "nope", **params})).status_code == 404
     app.state.retained = Retained()
@@ -274,9 +252,9 @@ async def test_similarity_needs_a_kept_map_and_a_known_document(app, client, map
 async def test_similarity_answers_only_for_the_map_it_names(client, mapped):
     url = "/api/doctor/alpha/projection/similarity"
     await client.post("/api/doctor/alpha/projection")
-    first = (await _settled(client, "alpha"))["result"]["generation"]
+    first = (await settled(client, "alpha", "/projection"))["result"]["generation"]
     await client.post("/api/doctor/alpha/projection")
-    second = (await _settled(client, "alpha"))["result"]["generation"]
+    second = (await settled(client, "alpha", "/projection"))["result"]["generation"]
     assert first != second
 
     doc = mapped["copy-a"]
