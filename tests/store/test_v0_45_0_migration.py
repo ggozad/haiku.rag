@@ -20,7 +20,9 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\nfake-picture-bytes"
 PNG_DATA_URI = f"data:image/png;base64,{base64.b64encode(PNG_BYTES).decode('ascii')}"
 
 
-def _docling_blob_with_picture(self_ref: str = "#/pictures/0") -> bytes:
+def _docling_blob_with_picture(
+    self_ref: str = "#/pictures/0", uri: str = PNG_DATA_URI
+) -> bytes:
     """Build a compressed docling-document blob carrying one picture with
     an inline data URI — the shape v0.45.0 was written to backfill from."""
     doc = {
@@ -30,7 +32,7 @@ def _docling_blob_with_picture(self_ref: str = "#/pictures/0") -> bytes:
         "pictures": [
             {
                 "self_ref": self_ref,
-                "image": {"mimetype": "image/png", "uri": PNG_DATA_URI},
+                "image": {"mimetype": "image/png", "uri": uri},
             }
         ],
         "tables": [],
@@ -178,3 +180,50 @@ async def test_migration_moves_picture_bytes_once(temp_db_path):
             .to_list()
         )
         assert rows_second[0]["picture_data"] == first_bytes
+
+
+async def test_migration_strips_an_external_image_without_writing_bytes(
+    temp_db_path,
+):
+    """An external image has no bytes to backfill, and its blob is stripped."""
+    async with Store(temp_db_path, create=True) as store:
+        await store.documents_table.add(
+            [
+                DocumentRecord(
+                    id=doc_id,
+                    content="x",
+                    docling_document=_docling_blob_with_picture(uri=uri),
+                    docling_version="1.10.0",
+                )
+                for doc_id, uri in [
+                    ("doc-1", PNG_DATA_URI),
+                    ("doc-2", "https://example.com/figure.png"),
+                ]
+            ]
+        )
+        await store.document_items_table.add(
+            [
+                DocumentItemRecord(
+                    document_id=doc_id,
+                    position=0,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text="",
+                    page_numbers="[1]",
+                )
+                for doc_id in ("doc-1", "doc-2")
+            ]
+        )
+
+        await _apply_extract_picture_bytes(store)
+
+        items = await store.document_items_table.query().to_list()
+        docs = await store.documents_table.query().to_list()
+
+    assert {row["document_id"]: row["picture_data"] for row in items} == {
+        "doc-1": PNG_BYTES,
+        "doc-2": None,
+    }
+    for row in docs:
+        blob = json.loads(decompress_json(row["docling_document"]))
+        assert blob["pictures"][0]["image"] is None

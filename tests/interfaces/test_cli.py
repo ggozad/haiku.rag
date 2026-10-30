@@ -557,6 +557,35 @@ class TestTagRestore:
         result = runner.invoke(cli, ["tag", "list", "--db", db])
         assert "before-restore" not in result.output
 
+    def test_restore_confirmed_restores_the_tagged_state(self, temp_db_path):
+        from haiku.rag.store.engine import Store
+        from haiku.rag.store.models import Document
+        from haiku.rag.store.repositories.document import DocumentRepository
+
+        async def _tagged_then_written():
+            async with Store(temp_db_path, create=True) as store:
+                repo = DocumentRepository(store)
+                await repo.create(Document(content="First"))
+                await store.create_tag("r1")
+                await repo.create(Document(content="Second"))
+
+        async def _live_state():
+            async with Store(temp_db_path, read_only=True) as store:
+                docs = await DocumentRepository(store).list_all(include_content=True)
+                return {d.content for d in docs}, set(await store.list_tags())
+
+        asyncio.run(_tagged_then_written())
+
+        result = runner.invoke(
+            cli, ["tag", "restore", "r1", "--db", str(temp_db_path)], input="y\n"
+        )
+
+        assert result.exit_code == 0, result.output
+        contents, tags = asyncio.run(_live_state())
+        assert contents == {"First"}
+        [safety] = tags - {"r1"}
+        assert safety.startswith("before-restore-")
+
     def test_restore_non_interactive_without_yes_fails(self, temp_db_path):
         db = str(temp_db_path)
         assert runner.invoke(cli, ["init", "--db", db]).exit_code == 0

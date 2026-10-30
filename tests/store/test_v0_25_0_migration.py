@@ -7,6 +7,8 @@ table must leave those blobs untouched.
 
 import json
 
+import pytest
+
 from haiku.rag.store.compression import compress_json, decompress_json
 from haiku.rag.store.engine import Store
 from haiku.rag.store.upgrades.v0_25_0 import _apply_compress_docling_document
@@ -151,14 +153,16 @@ async def test_stale_staging_table_is_replaced(temp_db_path):
     assert [row["id"] for row in rows] == ["doc-1"]
 
 
+@pytest.mark.parametrize("dropped", [False, True], ids=["emptied", "dropped"])
 async def test_recovers_documents_from_staging_when_documents_table_is_empty(
-    temp_db_path,
+    temp_db_path, dropped
 ):
-    """An interrupted run can leave the documents table emptied and every
-    migrated row in staging; the rerun must adopt staging rather than drop it."""
+    """A rerun adopts staging when the documents table is emptied or dropped."""
     blob = compress_json(DOC_JSON)
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await _seed_v3(store, [])
+        if dropped:
+            await store.db.drop_table("documents")
         staging = await store.db.create_table(
             STAGING, schema=documents_schema(DocumentRecordV4)
         )
@@ -198,9 +202,12 @@ async def test_unreadable_documents_table_falls_back_to_staging(temp_db_path):
     assert row["docling_document"] == blob
 
 
-async def test_empty_database_is_rebuilt_on_the_new_schema(temp_db_path):
+@pytest.mark.parametrize("dropped", [False, True], ids=["emptied", "dropped"])
+async def test_empty_database_is_rebuilt_on_the_new_schema(temp_db_path, dropped):
     async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
         await _seed_v3(store, [])
+        if dropped:
+            await store.db.drop_table("documents")
 
         await _apply_compress_docling_document(store)
 

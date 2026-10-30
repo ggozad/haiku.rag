@@ -80,9 +80,13 @@ class TestStandaloneAcrossDatabases:
         sandbox = Sandbox(db_path=None, config=config, context=AnalysisContext())
         try:
             _, owners = await sandbox._documents()
+            opened = sandbox._opened
+            _, later = await sandbox._documents()
 
             assert len(owners) == 2
             assert all(owner.store.db.is_open() for owner in owners.values())
+            assert sandbox._opened is opened
+            assert later == owners
         finally:
             await sandbox.close()
 

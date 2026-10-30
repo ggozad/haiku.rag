@@ -4,9 +4,11 @@ They stub the client and record the console: each test pins what the app asks
 the client for and what it renders, without a database or a model.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import lancedb
 import pytest
 from rich.console import Console
 
@@ -19,9 +21,11 @@ from haiku.rag.config.models import (
     PromptsConfig,
     StorageConfig,
 )
+from haiku.rag.store.engine import Store
 from haiku.rag.store.models.chunk import Chunk, SearchResult
 from haiku.rag.store.models.document import Document
 from tests.conftest import DOCUMENTED_SECRETS, documented_secret_shapes, for_path
+from tests.store.minimal_database import openai_settings
 
 
 @pytest.fixture
@@ -820,6 +824,13 @@ async def test_download_models_reports_each_stage(app, monkeypatch):
             completed=50,
         ),
         DownloadProgress(
+            status="downloading",
+            model="qwen3-embedding",
+            digest="sha256:abcdef0123456789",
+            total=100,
+            completed=100,
+        ),
+        DownloadProgress(
             status="verifying sha256 digest",
             model="qwen3-embedding",
         ),
@@ -970,3 +981,40 @@ async def test_history_limits_the_versions_shown(app, store_stub):
     printed = out(app)
     assert "v3" in printed
     assert "v1" not in printed
+
+
+def _real_app(path) -> HaikuRAGApp:
+    application = HaikuRAGApp(scope=for_path(path), config=AppConfig())
+    application.console = Console(record=True, width=200)
+    return application
+
+
+async def test_info_reports_absent_tables(temp_db_path):
+    db = await lancedb.connect_async(temp_db_path)
+    await db.create_table(
+        "settings",
+        data=[{"id": "settings", "settings": json.dumps(openai_settings("1.2.3"))}],
+    )
+    app = _real_app(temp_db_path)
+
+    await app.info()
+
+    printed = out(app)
+    for name in ("documents", "document_meta", "chunks", "document_items"):
+        assert f"{name}: absent" in printed
+    assert "vector index" not in printed
+    assert "versions (" not in printed
+
+
+async def test_history_annotates_a_partial_tag_only_where_it_exists(temp_db_path):
+    async with Store(temp_db_path, config=AppConfig(), create=True) as store:
+        version = await store.chunks_table.version()
+        await store.chunks_table.tags.create("partial", version)
+    app = _real_app(temp_db_path)
+
+    await app.history()
+
+    printed = out(app)
+    assert printed.count("<- partial") == 1
+    chunks_section = printed.split("\nchunks\n")[1].split("\ndocument_items\n")[0]
+    assert "<- partial" in chunks_section

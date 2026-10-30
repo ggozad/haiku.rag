@@ -153,6 +153,29 @@ async def test_caption_picture_refs_grouped_ignores_non_picture_predecessors(
         assert got == {}
 
 
+async def test_caption_picture_refs_grouped_skips_a_caption_without_a_ref(
+    temp_db_path,
+):
+    async with Store(temp_db_path, create=True) as store:
+        repo = DocumentItemRepository(store)
+        await repo.create_items(
+            "doc-1",
+            [
+                DocumentItem(
+                    document_id="doc-1",
+                    position=0,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                ),
+                DocumentItem(
+                    document_id="doc-1", position=1, self_ref="", label="caption"
+                ),
+            ],
+        )
+
+        assert await repo.get_caption_picture_refs_grouped({"doc-1": [""]}) == {}
+
+
 async def test_pictures_grouped_omits_text_unless_asked(temp_db_path, item_queries):
     """Text is dead weight for a caller that only scores pixels."""
     async with Store(temp_db_path, create=True) as store:

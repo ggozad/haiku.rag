@@ -182,7 +182,7 @@ async def apply_migrations(engine: AsyncEngine) -> int:
                             "ADD PRIMARY KEY (namespace, source_id, uri)"
                         )
                     )
-            if current < 6:
+            if current < 6:  # pragma: no branch - 6 is SCHEMA_VERSION
                 (index,) = (
                     i for i in jobs.indexes if i.name == "idx_jobs_source_claimable"
                 )

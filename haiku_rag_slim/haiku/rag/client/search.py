@@ -135,7 +135,7 @@ async def search_sources(
     if include_images:
         by_owner: dict[str, list[SearchResult]] = {}
         for result in results:
-            if result.source:
+            if result.source:  # pragma: no branch - fused results are named
                 by_owner.setdefault(result.source, []).append(result)
         owners = await client.clients_for(list(by_owner))
         await gather_all(

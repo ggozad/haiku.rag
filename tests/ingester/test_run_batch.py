@@ -47,6 +47,7 @@ from tests.ingester.conftest import (
 )
 
 _POLLER_LOGGER = logging.getLogger("haiku.rag.ingester.pollers.base")
+_APP_LOGGER = logging.getLogger("haiku.rag.ingester.app")
 
 
 def _config(tmp_path, root=None, **worker_kwargs) -> AppConfig:
@@ -845,32 +846,46 @@ async def test_waiting_on_a_serve_that_failed_raises_its_error():
         await _wait_until(lambda: False, serving=serving)
 
 
-@pytest.mark.parametrize("api", [True, False])
-async def test_serve_starts_workers_pollers_and_shuts_down(tmp_path, use_client, api):
+@pytest.mark.parametrize(
+    "api, auth_token, warnings",
+    [
+        (True, None, ["API auth_token is unset — control plane is unauthenticated"]),
+        (True, "secret", []),
+        (False, None, []),
+    ],
+)
+async def test_serve_starts_workers_pollers_and_shuts_down(
+    tmp_path, use_client, api, auth_token, warnings
+):
     """serve brings up pollers, workers and (when enabled) the HTTP API, then
     tears them all down. Shutdown is driven here by cancelling the serve task,
     which runs the same drain-and-close path as a SIGINT/SIGTERM."""
     use_client(_mock_client())
     config = _config(tmp_path)
-    config.ingester.api = APIConfig(enabled=api, host="127.0.0.1", port=0)
+    config.ingester.api = APIConfig(
+        enabled=api, host="127.0.0.1", port=0, auth_token=auth_token
+    )
     app = IngesterApp(config=config)
 
-    task = asyncio.create_task(app.serve(api=api))
-    try:
-        await _wait_until(
-            lambda: (
-                app._pool is not None
-                and app._pool.live_workers > 0
-                and app._pollers is not None
-                and app._pollers.live_pollers > 0
-            ),
-            serving=task,
-        )
-    finally:
-        task.cancel()
+    with capture_logs(_APP_LOGGER, logging.WARNING) as records:
+        task = asyncio.create_task(app.serve(api=api))
+        try:
+            await _wait_until(
+                lambda: (
+                    app._pool is not None
+                    and app._pool.live_workers > 0
+                    and app._pollers is not None
+                    and app._pollers.live_pollers > 0
+                ),
+                serving=task,
+            )
+        finally:
+            task.cancel()
 
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(task, timeout=5.0)
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=5.0)
+
+    assert [record.getMessage() for record in records] == warnings
 
     # Workers and pollers are stopped after the shutdown path runs.
     assert app._pool is not None and app._pollers is not None

@@ -129,7 +129,7 @@ async def convert_pdf_with_splitting(
                 # tmp_path itself) sees a fully written, closed file. Unlink
                 # in finally so a mid-write disk-full / mid-convert failure
                 # doesn't leak the slice on disk.
-                if tmp_path is not None:
+                if tmp_path is not None:  # pragma: no branch - None only if open raised
                     tmp_path.unlink(missing_ok=True)
     finally:
         # Close the generator under the pdfium lock so src.close() runs

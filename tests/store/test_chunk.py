@@ -401,6 +401,22 @@ def test_search_result_format_for_agent_picture_captions():
     assert "Figure 2. Projected annual emissions." in formatted
 
 
+def test_search_result_format_for_agent_skips_empty_label_and_caption():
+    result = SearchResult(
+        content="body",
+        score=0.5,
+        chunk_id="chunk-empty",
+        labels=[""],
+        picture_captions={"#/pictures/0": "", "#/pictures/1": "Figure 2."},
+    )
+
+    formatted = result.format_for_agent()
+
+    assert "Type:" not in formatted
+    assert "(#/pictures/0)" not in formatted
+    assert "Figure caption (#/pictures/1): Figure 2." in formatted
+
+
 @pytest.mark.parametrize(
     "kwargs,present,absent",
     [

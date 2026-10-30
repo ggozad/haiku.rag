@@ -259,7 +259,9 @@ class BasePoller:
                         )
                     elif event.kind is SourceEventKind.UNCHANGED:
                         summary.unchanged_count += 1
-                    elif event.kind is SourceEventKind.DELETE:
+                    elif (
+                        event.kind is SourceEventKind.DELETE
+                    ):  # pragma: no branch - DELETE is last
                         if self.config.delete_orphans:
                             summary.delete_count += 1
                             changes.append(
@@ -328,7 +330,7 @@ class BasePoller:
             sync_batch.append(
                 SyncRow(event.source_id, event.uri, event.revision, None, False)
             )
-        elif event.kind is SourceEventKind.DELETE:
+        elif event.kind is SourceEventKind.DELETE:  # pragma: no branch - DELETE is last
             if not self.config.delete_orphans:
                 return
             await self._jobs.enqueue(

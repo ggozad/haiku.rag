@@ -109,6 +109,17 @@ class TestMetadataJson:
         assert meta["metadata"]["author"] == "Ada"
 
 
+async def test_toc_json_is_not_mounted_when_disabled(temp_db_path, monkeypatch):
+    monkeypatch.setenv("HAIKU_RAG_DISABLE_TOC", "1")
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc_id = await _empty_doc(client, uri="test://no-toc", title="No TOC")
+
+    sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
+    assert await _read_vfs_text(sandbox, f"/documents/{doc_id}/content.txt") == "x"
+    with pytest.raises(FileNotFoundError):
+        await _read_toc(sandbox, doc_id)
+
+
 class TestTocShape:
     """toc.json builds a section tree from heading_level + position."""
 

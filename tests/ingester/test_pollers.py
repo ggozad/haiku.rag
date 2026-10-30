@@ -1029,3 +1029,20 @@ async def test_a_poller_added_to_a_started_manager_runs(tmp_path, jobs, sync):
     finally:
         await manager.stop()
     assert manager.live_pollers == 0
+
+
+async def test_a_poller_added_before_start_runs_when_the_manager_starts(
+    tmp_path, jobs, sync
+):
+    manager = PollerManager(
+        configs=[_idle_config(tmp_path, "first")], job_repo=jobs, sync_repo=sync
+    )
+    manager.add([manager.build(_idle_config(tmp_path, "second"))])
+    assert manager.live_pollers == 0
+
+    await manager.start()
+    try:
+        assert [poller.source_id for poller in manager.pollers] == ["first", "second"]
+        assert manager.live_pollers == 2
+    finally:
+        await manager.stop()

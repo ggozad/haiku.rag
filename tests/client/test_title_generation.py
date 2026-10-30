@@ -92,6 +92,17 @@ class TestExtractStructuralTitle:
 
         assert extract_structural_title(doc) == "HTML Page Title"
 
+    def test_first_body_title_wins(self):
+        doc = DoclingDocument(name="test")
+        doc.add_text(
+            label=DocItemLabel.TITLE, text="First", content_layer=ContentLayer.BODY
+        )
+        doc.add_text(
+            label=DocItemLabel.TITLE, text="Second", content_layer=ContentLayer.BODY
+        )
+
+        assert extract_structural_title(doc) == "First"
+
     def test_whitespace_stripped(self):
         """Whitespace is stripped from extracted titles."""
         doc = DoclingDocument(name="test")
@@ -104,13 +115,14 @@ class TestExtractStructuralTitle:
         assert extract_structural_title(doc) == "Padded Title"
 
     def test_empty_title_text_skipped(self):
-        """Empty or whitespace-only TITLE text is skipped."""
+        """Empty or whitespace-only TITLE and SECTION_HEADER text is skipped."""
         doc = DoclingDocument(name="test")
         doc.add_text(
             label=DocItemLabel.TITLE,
             text="   ",
             content_layer=ContentLayer.BODY,
         )
+        doc.add_text(label=DocItemLabel.SECTION_HEADER, text="   ")
         doc.add_text(label=DocItemLabel.SECTION_HEADER, text="Actual Heading")
 
         assert extract_structural_title(doc) == "Actual Heading"
@@ -250,6 +262,24 @@ class TestGenerateTitle:
             )
             with pytest.raises(RuntimeError):
                 await client.generate_title(doc)
+
+    async def test_document_without_docling_goes_to_the_model(self, monkeypatch):
+        from pydantic_ai.messages import ModelResponse, TextPart
+        from pydantic_ai.models.function import FunctionModel
+
+        from haiku.rag.client.titles import generate_title
+        from haiku.rag.store.models.document import Document
+
+        monkeypatch.setattr(
+            "haiku.rag.utils.models.get_model",
+            lambda *a, **kw: FunctionModel(
+                lambda messages, info: ModelResponse(parts=[TextPart("Model Title")])
+            ),
+        )
+
+        title = await generate_title(AppConfig(), Document(content="body"))
+
+        assert title == "Model Title"
 
     async def test_bypasses_auto_title_config(self, temp_db_path):
         """generate_title works even when auto_title is False."""

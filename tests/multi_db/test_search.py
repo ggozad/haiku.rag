@@ -33,6 +33,44 @@ def _accept_image_queries(monkeypatch):
     monkeypatch.setattr(EmbedderWrapper, "embed_image", embed_image)
 
 
+async def _seed_picture(config, name):
+    """One document whose only chunk is its picture, with the picture's bytes."""
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(config=config, create=True, sources=[name]) as rag:
+        doc = DoclingDocument(name=name)
+        doc.add_text(label=DocItemLabel.TEXT, text=f"{name} figure of cats")
+        await rag.import_document(
+            doc,
+            [
+                Chunk(
+                    content=f"{name} figure of cats",
+                    embedding=[0.1] * dim,
+                    order=0,
+                    metadata={
+                        "doc_item_refs": ["#/pictures/0"],
+                        "labels": ["picture"],
+                    },
+                )
+            ],
+            uri=f"test://{name}/figure",
+        )
+        [document] = await rag.list_documents()
+        assert document.id is not None
+        await rag.document_item_repository.create_items(
+            document.id,
+            [
+                DocumentItem(
+                    document_id=document.id,
+                    position=0,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    text=f"caption {name}",
+                    picture_data=f"bytes-{name}".encode(),
+                )
+            ],
+        )
+
+
 class TestFederatedSearch:
     async def test_results_carry_their_source(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -46,6 +84,20 @@ class TestFederatedSearch:
         for r in results:
             assert r.source is not None
             assert r.source in r.content
+
+    @pytest.mark.parametrize("include_images", [True, False])
+    async def test_pictures_attach_only_when_asked(self, tmp_path, include_images):
+        config = _config(tmp_path, ["alpha", "beta"])
+        for name in ("alpha", "beta"):
+            await _seed_picture(config, name)
+
+        async with HaikuRAG(config=config) as rag:
+            results = await rag.search(
+                "cats", search_type="fts", include_images=include_images
+            )
+
+        assert {r.source for r in results} == {"alpha", "beta"}
+        assert all((r.image_data is not None) is include_images for r in results)
 
     async def test_sources_selects_a_subset(self, tmp_path):
         config = _config(tmp_path, ["alpha", "beta"])
@@ -237,42 +289,8 @@ class TestRerankerFusion:
         documents, so the pre-rerank attach must stay per database."""
         config = _config(tmp_path, ["alpha", "beta"])
         config.reranking.multimodal = True
-        dim = get_config().embeddings.model.vector_dim
-
         for name in ("alpha", "beta"):
-            async with HaikuRAG(config=config, create=True, sources=[name]) as rag:
-                doc = DoclingDocument(name=name)
-                doc.add_text(label=DocItemLabel.TEXT, text=f"{name} figure of cats")
-                await rag.import_document(
-                    doc,
-                    [
-                        Chunk(
-                            content=f"{name} figure of cats",
-                            embedding=[0.1] * dim,
-                            order=0,
-                            metadata={
-                                "doc_item_refs": ["#/pictures/0"],
-                                "labels": ["picture"],
-                            },
-                        )
-                    ],
-                    uri=f"test://{name}/figure",
-                )
-                [document] = await rag.list_documents()
-                assert document.id is not None
-                await rag.document_item_repository.create_items(
-                    document.id,
-                    [
-                        DocumentItem(
-                            document_id=document.id,
-                            position=0,
-                            self_ref="#/pictures/0",
-                            label="picture",
-                            text=f"caption {name}",
-                            picture_data=f"bytes-{name}".encode(),
-                        )
-                    ],
-                )
+            await _seed_picture(config, name)
 
         stub = StubReranker()
         monkeypatch.setattr(HaikuRAG, "reranker", property(lambda self: stub))

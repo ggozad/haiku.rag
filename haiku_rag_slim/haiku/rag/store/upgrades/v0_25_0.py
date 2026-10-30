@@ -48,7 +48,7 @@ async def _apply_compress_docling_document(store: Store) -> None:
         if docling_json:
             if isinstance(docling_json, str):
                 docling_bytes = compress_json(docling_json)
-            elif isinstance(docling_json, bytes):
+            elif isinstance(docling_json, bytes):  # pragma: no branch - str or bytes
                 try:
                     decompress_json(docling_json)
                     docling_bytes = docling_json  # Already compressed
@@ -128,7 +128,7 @@ async def _apply_compress_docling_document(store: Store) -> None:
                         )
                         for row in batch
                     ]
-                    if records:
+                    if records:  # pragma: no branch - the ids come from this table
                         await store.documents_table.add(records)
                         logger.info("Recovered batch %d/%d", batch_num, total_batches)
                 await store.db.drop_table("documents_v4_staging")
@@ -165,7 +165,7 @@ async def _apply_compress_docling_document(store: Store) -> None:
         ).to_pylist()
 
         migrated_batch = [migrate_row(row) for row in batch]
-        if migrated_batch:
+        if migrated_batch:  # pragma: no branch - the ids come from this table
             await staging_table.add(migrated_batch)
 
         logger.info(
@@ -177,7 +177,9 @@ async def _apply_compress_docling_document(store: Store) -> None:
 
     # Replace old table with staging table
     del store.documents_table
-    if "documents" in (await store.db.list_tables()).tables:
+    if (
+        "documents" in (await store.db.list_tables()).tables
+    ):  # pragma: no branch - documents was just read
         await store.db.drop_table("documents")
     store.documents_table = await store.db.create_table(
         "documents", schema=get_documents_arrow_schema_v4()
@@ -210,12 +212,14 @@ async def _apply_compress_docling_document(store: Store) -> None:
             )
             for row in batch
         ]
-        if records:
+        if records:  # pragma: no branch - the ids come from this table
             await store.documents_table.add(records)
             logger.info("Copied batch %d/%d", batch_num, total_batches)
 
     # Cleanup staging table
-    if "documents_v4_staging" in (await store.db.list_tables()).tables:
+    if (
+        "documents_v4_staging" in (await store.db.list_tables()).tables
+    ):  # pragma: no branch - staging was created above
         await store.db.drop_table("documents_v4_staging")
 
     # Vacuum all tables (destructive migration, no history preserved)

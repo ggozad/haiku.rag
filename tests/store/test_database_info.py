@@ -51,6 +51,27 @@ async def test_gather_database_info_flags_missing_table_and_pending_migrations(
     assert all(m.version and m.description is not None for m in info.pending_migrations)
 
 
+@pytest.mark.parametrize("missing", ["table", "row"])
+async def test_gather_database_info_without_settings_reports_unknown(
+    temp_db_path, missing
+):
+    import lancedb
+
+    await seed_database(temp_db_path, openai_settings("1.2.3"))
+    db = await lancedb.connect_async(temp_db_path)
+    if missing == "table":
+        await db.drop_table("settings")
+    else:
+        await (await db.open_table("settings")).delete("id = 'settings'")
+
+    info = await gather_database_info(temp_db_path, AppConfig())
+
+    assert info.stored_version == "unknown"
+    assert info.embeddings.provider == "unknown"
+    tables = {t.name: t for t in info.tables}
+    assert tables["documents"].num_rows == 1
+
+
 async def test_gather_database_info_empty_database(temp_db_path):
     import lancedb
 

@@ -83,6 +83,52 @@ class TestV0_48_0Migration:
             rerun.sort(key=lambda r: r["position"])
             assert rerun == rows
 
+    async def test_leaves_items_with_no_matching_ref_untouched(self, temp_db_path):
+        """Rows whose refs match no fresh item get no levels, and the rest are backfilled."""
+        docling_doc = _docling_with_levels()
+        structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
+        items = list(docling_doc.iterate_items())
+
+        async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
+            await store.documents_table.add(
+                [
+                    DocumentRecord(
+                        id=doc_id,
+                        content="legacy",
+                        docling_document=structure,
+                        docling_pages=pages,
+                        docling_version=docling_doc.version,
+                    )
+                    for doc_id in ("stale", "current")
+                ]
+            )
+            await store.document_items_table.add(
+                [
+                    DocumentItemRecord(
+                        document_id=doc_id,
+                        position=pos,
+                        self_ref=f"#/stale/{pos}" if doc_id == "stale" else ref,
+                        label="section_header",
+                        page_numbers="[]",
+                    )
+                    for doc_id in ("stale", "current")
+                    for pos, ref in enumerate(item.self_ref for item, _ in items)
+                ]
+            )
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            await _apply_backfill_heading_hierarchy(store)
+            rows = await store.document_items_table.query().to_list()
+
+        levels = {
+            doc_id: sorted(
+                r["heading_level"] for r in rows if r["document_id"] == doc_id
+            )
+            for doc_id in ("stale", "current")
+        }
+        assert levels["stale"] == [0] * len(items)
+        assert levels["current"] == [0, 0, 1, 1, 2]
+
     async def test_skips_documents_without_docling(self, temp_db_path):
         async with Store(temp_db_path, create=True, skip_migration_check=True) as store:
             await store.set_haiku_version("0.45.0")

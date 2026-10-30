@@ -1186,11 +1186,14 @@ async def test_close_releases_the_connection(temp_db_path):
     assert not store.db.is_open()
 
 
-async def test_delete_marks_vacuum_dirty(temp_db_path):
+@pytest.mark.parametrize("auto_vacuum", [True, False])
+async def test_delete_marks_vacuum_dirty(temp_db_path, auto_vacuum):
     """A delete adds tombstone/table versions, so it must enter the auto-vacuum
     lifecycle — otherwise a delete-only run closes without a final vacuum."""
-    dim = get_config().embeddings.model.vector_dim
-    async with HaikuRAG(temp_db_path, create=True) as client:
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = auto_vacuum
+    dim = config.embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
         doc = await client.import_document(
             docling_doc("d", "body"),
             [Chunk(content="body", embedding=[0.1] * dim, order=0)],
@@ -1200,7 +1203,20 @@ async def test_delete_marks_vacuum_dirty(temp_db_path):
         client._session._vacuum_dirty = False  # isolate the delete
 
         assert await client.delete_document(doc.id) is True
-        assert client._session._vacuum_dirty is True
+        assert client._session._vacuum_dirty is auto_vacuum
+
+
+async def test_delete_document_without_a_uri(temp_db_path):
+    dim = get_config().embeddings.model.vector_dim
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+        )
+        assert doc.id is not None and doc.uri is None
+
+        assert await client.delete_document(doc.id) is True
+        assert await client.get_document_by_id(doc.id) is None
 
 
 async def test_delete_document_for_a_source_skips_another_sources_document(
@@ -1749,6 +1765,32 @@ async def test_metadata_refresh_with_nothing_to_write_returns_the_stored_record(
 
     assert refreshed.metadata == {"k": "v"}
     assert refreshed.updated_at == stored.updated_at
+
+
+async def test_metadata_refresh_without_auto_vacuum_schedules_none(temp_db_path):
+    from haiku.rag.client.documents import _refresh_doc_metadata
+
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = False
+    dim = config.embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        doc = await client.import_document(
+            docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+
+        refreshed = await _refresh_doc_metadata(
+            writing(client),
+            doc,
+            title="Renamed",
+            user_metadata={},
+            source_metadata=None,
+        )
+
+        assert refreshed.title == "Renamed"
+        assert client._session._vacuum_dirty is False
 
 
 async def test_metadata_refresh_of_a_document_deleted_while_it_waited_raises(

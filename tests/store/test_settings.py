@@ -351,6 +351,12 @@ def test_recorded_settings_drops_only_an_empty_prefix():
     ) == ["name: '' -> 'b'"]
 
 
+def test_recorded_settings_without_an_embedder_records_the_version():
+    from haiku.rag.store.engine import recorded_settings
+
+    assert recorded_settings({"version": "1.0", "embeddings": {}}) == {"version": "1.0"}
+
+
 async def test_a_new_database_records_its_prefixes(temp_db_path):
     from haiku.rag.store.engine import Store
     from haiku.rag.store.repositories.settings import SettingsRepository

@@ -120,7 +120,7 @@ async def _apply_backfill_heading_hierarchy(store: Store) -> None:
         records: list[DocumentItemRecord] = []
         for item in fresh_items:
             row = existing_by_ref.get(item.self_ref)
-            if row is None:  # pragma: no cover
+            if row is None:
                 continue
             records.append(
                 DocumentItemRecord(

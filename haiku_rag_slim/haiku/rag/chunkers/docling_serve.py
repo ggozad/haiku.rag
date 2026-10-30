@@ -160,19 +160,10 @@ class DoclingServeChunker(DocumentChunker):
             labels: list[str] = []
 
             for item in doc_items:
-                if isinstance(item, str):
-                    # docling-serve returns refs as strings directly
-                    doc_item_refs.append(item)
-                    # Resolve label from the document using the ref
-                    label = _resolve_label_from_document(item, document)
-                    if label:
-                        labels.append(label)
-                elif isinstance(item, dict):
-                    # Handle dict format if API ever returns it
-                    if "self_ref" in item:
-                        doc_item_refs.append(item["self_ref"])
-                    if "label" in item:
-                        labels.append(item["label"])
+                doc_item_refs.append(item)
+                label = _resolve_label_from_document(item, document)
+                if label:
+                    labels.append(label)
 
             headings = chunk.get("headings")
 

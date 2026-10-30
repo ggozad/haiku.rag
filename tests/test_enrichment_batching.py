@@ -1,3 +1,5 @@
+import base64
+
 import lancedb
 import lancedb.query
 import pytest
@@ -98,12 +100,64 @@ async def test_each_document_gets_its_own_pictures(temp_db_path):
         ]
         await populate_image_data(rag, results)
 
-    import base64
-
     for result, document_id in zip(results, ["doc-a", "doc-b"]):
         assert result.image_data is not None
         blob = base64.b64decode(result.image_data["#/pictures/0"])
         assert blob == f"bytes-{document_id}".encode()
+
+
+async def test_a_picture_reached_directly_and_by_caption_attaches_to_both(
+    temp_db_path,
+):
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await rag.document_item_repository.create_items(
+            "doc-a",
+            [
+                DocumentItem(
+                    document_id="doc-a",
+                    position=0,
+                    self_ref="#/pictures/0",
+                    label="picture",
+                    picture_data=b"bytes-doc-a",
+                ),
+                DocumentItem(
+                    document_id="doc-a",
+                    position=1,
+                    self_ref="#/texts/1",
+                    label="caption",
+                    text="figure 1",
+                ),
+            ],
+        )
+        results = [
+            _picture_result("doc-a", "#/pictures/0"),
+            _picture_result("doc-a", "#/texts/1"),
+        ]
+
+        await populate_image_data(rag, results)
+
+    assert [r.image_data for r in results] == [
+        {"#/pictures/0": base64.b64encode(b"bytes-doc-a").decode("ascii")}
+    ] * 2
+
+
+async def test_pictures_without_stored_bytes_attach_nothing(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        await _seed(rag, ["doc-a"])
+        stored_and_missing = SearchResult(
+            chunk_id="doc-a-both",
+            document_id="doc-a",
+            content="body",
+            score=0.9,
+            doc_item_refs=["#/pictures/0", "#/pictures/1"],
+        )
+        missing = _picture_result("doc-unstored", "#/pictures/0")
+
+        await populate_image_data(rag, [stored_and_missing, missing])
+
+    assert stored_and_missing.image_data is not None
+    assert list(stored_and_missing.image_data) == ["#/pictures/0"]
+    assert missing.image_data is None
 
 
 async def test_caption_ranked_results_take_at_most_four_queries(
@@ -259,11 +313,16 @@ async def test_reranker_gives_each_chunk_its_own_document_picture(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as rag:
         await _seed(rag, ["doc-a", "doc-b"])
 
-        chunks = [_picture_chunk("doc-a"), _picture_chunk("doc-b")]
+        chunks = [
+            _picture_chunk("doc-a"),
+            _picture_chunk("doc-b"),
+            _picture_chunk("doc-unstored"),
+        ]
         await _attach_picture_data(rag, chunks)
 
     assert chunks[0]._picture_data == b"bytes-doc-a"
     assert chunks[1]._picture_data == b"bytes-doc-b"
+    assert chunks[2]._picture_data is None
 
 
 async def test_expansion_keeps_document_order_for_tied_scores(temp_db_path):

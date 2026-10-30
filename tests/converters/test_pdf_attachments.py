@@ -119,6 +119,25 @@ async def test_nested_pdf_attachments_recurse_up_to_cap(temp_db_path, fake_inges
         assert await client.get_document_by_uri(l3_uri) is None
 
 
+@pytest.mark.parametrize(
+    ("attachments", "warned"),
+    [([], False), ([("leaf.txt", b"deepest")], True)],
+    ids=["none", "one"],
+)
+def test_depth_cap_warns_only_about_skipped_attachments(attachments, warned):
+    body = build_pdf(attachments)
+
+    with capture_logs(client_documents.logger, logging.WARNING) as records:
+        found = _extract_pdf_attachments(
+            body, "file:///fixtures/deep.pdf", depth=MAX_ATTACHMENT_DEPTH - 1
+        )
+
+    assert found is None
+    assert [r.getMessage().startswith("Attachment depth cap") for r in records] == (
+        [True] if warned else []
+    )
+
+
 async def test_config_off_skips_extraction(temp_db_path, monkeypatch, fake_ingest):
     async with HaikuRAG(temp_db_path, create=True) as client:
         monkeypatch.setattr(client._config.processing, "extract_pdf_attachments", False)

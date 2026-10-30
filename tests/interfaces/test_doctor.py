@@ -21,6 +21,7 @@ from haiku.rag.config.models import (
     PictureDescriptionConfig,
     ProcessingConfig,
     ProvidersConfig,
+    QAConfig,
 )
 from haiku.rag.doctor import (
     CheckResult,
@@ -974,6 +975,14 @@ def test_provider_targets_carries_docling_serve_api_key():
     assert targets["http://docling:5001/health"]["headers"] == {"X-Api-Key": "ds-key"}
 
 
+def test_provider_targets_probe_an_unnamed_model_without_listing_it():
+    config = AppConfig(qa=QAConfig(model=ModelConfig(provider="ollama", name="")))
+    targets, _ = _provider_targets(config)
+    entry = next(iter(targets.values()))
+    assert "" not in entry["models"]
+    assert "qwen3-embedding:4b" in entry["models"]
+
+
 def test_provider_targets_collects_local_providers():
     config = AppConfig(
         embeddings=EmbeddingsConfig(
@@ -1051,6 +1060,25 @@ async def test_provider_check_reports_local_provider(monkeypatch):
     local = next(r for r in results if r.name == "provider:sentence-transformers")
     assert local.severity is Severity.OK
     assert "local" in local.message
+
+
+async def test_provider_check_probes_nothing_without_endpoints(monkeypatch):
+    async def probe(_client, _url, _headers):
+        raise AssertionError("no endpoint to probe")
+
+    monkeypatch.setattr("haiku.rag.doctor._probe_endpoint", probe)
+    config = AppConfig(
+        embeddings=EmbeddingsConfig(
+            model=EmbeddingModelConfig(
+                provider="sentence-transformers", name="x", vector_dim=4
+            )
+        ),
+        qa=QAConfig(model=ModelConfig(provider="anthropic", name="claude")),
+    )
+    results = await run_provider_checks(config)
+    assert [(r.name, r.severity) for r in results] == [
+        ("provider:sentence-transformers", Severity.OK)
+    ]
 
 
 async def test_run_doctor_includes_provider_results(temp_db_path, monkeypatch):
@@ -1351,7 +1379,7 @@ async def test_scan_vectors_reduces_chunks_to_document_centroids(temp_db_path):
         [
             chunk_model(
                 id=f"zero-{n}",
-                document_id="b",
+                document_id="b" if n < 4 else "c",
                 content="x",
                 metadata=json.dumps({"doc_item_refs": ["#/texts/0"]}),
                 vector=[0.0] * 8,
@@ -1371,11 +1399,13 @@ async def test_scan_vectors_reduces_chunks_to_document_centroids(temp_db_path):
     assert scan.stored_dimension == 8
     assert scan.dimension == 8
     by_id = dict(zip(scan.document_ids, range(len(scan.document_ids))))
-    assert sorted(by_id) == ["a", "b"]
+    assert sorted(by_id) == ["a", "b", "c"]
     assert scan.counts[by_id["a"]] == 2
     assert scan.counts[by_id["b"]] == 1
+    assert scan.counts[by_id["c"]] == 0
     assert scan.centroids[by_id["a"]].tolist() == [1, 1, 0, 0, 0, 0, 0, 0]
     assert scan.centroids[by_id["b"]].tolist() == [0, 0, 1, 0, 0, 0, 0, 0]
+    assert scan.centroids[by_id["c"]].tolist() == [0] * 8
     assert scan.unembedded_count == 7
     assert scan.unembedded_sample == [f"zero-{n}" for n in range(5)]
 

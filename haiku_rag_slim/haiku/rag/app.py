@@ -871,7 +871,7 @@ class HaikuRAGApp:
                         completed=0,
                     )
                 progress.update(task_id, completed=event.completed, refresh=True)
-            elif progress and task_id is not None:
+            elif progress and task_id is not None:  # pragma: no branch - pulled first
                 progress.update(
                     task_id,
                     description=f"{current_model}: {event.status}",

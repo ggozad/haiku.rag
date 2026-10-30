@@ -270,6 +270,8 @@ async def test_a_reload_skips_an_unreadable_addition_and_adds_the_rest(
         assert [p.source_id for p in _pollers(app).pollers] == ["papers", "good"]
         assert list(app._failed) == ["broken"]
         assert "broken:" in (await api.get("/config")).json()["yaml"]
+        async with _api(app) as later:
+            assert "broken:" in (await later.get("/config")).json()["yaml"]
         assert [record.getMessage() for record in records] == [
             "Database 'broken' failed to start and is skipped: database 'broken': "
             "Database requires migration"

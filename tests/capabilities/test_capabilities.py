@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -161,6 +162,28 @@ async def test_a_string_db_path_opens_a_store(temp_db_path):
     try:
         rag = await capability._ensure_rag()
         assert rag.store.db_path == temp_db_path
+    finally:
+        await capability._close()
+
+
+async def test_concurrent_first_uses_open_one_client(temp_db_path):
+    from haiku.rag.client import HaikuRAG
+
+    config = AppConfig()
+    async with HaikuRAG(temp_db_path, config, create=True):
+        pass
+    capability = create_rag(db_path=temp_db_path, config=config)
+
+    await capability.resource_lock.acquire()
+    try:
+        first = asyncio.create_task(capability._ensure_rag())
+        second = asyncio.create_task(capability._ensure_rag())
+        await asyncio.sleep(0)
+        assert not first.done() and not second.done()
+    finally:
+        capability.resource_lock.release()
+    try:
+        assert await first is await second
     finally:
         await capability._close()
 

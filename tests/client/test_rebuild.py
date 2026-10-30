@@ -760,6 +760,34 @@ async def test_rebuild_title_only_handles_llm_failure(temp_db_path, monkeypatch)
         assert untouched.title is None
 
 
+async def test_rebuild_title_only_skips_a_blank_generated_title(
+    temp_db_path, monkeypatch
+):
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import FunctionModel
+
+    from haiku.rag.store.models.document import Document
+
+    monkeypatch.setattr(
+        "haiku.rag.utils.models.get_model",
+        lambda *a, **kw: FunctionModel(
+            lambda messages, info: ModelResponse(parts=[TextPart("   ")])
+        ),
+    )
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.document_repository.create(Document(content="body"))
+        assert doc.id is not None
+
+        processed = [
+            doc_id
+            async for doc_id in client.rebuild_database(mode=RebuildMode.TITLE_ONLY)
+        ]
+
+        assert processed == []
+        stored = await client.get_document_by_id(doc.id)
+        assert stored is not None and stored.title is None
+
+
 @pytest.mark.vcr()
 async def test_rebuild_full_source_failure_falls_back_to_stored_content(
     temp_db_path, monkeypatch
@@ -1177,6 +1205,23 @@ async def test_rebuild_set_embedder_works_on_empty_database(temp_db_path):
         assert await _stored_embedding_name(client) == "different-model"
 
 
+async def test_rebuild_set_embedder_records_an_embedder_where_none_was(
+    temp_db_path,
+):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        settings = dict(client.store.stored_settings)
+        del settings["embeddings"]
+        await client.store.settings_table.update({"settings": json.dumps(settings)})
+
+    async with HaikuRAG(temp_db_path, skip_validation=True) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.SET_EMBEDDER):
+            pass
+
+        assert await _stored_embedding_name(client) == (
+            get_config().embeddings.model.name
+        )
+
+
 async def test_rebuild_set_embedder_raises_on_vector_dim_mismatch(temp_db_path):
     """SET_EMBEDDER refuses when the vector dimension changed — a full rebuild is needed."""
     from haiku.rag.config import AppConfig
@@ -1430,6 +1475,23 @@ async def test_apply_descriptions_writes_only_non_empty_text(
     assert actual == expected_text
     # The blob is re-compressed either way; page rasters must survive it.
     assert document.docling_document is not None
+
+
+def test_apply_descriptions_replaces_an_existing_description():
+    from haiku.rag.client.rebuild import _apply_descriptions_sync
+    from haiku.rag.store.models.document import Document
+    from tests.documents import docling_doc_with_picture
+
+    docling_doc = docling_doc_with_picture()
+    ref = docling_doc.pictures[0].self_ref
+    document = Document(content="x", uri="test://doc")
+
+    _apply_descriptions_sync(docling_doc, document, {ref: "a red square"})
+    _apply_descriptions_sync(docling_doc, document, {ref: "a blue square"})
+
+    meta = docling_doc.pictures[0].meta
+    assert meta is not None and meta.description is not None
+    assert meta.description.text == "a blue square"
 
 
 async def test_patch_picture_descriptions_returns_zero_without_descriptions(

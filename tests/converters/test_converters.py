@@ -2005,7 +2005,8 @@ class TestDoclingServeConverter:
         assert data["ocr_engine"] == "rapidocr"
 
     def test_parse_zip_rehydrates_picture_uri(self, config):
-        """Zip path inlines artifact bytes as data: URIs on PictureItem.image.
+        """Zip path inlines artifact bytes as data: URIs on every PictureItem.image,
+        pictures sharing an artifact included.
 
         target_type=zip mode emits the URI as ``artifacts/<filename>`` — the
         same string we use to read the entry out of the archive.
@@ -2020,7 +2021,7 @@ class TestDoclingServeConverter:
         doc_json = create_mock_docling_document("test")
         doc_json["pictures"] = [
             {
-                "self_ref": "#/pictures/0",
+                "self_ref": f"#/pictures/{i}",
                 "parent": {"cref": "#/body"},
                 "children": [],
                 "content_layer": "body",
@@ -2037,6 +2038,7 @@ class TestDoclingServeConverter:
                     "uri": "artifacts/image_000000_test.png",
                 },
             }
+            for i in range(2)
         ]
         fake_png = b"\x89PNG\r\n\x1a\nfake-bytes-for-test"
 
@@ -2047,13 +2049,13 @@ class TestDoclingServeConverter:
 
         doc = converter._parse_zip_to_docling(buf.getvalue(), "test")
 
-        assert len(doc.pictures) == 1
-        image = doc.pictures[0].image
-        assert image is not None
-        uri = str(image.uri)
-        assert uri.startswith("data:image/png;base64,")
-        decoded = base64.b64decode(uri.split(",", 1)[1])
-        assert decoded == fake_png
+        assert len(doc.pictures) == 2
+        for picture in doc.pictures:
+            assert picture.image is not None
+            uri = str(picture.image.uri)
+            assert uri.startswith("data:image/png;base64,")
+            decoded = base64.b64decode(uri.split(",", 1)[1])
+            assert decoded == fake_png
 
     def test_parse_zip_leaves_unknown_artifact_uri_unchanged(self, config):
         """If a PictureItem references an artifact that is not in the zip,
@@ -2665,6 +2667,55 @@ class TestConversionTimeout:
         with pytest.raises(ConverterWedgedError, match="restart"):
             await DoclingLocalConverter(config).convert_file(healthy)
         assert time.monotonic() - started < 1.0
+
+    async def test_a_queued_conversion_polls_until_the_lock_frees(
+        self, config, tmp_path, monkeypatch
+    ):
+        """A conversion behind a held lock polls until the lock frees."""
+        import asyncio
+        import threading
+
+        from docling_core.types.doc.document import DoclingDocument
+
+        from haiku.rag.converters import docling_local
+
+        class PolledLock:
+            def __init__(self):
+                self.inner = threading.Lock()
+                self.failed_poll = threading.Event()
+
+            def acquire(self, timeout=-1):
+                acquired = self.inner.acquire(timeout=timeout)
+                if not acquired:
+                    self.failed_poll.set()
+                return acquired
+
+            def release(self):
+                self.inner.release()
+
+        lock = PolledLock()
+        monkeypatch.setattr(docling_local, "_CONVERTER_LOCK", lock)
+        monkeypatch.setattr(docling_local, "_LOCK_POLL_SECONDS", 0.01)
+        converter = DoclingLocalConverter(config)
+        converted = DoclingDocument(name="queued")
+        monkeypatch.setattr(
+            converter, "_sync_convert_timed", lambda path, source_uri=None: converted
+        )
+        pdf = tmp_path / "queued.pdf"
+        pdf.write_bytes(b"%PDF-1.5\n")
+
+        lock.inner.acquire()
+        try:
+            task = asyncio.create_task(converter.convert_file(pdf))
+            assert await asyncio.to_thread(lock.failed_poll.wait, 3)
+            assert not task.done()
+        finally:
+            lock.inner.release()
+
+        document = await asyncio.wait_for(task, 3)
+        assert document.name == "queued"
+        assert not lock.inner.locked()
+        assert not docling_local._WEDGED.is_set()
 
     async def test_failure_keeps_its_cause(self, config, tmp_path, monkeypatch):
         """`Failed to parse file` chains the exception that caused it and

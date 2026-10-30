@@ -190,6 +190,13 @@ class TestExtractItemTextPictures:
         pic.meta = PictureMeta(description=DescriptionMetaField(text="A red square."))
         assert extract_item_text(pic, doc) == "A red square."
 
+    def test_blank_description_falls_back_to_captions(self):
+        from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+
+        doc, pic = _doc_with_captioned_picture("A caption")
+        pic.meta = PictureMeta(description=DescriptionMetaField(text="  "))
+        assert extract_item_text(pic, doc) == "A caption"
+
     def test_child_text_is_extracted(self):
         doc, pic = _doc_with_captioned_picture()
         add_picture_text(doc, pic, "Skip paywalls", "Save on subscription costs.")
@@ -342,8 +349,7 @@ class TestDocumentItemRepository:
             assert await repo.get_item_count("nonexistent") == 0
 
     async def test_get_all_picture_data_grouped(self, temp_db_path):
-        """Pictures sharing a self_ref in different documents stay apart, and a
-        document without pictures maps to an empty dict."""
+        """Pictures sharing a self_ref stay per document, and one without bytes maps to {}."""
 
         def picture(doc_id: str, data: bytes | None) -> list[DocumentItem]:
             return [
@@ -365,14 +371,16 @@ class TestDocumentItemRepository:
                 picture("doc-1", b"one")
                 + picture("doc-2", b"two")
                 + picture("doc-3", None)
+                + picture("doc-4", b"")
             )
 
             assert await repo.get_all_picture_data_grouped(
-                ["doc-1", "doc-2", "doc-3", "missing"]
+                ["doc-1", "doc-2", "doc-3", "doc-4", "missing"]
             ) == {
                 "doc-1": {"#/pictures/0": b"one"},
                 "doc-2": {"#/pictures/0": b"two"},
                 "doc-3": {},
+                "doc-4": {},
                 "missing": {},
             }
             assert await repo.get_all_picture_data_grouped(["doc-2"]) == {

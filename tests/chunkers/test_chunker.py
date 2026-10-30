@@ -652,7 +652,7 @@ async def test_serve_chunker_accepts_picture_laden_docling(doclaynet_first_page_
 
 
 class TestDoclingServeChunkerRefResolution:
-    """_resolve_label_from_document and the dict-shaped doc_items branch."""
+    """Label resolution of docling-serve doc_item refs."""
 
     @pytest.fixture
     def chunker(self):
@@ -703,25 +703,13 @@ class TestDoclingServeChunkerRefResolution:
     async def test_chunk_of_none_returns_empty(self, chunker):
         assert await chunker.chunk(None) == []
 
-    async def test_dict_shaped_doc_items_are_decoded(self, chunker, document):
-        """docling-serve returns refs as strings today; the dict shape is
-        accepted in case the API changes."""
-
+    async def test_unresolvable_ref_is_kept_without_a_label(self, chunker, document):
         async def fake_chunk_api(_document):
-            return [
-                {
-                    "raw_text": "body",
-                    # A label the document does NOT carry, so the assertion
-                    # proves the dict's own label was used rather than a
-                    # lookup against the document.
-                    "doc_items": [{"self_ref": "#/texts/0", "label": "caption"}],
-                }
-            ]
+            return [{"raw_text": "body", "doc_items": ["#/texts/0", "#/texts/999"]}]
 
         chunker._call_chunk_api = fake_chunk_api  # type: ignore[method-assign]
 
         chunks = await chunker.chunk(document)
 
-        assert len(chunks) == 1
-        assert chunks[0].metadata["doc_item_refs"] == ["#/texts/0"]
-        assert chunks[0].metadata["labels"] == ["caption"]
+        assert chunks[0].metadata["doc_item_refs"] == ["#/texts/0", "#/texts/999"]
+        assert chunks[0].metadata["labels"] == ["paragraph"]

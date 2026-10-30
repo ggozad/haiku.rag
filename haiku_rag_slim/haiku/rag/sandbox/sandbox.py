@@ -363,7 +363,7 @@ class Sandbox:
         replacement, at the cost of the variables the dead worker held.
         """
         session, self._session = self._session, None
-        if session is not None:
+        if session is not None:  # pragma: no branch - execute() set the session
             with suppress(Exception):
                 await session.__aexit__(None, None, None)
 
@@ -748,7 +748,7 @@ class Sandbox:
             )
 
         finally:
-            if stopper is not None:
+            if stopper is not None:  # pragma: no branch - pool workers report a pid
                 stopper.cancel()
 
         if output is not None:

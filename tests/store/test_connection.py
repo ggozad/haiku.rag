@@ -275,6 +275,18 @@ class TestInitFailureCleanup:
             "AsyncConnection.close() was not called on init failure"
         )
 
+    async def test_store_aenter_keeps_a_connect_failure(
+        self, temp_db_path, monkeypatch
+    ):
+        async def failing_connect(*args, **kwargs):
+            raise OSError("simulated connect failure")
+
+        monkeypatch.setattr("haiku.rag.store.engine.connect_lancedb", failing_connect)
+
+        with pytest.raises(OSError, match="simulated connect failure"):
+            async with Store(temp_db_path, create=True):
+                pass
+
     async def test_client_aenter_closes_store_on_init_failure(
         self, temp_db_path, monkeypatch
     ):

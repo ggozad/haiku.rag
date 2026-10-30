@@ -19,7 +19,7 @@ from haiku.rag.ingester.queue.migrations import (
     open_queue,
     verify_schema,
 )
-from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
+from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo, _insert
 from tests.ingester.conftest import finished_job, status_of
 
@@ -745,6 +745,53 @@ async def test_retry_returns_live_sibling_instead_of_colliding(jobs):
     assert result.id == live.id
     assert result.status is JobStatus.QUEUED
     # The originally-dead row stays dead — not duplicated into a second live job.
+    refreshed = await jobs.get_job(first.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.DEAD
+
+
+async def _dead_job_with_live_sibling(jobs) -> tuple[Job, Job]:
+    first = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    claimed = await jobs.claim_next("w")
+    assert first is not None and claimed is not None
+    await jobs.mark_dead(claimed.id, "boom", "w")
+    live = await jobs.enqueue("s", "u", JobOp.UPSERT)
+    assert live is not None
+    return first, live
+
+
+async def test_retry_raises_when_the_target_is_pruned_after_colliding(
+    jobs, monkeypatch
+):
+    first, _ = await _dead_job_with_live_sibling(jobs)
+    get_job = jobs.get_job
+
+    async def pruned_first(job_id):
+        await jobs.prune_unsuccessful("s", "u")
+        return await get_job(job_id)
+
+    monkeypatch.setattr(jobs, "get_job", pruned_first)
+
+    with pytest.raises(KeyError):
+        await jobs.retry(first.id)
+
+
+async def test_retry_raises_when_the_live_sibling_finishes_after_colliding(
+    jobs, monkeypatch
+):
+    first, live = await _dead_job_with_live_sibling(jobs)
+    live_sibling = jobs._live_sibling
+
+    async def finished_first(source_id, uri):
+        claimed = await jobs.claim_next("w2")
+        assert claimed is not None and claimed.id == live.id
+        await jobs.mark_succeeded(claimed.id, "w2")
+        return await live_sibling(source_id, uri)
+
+    monkeypatch.setattr(jobs, "_live_sibling", finished_first)
+
+    with pytest.raises(KeyError):
+        await jobs.retry(first.id)
     refreshed = await jobs.get_job(first.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.DEAD

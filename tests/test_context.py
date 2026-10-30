@@ -1,6 +1,7 @@
 from haiku.rag.client.documents import _store_document_with_chunks
 from haiku.rag.context import (
     _clip_to_budget,
+    _collect_meta,
     _evidence_anchors,
     _expand_outward,
     _find_expansion_range,
@@ -282,6 +283,15 @@ class TestFindExpansionRange:
         lo, hi = _find_expansion_range(items, {3}, has_sections=True, max_chars=5000)
         # Text hits keep growing across section boundaries
         assert lo < 2 or hi > 3
+
+
+class TestCollectMeta:
+    def test_unlabelled_items_add_no_label(self):
+        items = [_item(0, label="section_header"), _item(1, label="")]
+        pages, refs, labels = _collect_meta([(0, 1, item) for item in items])
+        assert pages == {1}
+        assert refs == ["#/texts/0", "#/texts/1"]
+        assert labels == {"section_header"}
 
 
 class TestEvidenceAnchors:

@@ -527,3 +527,35 @@ async def test_visualize_chunk_falls_back_when_expansion_drops_refs(temp_db_path
             images = await client.visualize_chunk(stored[0])
 
     assert len(images) == 1
+
+
+async def test_visualize_command_omits_the_document_line_without_a_uri(
+    temp_db_path, monkeypatch
+):
+    from rich.console import Console
+
+    from haiku.rag.app import HaikuRAGApp
+    from haiku.rag.config import AppConfig
+    from tests.conftest import for_path
+
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={"doc_item_refs": ["#/texts/0"], "page_numbers": [1]},
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(_bbox_doc(with_page_image=True), chunks)
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+    assert stored[0].id is not None
+    monkeypatch.setattr("textual_image.renderable.Image", lambda img: "<page image>")
+    app = HaikuRAGApp(scope=for_path(temp_db_path), config=AppConfig())
+    app.console = Console(record=True, width=200)
+
+    await app.visualize_chunk(stored[0].id)
+
+    printed = app.console.export_text()
+    assert "Page 1/1" in printed
+    assert "document:" not in printed

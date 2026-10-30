@@ -408,7 +408,7 @@ async def import_document(
 
 async def _store_documents_with_chunks(
     session: SingleDatabaseSession,
-    client: "HaikuRAG | None",
+    client: "HaikuRAG",
     prepared: list[tuple[Document, list[Chunk], "DoclingDocument"]],
 ) -> list[Document]:
     """Store many documents with their chunks in a single table version each.
@@ -468,15 +468,14 @@ async def _store_documents_with_chunks(
         session.schedule_vacuum()
 
     session.name_all(created)
-    if client is not None:
-        event = IngestEvent(documents=created, operation="create")
-        await notify(client._hooks, "after_ingest", client, event)
+    event = IngestEvent(documents=created, operation="create")
+    await notify(client._hooks, "after_ingest", client, event)
     return created
 
 
 async def import_documents(
     session: SingleDatabaseSession,
-    client: "HaikuRAG | None",
+    client: "HaikuRAG",
     imports: list[DocumentImport],
 ) -> list[Document]:
     """Batch-import pre-processed documents with their chunks.
