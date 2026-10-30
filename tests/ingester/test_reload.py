@@ -1181,6 +1181,47 @@ async def test_removing_the_last_database_then_adding_one(tmp_path, clients):
         await _wait_until(lambda: _ingested(clients["wiki"]) == ["wiki.md"])
 
 
+async def test_a_reload_adds_and_retires_the_databases_of_fragments(tmp_path, clients):
+    path = tmp_path / "haiku.rag.yaml"
+    settings = _settings(
+        tmp_path, {"papers": ("papers.lancedb", [_fs(tmp_path, "papers")])}
+    )
+    _write(path, {"databases_include": "databases.d", **settings})
+    fragments = tmp_path / "databases.d"
+    fragments.mkdir()
+    app = _app(path)
+
+    async with _serving(app):
+        wiki = _settings(tmp_path, {"wiki": ("wiki.lancedb", [_fs(tmp_path, "wiki")])})
+        _write(
+            fragments / "wiki.yaml",
+            {
+                "lancedb": wiki["lancedb"],
+                "ingester": {"databases": wiki["ingester"]["databases"]},
+            },
+        )
+        assert _changes(await app.reload()) == {("wiki", "added")}
+        await _wait_until(lambda: _ingested(clients["wiki"]) == ["wiki.md"])
+
+        (fragments / "wiki.yaml").unlink()
+        assert _changes(await app.reload()) == {("wiki", "removed")}
+        assert list(app._running) == ["papers"]
+
+
+async def test_post_reload_answers_422_for_an_invalid_fragment(tmp_path, clients):
+    path = tmp_path / "haiku.rag.yaml"
+    _write(path, {"databases_include": "databases.d", **_settings(tmp_path, {})})
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        (tmp_path / "databases.d").mkdir()
+        (tmp_path / "databases.d" / "bad.yaml").write_text("processing: {}\n")
+        resp = await api.post("/reload")
+
+    assert resp.status_code == 422
+    assert "bad.yaml" in resp.text
+
+
 async def test_a_reload_without_a_configuration_file_is_refused(tmp_path, clients):
     path = tmp_path / "haiku.rag.yaml"
     _write(path, _settings(tmp_path, {}))

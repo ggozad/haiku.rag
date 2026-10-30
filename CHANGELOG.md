@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `databases_include` names a directory of YAML fragments, each adding `lancedb.databases` and `ingester.databases` entries. The ingester's reload reads it again (#785).
+
 ## [0.103.0] - 2026-10-29
 
 ### Added

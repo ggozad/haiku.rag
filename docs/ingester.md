@@ -393,7 +393,7 @@ The service runs until `SIGINT` or `SIGTERM`, then cancels any reload, and stops
 
 ### Reloading databases
 
-`POST /reload` and `SIGHUP` read the configuration file again and apply what changed in `lancedb.databases` and `ingester.databases`:
+`POST /reload` and `SIGHUP` read the configuration file and its [database fragments](configuration/index.md#database-fragments) again and apply what changed in `lancedb.databases` and `ingester.databases`:
 
 - A database in the file and not running is added: opened, created if missing, reconciled, then swept.
 - A running database missing from the file is removed.
