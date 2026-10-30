@@ -46,7 +46,8 @@ async def test_app_info_outputs(temp_db_path, capsys):
     assert "pydantic-ai:" in out
 
 
-async def test_app_info_with_vector_index(temp_db_path, capsys):
+@pytest.mark.parametrize("index_name", [None, "embedding_ann"])
+async def test_app_info_with_vector_index(temp_db_path, capsys, index_name):
     from lancedb.index import IvfPq
 
     # PQ needs more than 256 chunks for training
@@ -62,7 +63,9 @@ async def test_app_info_with_vector_index(temp_db_path, capsys):
     )
 
     # Create vector index
-    await chunks_tbl.create_index("vector", config=IvfPq(distance_type="cosine"))
+    await chunks_tbl.create_index(
+        "vector", config=IvfPq(distance_type="cosine"), name=index_name
+    )
 
     app = HaikuRAGApp(scope=for_path(temp_db_path))
     await app.info()

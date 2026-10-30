@@ -5,9 +5,10 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from unittest.mock import patch
 
 # Prevent tests from loading user's local haiku.rag.yaml by setting env var
 # to a test config file BEFORE any haiku.rag imports.
@@ -84,6 +85,24 @@ def capture_logs(
         yield records
     finally:
         logger.removeHandler(handler)
+
+
+@contextmanager
+def serving_url(content: bytes, content_type: str, status: int = 200) -> Iterator[None]:
+    """Answer every streamed httpx request with one response."""
+    import httpx
+
+    @asynccontextmanager
+    async def stream(self, method, url, **kwargs):
+        yield httpx.Response(
+            status,
+            content=content,
+            headers={"content-type": content_type},
+            request=httpx.Request(method, url),
+        )
+
+    with patch("httpx.AsyncClient.stream", stream):
+        yield
 
 
 @pytest.fixture

@@ -533,6 +533,25 @@ async def test_fetch_rejects_file_exceeding_max_size():
         await src.fetch("https://nc.example.com/dav/big.bin")
 
 
+@pytest.mark.parametrize("head_headers", [{}, {"content-length": "10"}])
+async def test_fetch_rejects_a_body_exceeding_max_size(head_headers):
+    """The limit holds when HEAD omits or understates the length."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "HEAD":
+            return httpx.Response(200, headers=head_headers)
+        return httpx.Response(200, content=b"x" * 5000)
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        transport=_transport(handler),
+        max_file_size=1000,
+    )
+    with pytest.raises(FileTooLargeError):
+        await src.fetch("https://nc.example.com/dav/big.bin")
+
+
 async def test_fetch_allows_file_within_max_size():
     body = b"small"
 

@@ -12,7 +12,7 @@ from haiku.rag.sources.base import (
     RevisionSnapshot,
     SourceEvent,
     SourceEventKind,
-    check_file_size,
+    get_within_limit,
 )
 from haiku.rag.sources.filter import (
     FileFilter,
@@ -264,16 +264,9 @@ class WebDAVSource:
         return entries[0].revision
 
     async def fetch(self, uri: str) -> FetchResult:
-        if self._max_file_size is not None:
-            head = await self._http.head(uri)
-            content_length = head.headers.get("content-length")
-            if content_length is not None:
-                check_file_size(int(content_length), self._max_file_size, uri)
-        response = await self._http.get(uri)
-        response.raise_for_status()
-        body = response.content
+        body, headers = await get_within_limit(self._http, uri, self._max_file_size)
         content_type = (
-            response.headers.get("content-type", "application/octet-stream")
+            headers.get("content-type", "application/octet-stream")
             .split(";")[0]
             .strip()
             .lower()
@@ -281,12 +274,12 @@ class WebDAVSource:
         # ETag from the GET response is the freshest revision; fall back to
         # Last-Modified, matching HTTPSource's preference order.
         revision = (
-            _strip_etag(response.headers.get("etag"))
-            or (response.headers.get("last-modified") or "").strip()
+            _strip_etag(headers.get("etag"))
+            or (headers.get("last-modified") or "").strip()
             or None
         )
         extra: dict[str, str] = {}
-        last_modified = (response.headers.get("last-modified") or "").strip()
+        last_modified = (headers.get("last-modified") or "").strip()
         if last_modified:
             extra["last_modified"] = last_modified
         return FetchResult(

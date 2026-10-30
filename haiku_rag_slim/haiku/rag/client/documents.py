@@ -517,9 +517,10 @@ async def _refresh_doc_metadata(
     assert doc.id is not None
     async with session.store._write_lock:
         stored = await session.document_repository.get_by_id(doc.id)
-        if stored is not None:
-            doc.uri, doc.title = stored.uri, stored.title
-            doc.metadata, doc.updated_at = stored.metadata, stored.updated_at
+        if stored is None:
+            raise ValueError(f"Document with ID {doc.id} not found")
+        doc.uri, doc.title = stored.uri, stored.title
+        doc.metadata, doc.updated_at = stored.metadata, stored.updated_at
         before = (doc.title, doc.metadata)
         if title is not None:
             doc.title = title

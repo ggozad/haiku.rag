@@ -4,6 +4,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+import httpx
 from pydantic import BaseModel, Field
 
 # uri -> revision. Captures what revisions of which URIs we had last seen
@@ -57,6 +58,26 @@ def check_file_size(size: int, max_file_size: int | None, uri: str) -> None:
         raise FileTooLargeError(
             f"{uri}: file size {size} bytes exceeds limit of {max_file_size} bytes"
         )
+
+
+async def get_within_limit(
+    http: httpx.AsyncClient, uri: str, max_file_size: int | None
+) -> tuple[bytes, httpx.Headers]:
+    """GET `uri`, raising FileTooLargeError once the body passes the limit."""
+    if max_file_size is not None:
+        head = await http.head(uri)
+        content_length = head.headers.get("content-length")
+        if content_length is not None:
+            check_file_size(int(content_length), max_file_size, uri)
+    chunks: list[bytes] = []
+    size = 0
+    async with http.stream("GET", uri) as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            check_file_size(size, max_file_size, uri)
+            chunks.append(chunk)
+    return b"".join(chunks), response.headers
 
 
 @runtime_checkable

@@ -27,7 +27,7 @@ from haiku.rag.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from tests.conftest import writing
+from tests.conftest import serving_url, writing
 from tests.documents import docling_doc, document_import
 from tests.locks import ObservedLock, assert_waiting_for_lock
 from tests.platform import requires_symlinks
@@ -527,12 +527,11 @@ async def test_client_create_document_from_url(temp_db_path):
     """Test creating a document from a URL."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Mock the HTTP response
-        mock_response = AsyncMock()
-        mock_response.content = b"<html><body><h1>Test Page</h1><p>This is test content from a webpage.</p></body></html>"
-        mock_response.headers = {"content-type": "text/html"}
-        mock_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_response):
+        with serving_url(
+            b"<html><body><h1>Test Page</h1><p>This is test content from a webpage.</p></body></html>",
+            "text/html",
+        ):
             doc = await client.create_document_from_source(
                 source="https://example.com/test.html", metadata={"source_type": "web"}
             )
@@ -555,14 +554,11 @@ async def test_client_create_document_from_url_with_different_content_types(
     """Test creating documents from URLs with different content types."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Test JSON content
-        mock_json_response = AsyncMock()
-        mock_json_response.content = (
-            b'{"title": "Test JSON", "content": "This is JSON content"}'
-        )
-        mock_json_response.headers = {"content-type": "application/json"}
-        mock_json_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_json_response):
+        with serving_url(
+            (b'{"title": "Test JSON", "content": "This is JSON content"}'),
+            "application/json",
+        ):
             doc = await client.create_document_from_source(
                 "https://api.example.com/data.json"
             )
@@ -576,12 +572,8 @@ async def test_client_create_document_from_url_with_different_content_types(
             assert doc.metadata["content_type"] == "application/json"
 
         # Test plain text content
-        mock_text_response = AsyncMock()
-        mock_text_response.content = b"This is plain text content from a URL."
-        mock_text_response.headers = {"content-type": "text/plain"}
-        mock_text_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_text_response):
+        with serving_url(b"This is plain text content from a URL.", "text/plain"):
             doc = await client.create_document_from_source(
                 "https://example.com/readme.txt"
             )
@@ -600,12 +592,8 @@ async def test_client_create_document_from_url_unsupported_content(temp_db_path)
     """Test creating a document from URL with unsupported content type."""
     async with HaikuRAG(temp_db_path, create=True) as client:
         # Mock response with unsupported content type
-        mock_response = AsyncMock()
-        mock_response.content = b"binary content"
-        mock_response.headers = {"content-type": "application/octet-stream"}
-        mock_response.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_response):
+        with serving_url(b"binary content", "application/octet-stream"):
             with pytest.raises(ValueError, match="Unsupported content type"):
                 await client.create_document_from_source(
                     "https://example.com/binary.bin"
@@ -616,13 +604,7 @@ async def test_client_create_document_from_url_unsupported_content(temp_db_path)
 async def test_client_create_document_from_url_http_error(temp_db_path):
     """Test handling HTTP errors when creating document from URL."""
     async with HaikuRAG(temp_db_path, create=True) as client:
-        with patch("httpx.AsyncClient.get") as mock_get:
-            mock_get.side_effect = httpx.HTTPStatusError(
-                "404 Not Found",
-                request=httpx.Request("GET", "https://example.com/notfound.html"),
-                response=httpx.Response(404),
-            )
-
+        with serving_url(b"", "text/html", status=404):
             with pytest.raises(httpx.HTTPStatusError):
                 await client.create_document_from_source(
                     "https://example.com/notfound.html"
@@ -681,12 +663,7 @@ async def test_client_metadata_content_type_and_md5(temp_db_path):
             assert doc.metadata["content_type"] == "text/plain"
             assert doc.metadata["md5"] == expected_md5
 
-            mock_response = AsyncMock()
-            mock_response.content = test_content.encode()
-            mock_response.headers = {"content-type": "text/plain"}
-            mock_response.raise_for_status = AsyncMock()
-
-            with patch("httpx.AsyncClient.get", return_value=mock_response):
+            with serving_url(test_content.encode(), "text/plain"):
                 url_doc = await client.create_document_from_source(
                     "https://example.com/test.txt"
                 )
@@ -751,12 +728,8 @@ async def test_client_url_create_update_no_op_behavior(temp_db_path):
         updated_content = b"Updated URL content"
 
         # Mock first response
-        mock_response1 = AsyncMock()
-        mock_response1.content = original_content
-        mock_response1.headers = {"content-type": "text/plain"}
-        mock_response1.raise_for_status = AsyncMock()
 
-        with patch("httpx.AsyncClient.get", return_value=mock_response1):
+        with serving_url(original_content, "text/plain"):
             # First call - should create new document
             doc1 = await client.create_document_from_source(url)
             assert isinstance(doc1, Document)
@@ -768,12 +741,7 @@ async def test_client_url_create_update_no_op_behavior(temp_db_path):
             assert isinstance(doc2, Document)
             assert doc2.id == original_id  # Same document
 
-        mock_response2 = AsyncMock()
-        mock_response2.content = updated_content
-        mock_response2.headers = {"content-type": "text/plain"}
-        mock_response2.raise_for_status = AsyncMock()
-
-        with patch("httpx.AsyncClient.get", return_value=mock_response2):
+        with serving_url(updated_content, "text/plain"):
             # Third call with changed content - should update existing document
             doc3 = await client.create_document_from_source(url)
             assert isinstance(doc3, Document)
@@ -1781,6 +1749,42 @@ async def test_metadata_refresh_with_nothing_to_write_returns_the_stored_record(
 
     assert refreshed.metadata == {"k": "v"}
     assert refreshed.updated_at == stored.updated_at
+
+
+async def test_metadata_refresh_of_a_document_deleted_while_it_waited_raises(
+    temp_db_path, monkeypatch
+):
+    from haiku.rag.client.documents import _refresh_doc_metadata
+
+    dim = get_config().embeddings.model.vector_dim
+    docling_doc = DoclingDocument(name="d")
+    docling_doc.add_text(label=DocItemLabel.TEXT, text="body")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc,
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://meta",
+        )
+        assert doc.id is not None
+
+        lock = ObservedLock()
+        monkeypatch.setattr(client.store, "_write_lock", lock)
+        async with lock:
+            task = asyncio.create_task(
+                _refresh_doc_metadata(
+                    writing(client),
+                    doc,
+                    title=None,
+                    user_metadata={"k": "v"},
+                    source_metadata=None,
+                )
+            )
+            await assert_waiting_for_lock(task, lock)
+            await writing(client).document_repository.delete(doc.id)
+        with pytest.raises(ValueError, match="not found"):
+            await task
+        assert await client.get_document_by_id(doc.id) is None
 
 
 @pytest.mark.parametrize(

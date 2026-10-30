@@ -1,7 +1,6 @@
 import logging
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -9,7 +8,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.client.processing import _warn_if_descriptions_missing, convert
 from haiku.rag.config import AppConfig
 from haiku.rag.store.models.chunk import Chunk
-from tests.conftest import capture_logs
+from tests.conftest import capture_logs, serving_url
 
 
 def _doc_with_pictures(*, with_descriptions: bool):
@@ -314,14 +313,9 @@ async def test_client_convert_from_url(temp_db_path):
     from docling_core.types.doc.document import DoclingDocument
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        mock_response = AsyncMock()
-        mock_response.content = (
-            b"<html><body><p>URL convert path content.</p></body></html>"
-        )
-        mock_response.headers = {"content-type": "text/html"}
-        mock_response.raise_for_status = AsyncMock()
-
-        with patch("httpx.AsyncClient.get", return_value=mock_response):
+        with serving_url(
+            b"<html><body><p>URL convert path content.</p></body></html>", "text/html"
+        ):
             docling_doc = await client.convert("https://example.com/page.html")
 
         assert isinstance(docling_doc, DoclingDocument)
@@ -331,12 +325,7 @@ async def test_client_convert_from_url(temp_db_path):
 
 async def test_client_convert_from_url_unsupported_content_type(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
-        mock_response = AsyncMock()
-        mock_response.content = b"\x00\x01\x02binary"
-        mock_response.headers = {"content-type": "application/octet-stream"}
-        mock_response.raise_for_status = AsyncMock()
-
-        with patch("httpx.AsyncClient.get", return_value=mock_response):
+        with serving_url(b"\x00\x01\x02binary", "application/octet-stream"):
             with pytest.raises(ValueError, match="Unsupported content type"):
                 await client.convert("https://example.com/blob.bin")
 

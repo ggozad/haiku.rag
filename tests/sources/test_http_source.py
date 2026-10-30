@@ -503,6 +503,21 @@ async def test_fetch_rejects_file_exceeding_max_size():
         await src.fetch("https://example.com/big.bin")
 
 
+@pytest.mark.parametrize("head_headers", [{}, {"content-length": "10"}])
+async def test_fetch_rejects_a_body_exceeding_max_size(head_headers):
+    """The limit holds when HEAD omits or understates the length."""
+    url = "https://example.com/big.bin"
+    transport = _transport(
+        {
+            ("HEAD", url): httpx.Response(200, headers=head_headers),
+            ("GET", url): httpx.Response(200, content=b"x" * 5000),
+        }
+    )
+    src = HTTPSource(source_id="default", transport=transport, max_file_size=1000)
+    with pytest.raises(FileTooLargeError):
+        await src.fetch(url)
+
+
 async def test_fetch_allows_file_within_max_size():
     body = b"small"
     transport = _transport(
