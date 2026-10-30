@@ -10,6 +10,7 @@
 
 - `CitationPolicyCapability` no longer redirects structured answers. An undeclared structured answer is recorded in `CitationPolicyState.violations` (#783) - thanks @gblackadder
 - `CitationPolicyCapability` no longer queues a second redirect for a response with no text followed by the answer.
+- `CitationPolicyCapability` no longer records a violation when a run pauses for deferred tool results.
 
 ## [0.103.0] - 2026-10-29
 

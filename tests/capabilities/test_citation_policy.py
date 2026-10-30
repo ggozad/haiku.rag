@@ -7,6 +7,8 @@ import pytest
 from pydantic import BaseModel
 from pydantic_ai import (
     Agent,
+    CallDeferred,
+    DeferredToolRequests,
     DeferredToolResults,
     NativeOutput,
     PromptedOutput,
@@ -598,6 +600,70 @@ async def test_a_structured_answer_is_recorded_when_text_or_structured_is_allowe
         p for p in prompts_of(result.all_messages()) if CITATION_REDIRECT_TAG in p
     ]
     assert deps.state["citation_policy"]["violations"] == [0]
+
+
+@pytest.mark.parametrize(
+    ("completion", "output", "violations"),
+    [
+        (
+            [
+                [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-3")],
+                [TextPart("cited")],
+            ],
+            "cited",
+            [],
+        ),
+        ([[TextPart("uncited")], [TextPart("still uncited")]], "still uncited", [0]),
+    ],
+)
+async def test_a_run_paused_for_deferred_results_is_not_a_violation(
+    temp_db_path, completion, output, violations
+):
+    """The question is still open at the pause. Only its completion is judged."""
+    turns = iter(
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("external_tool", {}, "call-2")],
+            *completion,
+        ]
+    )
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(  # ty: ignore[no-matching-overload]
+        FunctionModel(model),
+        deps_type=Deps,
+        output_type=[str, DeferredToolRequests],
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig()),
+            create_policy(),
+        ],
+    )
+
+    @agent.tool_plain
+    def external_tool() -> str:
+        raise CallDeferred
+
+    deps = Deps()
+    with patch.object(RAGCapability, "_search", stub_search):
+        paused = await agent.run(
+            "what does the supervisor do?",
+            deps=deps,  # ty: ignore[invalid-argument-type]
+        )
+        assert isinstance(paused.output, DeferredToolRequests)
+        assert deps.state["citation_policy"]["violations"] == []
+
+        resumed = await agent.run(
+            deps=deps,  # ty: ignore[invalid-argument-type]
+            message_history=paused.all_messages(),
+            deferred_tool_results=DeferredToolResults(
+                calls={"call-2": "external result"}
+            ),
+        )
+
+    assert resumed.output == output
+    assert deps.state["citation_policy"]["violations"] == violations
 
 
 async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_path):

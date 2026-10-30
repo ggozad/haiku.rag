@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import RunContext
+from pydantic_ai import DeferredToolRequests, RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     ModelMessage,
@@ -140,7 +140,12 @@ class CitationPolicyCapability(AbstractCapability[Any]):
         can be asked of the model now, so this only records: a question that reached
         the end of its run without a declaration is a violation, and one that was
         asked but never answered is the same.
+
+        A run paused for deferred tool results has not finished its question, so
+        the resumption decides.
         """
+        if isinstance(result.output, DeferredToolRequests):
+            return result
         evidence = discover_evidence(ctx)
         question = question_in_progress(evidence)
         if not _has_evidence_to_declare(evidence):
