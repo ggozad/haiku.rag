@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic_ai import RunContext
+from pydantic_ai import DeferredToolRequests, RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import (
     ModelMessage,
     ModelResponse,
+    TextPart,
     ToolCallPart,
     UserPromptPart,
 )
@@ -47,8 +48,9 @@ REDIRECT = (
 class CitationPolicyState(BaseModel):
     """What the policy decided, for hosts and evaluations to read.
 
-    ``violations`` holds the identities of questions that ended undeclared while
-    the cite tool was already gone, so no redirect was possible. It is an
+    ``violations`` holds the identities of questions that ended undeclared: asked
+    and ignored, never asked because the cite tool was gone, or a structured
+    answer, which is never asked. It is an
     enforcement outcome, which is why it lives here rather than in an evidence
     capability's record: nothing the model declared says it.
     """
@@ -87,17 +89,17 @@ class CitationPolicyCapability(AbstractCapability[Any]):
     ) -> ModelResponse:
         """Decide once, at the last moment a question can still be redirected.
 
-        A response that ends the question is the last opportunity: one carrying no
-        tool calls, or one whose call is an output tool, which is how a structured
-        answer arrives and which finishes the run just the same. Citing is
-        unconditional, so an undeclared answer is a protocol breach whether the model
-        answered or refused, and this never has to guess which it was.
+        A plain-text answer is the last opportunity. Citing is unconditional, so an
+        undeclared answer is a protocol breach whether the model answered or refused,
+        and this never has to guess which it was.
 
-        Endings this cannot see — a host running ``end_strategy="early"`` can finish
-        on text beside a function call — are caught by ``after_run``, which can still
-        record the outcome even though it can no longer ask for a citation.
+        A structured answer is never redirected: the redirect is a turn after the
+        answer, and a structured run has already accepted its output by then. It
+        and the endings this cannot see — a host running ``end_strategy="early"``
+        can finish on text beside a function call — are caught by ``after_run``,
+        which records the outcome without asking for a citation.
         """
-        if not _ends_the_question(response, request_context):
+        if not _is_text_answer(response, request_context):
             return response
         evidence = discover_evidence(ctx)
         question = question_in_progress(evidence)
@@ -116,7 +118,7 @@ class CitationPolicyCapability(AbstractCapability[Any]):
         return response
 
     def _record_violation(self, ctx: RunContext[Any], question: int) -> None:
-        """Note a question that could not be asked to cite, the tool being gone.
+        """Note a question that ended, or will end, without a declaration.
 
         Recorded once per question: a resumption of the same question decides
         again, and one question is one outcome.
@@ -138,7 +140,12 @@ class CitationPolicyCapability(AbstractCapability[Any]):
         can be asked of the model now, so this only records: a question that reached
         the end of its run without a declaration is a violation, and one that was
         asked but never answered is the same.
+
+        A run paused for deferred tool results has not finished its question, so
+        the resumption decides.
         """
+        if isinstance(result.output, DeferredToolRequests):
+            return result
         evidence = discover_evidence(ctx)
         question = question_in_progress(evidence)
         if not _has_evidence_to_declare(evidence):
@@ -157,22 +164,22 @@ class CitationPolicyCapability(AbstractCapability[Any]):
             )
 
 
-def _ends_the_question(
+def _is_text_answer(
     response: ModelResponse, request_context: ModelRequestContext
 ) -> bool:
-    """Whether this response finishes the question rather than continuing it.
+    """Whether this response is a plain-text answer that ends the question.
 
-    An output tool call is a ``ToolCallPart`` like any other, but it carries the
-    final answer and ends the run, so treating every tool call as intermediate let a
-    structured answer finish undeclared.
+    Native and prompted output arrive as text too, and a bare structured
+    ``output_type`` can reach this hook as ``auto`` with text allowed, so only
+    ``text`` and a ``tool`` run that accepts text qualify.
     """
-    calls = [part for part in response.parts if isinstance(part, ToolCallPart)]
-    if not calls:
-        return True
-    output_tools = {
-        tool.name for tool in request_context.model_request_parameters.output_tools
-    }
-    return any(call.tool_name in output_tools for call in calls)
+    parameters = request_context.model_request_parameters
+    return (
+        parameters.output_mode in ("text", "tool")
+        and parameters.allow_text_output
+        and any(isinstance(part, TextPart) and part.content for part in response.parts)
+        and not any(isinstance(part, ToolCallPart) for part in response.parts)
+    )
 
 
 def _already_asked(messages: list[ModelMessage], question: int) -> bool:

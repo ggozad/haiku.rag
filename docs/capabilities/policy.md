@@ -17,11 +17,16 @@ all (*missing*). A model can always satisfy the policy without inventing groundi
 
 ## What happens when a question ends undeclared
 
-The model is asked once to record what grounded the answer it already gave. It is not
-asked to change the answer. If the cite tool is no longer available by then, or the
-question finishes undeclared anyway, the question is recorded in
-`CitationPolicyState.violations` under the `"citation_policy"` state key, and the model
-is not asked again.
+After a plain-text answer, the model is asked once to record what grounded the answer
+it already gave. It is not asked to change the answer. If the cite tool is no longer
+available by then, or the question finishes undeclared anyway, the question is recorded
+in `CitationPolicyState.violations` under the `"citation_policy"` state key, and the
+model is not asked again.
+
+A structured answer, in tool, native or prompted output mode, is never asked. An
+undeclared one is recorded in `CitationPolicyState.violations`. With an output type that
+accepts both text and a structured value, the text answers are asked and the structured
+ones are recorded.
 
 ## Which answers are enforced
 
@@ -31,6 +36,7 @@ available to later answers. A follow-up about evidence cited earlier is enforced
 though it searched nothing.
 
 Once anything has been cited, later turns are enforced too, a greeting included. The
-model satisfies the policy by citing an empty list, at the cost of one extra request. A
+model satisfies the policy by citing an empty list. After a plain-text answer this costs
+one extra request. A
 conversation with neither a current-question evidence outcome nor any earlier citation
 is not enforced.

@@ -1,13 +1,22 @@
+import json
 from dataclasses import dataclass, field
 from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
-from pydantic_ai import Agent, DeferredToolResults
+from pydantic_ai import (
+    Agent,
+    CallDeferred,
+    DeferredToolRequests,
+    DeferredToolResults,
+    NativeOutput,
+    PromptedOutput,
+    ToolOutput,
+)
 from pydantic_ai.exceptions import UserError
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.messages import ModelResponse, TextPart, ThinkingPart, ToolCallPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from haiku.rag.capabilities.policy import (
     CITATION_REDIRECT_TAG,
@@ -379,26 +388,128 @@ class Answer(BaseModel):
     text: str
 
 
-async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_path):
-    """An output tool call is a `ToolCallPart` too, and it ends the run.
+OUTPUT_TYPES = {
+    "auto": Answer,
+    "tool": ToolOutput(Answer),
+    "native": NativeOutput(Answer),
+    "prompted": PromptedOutput(Answer),
+}
 
-    Treating every tool call as intermediate let a model search, skip citing, emit
-    its structured answer and finish with neither a redirect nor a violation.
+
+async def run_structured(temp_db_path, output_type, responses, *, streaming=False):
+    """Answer one question with a structured output type and the policy."""
+    as_text = isinstance(output_type, NativeOutput | PromptedOutput)
+    turns = iter(responses)
+    sent: list[list[Any]] = []
+
+    async def model(messages, _info):
+        sent.append(list(messages))
+        return ModelResponse(
+            parts=[
+                TextPart(json.dumps(part.args))
+                if as_text
+                and isinstance(part, ToolCallPart)
+                and part.tool_name == "final_result"
+                else part
+                for part in next(turns)
+            ]
+        )
+
+    async def stream_model(messages, info):
+        response = await model(messages, info)
+        for index, part in enumerate(response.parts):
+            if isinstance(part, TextPart):
+                yield part.content
+            elif isinstance(part, ToolCallPart):
+                yield {
+                    index: DeltaToolCall(
+                        name=part.tool_name,
+                        json_args=json.dumps(part.args),
+                        tool_call_id=part.tool_call_id,
+                    )
+                }
+
+    async def consume_events(_ctx, events):
+        async for _event in events:
+            pass
+
+    agent = Agent(
+        FunctionModel(model, stream_function=stream_model),
+        deps_type=Deps,
+        output_type=output_type,
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig()),
+            create_policy(),
+        ],
+    )
+    deps = Deps()
+    with patch.object(RAGCapability, "_search", stub_search):
+        result = await agent.run(
+            "what does the supervisor do?",
+            deps=deps,
+            event_stream_handler=consume_events if streaming else None,
+        )
+    return result, deps, sent
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("mode", OUTPUT_TYPES)
+async def test_an_undeclared_structured_answer_is_recorded_not_redirected(
+    temp_db_path, mode, streaming
+):
+    """A structured answer is recorded, never asked to cite.
+
+    An invalid candidate comes first, so the run holds a rejected and an accepted
+    answer.
     """
-    rag = create_rag(db_path=temp_db_path, config=AppConfig())
+    result, deps, sent = await run_structured(
+        temp_db_path,
+        OUTPUT_TYPES[mode],
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("final_result", {}, "invalid")],
+            [ToolCallPart("final_result", {"text": "uncited"}, "valid")],
+        ],
+        streaming=streaming,
+    )
+
+    assert result.output == Answer(text="uncited")
+    assert len(sent) == 3
+    assert not [
+        p for p in prompts_of(result.all_messages()) if CITATION_REDIRECT_TAG in p
+    ]
+    assert deps.state["citation_policy"]["violations"] == [0]
+
+
+@pytest.mark.parametrize("mode", ["auto", "tool"])
+async def test_prose_rejected_by_a_structured_run_is_not_redirected(temp_db_path, mode):
+    result, deps, sent = await run_structured(
+        temp_db_path,
+        OUTPUT_TYPES[mode],
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [TextPart("prose where the output tool was required")],
+            [ToolCallPart("final_result", {"text": "uncited"}, "valid")],
+        ],
+    )
+
+    assert result.output == Answer(text="uncited")
+    assert len(sent) == 3
+    assert not [
+        p for p in prompts_of(result.all_messages()) if CITATION_REDIRECT_TAG in p
+    ]
+    assert deps.state["citation_policy"]["violations"] == [0]
+
+
+async def test_prose_opening_a_structured_follow_up_is_not_redirected(temp_db_path):
+    """A question's first request still reports ``auto`` with text allowed."""
     turns = iter(
         [
             [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
-            [
-                ToolCallPart(
-                    "final_result", {"text": "uncited structured answer"}, "out"
-                )
-            ],
-            [
-                ToolCallPart(
-                    "final_result", {"text": "uncited structured answer"}, "out"
-                )
-            ],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [ToolCallPart("final_result", {"text": "cited"}, "out-1")],
+            [TextPart("prose where the output tool was required")],
+            [ToolCallPart("final_result", {"text": "uncited"}, "out-2")],
         ]
     )
     sent: list[list[Any]] = []
@@ -411,16 +522,148 @@ async def test_a_structured_output_answer_does_not_escape_enforcement(temp_db_pa
         FunctionModel(model),
         deps_type=Deps,
         output_type=Answer,
-        capabilities=[rag, create_policy()],
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig()),
+            create_policy(),
+        ],
     )
     deps = Deps()
-
     with patch.object(RAGCapability, "_search", stub_search):
-        await agent.run("what does the supervisor do?", deps=deps)
+        first = await agent.run("what does the supervisor do?", deps=deps)
+        result = await agent.run(
+            "and who supervises them?",
+            deps=deps,
+            message_history=first.all_messages(),
+        )
 
-    # The cite tool is available here, so the redirect is what must happen; the
-    # backstop recording a violation would pass an `or` even with detection broken.
+    assert result.output == Answer(text="uncited")
+    assert len(sent) == 5
+    assert not [
+        p for p in prompts_of(result.all_messages()) if CITATION_REDIRECT_TAG in p
+    ]
+    assert deps.state["citation_policy"]["violations"] == [len(first.all_messages())]
+
+
+async def test_a_response_without_text_is_not_an_answer(temp_db_path):
+    """Only the answer after it queues the redirect, so it is queued once."""
+    result, deps, sent = await run_with_policy(
+        temp_db_path,
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ThinkingPart("thinking, with nothing to say yet")],
+            [TextPart("uncited")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [TextPart("uncited")],
+        ],
+    )
+
+    assert len(sent) == 5
+    assert len([p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]) == 1
+    assert deps.state["citation_policy"]["violations"] == []
+
+
+async def test_a_text_answer_is_redirected_when_text_or_structured_is_allowed(
+    temp_db_path,
+):
+    result, deps, sent = await run_structured(
+        temp_db_path,
+        str | Answer,
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [TextPart("uncited")],
+            [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-2")],
+            [TextPart("uncited")],
+        ],
+    )
+
+    assert result.output == "uncited"
+    assert len(sent) == 4
     assert [p for p in prompts_of(sent[-1]) if CITATION_REDIRECT_TAG in p]
+    assert deps.state["citation_policy"]["violations"] == []
+
+
+async def test_a_structured_answer_is_recorded_when_text_or_structured_is_allowed(
+    temp_db_path,
+):
+    result, deps, sent = await run_structured(
+        temp_db_path,
+        str | Answer,
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("final_result", {"text": "uncited"}, "valid")],
+        ],
+    )
+
+    assert result.output == Answer(text="uncited")
+    assert len(sent) == 2
+    assert not [
+        p for p in prompts_of(result.all_messages()) if CITATION_REDIRECT_TAG in p
+    ]
+    assert deps.state["citation_policy"]["violations"] == [0]
+
+
+@pytest.mark.parametrize(
+    ("completion", "output", "violations"),
+    [
+        (
+            [
+                [ToolCallPart("cite", {"chunk_ids": ["chunk-1"]}, "call-3")],
+                [TextPart("cited")],
+            ],
+            "cited",
+            [],
+        ),
+        ([[TextPart("uncited")], [TextPart("still uncited")]], "still uncited", [0]),
+    ],
+)
+async def test_a_run_paused_for_deferred_results_is_not_a_violation(
+    temp_db_path, completion, output, violations
+):
+    """The question is still open at the pause. Only its completion is judged."""
+    turns = iter(
+        [
+            [ToolCallPart("search", {"query": "supervisor"}, "call-1")],
+            [ToolCallPart("external_tool", {}, "call-2")],
+            *completion,
+        ]
+    )
+
+    async def model(_messages, _info):
+        return ModelResponse(parts=next(turns))
+
+    agent = Agent(  # ty: ignore[no-matching-overload]
+        FunctionModel(model),
+        deps_type=Deps,
+        output_type=[str, DeferredToolRequests],
+        capabilities=[
+            create_rag(db_path=temp_db_path, config=AppConfig()),
+            create_policy(),
+        ],
+    )
+
+    @agent.tool_plain
+    def external_tool() -> str:
+        raise CallDeferred
+
+    deps = Deps()
+    with patch.object(RAGCapability, "_search", stub_search):
+        paused = await agent.run(
+            "what does the supervisor do?",
+            deps=deps,  # ty: ignore[invalid-argument-type]
+        )
+        assert isinstance(paused.output, DeferredToolRequests)
+        assert deps.state["citation_policy"]["violations"] == []
+
+        resumed = await agent.run(
+            deps=deps,  # ty: ignore[invalid-argument-type]
+            message_history=paused.all_messages(),
+            deferred_tool_results=DeferredToolResults(
+                calls={"call-2": "external result"}
+            ),
+        )
+
+    assert resumed.output == output
+    assert deps.state["citation_policy"]["violations"] == violations
 
 
 async def test_a_question_asked_once_and_still_undeclared_is_recorded(temp_db_path):
