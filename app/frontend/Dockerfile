@@ -14,6 +14,9 @@ COPY . .
 RUN pnpm build
 
 FROM base AS runner
+ARG VERSION
+LABEL org.opencontainers.image.source="https://github.com/ggozad/haiku.rag" \
+      org.opencontainers.image.version="${VERSION}"
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -31,5 +34,9 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+# 127.0.0.1, not localhost: busybox wget resolves localhost to ::1, where the server does not listen.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["wget", "-q", "--spider", "http://127.0.0.1:3000/"]
 
 CMD ["node", "server.js"]

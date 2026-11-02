@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -10,14 +11,14 @@ bump_version = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bump_version)
 
 
-def test_update_plugin_version_rewrites_only_the_version_field(tmp_path, monkeypatch):
+def test_update_manifest_version_rewrites_only_the_version_field(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     manifest = tmp_path / "plugin.json"
     manifest.write_text(
         '{\n  "name": "haiku-rag",\n  "version": "0.1.0",\n  "license": "MIT"\n}\n'
     )
 
-    bump_version.update_plugin_version(manifest, "0.2.0")
+    bump_version.update_manifest_version(manifest, "0.2.0")
 
     assert json.loads(manifest.read_text()) == {
         "name": "haiku-rag",
@@ -39,3 +40,67 @@ def test_the_shipped_plugin_manifests_carry_the_package_version():
             ).read_text(encoding="utf-8")
         )
         assert manifest["version"] == package_version
+
+
+def test_update_manifest_version_leaves_dependency_versions_alone(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    manifest = tmp_path / "package.json"
+    manifest.write_text(
+        '{\n\t"name": "haiku-rag-app",\n\t"version": "0.1.0",\n'
+        '\t"dependencies": {\n\t\t"react-markdown": "10.1.0"\n\t}\n}\n'
+    )
+
+    bump_version.update_manifest_version(manifest, "0.2.0")
+
+    assert json.loads(manifest.read_text()) == {
+        "name": "haiku-rag-app",
+        "version": "0.2.0",
+        "dependencies": {"react-markdown": "10.1.0"},
+    }
+
+
+def test_the_app_carries_the_package_version():
+    root = Path(__file__).resolve().parents[1]
+    package_version = bump_version.get_current_version(
+        root / "haiku_rag_slim" / "pyproject.toml"
+    )
+    backend = root / "app" / "backend" / "pyproject.toml"
+    frontend = root / "app" / "frontend" / "package.json"
+    assert bump_version.get_current_version(backend) == package_version
+    assert (
+        json.loads(frontend.read_text(encoding="utf-8"))["version"] == package_version
+    )
+
+
+def test_update_compose_version_rewrites_the_image_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text(
+        "services:\n"
+        "  backend:\n"
+        "    image: ghcr.io/ggozad/haiku.rag-app-backend:${HAIKU_RAG_VERSION:-0.1.0}\n"
+        "  docling-serve:\n"
+        "    image: quay.io/docling-project/docling-serve:v1.38.0\n"
+    )
+
+    bump_version.update_compose_version(compose, "0.2.0")
+
+    assert compose.read_text() == (
+        "services:\n"
+        "  backend:\n"
+        "    image: ghcr.io/ggozad/haiku.rag-app-backend:${HAIKU_RAG_VERSION:-0.2.0}\n"
+        "  docling-serve:\n"
+        "    image: quay.io/docling-project/docling-serve:v1.38.0\n"
+    )
+
+
+def test_the_published_compose_file_defaults_to_the_package_version():
+    root = Path(__file__).resolve().parents[1]
+    package_version = bump_version.get_current_version(
+        root / "haiku_rag_slim" / "pyproject.toml"
+    )
+    compose = (root / "app" / "docker-compose.yml").read_text(encoding="utf-8")
+    defaults = re.findall(r"\$\{HAIKU_RAG_VERSION:-([^}]+)\}", compose)
+    assert defaults == [package_version] * 3

@@ -1,13 +1,11 @@
 services:
   backend:
-    build:
-      context: ..
-      dockerfile: app/backend/Dockerfile
+    image: ghcr.io/ggozad/haiku.rag-app-backend:${HAIKU_RAG_VERSION:-0.104.0}
     # No authentication; bound to loopback. The frontend reaches it over the compose network.
     ports:
       - "127.0.0.1:8001:8000"
     environment:
-      - HAIKU_RAG_CONFIG_PATH=/app/haiku.rag.yaml
+      - HAIKU_RAG_CONFIG_PATH=/app/config/haiku.rag.yaml
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
@@ -15,10 +13,10 @@ services:
       - HAIKU_RAG_APP_SESSIONS=/sessions/sessions.db
       - INGESTER_TOKEN=${INGESTER_TOKEN:-}
     volumes:
-      # haiku.rag.yaml places the database at /data.
-      - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
+      # haiku.rag.yaml places each database under /data.
+      - ${DATA_DIR:-./data}:/data:ro
       - sessions:/sessions
-      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
+      - ${CONFIG_DIR:-./config}:/app/config:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -26,10 +24,8 @@ services:
   # DOCS_VOLUME at /docs, and writes each database listed under
   # ingester.databases.
   ingester:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    command: ["haiku-ingester", "--config", "/app/haiku.rag.yaml", "serve", "--host", "0.0.0.0"]
+    image: ghcr.io/ggozad/haiku.rag-slim:${HAIKU_RAG_VERSION:-0.104.0}
+    command: ["haiku-ingester", "--config", "/app/config/haiku.rag.yaml", "serve", "--host", "0.0.0.0"]
     # No authentication beyond the token; bound to loopback like the backend.
     ports:
       - "127.0.0.1:8765:8765"
@@ -40,19 +36,31 @@ services:
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - INGESTER_TOKEN=${INGESTER_TOKEN:-}
     volumes:
-      - ${DB_VOLUME:-./data/haiku.rag.lancedb}:/data
+      - ${DATA_DIR:-./data}:/data
       - ${DOCS_VOLUME:-./docs}:/docs:ro
       - ingester_queue:/queue
-      - ./haiku.rag.yaml:/app/haiku.rag.yaml:ro
+      - ${CONFIG_DIR:-./config}:/app/config:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      docling-serve:
+        condition: service_healthy
     # The ingester drains its workers for up to 60 s on SIGTERM.
     stop_grace_period: 180s
 
+  # Converts and chunks documents for the ingester, on the compose network only.
+  docling-serve:
+    image: quay.io/docling-project/docling-serve:v1.38.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      start_interval: 5s
+
   frontend:
-    build:
-      context: frontend
-      dockerfile: Dockerfile
+    image: ghcr.io/ggozad/haiku.rag-app-frontend:${HAIKU_RAG_VERSION:-0.104.0}
     # No authentication; it proxies every backend route, so it stays on loopback too.
     ports:
       - "127.0.0.1:3000:3000"

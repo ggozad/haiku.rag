@@ -6,13 +6,17 @@
 
 - Ingester dashboard: "Processed in" column in recent jobs, the time from the last attempt's claim to completion (#789).
 - Web app: `POST /reload` on the backend reads the configuration and its database fragments again and serves the `lancedb.databases` they place (#795).
+- Docker images `ghcr.io/ggozad/haiku.rag-app-backend` and `ghcr.io/ggozad/haiku.rag-app-frontend`, tagged with the package version and `latest` (#791).
 
 ### Changed
 
 - A PDF's `after_ingest` fires after its attachments' and carries `md5`, and `source_revision` when the source supplies one (#790).
+- The web app's `docker-compose.yml` runs the published images and a docling-serve service, mounting the configuration directory `CONFIG_DIR` and the databases directory `DATA_DIR`. `docker-compose.dev.yml` builds the images. Move `app/haiku.rag.yaml` to `app/config/haiku.rag.yaml`, point `DATA_DIR` at the parent of a custom `DB_VOLUME`, place `haiku.rag` at `/data/<database directory>` (default `/data/haiku.rag.lancedb`), and set `processing.converter` and `processing.chunker` to `docling-serve` for the published images.
+- The web app's backend image runs as uid 1001. An existing `sessions` volume needs `docker compose run --rm --user root backend chown -R 1001:1001 /sessions` once.
 
 ### Fixed
 
+- A rebuild of `docker/Dockerfile`, `docker/Dockerfile.slim` or the web app's backend image with a warm uv cache installs the current haiku.rag and app code, not the previously built wheel.
 - Discovery no longer re-enqueues an unchanged file whose job went dead after `max_attempts` (#792).
 
 ## [0.104.0] - 2026-10-30

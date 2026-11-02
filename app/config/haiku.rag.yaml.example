@@ -1,11 +1,15 @@
 # haiku.rag configuration for the chat app
 # Copy to haiku.rag.yaml and customize as needed
 
-# The database. The compose files mount DB_VOLUME (default
-# ./data/haiku.rag.lancedb) at /data.
+# The databases. The compose files mount DATA_DIR (default ./data) at /data,
+# so each database is a directory under /data.
 lancedb:
   databases:
-    haiku.rag: /data
+    haiku.rag: /data/haiku.rag.lancedb
+
+# Each *.yaml in config/databases adds lancedb.databases and
+# ingester.databases entries.
+databases_include: databases
 
 # QA model configuration
 qa:
@@ -40,8 +44,15 @@ embeddings:
 search:
   limit: 5
 
+# Documents convert on the docling-serve service of the compose files.
+processing:
+  converter: docling-serve
+  chunker: docling-serve
+
 # Provider settings
 providers:
+  docling_serve:
+    base_url: http://docling-serve:5001
   ollama:
     # Use host.docker.internal to reach Ollama running on the host machine
     base_url: http://host.docker.internal:11434

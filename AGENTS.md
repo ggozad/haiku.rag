@@ -549,7 +549,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 
 ### Docling and conversion
 
-- **docling and docling-serve are pinned as a pair**: `docling==2.142.0` + `docling-core==2.104.0`, and `quay.io/docling-project/docling-serve:v1.38.0` in `tests/docker/` and `examples/docker/`. The coupling is `tests/chunkers/test_chunker.py::test_local_and_serve_chunkers_produce_same_output` (slow, vcr), which the `test-slow` CI job enforces. Take the client version from the serve release's bundled library set and move both together. Re-record the serve cassettes when the image moves: that test plus the slow vcr `TestDoclingServeConverterIntegration` tests. Never use `:latest` in a compose file: Docker never re-pulls it.
+- **docling and docling-serve are pinned as a pair**: `docling==2.142.0` + `docling-core==2.104.0`, and `quay.io/docling-project/docling-serve:v1.38.0` in `tests/docker/`, `examples/docker/` and both `app/` compose files. The coupling is `tests/chunkers/test_chunker.py::test_local_and_serve_chunkers_produce_same_output` (slow, vcr), which the `test-slow` CI job enforces. Take the client version from the serve release's bundled library set and move both together. Re-record the serve cassettes when the image moves: that test plus the slow vcr `TestDoclingServeConverterIntegration` tests. Never use `:latest` in a compose file: Docker never re-pulls it.
 - **`pdf_backend` defaults to `threaded_docling_parse`**. `docling_parse` is a deprecated alias of the same threaded implementation, not a serialized parser. docling-serve v1.38.0 names the threaded backend `docling_parse` in its API; the serve converter translates the configuration value. Keep conversion timeouts and hold the backend constant when comparing versions.
 - **`processing.conversion_timeout`** (600s) bounds one conversion. Every part is deliberate: the deadline starts when the conversion *holds* `_CONVERTER_LOCK`; the lock is owned by the conversion thread, never the coroutine; the deadline runs in a task the caller `asyncio.shield`s; conversions run on daemon threads through `contextvars.copy_context().run`, not `asyncio.to_thread`; a queued conversion polls `acquire(timeout=0.5)` and re-checks `_WEDGED` before and after acquiring. Do not simplify any of it.
 - **`TestConversionTimeout`** needs a fresh `_CONVERTER_LOCK` per test (`monkeypatch.setattr(docling_local, "_CONVERTER_LOCK", threading.Lock())`), never a forced `release()`. Stall stubs stay bounded by a `threading.Event`.
@@ -784,12 +784,15 @@ app/
 │   │   ├── doctor.py       # doctor and projection routes
 │   │   └── projection.py   # t-SNE of document centroids, similarity, Retained
 │   └── tests/
+├── config/                 # haiku.rag.yaml.example, databases/ (fragments), mounted at /app/config
 ├── frontend/               # Next.js, Tailwind, shadcn/ui, @ag-ui/client
 │   ├── app/                # pages: / (chat), /ingestion, (inspector)/ for /inspect/[[...path]] and /search, /doctor/[[...db]]; api/backend, api/ingester proxies
 │   ├── components/         # chat/, ingestion/, inspect/, doctor/, ui/ (shadcn)
 │   └── lib/                # tested logic: addresses, chat, sessions, ingestion, inspect, map, doctor, proxy
-└── docker-compose*.yml     # backend, ingester (docker/Dockerfile), frontend
+└── docker-compose*.yml     # backend, ingester, docling-serve, frontend: published images, or (.dev) built from the checkout
 ```
+
+- **Published images.** `docker-publish-app.yml` pushes `haiku.rag-app-backend` and `haiku.rag-app-frontend` after the slim package publishes, tagged with the `haiku_rag_slim` version and `latest`. `docker-compose.yml` names them and `haiku.rag-slim` at `${HAIKU_RAG_VERSION:-<release>}`, a default `bump_version.py` rewrites. The backend bundles haiku.rag, so its release must match the ingester's. The backend runs as uid 1001 and mounts `DATA_DIR` at `/data` read-only.
 
 - **The backend reads, the ingester writes.** `Databases` opens one read-only client covering the configured set on first use and retries a database that failed. The ingester is the only LanceDB writer, and the backend writes only its session file.
 - **`POST /reload` swaps the database set.** `Configuration` (main.py) holds the current `Databases`, and `PinDatabases` puts it on `request.state.databases` for the whole request, a streamed chat run included. Handlers read it there, never `app.state`, and the chat agent lives on it. A replaced set closes when its last request ends, and the lifespan awaits those closes. The reload refuses any change outside `lancedb.databases` (`changed_sections`, shared with the ingester) except the `ingester` section. Doctor jobs and kept centroids are keyed by `DatabaseRef`, so a repointed name shows nothing of its old location.

@@ -2,8 +2,8 @@
 """
 Version bumping script for haiku.rag workspace.
 
-Updates version in all pyproject.toml files, both plugin manifests, and
-CHANGELOG.md.
+Updates version in all pyproject.toml files, both plugin manifests, the web
+app's package.json and image tags, and CHANGELOG.md.
 """
 
 import re
@@ -55,14 +55,24 @@ def update_example_dependencies(file_path: Path, new_version: str) -> None:
     print(f"✓ Updated example dependencies in {file_path.relative_to(Path.cwd())}")
 
 
-def update_plugin_version(file_path: Path, new_version: str) -> None:
-    """Update the version in a plugin manifest."""
+def update_manifest_version(file_path: Path, new_version: str) -> None:
+    """Update the top-level version in a JSON manifest."""
     content = file_path.read_text()
     updated = re.sub(
         r'^(\s*"version": )"[^"]+"',
         rf'\1"{new_version}"',
         content,
         flags=re.MULTILINE,
+    )
+    file_path.write_text(updated)
+    print(f"✓ Updated {file_path.relative_to(Path.cwd())}")
+
+
+def update_compose_version(file_path: Path, new_version: str) -> None:
+    """Update the default image tag in a compose file."""
+    content = file_path.read_text()
+    updated = re.sub(
+        r"(\$\{HAIKU_RAG_VERSION:-)[^}]+\}", rf"\g<1>{new_version}}}", content
     )
     file_path.write_text(updated)
     print(f"✓ Updated {file_path.relative_to(Path.cwd())}")
@@ -130,21 +140,27 @@ def main():
         root / "pyproject.toml",
         root / "haiku_rag_slim" / "pyproject.toml",
         root / "evaluations" / "pyproject.toml",
+        root / "app" / "backend" / "pyproject.toml",
     ]
 
     example_pyproject_files = [
         root / "app" / "backend" / "pyproject.toml",
     ]
 
-    plugin_files = [
+    manifest_files = [
         root / "plugins" / "haiku-rag" / ".claude-plugin" / "plugin.json",
         root / "plugins" / "haiku-rag" / ".codex-plugin" / "plugin.json",
+        root / "app" / "frontend" / "package.json",
     ]
+    compose_file = root / "app" / "docker-compose.yml"
     changelog_file = root / "CHANGELOG.md"
 
     # Check all files exist
     for file in (
-        pyproject_files + example_pyproject_files + plugin_files + [changelog_file]
+        pyproject_files
+        + example_pyproject_files
+        + manifest_files
+        + [compose_file, changelog_file]
     ):
         if not file.exists():
             print(f"Error: {file} not found")
@@ -175,8 +191,10 @@ def main():
     for file in example_pyproject_files:
         update_example_dependencies(file, new_version)
 
-    for file in plugin_files:
-        update_plugin_version(file, new_version)
+    for file in manifest_files:
+        update_manifest_version(file, new_version)
+
+    update_compose_version(compose_file, new_version)
 
     # Update CHANGELOG.md
     update_changelog(changelog_file, new_version)
