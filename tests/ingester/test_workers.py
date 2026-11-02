@@ -432,24 +432,66 @@ async def test_a_rejection_is_recorded_rejected_with_its_marker(client, jobs, sy
     assert row.last_ingested_at is None
 
 
-async def test_transient_exhausted_writes_no_marker(client, jobs, sync):
-    """A transient failure that exhausts max_attempts goes dead but records no
-    suppression marker, so it stays re-attemptable on the next sweep (transient =
-    keep retrying once the service recovers)."""
-    client._ingest_observed.side_effect = TransientError("blip")
-    job = await jobs.enqueue(
-        "src", "file:///x/y.pdf", JobOp.UPSERT, revision="r0", max_attempts=1
-    )
-    assert job is not None
+async def test_transient_exhausted_job_is_not_queued_again_while_unchanged(
+    client, jobs, sync, tmp_path
+):
+    """A job dead after max_attempts records its revision, so the next sweep
+    over the unchanged file queues nothing."""
+    from haiku.rag.config import RetryPolicyConfig
 
-    pool = _pool(client, jobs, sync)
-    await pool.drain_once()
+    root = (tmp_path / "source").resolve()
+    root.mkdir()
+    path = root / "doc.md"
+    path.write_text("body", encoding="utf-8")
+    uri = path.as_uri()
+    source = FSSource(root=root, source_id="src")
+    poller = PeriodicPoller(
+        source=source,
+        config=FSSourceConfig(
+            type="fs", id="src", root=root, retry=RetryPolicyConfig(max_attempts=1)
+        ),
+        job_repo=jobs,
+        sync_repo=sync,
+    )
+    client._ingest_observed.side_effect = TransientError("blip")
+    pool = _pool(client, jobs, sync, sources=[source])
+
+    assert await poller._sweep_once()
+    assert await pool.drain_once() == 1
+    [job] = await jobs.list_jobs(source_id="src")
+    assert job.status is JobStatus.DEAD
+    row = await sync.get_row("src", uri)
+    assert row is not None
+    assert row.revision == await source.head(uri)
+    assert row.last_ingested_at is None
+
+    assert await poller._sweep_once()
+    assert len(await jobs.list_jobs(source_id="src")) == 1
+
+
+async def test_transient_exhausted_loses_claim_to_reaper_writes_no_marker(
+    client, jobs, sync
+):
+    """A worker whose claim was reset and re-claimed before its last attempt
+    is recorded leaves the job and sync_state to the re-claiming worker."""
+    client._ingest_observed.side_effect = TransientError("blip")
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT, revision="r0", max_attempts=1)
+    assert job is not None
+    claimed_by_a = await jobs.claim_next("worker-A")
+    assert claimed_by_a is not None
+    await jobs.reap_stale(lease_ttl_seconds=0)
+    await jobs.claim_next("worker-B")
+
+    pool = _pool(client, jobs, sync, worker_count=1)
+    with capture_logs(_POOL_LOGGER, logging.WARNING) as records:
+        await pool._process(claimed_by_a)
 
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
-    assert refreshed.status is JobStatus.DEAD
-    # No marker despite a revision being present — only PermanentError suppresses.
+    assert refreshed.status is JobStatus.CLAIMED
+    assert refreshed.claimed_by == "worker-B"
     assert await sync.get_revision_snapshot("src") == {}
+    assert any("lost claim" in r.getMessage() for r in records)
 
 
 async def test_transient_error_reschedules_below_max_attempts(client, jobs, sync):
