@@ -5,7 +5,7 @@ The web app is a browser interface to a haiku.rag knowledge base. In it you ask 
 ![Chat: an answer with the agent's steps and its sources](img/app-chat.png)
 
 !!! warning "No authentication"
-    The app has no authentication. The Compose files publish its ports on `127.0.0.1` only. Keep them unreachable from untrusted networks.
+    The app has no authentication, and the frontend adds `INGESTER_TOKEN` to every request it forwards to the ingester. Anyone who reaches the frontend reads every configured database and can refresh the ingester's sources and retry or cancel its jobs. The Compose files publish the ports on `127.0.0.1` only. To serve the app beyond the local machine, put the frontend behind a reverse proxy that authenticates users.
 
 ## Set it up
 
@@ -65,6 +65,11 @@ curl -X POST http://localhost:8001/reload
 Chat searches every database, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources) and [Multiple databases](configuration/multiple-databases.md)).
 
 The backend's reload applies `lancedb.databases` only. It answers 409 and names the sections when another one changed, since those need a restart, and ignores the `ingester` section. A chat turn whose session selects documents of a removed database fails and names that database.
+
+### Deployment limits
+
+- One backend covers databases that share one `embeddings` configuration. The backend embeds every query with that configuration. A database embedded at another vector dimension fails to open. One embedded by another model at the same dimension opens with a warning, and its search results are meaningless. Run a separate app for databases with a different embedder.
+- The backend runs as one replica with one worker. It holds runs in process and stores sessions in a SQLite file.
 
 ### Upgrade from an earlier layout
 
