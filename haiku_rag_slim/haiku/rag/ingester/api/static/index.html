@@ -377,6 +377,12 @@
         return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
       }
 
+      function elapsed(start, end) {
+        if (!start || !end) return "—";
+        const ms = Date.parse(end) - Date.parse(start);
+        return ms >= 0 ? formatDuration(ms / 1000) : "—";
+      }
+
       function shortId(id) {
         return id ? id.slice(0, 8) : "—";
       }
@@ -639,24 +645,23 @@
           return;
         }
         const rows = jobs
-          .map((j) => {
-            let duration = "—";
-            if (j.completed_at && j.enqueued_at) {
-              const ms = Date.parse(j.completed_at) - Date.parse(j.enqueued_at);
-              if (ms >= 0) duration = formatDuration(ms / 1000);
-            }
-            return `<tr>
+          .map(
+            (j) => `<tr>
               <td>${opBadge(j.op)}</td>
               <td class="uri" data-tip="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
               <td>${escapeHtml(j.source_id)}</td>
-              <td>${duration}</td>
+              <td>${elapsed(j.enqueued_at, j.completed_at)}</td>
+              <td>${elapsed(j.claimed_at, j.completed_at)}</td>
               <td>${relTime(j.completed_at)}</td>
-            </tr>`;
-          })
+            </tr>`,
+          )
           .join("");
         $("recent-body").innerHTML = `<table>
           <thead><tr>
-            <th>Op</th><th>URI</th><th>Source</th><th>Duration</th><th>Finished</th>
+            <th>Op</th><th>URI</th><th>Source</th>
+            <th data-tip="From enqueue to finish, queue wait included">Duration</th>
+            <th data-tip="From the last attempt's claim to finish. A retried job shows its final attempt only">Processed in</th>
+            <th>Finished</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
