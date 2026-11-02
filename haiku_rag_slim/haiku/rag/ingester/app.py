@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 from sqlalchemy.engine import make_url
 
-from haiku.rag.config import AppConfig, SourceConfig, load_yaml_config
+from haiku.rag.config import AppConfig, SourceConfig, changed_sections, load_yaml_config
 from haiku.rag.ingester.batch import BatchChange, BatchDryRunReport, BatchManifest
 from haiku.rag.ingester.exceptions import (
     DuplicateSourceError,
@@ -1097,7 +1097,11 @@ class IngesterApp:
                 setattr(config.ingester.api, field, value)
         except Exception as error:
             raise InvalidConfigError(f"{self._config_path}: {error}") from error
-        changed = _changed_sections(self._config, config)
+        changed = changed_sections(
+            self._config,
+            config,
+            ignored={"lancedb": {"databases"}, "ingester": {"databases"}},
+        )
         if changed:
             raise ReloadRefusedError(
                 f"{', '.join(changed)} changed, and only lancedb.databases and "
@@ -1203,25 +1207,6 @@ def _refuse_duplicate_ids(ids: list[str]) -> None:
 
 def _placement(ref: "DatabaseRef") -> tuple[str | tuple[int, int], str | None]:
     return _location_identity(ref.location), ref.tag
-
-
-def _changed_sections(running: AppConfig, read: AppConfig) -> list[str]:
-    """The sections of `read` that differ from `running`, besides the two
-    database maps, named to their second level."""
-    unloaded = {"lancedb": {"databases"}, "ingester": {"databases"}}
-    before = running.model_dump(mode="json", exclude=unloaded)
-    after = read.model_dump(mode="json", exclude=unloaded)
-    changed = []
-    for section, value in before.items():
-        if value == after[section]:
-            continue
-        if isinstance(value, dict):
-            changed.extend(
-                f"{section}.{key}" for key in value if value[key] != after[section][key]
-            )
-        else:
-            changed.append(section)
-    return changed
 
 
 def _log_signal_reload(task: asyncio.Task) -> None:

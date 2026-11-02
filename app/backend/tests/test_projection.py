@@ -4,6 +4,7 @@ from docling_core.types.doc.document import DoclingDocument
 from starlette.exceptions import HTTPException
 
 from haiku.rag.client import HaikuRAG
+from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.doctor import VectorScan
 from haiku.rag.store.models import Chunk
@@ -111,16 +112,21 @@ def test_near_duplicates_form_a_family_and_similarity_is_cosine():
 
 
 def test_the_budget_evicts_the_oldest_and_refuses_what_never_fits():
+    refs = {name: DatabaseRef.configured(name, f"{name}.lancedb") for name in "abcd"}
     retained = Retained(budget=64)
     small = np.zeros((2, 4), dtype=np.float32)
-    assert retained.keep("a", "g1", ["x", "y"], small)
-    assert retained.keep("b", "g2", ["x", "y"], small)
-    assert retained.keep("c", "g3", ["x", "y"], np.zeros((4, 4), dtype=np.float32))
-    assert retained.get("a") is None and retained.get("b") is None
-    assert not retained.keep("d", "g4", ["x"], np.zeros((10, 4), dtype=np.float32))
-    assert retained.get("d") is None
-    assert retained.keep("c", "g5", ["x"], small)
-    kept = retained.get("c")
+    assert retained.keep(refs["a"], "g1", ["x", "y"], small)
+    assert retained.keep(refs["b"], "g2", ["x", "y"], small)
+    assert retained.keep(
+        refs["c"], "g3", ["x", "y"], np.zeros((4, 4), dtype=np.float32)
+    )
+    assert retained.get(refs["a"]) is None and retained.get(refs["b"]) is None
+    assert not retained.keep(
+        refs["d"], "g4", ["x"], np.zeros((10, 4), dtype=np.float32)
+    )
+    assert retained.get(refs["d"]) is None
+    assert retained.keep(refs["c"], "g5", ["x"], small)
+    kept = retained.get(refs["c"])
     assert kept is not None and kept.generation == "g5"
     assert kept.unit.shape == (2, 4)
 

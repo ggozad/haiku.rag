@@ -15,9 +15,9 @@ The frontend is at `http://localhost:3000`, the backend at `http://localhost:800
 
 ## Services
 
-- **backend**: the `haiku_rag_app` package, a Starlette app. It opens one read-only client over every configured database on first use, and retries a database that failed to open.
+- **backend**: the `haiku_rag_app` package, a Starlette app. It opens one read-only client over every configured database on first use, and retries a database that failed to open. `POST /reload` reads `haiku.rag.yaml` and its database fragments again and serves the databases they place. A request keeps the databases it started with, and the replaced client closes when the last such request ends.
 - **ingester**: `haiku-ingester serve`, the only writer of LanceDB. The example configuration ingests the documents mounted at `/docs` into `haiku.rag`. With several databases, it writes each one listed under `ingester.databases`, and the ingestion page names each source's database. One process serves them all: if one database fails to open, the ingester starts for none of them, and the backend keeps serving the others.
-- **frontend**: Next.js. It proxies the backend at `/api/backend/*`. At `/api/ingester/*` it proxies the ingester, adds `INGESTER_TOKEN` as a bearer token, and forwards only these writes: refresh a source, retry a job or a dead letter, and cancel a job.
+- **frontend**: Next.js. It proxies the backend at `/api/backend/*`. It refuses the backend's `/reload`. At `/api/ingester/*` it proxies the ingester, adds `INGESTER_TOKEN` as a bearer token, and forwards only these writes: refresh a source, retry a job or a dead letter, and cancel a job.
 
 The backend and the ingester both read `haiku.rag.yaml`. The example configuration references `${INGESTER_TOKEN}`, so both require it.
 
@@ -27,7 +27,7 @@ The backend stores sessions in a SQLite file. `HAIKU_RAG_APP_SESSIONS` sets the 
 
 ## Doctor and map jobs
 
-The backend reads every chunk vector for each doctor or map job. The vectors occupy at least chunks × dimension × 4 bytes. One job runs at a time across databases, on a thread of its own. The backend keeps job results in memory until another job of the same kind starts for that database, or the backend restarts. For similarity lookups it also keeps each map's document centroids, within one 256 MiB budget across databases. To fit a newer map's centroids, it removes the oldest kept ones until they fit. When one map's centroids exceed the budget alone, the backend keeps none of them. That map stays visible, and its neighbour lookups are unavailable. The doctor refuses a database read at a tag, since it checks the live state.
+The backend reads every chunk vector for each doctor or map job. The vectors occupy at least chunks × dimension × 4 bytes. One job runs at a time across databases, on a thread of its own. The backend keeps job results in memory until another job of the same kind starts for that database, or the backend restarts. A reload that points a name at another location shows none of the earlier location's results. For similarity lookups it also keeps each map's document centroids, within one 256 MiB budget across databases. To fit a newer map's centroids, it removes the oldest kept ones until they fit. When one map's centroids exceed the budget alone, the backend keeps none of them. That map stays visible, and its neighbour lookups are unavailable. The doctor refuses a database read at a tag, since it checks the live state.
 
 ## Addresses
 
@@ -65,6 +65,7 @@ Every inspector view has an address that reopens it:
 | `/api/doctor/{source}/projection/similarity` | GET | The cosine similarity between each mapped document's centroid and the centroid of document `id`, in map order. `generation` identifies the map. Returns 404 when the map's centroids are not kept, and 409 when `generation` differs from the kept map's |
 | `/api/doctor/{source}/duplicates.yaml` | GET | The map's near-duplicate families |
 | `/health` | GET | Health, model and databases |
+| `/reload` | POST | Read the configuration again and serve its `lancedb.databases`. Returns the names `added` and `removed` (a name at a new location or tag is both) and the `databases` served. 409 without a configuration file, or when another section changed. 422 when the file fails to load. Not reachable through the frontend |
 
 ## Development
 

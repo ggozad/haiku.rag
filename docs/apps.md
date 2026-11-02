@@ -31,6 +31,15 @@ Three services run: a backend that reads the database, the [ingester](ingester.m
 
 To work across several databases, list them under `lancedb.databases` (see [Multiple databases](configuration/multiple-databases.md)), and mount each one into the `backend` and `ingester` services. Chat searches all of them, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources)).
 
+A database added to the configuration, in `haiku.rag.yaml` or a [database fragment](configuration/index.md#database-fragments), reaches the app without a restart when both services already mount the directory that holds it. Adding a volume recreates the container, and the example Compose file mounts `DB_VOLUME` as the database itself. To add databases while the app runs, mount one parent directory into both services, for example at `/data`, and place every `lancedb.databases` entry under it. Then, for each new database, reload the ingester and the backend:
+
+```bash
+curl -X POST -H "Authorization: Bearer $INGESTER_TOKEN" http://localhost:8765/reload
+curl -X POST http://localhost:8001/reload
+```
+
+The backend's reload applies `lancedb.databases` only. It answers 409 and names the sections when another one changed, since those need a restart, and ignores the `ingester` section. A chat turn whose session selects documents of a removed database fails and names that database. The example Compose files mount `haiku.rag.yaml` as a single file: an editor that replaces the file on save leaves the containers reading the old one, so edit it in place or mount its directory.
+
 ## Ask questions
 
 Type a question in Chat and press Enter. Shift+Enter starts a new line, and the stop button ends an answer early. The answer streams in with the agent's steps: its searches, and any program it wrote to count or compare across documents. Below the answer, a badge says whether the answer is grounded in its sources, and the sources follow.

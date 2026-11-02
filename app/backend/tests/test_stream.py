@@ -17,7 +17,7 @@ from tests.support import image_bytes, png, served
 
 
 async def served_agent(app):
-    return await agent_for(app.state.configuration.current, app.state.config)
+    return await agent_for(app.state.configuration.current)
 
 
 async def _answer(
@@ -134,7 +134,6 @@ async def test_a_turn_runs_on_the_database_set_it_started_on(
     alpha_chunk = ids["alpha"]["chunk_id"]
     session_id = await _session(client)
     await _select_present(client, session_id, ids)
-    started = app.state.configuration.current
     agent = await served_agent(app)
     sessions = app.state.sessions
     entered, release = asyncio.Event(), asyncio.Event()
@@ -162,11 +161,8 @@ async def test_a_turn_runs_on_the_database_set_it_started_on(
         )
         release.set()
         response = await turn
-    try:
-        summary = next(e for e in _events(response.text) if e["type"] == "CUSTOM")
-        assert summary["value"] == {"citation_status": "grounded", "violation": False}
-    finally:
-        await started.aclose()
+    summary = next(e for e in _events(response.text) if e["type"] == "CUSTOM")
+    assert summary["value"] == {"citation_status": "grounded", "violation": False}
 
 
 async def test_a_second_turn_runs_on_the_stored_history_and_state(

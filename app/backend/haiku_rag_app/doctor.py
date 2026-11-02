@@ -44,13 +44,13 @@ async def start_run(request: Request) -> JSONResponse:
         )
         return report.model_dump(mode="json")
 
-    job = request.app.state.jobs.submit(ref.name, "doctor", work)
+    job = request.app.state.jobs.submit(ref, "doctor", work)
     return JSONResponse(job.summary(), status_code=202)
 
 
 async def get_run(request: Request) -> JSONResponse:
     ref = configured_ref(request)
-    job = request.app.state.jobs.get(ref.name, "doctor")
+    job = request.app.state.jobs.get(ref, "doctor")
     return JSONResponse({"run": job.summary() if job else None})
 
 
@@ -90,9 +90,7 @@ async def start_projection(request: Request) -> JSONResponse:
 
     def done(projection: Projection) -> dict[str, Any]:
         generation = uuid.uuid4().hex
-        neighbours = retained.keep(
-            ref.name, generation, projection.ids, projection.unit
-        )
+        neighbours = retained.keep(ref, generation, projection.ids, projection.unit)
         labels = {point["id"]: _label(point) for point in projection.points}
         return {
             "points": projection.points,
@@ -112,7 +110,7 @@ async def start_projection(request: Request) -> JSONResponse:
             ),
         }
 
-    job = request.app.state.jobs.submit(ref.name, "projection", work, on_done=done)
+    job = request.app.state.jobs.submit(ref, "projection", work, on_done=done)
     return JSONResponse(job.summary(), status_code=202)
 
 
@@ -120,14 +118,14 @@ async def get_projection(request: Request) -> JSONResponse:
     """The latest projection, marked stale when the chunks or the documents'
     attributes changed since its scan started."""
     ref = configured_ref(request)
-    job = request.app.state.jobs.get(ref.name, "projection")
+    job = request.app.state.jobs.get(ref, "projection")
     if job is None:
         return JSONResponse({"projection": None})
     summary = job.summary()
     if job.status == "done":
         summary["stale"] = await _stale(request, ref.name, job.result["versions"])
         # A later map of another database may have evicted these centroids.
-        kept = request.app.state.retained.get(ref.name)
+        kept = request.app.state.retained.get(ref)
         summary["result"] = {
             **job.result,
             "neighbours": kept is not None
@@ -151,7 +149,7 @@ async def _stale(request: Request, name: str, versions: dict) -> bool | None:
 
 async def similarities(request: Request) -> JSONResponse:
     ref = configured_ref(request)
-    kept = request.app.state.retained.get(ref.name)
+    kept = request.app.state.retained.get(ref)
     if kept is None:
         raise HTTPException(
             404,
@@ -175,7 +173,7 @@ async def similarities(request: Request) -> JSONResponse:
 
 async def duplicates_export(request: Request) -> PlainTextResponse:
     ref = configured_ref(request)
-    job = request.app.state.jobs.get(ref.name, "projection")
+    job = request.app.state.jobs.get(ref, "projection")
     if job is None or job.status != "done":
         raise HTTPException(404, "compute the map first")
     return PlainTextResponse(

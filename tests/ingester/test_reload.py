@@ -197,9 +197,11 @@ async def test_a_change_outside_the_databases_is_refused(tmp_path, clients):
         ) as refused:
             await app.reload()
 
-        assert "ingester.workers" in str(refused.value)
-        assert "processing.chunk_size" in str(refused.value)
-        assert "environment" in str(refused.value)
+        assert str(refused.value) == (
+            "environment, processing.chunk_size, ingester.workers changed, and "
+            "only lancedb.databases and ingester.databases are reloaded. Restart "
+            "to apply the rest"
+        )
         assert list(app._running) == ["papers"]
 
 

@@ -149,6 +149,16 @@ describe("routes", () => {
 		expect(calls[0].url).toBe("http://localhost:8001/api/databases");
 	});
 
+	it("keeps the backend's reload from the browser", async () => {
+		const calls = stubFetch(() => new Response("{}"));
+		const refused = await backendRoute.POST(
+			new Request("http://app/x", { method: "POST" }),
+			{ params: Promise.resolve({ path: ["reload"] }) },
+		);
+		expect(refused.status).toBe(405);
+		expect(calls).toHaveLength(0);
+	});
+
 	it("adds the ingester token server-side", async () => {
 		vi.stubEnv("INGESTER_URL", "http://localhost:8765");
 		vi.stubEnv("INGESTER_TOKEN", "secret");

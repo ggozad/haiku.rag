@@ -8,6 +8,8 @@ from typing import Any
 
 from starlette.exceptions import HTTPException
 
+from haiku.rag.client.scope import DatabaseRef
+
 Progress = Callable[[str], None]
 Work = Callable[[Progress], Awaitable[Any]]
 
@@ -56,29 +58,29 @@ class Jobs:
     """
 
     def __init__(self) -> None:
-        self._jobs: dict[tuple[str, str], Job] = {}
+        self._jobs: dict[tuple[DatabaseRef, str], Job] = {}
         self._queue: queue.Queue[tuple[Job, Work, asyncio.AbstractEventLoop]] = (
             queue.Queue()
         )
         self._thread: threading.Thread | None = None
 
-    def get(self, source: str, kind: str) -> Job | None:
-        return self._jobs.get((source, kind))
+    def get(self, database: DatabaseRef, kind: str) -> Job | None:
+        return self._jobs.get((database, kind))
 
     def submit(
         self,
-        source: str,
+        database: DatabaseRef,
         kind: str,
         work: Work,
         on_done: Callable[[Any], Any] | None = None,
     ) -> Job:
-        current = self._jobs.get((source, kind))
+        current = self._jobs.get((database, kind))
         if current is not None and current.status in ("queued", "running"):
             raise HTTPException(
-                409, f"a {kind} of {source!r} is already {current.status}"
+                409, f"a {kind} of {database.name!r} is already {current.status}"
             )
-        job = Job(kind=kind, source=source, on_done=on_done)
-        self._jobs[(source, kind)] = job
+        job = Job(kind=kind, source=database.name, on_done=on_done)
+        self._jobs[(database, kind)] = job
         if self._thread is None:
             self._thread = threading.Thread(
                 target=self._serve, name="haiku-rag-app-jobs", daemon=True
