@@ -10,6 +10,7 @@
 ### Changed
 
 - A PDF's `after_ingest` fires after its attachments' and carries `md5`, and `source_revision` when the source supplies one (#790).
+- The web app's backend image runs as uid 1001. An existing `sessions` volume needs `docker compose run --rm --user root backend chown -R 1001:1001 /sessions` once.
 
 ### Fixed
 

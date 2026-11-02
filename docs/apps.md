@@ -29,6 +29,12 @@ docker compose up -d --build
 
 Three services run: a backend that reads the database, the [ingester](ingester.md), which writes it, and the frontend.
 
+The backend runs as uid 1001. A `sessions` volume created by a backend that ran as root holds a root-owned session file, and saving a session fails until you change its owner once:
+
+```bash
+docker compose run --rm --user root backend chown -R 1001:1001 /sessions
+```
+
 To work across several databases, list them under `lancedb.databases` (see [Multiple databases](configuration/multiple-databases.md)), and mount each one into the `backend` and `ingester` services. Chat searches all of them, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources)).
 
 A database added to the configuration, in `haiku.rag.yaml` or a [database fragment](configuration/index.md#database-fragments), reaches the app without a restart when both services already mount the directory that holds it. Adding a volume recreates the container, and the example Compose file mounts `DB_VOLUME` as the database itself. To add databases while the app runs, mount one parent directory into both services, for example at `/data`, and place every `lancedb.databases` entry under it. Then, for each new database, reload the ingester and the backend:
