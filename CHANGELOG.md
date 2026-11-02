@@ -6,6 +6,10 @@
 
 - Ingester dashboard: "Processed in" column in recent jobs, the time from the last attempt's claim to completion (#789).
 
+### Changed
+
+- A PDF's `after_ingest` fires after its attachments' and carries `md5`, and `source_revision` when the source supplies one (#790).
+
 ### Fixed
 
 - Discovery no longer re-enqueues an unchanged file whose job went dead after `max_attempts` (#792).
