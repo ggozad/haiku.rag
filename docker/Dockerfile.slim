@@ -18,7 +18,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY haiku_rag_slim haiku_rag_slim/
 COPY README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --no-dev --extra ingester --package haiku.rag-slim
+    uv sync --frozen --no-editable --no-dev --extra ingester --package haiku.rag-slim \
+        --reinstall-package haiku.rag-slim
 
 # Final layer
 FROM python:3.13-slim

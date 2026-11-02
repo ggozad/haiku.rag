@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- A rebuild of `docker/Dockerfile`, `docker/Dockerfile.slim` or the web app's backend image with a warm uv cache installs the current haiku.rag and app code, not the previously built wheel.
 - Discovery no longer re-enqueues an unchanged file whose job went dead after `max_attempts` (#792).
 
 ## [0.104.0] - 2026-10-30

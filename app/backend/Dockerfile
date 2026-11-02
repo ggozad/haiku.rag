@@ -16,7 +16,8 @@ COPY haiku_rag_slim haiku_rag_slim/
 COPY app/backend/haiku_rag_app app/backend/haiku_rag_app/
 COPY README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --no-dev --package haiku-rag-app
+    uv sync --frozen --no-editable --no-dev --package haiku-rag-app \
+        --reinstall-package haiku-rag-app --reinstall-package haiku.rag-slim
 
 FROM python:3.13-slim
 ARG VERSION
