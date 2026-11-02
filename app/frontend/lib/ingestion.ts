@@ -1,4 +1,6 @@
-const BASE = "/api/ingester";
+import { withBasePath } from "./paths";
+
+const BASE = withBasePath("/api/ingester");
 
 // The ingester dashboard's cycle: what one refresh reads.
 export const CYCLE = {

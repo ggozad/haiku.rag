@@ -3,6 +3,7 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { databaseHref, documentHref } from "@/lib/addresses";
+import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 
 type Place =
@@ -11,7 +12,7 @@ type Place =
 	| { kind: "chunk"; db: string; doc: string; chunk: string };
 
 const base = (db: string) =>
-	`/api/backend/api/inspect/${encodeURIComponent(db)}`;
+	withBasePath(`/api/backend/api/inspect/${encodeURIComponent(db)}`);
 
 // The database, document and chunk open, each above the current one a link.
 // `list` is the document list's query, `documentQuery` the document's view.

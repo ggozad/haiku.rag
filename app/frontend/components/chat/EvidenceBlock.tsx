@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/collapsible";
 import { chunkHref } from "@/lib/addresses";
 import { type Citation, type Evidence, statusOf } from "@/lib/chat";
+import { withBasePath } from "@/lib/paths";
 import VisualGroundingDialog from "./VisualGroundingDialog";
 
 const STATUS_ICONS = {
@@ -32,7 +33,7 @@ export function pictureUrl(citation: Citation, ref: string): string {
 		ref,
 	});
 	if (citation.source) query.set("source", citation.source);
-	return `/api/backend/api/pictures?${query}`;
+	return withBasePath(`/api/backend/api/pictures?${query}`);
 }
 
 function CitationItem({
@@ -94,10 +95,12 @@ function CitationItem({
 					{citation.source && (
 						<Button asChild variant="outline" size="sm">
 							<a
-								href={chunkHref(
-									citation.source,
-									citation.document_id,
-									citation.chunk_id,
+								href={withBasePath(
+									chunkHref(
+										citation.source,
+										citation.document_id,
+										citation.chunk_id,
+									),
 								)}
 								target="_blank"
 								rel="noopener"

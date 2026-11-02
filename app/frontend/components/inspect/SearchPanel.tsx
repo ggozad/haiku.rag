@@ -18,6 +18,7 @@ import type { DatabaseEntry } from "@/lib/databases";
 import { decoded } from "@/lib/http";
 import { type Attachment, readImage } from "@/lib/images";
 import { firstLine, searched } from "@/lib/inspect";
+import { withBasePath } from "@/lib/paths";
 import type { ChunkRef } from "./ChunkView";
 
 interface Result {
@@ -105,7 +106,7 @@ export default function SearchPanel({
 		setBusy(true);
 		setError(null);
 		try {
-			const response = await fetch("/api/backend/api/search", {
+			const response = await fetch(withBasePath("/api/backend/api/search"), {
 				method: "POST",
 				signal: current.signal,
 				headers: { "content-type": "application/json" },

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatBytes, scanBytes } from "@/lib/doctor";
 import type { Point } from "@/lib/map";
+import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import { useJob } from "./useJob";
 
@@ -18,7 +19,7 @@ export interface MapResult {
 }
 
 export const doctorBase = (source: string) =>
-	`/api/backend/api/doctor/${encodeURIComponent(source)}`;
+	withBasePath(`/api/backend/api/doctor/${encodeURIComponent(source)}`);
 
 // The database's latest corpus map job. A finished map is read again every
 // 30 s, so staleness and eviction show.
@@ -55,7 +56,9 @@ export function useEstimate(source: string | null) {
 	}>(
 		source === null
 			? null
-			: `/api/backend/api/inspect/${encodeURIComponent(source)}/info`,
+			: withBasePath(
+					`/api/backend/api/inspect/${encodeURIComponent(source)}/info`,
+				),
 	);
 	const dimension = details.data?.info.embeddings.vector_dim;
 	const chunks = details.data?.info.tables.find(

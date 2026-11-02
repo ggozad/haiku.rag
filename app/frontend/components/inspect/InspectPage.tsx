@@ -33,6 +33,7 @@ import {
 } from "@/lib/addresses";
 import { useDatabases } from "@/lib/databases";
 import { formatRelativeTime } from "@/lib/format";
+import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
 import AskAbout from "./AskAbout";
@@ -172,7 +173,9 @@ export default function InspectPage() {
 	// Read again whenever the databases are, so the ingester's writes appear.
 	const listing = useJson<Listing>(
 		source && selected?.available
-			? `/api/backend/api/inspect/${encodeURIComponent(source)}/documents?${params}`
+			? withBasePath(
+					`/api/backend/api/inspect/${encodeURIComponent(source)}/documents?${params}`,
+				)
 			: null,
 		info,
 	);

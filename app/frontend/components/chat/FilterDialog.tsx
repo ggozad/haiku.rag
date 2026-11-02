@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { DocumentRef } from "@/lib/chat";
+import { withBasePath } from "@/lib/paths";
 import { load } from "@/lib/useJson";
 
 interface ListedDocument {
@@ -80,7 +81,7 @@ export default function FilterDialog({
 		const controller = new AbortController();
 		requests.current.add(controller);
 		void load<Listing>(
-			`/api/backend/api/documents?${search}`,
+			withBasePath(`/api/backend/api/documents?${search}`),
 			controller.signal,
 			{
 				...on,

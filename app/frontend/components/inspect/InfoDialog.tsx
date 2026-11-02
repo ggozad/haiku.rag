@@ -7,6 +7,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 
 interface Info {
@@ -66,7 +67,11 @@ export default function InfoDialog({
 	onOpenChange: (open: boolean) => void;
 }) {
 	const { data, error } = useJson<Info>(
-		open ? `/api/backend/api/inspect/${encodeURIComponent(source)}/info` : null,
+		open
+			? withBasePath(
+					`/api/backend/api/inspect/${encodeURIComponent(source)}/info`,
+				)
+			: null,
 	);
 	const info = data?.info;
 	return (
