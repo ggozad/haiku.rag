@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.105.0] - 2026-11-02
+
 ### Added
 
 - Ingester dashboard: "Processed in" column in recent jobs, the time from the last attempt's claim to completion (#789).
@@ -3181,7 +3183,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.104.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.105.0...HEAD
+[0.105.0]: https://github.com/ggozad/haiku.rag/compare/0.104.0...0.105.0
 [0.104.0]: https://github.com/ggozad/haiku.rag/compare/0.103.0...0.104.0
 [0.103.0]: https://github.com/ggozad/haiku.rag/compare/0.102.0...0.103.0
 [0.102.0]: https://github.com/ggozad/haiku.rag/compare/0.101.2...0.102.0
