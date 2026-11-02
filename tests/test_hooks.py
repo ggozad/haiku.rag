@@ -1614,3 +1614,265 @@ async def test_a_rejected_attachment_is_skipped_and_its_stored_copy_kept(
     assert [r.getMessage() for r in records] == [
         f"{parent_uri}#attachment=a.txt rejected: draft"
     ]
+
+
+class MetadataRecordingHook(Hook):
+    def __init__(self):
+        self.events: list[tuple[str, list[tuple[str | None, dict]]]] = []
+
+    async def after_ingest(self, client, event):
+        self.events.append(
+            (event.operation, [(d.uri, dict(d.metadata)) for d in event.documents])
+        )
+
+
+@pytest.fixture
+def unconverted_ingest(monkeypatch):
+    """Run the real ingest path with conversion and chunking stubbed: every
+    document converts to its URI's text and one pre-embedded chunk. A source
+    URI listed in the returned set fails to convert."""
+    failing: set[str] = set()
+
+    async def fake_convert(config, source, *, format="md", source_uri=None):
+        if source_uri in failing:
+            raise RuntimeError(f"cannot convert {source_uri}")
+        return docling_doc("doc", f"Text of {source_uri}.")
+
+    async def fake_chunk_document(session, docling_document, **kwargs):
+        dim = session.config.embeddings.model.vector_dim
+        return [Chunk(content="text", embedding=[0.1] * dim, order=0)]
+
+    async def no_embedding(*args, **kwargs):
+        raise AssertionError("the embedder ran")
+
+    monkeypatch.setattr("haiku.rag.client.documents.convert", fake_convert)
+    monkeypatch.setattr(
+        "haiku.rag.client.documents.chunk_document", fake_chunk_document
+    )
+    monkeypatch.setattr("haiku.rag.embeddings.embed_chunks", no_embedding)
+    return failing
+
+
+def _ingested(hook: MetadataRecordingHook) -> list[tuple[str, str | None]]:
+    return [(op, uri) for op, docs in hook.events for uri, _ in docs]
+
+
+@pytest.mark.asyncio
+async def test_a_pdfs_after_ingest_follows_its_attachments_and_carries_its_keys(
+    temp_db_path, tmp_path, unconverted_ingest
+):
+    from tests.conftest import build_pdf
+
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("a.txt", b"A"), ("b.txt", b"B")]))
+    recording = MetadataRecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        parent = await client.create_document_from_source(path)
+
+    assert not isinstance(parent, list)
+    assert _ingested(recording) == [
+        ("create", f"{parent.uri}#attachment=a.txt"),
+        ("create", f"{parent.uri}#attachment=b.txt"),
+        ("create", parent.uri),
+    ]
+    _, [(_, metadata)] = recording.events[-1]
+    assert metadata["md5"] == _md5(path.read_bytes())
+    assert metadata["source_revision"] == str(path.stat().st_mtime_ns)
+
+
+@pytest.mark.asyncio
+async def test_a_pdf_without_attachments_fires_once_with_its_keys(
+    temp_db_path, tmp_path, unconverted_ingest
+):
+    from tests.conftest import build_pdf
+
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([]))
+    recording = MetadataRecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        parent = await client.create_document_from_source(path)
+
+    assert not isinstance(parent, list)
+    [(operation, [(uri, metadata)])] = recording.events
+    assert (operation, uri) == ("create", parent.uri)
+    assert metadata["md5"] == _md5(path.read_bytes())
+    assert metadata["source_revision"] == str(path.stat().st_mtime_ns)
+
+
+@pytest.mark.asyncio
+async def test_a_changed_pdf_with_unchanged_attachments_fires_once_as_an_update(
+    temp_db_path, tmp_path, unconverted_ingest
+):
+    from tests.conftest import build_pdf
+
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("a.txt", b"A")]))
+    recording = MetadataRecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(path)
+        path.write_bytes(build_pdf([("a.txt", b"A")]) + b"\n%changed\n")
+        client._hooks = [recording]
+        parent = await client.create_document_from_source(path)
+
+    assert not isinstance(parent, list)
+    [(operation, [(uri, metadata)])] = recording.events
+    assert (operation, uri) == ("update", parent.uri)
+    assert metadata["md5"] == _md5(path.read_bytes())
+    assert metadata["source_revision"] == str(path.stat().st_mtime_ns)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_attachment_withholds_the_pdfs_event_until_a_retry(
+    temp_db_path, tmp_path, unconverted_ingest
+):
+    from tests.conftest import build_pdf
+
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("a.txt", b"A"), ("b.txt", b"B")]))
+    parent_uri = path.as_uri()
+    unconverted_ingest.add(f"{parent_uri}#attachment=b.txt")
+    recording = MetadataRecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        with pytest.raises(RuntimeError, match="cannot convert"):
+            await client.create_document_from_source(path)
+        stored = await client.get_document_by_uri(parent_uri)
+        assert stored is not None
+        assert "md5" not in stored.metadata
+        assert _ingested(recording) == [("create", f"{parent_uri}#attachment=a.txt")]
+
+        unconverted_ingest.clear()
+        recording.events.clear()
+        await client.create_document_from_source(path)
+
+    assert _ingested(recording) == [
+        ("create", f"{parent_uri}#attachment=b.txt"),
+        ("update", parent_uri),
+    ]
+    _, [(_, metadata)] = recording.events[-1]
+    assert metadata["md5"] == _md5(path.read_bytes())
+    assert metadata["source_revision"] == str(path.stat().st_mtime_ns)
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_attachment_lets_its_pdf_fire(
+    temp_db_path, tmp_path, unconverted_ingest
+):
+    from tests.conftest import build_pdf, capture_logs
+
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("a.txt", b"A"), ("b.txt", b"B")]))
+    recording = MetadataRecordingHook()
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.client.documents"), logging.WARNING
+    ) as records:
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            client._hooks = [RejectHook("#attachment=b.txt"), recording]
+            parent = await client.create_document_from_source(path)
+
+    assert not isinstance(parent, list)
+    assert [r.getMessage() for r in records] == [
+        f"{parent.uri}#attachment=b.txt rejected: draft"
+    ]
+    assert _ingested(recording) == [
+        ("create", f"{parent.uri}#attachment=a.txt"),
+        ("create", parent.uri),
+    ]
+    _, [(_, metadata)] = recording.events[-1]
+    assert metadata["md5"] == _md5(path.read_bytes())
+    assert metadata["source_revision"] == str(path.stat().st_mtime_ns)
+
+
+@pytest.mark.asyncio
+async def test_a_nested_pdf_fires_after_its_own_attachments(
+    temp_db_path, tmp_path, unconverted_ingest
+):
+    from tests.conftest import build_pdf
+
+    inner = build_pdf([("deep.txt", b"Deep")])
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("inner.pdf", inner)]))
+    recording = MetadataRecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        parent = await client.create_document_from_source(path)
+
+    assert not isinstance(parent, list)
+    inner_uri = f"{parent.uri}#attachment=inner.pdf"
+    assert _ingested(recording) == [
+        ("create", f"{inner_uri}#attachment=deep.txt"),
+        ("create", inner_uri),
+        ("create", parent.uri),
+    ]
+    assert [docs[0][1]["md5"] for _, docs in recording.events[1:]] == [
+        _md5(inner),
+        _md5(path.read_bytes()),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_full_rebuild_of_a_pdf_fires_no_after_ingest(
+    temp_db_path, tmp_path, unconverted_ingest
+):
+    from haiku.rag.client import RebuildMode
+    from tests.conftest import build_pdf
+
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("a.txt", b"A")]))
+    recording = MetadataRecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(path)
+        client._hooks = [recording]
+        rebuilt = [
+            doc_id async for doc_id in client.rebuild_database(mode=RebuildMode.FULL)
+        ]
+
+    assert len(rebuilt) == 2
+    assert recording.events == []
+
+
+@pytest.mark.asyncio
+async def test_a_revisionless_pdf_fires_with_md5_and_no_revision(
+    temp_db_path, unconverted_ingest
+):
+    from haiku.rag.client.documents import _ingest_fetch_result
+    from haiku.rag.sources.base import FetchResult
+    from tests.conftest import build_pdf, writing
+
+    body = build_pdf([("a.txt", b"A")])
+    uri = "https://example.com/parent.pdf"
+    recording = MetadataRecordingHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [recording]
+        await _ingest_fetch_result(
+            writing(client),
+            client,
+            FetchResult(
+                uri=uri,
+                body=body,
+                content_type="application/pdf",
+                content_hash=_md5(body),
+            ),
+            title=None,
+            user_metadata={},
+            stored_uri=uri,
+            existing_doc=None,
+        )
+
+    assert _ingested(recording) == [
+        ("create", f"{uri}#attachment=a.txt"),
+        ("create", uri),
+    ]
+    _, [(_, metadata)] = recording.events[-1]
+    assert metadata["md5"] == _md5(body)
+    assert "source_revision" not in metadata

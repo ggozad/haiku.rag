@@ -184,12 +184,14 @@ async def _store_document_with_chunks(
     docling_document: "DoclingDocument",
     observed_uri: str | None = None,
     notify_hooks: bool = True,
+    events: list[IngestEvent] | None = None,
 ) -> Document:
     """Store a document with chunks, embedding any that lack embeddings.
 
     Handles versioning/rollback on failure. ``observed_uri`` is the URI the
     other phase spans report, which can differ from ``document.uri``, the URI
-    the document is stored under.
+    the document is stored under. ``events``, when given, receives the
+    ``after_ingest`` event instead of the hooks.
     """
     span_uri = observed_uri if observed_uri is not None else document.uri
     chunks = await ensure_chunks_embedded(
@@ -263,7 +265,10 @@ async def _store_document_with_chunks(
             documents=[stored_doc],
             operation="create" if existing is None else "update",
         )
-        await notify(client._hooks, "after_ingest", client, event)
+        if events is not None:
+            events.append(event)
+        else:
+            await notify(client._hooks, "after_ingest", client, event)
     return stored_doc
 
 
@@ -276,6 +281,7 @@ async def _update_document_with_chunks(
     observed_uri: str | None = None,
     notify_hooks: bool = True,
     stored_meta: Callable[[], Awaitable[Document]] | None = None,
+    events: list[IngestEvent] | None = None,
 ) -> Document:
     """Update a document and replace its chunks, embedding any that lack embeddings.
 
@@ -284,6 +290,8 @@ async def _update_document_with_chunks(
     spans report, which can differ from ``document.uri``, the URI the
     document is stored under. ``stored_meta``, when given, supplies the
     ``uri``, ``title`` and ``metadata`` to write, read under the write lock.
+    ``events``, when given, receives the ``after_ingest`` event instead of the
+    hooks.
     """
     span_uri = observed_uri if observed_uri is not None else document.uri
     assert document.id is not None, "Document ID is required for update"
@@ -341,7 +349,10 @@ async def _update_document_with_chunks(
     session.name(updated_doc)
     if client is not None and notify_hooks:
         event = IngestEvent(documents=[updated_doc], operation="update")
-        await notify(client._hooks, "after_ingest", client, event)
+        if events is not None:
+            events.append(event)
+        else:
+            await notify(client._hooks, "after_ingest", client, event)
     return updated_doc
 
 
@@ -726,10 +737,15 @@ async def _ingest_fetch_result(
             cleanup_path.unlink(missing_ok=True)
 
     final_metadata = {**user_metadata, **source_metadata}
+    may_have_attachments = _may_have_attachments(session, result.content_type)
     freshness = (
         {k: final_metadata.pop(k) for k in _FRESHNESS_KEYS if k in final_metadata}
-        if _may_have_attachments(session, result.content_type)
+        if may_have_attachments
         else {}
+    )
+    # A PDF's event waits for its attachments and its freshness keys.
+    held: list[IngestEvent] | None = (
+        [] if may_have_attachments and client is not None and notify_hooks else None
     )
 
     if existing_doc:
@@ -747,6 +763,7 @@ async def _ingest_fetch_result(
             docling_document,
             observed_uri=result.uri,
             notify_hooks=notify_hooks,
+            events=held,
         )
     else:
         document = Document(
@@ -764,6 +781,7 @@ async def _ingest_fetch_result(
             docling_document,
             observed_uri=result.uri,
             notify_hooks=notify_hooks,
+            events=held,
         )
 
     if written_ids is not None:
@@ -782,9 +800,15 @@ async def _ingest_fetch_result(
         written_ids=written_ids,
         notify_hooks=notify_hooks,
     )
-    return await _refresh_doc_metadata(
+    refreshed = await _refresh_doc_metadata(
         session, stored, title=None, user_metadata={}, source_metadata=freshness
     )
+    if held is not None:
+        assert client is not None
+        [event] = held
+        event.documents = [refreshed]
+        await notify(client._hooks, "after_ingest", client, event)
+    return refreshed
 
 
 def _may_have_attachments(

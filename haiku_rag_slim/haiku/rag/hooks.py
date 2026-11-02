@@ -138,7 +138,8 @@ class Hook:
         regardless of the operation: even a creation may be a retry.
         Metadata/title-only updates do not fire, so a hook may store derived
         keys with a metadata-only ``update_document``. "Metadata lifetime" in
-        docs/hooks.md says how long they last.
+        docs/hooks.md says how long they last. A PDF's event fires after its
+        attachments', once its ``md5`` is stored.
 
         Best-effort observer: the operation has already committed, so
         exceptions are logged and never raised, and subsequent hooks still
