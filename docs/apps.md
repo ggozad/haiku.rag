@@ -71,6 +71,50 @@ The backend's reload applies `lancedb.databases` only. It answers 409 and names 
 - One backend covers databases that share one `embeddings` configuration. The backend embeds every query with that configuration. A database embedded at another vector dimension fails to open. One embedded by another model at the same dimension opens with a warning, and its search results are meaningless. Run a separate app for databases with a different embedder.
 - The backend runs as one replica with one worker. It holds runs in process and stores sessions in a SQLite file.
 
+### Serve under a URL prefix
+
+The frontend serves at the root of its origin unless it is built with `BASE_PATH`, a prefix such as `/rag`. The prefix is fixed when the frontend image is built, and the published frontend image serves at the root. To serve the app under a prefix, build the frontend image yourself and keep the published backend and ingester images, which never see the prefix. Changing the prefix means building the frontend image again. Setting `BASE_PATH` on a built image moves only its health check, so the container reports unhealthy.
+
+From `app/`:
+
+```bash
+docker build --build-arg BASE_PATH=/rag -t haiku-rag-app-frontend:rag frontend
+```
+
+Point the frontend service at that image in `docker-compose.override.yml`, which `docker compose` reads beside `docker-compose.yml`:
+
+```yaml
+services:
+  frontend:
+    image: haiku-rag-app-frontend:rag
+```
+
+The proxy passes the prefix through, since the frontend expects it in every path. The chat streams its answers, so turn off response buffering, or each answer arrives all at once. The stream also stays silent while the model thinks or a tool runs, so raise the read timeout above the longest pause: nginx closes the stream after 60 s by default. With nginx:
+
+```nginx
+location = /rag {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_buffering off;
+    proxy_read_timeout 10m;
+}
+
+location /rag/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_buffering off;
+    proxy_read_timeout 10m;
+}
+```
+
+The frontend redirects `/rag/` to `/rag`. Don't redirect `/rag` to `/rag/` at the proxy: the two redirects loop.
+
+With the development compose file, the prefix needs no build: set `BASE_PATH` in `.env`, and `docker compose -f docker-compose.dev.yml up -d` recreates the frontend with it. Behind a proxy, the development server's pages wait for its live-reload WebSocket, so forward WebSocket upgrades too:
+
+```nginx
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+```
+
 ### Upgrade from an earlier layout
 
 Before 0.105.0, the compose files built the images, mounted `app/haiku.rag.yaml` as one file, and mounted the database itself at `/data` from `DB_VOLUME`. To move to this layout:

@@ -11,10 +11,12 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ARG BASE_PATH
 RUN pnpm build
 
 FROM base AS runner
 ARG VERSION
+ARG BASE_PATH
 LABEL org.opencontainers.image.source="https://github.com/ggozad/haiku.rag" \
       org.opencontainers.image.version="${VERSION}"
 WORKDIR /app
@@ -34,9 +36,10 @@ EXPOSE 3000
 
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV BASE_PATH="${BASE_PATH}"
 
 # 127.0.0.1, not localhost: busybox wget resolves localhost to ::1, where the server does not listen.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD ["wget", "-q", "--spider", "http://127.0.0.1:3000/"]
+    CMD wget -q --spider "http://127.0.0.1:3000${BASE_PATH:-/}"
 
 CMD ["node", "server.js"]
