@@ -207,7 +207,7 @@ async def test_staleness_is_unknown_while_the_database_is_unavailable(
     async def unavailable(name):
         raise HTTPException(503, "gone")
 
-    monkeypatch.setattr(app.state.databases, "reader", unavailable)
+    monkeypatch.setattr(app.state.configuration.current, "reader", unavailable)
     projection = (await client.get("/api/doctor/alpha/projection")).json()["projection"]
     assert projection["stale"] is None
 

@@ -18,7 +18,7 @@ def configured_ref(request: Request) -> DatabaseRef:
     """The configured database the path names, refused at a tag: the doctor
     reads the live state only."""
     name = request.path_params["source"]
-    scope = request.app.state.databases.scope
+    scope = request.state.databases.scope
     ref = next((r for r in scope.databases if r.name == name), None)
     if ref is None:
         raise HTTPException(404, f"unknown database {name!r}")
@@ -138,7 +138,7 @@ async def get_projection(request: Request) -> JSONResponse:
 
 async def _stale(request: Request, name: str, versions: dict) -> bool | None:
     try:
-        owner = await request.app.state.databases.reader(name)
+        owner = await request.state.databases.reader(name)
         # The ingester writes from another process: read its latest versions.
         for table in versions:
             await getattr(owner.store, f"{table}_table").checkout_latest()

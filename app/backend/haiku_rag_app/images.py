@@ -51,7 +51,7 @@ async def picture(request: Request) -> Response:
     document_id, ref = params.get("document_id"), params.get("ref")
     if not document_id or not ref:
         raise HTTPException(400, "document_id and ref are required")
-    owner = await request.app.state.databases.reader(params.get("source"))
+    owner = await request.state.databases.reader(params.get("source"))
     data = await owner.get_picture_bytes(document_id, ref)
     if data is None:
         raise HTTPException(404, f"no picture {ref!r} in document {document_id!r}")
@@ -72,7 +72,7 @@ async def visualize(request: Request) -> JSONResponse:
     `refs` the JSON list of the items the model saw, drawn instead of
     re-expanding.
     """
-    owner = await request.app.state.databases.reader(request.query_params.get("source"))
+    owner = await request.state.databases.reader(request.query_params.get("source"))
     refs: list[str] | None = None
     if refs_param := request.query_params.get("refs"):
         try:

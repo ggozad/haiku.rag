@@ -36,7 +36,7 @@ async def served(
         ) as http:
             yield app, http
     finally:
-        await app.state.databases.aclose()
+        await app.state.configuration.aclose()
         await app.state.sessions.aclose()
 
 

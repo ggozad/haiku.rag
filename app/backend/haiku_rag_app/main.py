@@ -2,18 +2,26 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config import AppConfig, get_config
 from haiku_rag_app import chat, doctor, images, inspect, jobs, projection, sessions
 from haiku_rag_app.sessions import Sessions
+
+if TYPE_CHECKING:
+    from pydantic_ai import Agent
+
+    from haiku_rag_app.chat import ChatDeps
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +38,8 @@ class Databases:
         self.scope = DatabaseScope.resolve(config)
         self._client: HaikuRAG | None = None
         self._lock = asyncio.Lock()
+        self.agent: Agent[ChatDeps, str] | None = None
+        self.agent_lock = asyncio.Lock()
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -71,6 +81,30 @@ class Databases:
             self._client = None
 
 
+class Configuration:
+    """The database set requests are served from."""
+
+    def __init__(self, config: AppConfig) -> None:
+        self.current = Databases(config)
+
+    async def aclose(self) -> None:
+        await self.current.aclose()
+
+
+class PinDatabases:
+    """Serves each request from the database set current when it started, read
+    as `request.state.databases` until its response ends."""
+
+    def __init__(self, app: ASGIApp, configuration: Configuration) -> None:
+        self.app = app
+        self.configuration = configuration
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            scope.setdefault("state", {})["databases"] = self.configuration.current
+        await self.app(scope, receive, send)
+
+
 async def health(request: Request) -> JSONResponse:
     config: AppConfig = request.app.state.config
     return JSONResponse(
@@ -79,7 +113,7 @@ async def health(request: Request) -> JSONResponse:
             "qa_provider": config.qa.model.provider,
             "qa_model": config.qa.model.name,
             "vision": config.qa.model.vision,
-            "databases": list(request.app.state.databases.names),
+            "databases": list(request.state.databases.names),
         }
     )
 
@@ -88,7 +122,7 @@ async def list_databases(request: Request) -> JSONResponse:
     """Each configured database with its availability and size."""
     from haiku.rag.store.info import get_database_stats
 
-    databases: Databases = request.app.state.databases
+    databases: Databases = request.state.databases
     entries = []
     for name in databases.names:
         try:
@@ -121,7 +155,7 @@ async def http_error(_: Request, error: Exception) -> JSONResponse:
 
 
 def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlette:
-    databases = Databases(config)
+    configuration = Configuration(config)
     session_store = Sessions(sessions_path or sessions.default_path())
 
     @asynccontextmanager
@@ -129,7 +163,7 @@ def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlett
         try:
             yield
         finally:
-            await databases.aclose()
+            await configuration.aclose()
             await session_store.aclose()
 
     app = Starlette(
@@ -142,19 +176,18 @@ def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlett
             *inspect.routes,
             *doctor.routes,
         ],
+        middleware=[Middleware(PinDatabases, configuration=configuration)],
         exception_handlers={HTTPException: http_error},
         lifespan=lifespan,
     )
     app.state.config = config
-    app.state.databases = databases
+    app.state.configuration = configuration
     app.state.sessions = session_store
     app.state.jobs = jobs.Jobs()
     app.state.retained = projection.Retained()
-    app.state.agent = None
-    app.state.agent_lock = asyncio.Lock()
     logger.info(
         "Databases: %s; QA model: %s/%s",
-        ", ".join(databases.names),
+        ", ".join(configuration.current.names),
         config.qa.model.provider,
         config.qa.model.name,
     )

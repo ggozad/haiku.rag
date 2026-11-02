@@ -97,12 +97,12 @@ async def test_one_database_is_read_without_a_name(tmp_path, seed_database):
 @pytest.mark.parametrize("error", [None, RuntimeError("shutdown")])
 async def test_the_lifespan_closes_the_databases(app, client, error):
     await client.get("/api/databases")
-    assert app.state.databases._client is not None
+    assert app.state.configuration.current._client is not None
     with pytest.raises(RuntimeError) if error else nullcontext():
         async with app.router.lifespan_context(app):
             if error:
                 raise error
-    assert app.state.databases._client is None
+    assert app.state.configuration.current._client is None
 
 
 async def test_the_served_app_is_configured_from_the_environment(monkeypatch, tmp_path):

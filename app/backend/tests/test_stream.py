@@ -10,8 +10,14 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 
+from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku_rag_app.chat import agent_for
+from haiku_rag_app.main import Databases
 from tests.support import image_bytes, png, served
+
+
+async def served_agent(app):
+    return await agent_for(app.state.configuration.current, app.state.config)
 
 
 async def _answer(
@@ -93,7 +99,7 @@ async def _select_present(client, session_id: str, ids: dict) -> None:
 
 
 async def _run(app, client, session_id, run_id, messages, model=None, **extra):
-    agent = await agent_for(app)
+    agent = await served_agent(app)
     model = model or FunctionModel(stream_function=_answer)
     with agent.override(model=model):
         response = await client.post(
@@ -119,6 +125,48 @@ async def test_a_finished_turn_is_committed_with_its_run(app, client):
     assert session["runs"]["run-1"]["summary"]["citation_status"] == "missing"
     assert session["in_flight_run_id"] is None
     assert "rag" in session["state"]
+
+
+async def test_a_turn_runs_on_the_database_set_it_started_on(
+    monkeypatch, tmp_path, app, client, seeded, query_embedding
+):
+    _, ids = seeded
+    alpha_chunk = ids["alpha"]["chunk_id"]
+    session_id = await _session(client)
+    await _select_present(client, session_id, ids)
+    started = app.state.configuration.current
+    agent = await served_agent(app)
+    sessions = app.state.sessions
+    entered, release = asyncio.Event(), asyncio.Event()
+    get = sessions.get
+
+    async def held(session_id):
+        entered.set()
+        await release.wait()
+        return await get(session_id)
+
+    monkeypatch.setattr(sessions, "get", held)
+    with agent.override(model=FunctionModel(stream_function=_scripted(alpha_chunk))):
+        turn = asyncio.create_task(
+            client.post(
+                "/v1/chat/stream", json=_input(session_id, "run-1", [_user("u1")])
+            )
+        )
+        await entered.wait()
+        app.state.configuration.current = Databases(
+            AppConfig(
+                lancedb=LanceDBConfig(
+                    databases={"gamma": str(tmp_path / "gamma.lancedb")}
+                )
+            )
+        )
+        release.set()
+        response = await turn
+    try:
+        summary = next(e for e in _events(response.text) if e["type"] == "CUSTOM")
+        assert summary["value"] == {"citation_status": "grounded", "violation": False}
+    finally:
+        await started.aclose()
 
 
 async def test_a_second_turn_runs_on_the_stored_history_and_state(
@@ -196,7 +244,7 @@ async def test_runs_on_different_sessions_proceed_together(app, client):
         await release.wait()
         yield "Done."
 
-    agent = await agent_for(app)
+    agent = await served_agent(app)
     first, second = await _session(client), await _session(client)
     with agent.override(model=FunctionModel(stream_function=held)):
         runs = [
@@ -282,12 +330,12 @@ async def test_one_database_scopes_by_id_alone(tmp_path, seed_database):
 async def test_the_agent_borrows_the_apps_client(app):
     from haiku.rag.capabilities.rag import RAGCapability
 
-    agent = await agent_for(app)
-    assert await agent_for(app) is agent
+    agent = await served_agent(app)
+    assert await served_agent(app) is agent
     [capability] = [
         c for c in agent.root_capability.capabilities if isinstance(c, RAGCapability)
     ]
-    assert capability.borrowed_rag is await app.state.databases.covering()
+    assert capability.borrowed_rag is await app.state.configuration.current.covering()
 
 
 async def test_chat_is_unavailable_while_the_database_is(tmp_path):
@@ -322,7 +370,7 @@ async def test_events_reach_the_client_while_the_model_is_still_answering(app):
     run_input = AGUIAdapter.build_run_input(
         json.dumps(_input(session_id, "run-1", [_user("u1")])).encode()
     )
-    agent = await agent_for(app)
+    agent = await served_agent(app)
     adapter = AGUIAdapter(agent=agent, run_input=run_input)
     app.state.sessions.admit(session_id, "run-1")
     with agent.override(model=FunctionModel(stream_function=held)):
@@ -370,7 +418,7 @@ async def test_a_commit_lands_when_the_run_is_cancelled_during_it(app, monkeypat
     run_input = AGUIAdapter.build_run_input(
         json.dumps(_input(session_id, "run-1", [_user("u1")])).encode()
     )
-    agent = await agent_for(app)
+    agent = await served_agent(app)
     adapter = AGUIAdapter(agent=agent, run_input=run_input)
     sessions.admit(session_id, "run-1")
     events = chat_events(
@@ -459,7 +507,7 @@ async def test_a_client_leaving_mid_run_cancels_it_and_stores_nothing(app, tmp_p
     serving = asyncio.ensure_future(server.serve())
     while not server.started:
         await asyncio.sleep(0.01)
-    agent = await agent_for(app)
+    agent = await served_agent(app)
     try:
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as http:
             session_id = (await http.post("/api/sessions")).json()["id"]
