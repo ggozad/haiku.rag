@@ -6,9 +6,10 @@ A browser application over haiku.rag: chat over every configured database, the i
 
 ```bash
 cd app
-cp .env.example .env                      # API keys, host paths, the ingester token
-cp haiku.rag.yaml.example haiku.rag.yaml  # models, database at /data, ingester source /docs
-docker compose up -d --build              # or docker-compose.dev.yml for hot reload
+cp .env.example .env                                          # API keys, host paths, the ingester token
+cp config/haiku.rag.yaml.example config/haiku.rag.yaml        # models, databases under /data, ingester source /docs
+docker compose up -d                                          # published images of this release
+docker compose -f docker-compose.dev.yml up -d --build        # or images built from the checkout, with hot reload
 ```
 
 The frontend is at `http://localhost:3000`, the backend at `http://localhost:8001` and the ingester at `http://localhost:8765`.
@@ -17,9 +18,10 @@ The frontend is at `http://localhost:3000`, the backend at `http://localhost:800
 
 - **backend**: the `haiku_rag_app` package, a Starlette app. It opens one read-only client over every configured database on first use, and retries a database that failed to open. `POST /reload` reads `haiku.rag.yaml` and its database fragments again and serves the databases they place. A request keeps the databases it started with, and the replaced client closes when the last such request ends.
 - **ingester**: `haiku-ingester serve`, the only writer of LanceDB. The example configuration ingests the documents mounted at `/docs` into `haiku.rag`. With several databases, it writes each one listed under `ingester.databases`, and the ingestion page names each source's database. One process serves them all: if one database fails to open, the ingester starts for none of them, and the backend keeps serving the others.
+- **docling-serve**: converts and chunks documents for the ingester. The published ingester image, `haiku.rag-slim`, has no local docling.
 - **frontend**: Next.js. It proxies the backend at `/api/backend/*`. It refuses the backend's `/reload`. At `/api/ingester/*` it proxies the ingester, adds `INGESTER_TOKEN` as a bearer token, and forwards only these writes: refresh a source, retry a job or a dead letter, and cancel a job.
 
-The backend and the ingester both read `haiku.rag.yaml`. The example configuration references `${INGESTER_TOKEN}`, so both require it.
+The backend and the ingester both read `config/haiku.rag.yaml`, mounted with its directory at `/app/config`, and the fragments in `config/databases/`. They mount `DATA_DIR` at `/data`, the backend read-only. The example configuration references `${INGESTER_TOKEN}`, so both require it.
 
 ## Sessions
 

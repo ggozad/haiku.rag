@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -71,3 +72,35 @@ def test_the_app_carries_the_package_version():
     assert (
         json.loads(frontend.read_text(encoding="utf-8"))["version"] == package_version
     )
+
+
+def test_update_compose_version_rewrites_the_image_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    compose = tmp_path / "docker-compose.yml"
+    compose.write_text(
+        "services:\n"
+        "  backend:\n"
+        "    image: ghcr.io/ggozad/haiku.rag-app-backend:${HAIKU_RAG_VERSION:-0.1.0}\n"
+        "  docling-serve:\n"
+        "    image: quay.io/docling-project/docling-serve:v1.38.0\n"
+    )
+
+    bump_version.update_compose_version(compose, "0.2.0")
+
+    assert compose.read_text() == (
+        "services:\n"
+        "  backend:\n"
+        "    image: ghcr.io/ggozad/haiku.rag-app-backend:${HAIKU_RAG_VERSION:-0.2.0}\n"
+        "  docling-serve:\n"
+        "    image: quay.io/docling-project/docling-serve:v1.38.0\n"
+    )
+
+
+def test_the_published_compose_file_defaults_to_the_package_version():
+    root = Path(__file__).resolve().parents[1]
+    package_version = bump_version.get_current_version(
+        root / "haiku_rag_slim" / "pyproject.toml"
+    )
+    compose = (root / "app" / "docker-compose.yml").read_text(encoding="utf-8")
+    defaults = re.findall(r"\$\{HAIKU_RAG_VERSION:-([^}]+)\}", compose)
+    assert defaults == [package_version] * 3

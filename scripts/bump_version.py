@@ -3,7 +3,7 @@
 Version bumping script for haiku.rag workspace.
 
 Updates version in all pyproject.toml files, both plugin manifests, the web
-app's package.json, and CHANGELOG.md.
+app's package.json and image tags, and CHANGELOG.md.
 """
 
 import re
@@ -63,6 +63,16 @@ def update_manifest_version(file_path: Path, new_version: str) -> None:
         rf'\1"{new_version}"',
         content,
         flags=re.MULTILINE,
+    )
+    file_path.write_text(updated)
+    print(f"✓ Updated {file_path.relative_to(Path.cwd())}")
+
+
+def update_compose_version(file_path: Path, new_version: str) -> None:
+    """Update the default image tag in a compose file."""
+    content = file_path.read_text()
+    updated = re.sub(
+        r"(\$\{HAIKU_RAG_VERSION:-)[^}]+\}", rf"\g<1>{new_version}}}", content
     )
     file_path.write_text(updated)
     print(f"✓ Updated {file_path.relative_to(Path.cwd())}")
@@ -142,11 +152,15 @@ def main():
         root / "plugins" / "haiku-rag" / ".codex-plugin" / "plugin.json",
         root / "app" / "frontend" / "package.json",
     ]
+    compose_file = root / "app" / "docker-compose.yml"
     changelog_file = root / "CHANGELOG.md"
 
     # Check all files exist
     for file in (
-        pyproject_files + example_pyproject_files + manifest_files + [changelog_file]
+        pyproject_files
+        + example_pyproject_files
+        + manifest_files
+        + [compose_file, changelog_file]
     ):
         if not file.exists():
             print(f"Error: {file} not found")
@@ -179,6 +193,8 @@ def main():
 
     for file in manifest_files:
         update_manifest_version(file, new_version)
+
+    update_compose_version(compose_file, new_version)
 
     # Update CHANGELOG.md
     update_changelog(changelog_file, new_version)

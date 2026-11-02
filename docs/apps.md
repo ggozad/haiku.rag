@@ -9,42 +9,80 @@ The web app is a browser interface to a haiku.rag knowledge base. In it you ask 
 
 ## Set it up
 
-The app runs with Docker Compose from the `app/` directory of the repository. Copy the two example files:
+The app runs with Docker Compose from the `app/` directory of the repository, on published images: `ghcr.io/ggozad/haiku.rag-app-backend`, `ghcr.io/ggozad/haiku.rag-app-frontend` and `ghcr.io/ggozad/haiku.rag-slim` for the ingester. Releases from 0.105.0 publish them. Copy the two example files:
 
 ```bash
 cd app
 cp .env.example .env
-cp haiku.rag.yaml.example haiku.rag.yaml
+cp config/haiku.rag.yaml.example config/haiku.rag.yaml
 ```
 
-`.env` contains the API keys and two paths on your machine: `DB_VOLUME` for the database and `DOCS_VOLUME` for the documents to ingest. It also contains `INGESTER_TOKEN`, a secret that the frontend sends to the ingester. Both the backend and the ingester require it.
+`.env` contains the API keys and three directories on your machine: `CONFIG_DIR` for the configuration (default `./config`), `DATA_DIR` for the databases (default `./data`) and `DOCS_VOLUME` for the documents to ingest (default `./docs`). It also contains `INGESTER_TOKEN`, a secret that the frontend sends to the ingester. Both the backend and the ingester require it.
 
-`haiku.rag.yaml` is a haiku.rag [configuration](configuration/index.md): the models, the database and the ingester's source. The example expects Ollama with `gpt-oss` and `qwen3-embedding:4b`.
+`config/haiku.rag.yaml` is a haiku.rag [configuration](configuration/index.md): the models, the databases and the ingester's source. The example expects Ollama with `gpt-oss` and `qwen3-embedding:4b`, and converts documents on the `docling-serve` service. It places the database `haiku.rag` at `/data/haiku.rag.lancedb`, inside `DATA_DIR`.
 
 Edit both files for your paths, token and models. Then start the app and open `http://localhost:3000`:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
-Three services run: a backend that reads the database, the [ingester](ingester.md), which writes it, and the frontend.
+Four services run: a backend that reads the databases, the [ingester](ingester.md), which writes them, docling-serve, which converts documents for the ingester, and the frontend.
 
-The backend runs as uid 1001. A `sessions` volume created by a backend that ran as root holds a root-owned session file, and saving a session fails until you change its owner once:
+The compose file names the images of its own release. `HAIKU_RAG_VERSION` in `.env` selects another release for all three. The backend opens a database only when its haiku.rag version supports the database's schema, so keep the backend and the ingester on one release.
+
+To build the images from the checkout instead, use the development compose file, which also reloads the backend's code on change:
 
 ```bash
-docker compose run --rm --user root backend chown -R 1001:1001 /sessions
+docker compose -f docker-compose.dev.yml up -d --build
 ```
 
-To work across several databases, list them under `lancedb.databases` (see [Multiple databases](configuration/multiple-databases.md)), and mount each one into the `backend` and `ingester` services. Chat searches all of them, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources)).
+### Add databases
 
-A database added to the configuration, in `haiku.rag.yaml` or a [database fragment](configuration/index.md#database-fragments), reaches the app without a restart when both services already mount the directory that holds it. Adding a volume recreates the container, and the example Compose file mounts `DB_VOLUME` as the database itself. To add databases while the app runs, mount one parent directory into both services, for example at `/data`, and place every `lancedb.databases` entry under it. Then, for each new database, reload the ingester and the backend:
+Every database lives in `DATA_DIR`, mounted at `/data`, so a new one needs no new mount. A database on object storage (`s3://…`) needs no mount at all. Add one as a [database fragment](configuration/index.md#database-fragments) in `config/databases/`, for example `config/databases/papers.yaml`:
+
+```yaml
+lancedb:
+  databases:
+    papers: /data/papers.lancedb
+
+ingester:
+  databases:
+    papers:
+      sources:
+        - type: fs
+          id: papers
+          root: /docs/papers
+```
+
+Then reload the ingester and the backend. Both read the configuration directory again:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $INGESTER_TOKEN" http://localhost:8765/reload
 curl -X POST http://localhost:8001/reload
 ```
 
-The backend's reload applies `lancedb.databases` only. It answers 409 and names the sections when another one changed, since those need a restart, and ignores the `ingester` section. A chat turn whose session selects documents of a removed database fails and names that database. The example Compose files mount `haiku.rag.yaml` as a single file: an editor that replaces the file on save leaves the containers reading the old one, so edit it in place or mount its directory.
+Chat searches every database, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources) and [Multiple databases](configuration/multiple-databases.md)).
+
+The backend's reload applies `lancedb.databases` only. It answers 409 and names the sections when another one changed, since those need a restart, and ignores the `ingester` section. A chat turn whose session selects documents of a removed database fails and names that database.
+
+### Upgrade from an earlier layout
+
+Before 0.105.0, the compose files built the images, mounted `app/haiku.rag.yaml` as one file, and mounted the database itself at `/data` from `DB_VOLUME`. To move to this layout:
+
+1. Move `app/haiku.rag.yaml` to `app/config/haiku.rag.yaml`.
+2. If you set `DB_VOLUME`, set `DATA_DIR` to its parent directory. The default `./data/haiku.rag.lancedb` needs nothing.
+3. In `haiku.rag.yaml`, place `haiku.rag` at `/data/` followed by the name of the directory `DB_VOLUME` named, instead of `/data`. With the default, that is `/data/haiku.rag.lancedb`.
+4. For the published images, set `processing.converter` and `processing.chunker` to `docling-serve` and `providers.docling_serve.base_url` to `http://docling-serve:5001`, as the example does. The published ingester image has no local docling.
+5. To add databases as fragments in `config/databases/`, add `databases_include: databases` to `haiku.rag.yaml`. Without it, the services ignore the fragments.
+
+Check step 3 before the first start. With `haiku.rag` left at `/data`, the ingester creates an empty database directly in `DATA_DIR` and ingests every document into it again. The app then shows only that copy, and table directories such as `documents.lance` and `chunks.lance` appear directly in `DATA_DIR`. The original database stays in `haiku.rag.lancedb`. To return to it, stop the app, fix the location, remove the `*.lance` directories at the top of `DATA_DIR` and nothing inside `haiku.rag.lancedb`, and start the app again.
+
+The backend runs as uid 1001. A `sessions` volume created by a backend that ran as root holds a root-owned session file, and saving a session fails until you change its owner once:
+
+```bash
+docker compose run --rm --user root backend chown -R 1001:1001 /sessions
+```
 
 ## Ask questions
 

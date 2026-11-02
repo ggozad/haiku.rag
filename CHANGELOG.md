@@ -11,6 +11,7 @@
 ### Changed
 
 - A PDF's `after_ingest` fires after its attachments' and carries `md5`, and `source_revision` when the source supplies one (#790).
+- The web app's `docker-compose.yml` runs the published images and a docling-serve service, mounting the configuration directory `CONFIG_DIR` and the databases directory `DATA_DIR`. `docker-compose.dev.yml` builds the images. Move `app/haiku.rag.yaml` to `app/config/haiku.rag.yaml`, point `DATA_DIR` at the parent of a custom `DB_VOLUME`, place `haiku.rag` at `/data/<database directory>` (default `/data/haiku.rag.lancedb`), and set `processing.converter` and `processing.chunker` to `docling-serve` for the published images.
 - The web app's backend image runs as uid 1001. An existing `sessions` volume needs `docker compose run --rm --user root backend chown -R 1001:1001 /sessions` once.
 
 ### Fixed

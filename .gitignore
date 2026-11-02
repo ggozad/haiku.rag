@@ -45,3 +45,5 @@ CLAUDE.local.md
 
 # Vacuum investigation scratch: kept on disk, never committed
 vacuum-findings/
+app/data/
+app/docs/
