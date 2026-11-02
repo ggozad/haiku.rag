@@ -17,6 +17,7 @@ import {
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { type Check, counts, ordered, type Severity } from "@/lib/doctor";
+import { withBasePath } from "@/lib/paths";
 import { useJob } from "./useJob";
 
 const SEVERITY: Record<
@@ -81,7 +82,9 @@ export default function ChecksPanel({
 	// The memory figure is shown, so the operator can decide.
 	ready: boolean;
 }) {
-	const base = `/api/backend/api/doctor/${encodeURIComponent(source)}`;
+	const base = withBasePath(
+		`/api/backend/api/doctor/${encodeURIComponent(source)}`,
+	);
 	const { job, error, start } = useJob<{ results: Check[] }>(base, "run");
 	const [providers, setProviders] = useState(true);
 	const busy = job?.status === "queued" || job?.status === "running";

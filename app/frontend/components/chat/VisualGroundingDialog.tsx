@@ -9,6 +9,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import type { Citation } from "@/lib/chat";
+import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 
 export function visualizeUrl(citation: Citation): string {
@@ -20,7 +21,9 @@ export function visualizeUrl(citation: Citation): string {
 	if (citation.doc_item_refs?.length) {
 		query.set("refs", JSON.stringify(citation.doc_item_refs));
 	}
-	return `/api/backend/api/visualize/${encodeURIComponent(chunkIds)}?${query}`;
+	return withBasePath(
+		`/api/backend/api/visualize/${encodeURIComponent(chunkIds)}?${query}`,
+	);
 }
 
 export default function VisualGroundingDialog({

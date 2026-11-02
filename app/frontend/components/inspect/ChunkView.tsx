@@ -6,6 +6,7 @@ import { Loading } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { firstLine, type Item } from "@/lib/inspect";
+import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 
 export interface ChunkRef {
@@ -108,8 +109,12 @@ export default function ChunkView({
 	actions?: React.ReactNode;
 }) {
 	const tab = VIEWS.includes(view) ? view : "details";
-	const documentBase = `/api/backend/api/inspect/${encodeURIComponent(ref.source)}/documents/${encodeURIComponent(ref.documentId)}`;
-	const base = `/api/backend/api/inspect/${encodeURIComponent(ref.source)}/chunks/${encodeURIComponent(ref.chunkId)}`;
+	const documentBase = withBasePath(
+		`/api/backend/api/inspect/${encodeURIComponent(ref.source)}/documents/${encodeURIComponent(ref.documentId)}`,
+	);
+	const base = withBasePath(
+		`/api/backend/api/inspect/${encodeURIComponent(ref.source)}/chunks/${encodeURIComponent(ref.chunkId)}`,
+	);
 	const chunk = useJson<ChunkRow>(base);
 	const items = useJson<{ items: Pick<Item, "chunk_ids">[] }>(
 		`${documentBase}/items`,
@@ -124,7 +129,9 @@ export default function ChunkView({
 	const context = useJson<Context>(tab === "agent" ? `${base}/context` : null);
 	const grounding = useJson<{ images: string[]; message: string | null }>(
 		tab === "grounding"
-			? `/api/backend/api/visualize/${encodeURIComponent(ref.chunkId)}?source=${encodeURIComponent(ref.source)}`
+			? withBasePath(
+					`/api/backend/api/visualize/${encodeURIComponent(ref.chunkId)}?source=${encodeURIComponent(ref.source)}`,
+				)
 			: null,
 	);
 	const similar = useJson<Similar>(
@@ -136,7 +143,9 @@ export default function ChunkView({
 			)
 		: [];
 	const pictureUrl = (ref_: string) =>
-		`/api/backend/api/pictures?${new URLSearchParams({ source: ref.source, document_id: ref.documentId, ref: ref_ })}`;
+		withBasePath(
+			`/api/backend/api/pictures?${new URLSearchParams({ source: ref.source, document_id: ref.documentId, ref: ref_ })}`,
+		);
 
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">

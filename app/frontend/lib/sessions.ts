@@ -1,8 +1,9 @@
 import type { Message } from "@ag-ui/client";
 import type { DocumentRef, Evidence } from "./chat";
 import { decoded } from "./http";
+import { withBasePath } from "./paths";
 
-const BASE = "/api/backend/api/sessions";
+const BASE = withBasePath("/api/backend/api/sessions");
 
 export interface SessionSummary {
 	id: string;

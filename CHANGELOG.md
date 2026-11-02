@@ -7,6 +7,7 @@
 - Ingester dashboard: "Processed in" column in recent jobs, the time from the last attempt's claim to completion (#789).
 - Web app: `POST /reload` on the backend reads the configuration and its database fragments again and serves the `lancedb.databases` they place (#795).
 - Docker images `ghcr.io/ggozad/haiku.rag-app-backend` and `ghcr.io/ggozad/haiku.rag-app-frontend`, tagged with the package version and `latest` (#791).
+- Web app: `BASE_PATH` at build time serves the frontend under a URL prefix (#794).
 
 ### Changed
 

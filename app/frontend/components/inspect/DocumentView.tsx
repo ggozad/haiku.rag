@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { blocksOf, type Item, type OutlineNode } from "@/lib/inspect";
+import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import ChunksTab, { type ChunkPage, PAGE } from "./ChunksTab";
 import ContentTab from "./ContentTab";
@@ -50,7 +51,9 @@ export default function DocumentView({
 	actions?: React.ReactNode;
 }) {
 	const { tab, offset, page, item } = state;
-	const base = `/api/backend/api/inspect/${encodeURIComponent(source)}/documents/${encodeURIComponent(documentId)}`;
+	const base = withBasePath(
+		`/api/backend/api/inspect/${encodeURIComponent(source)}/documents/${encodeURIComponent(documentId)}`,
+	);
 	const doc = useJson<DocumentInfo>(base);
 	const items = useJson<{ items: Item[] }>(`${base}/items`);
 	const outline = useJson<{ outline: OutlineNode[] }>(`${base}/outline`);
@@ -69,7 +72,9 @@ export default function DocumentView({
 	);
 
 	const pictureUrl = (ref: string) =>
-		`/api/backend/api/pictures?${new URLSearchParams({ source, document_id: documentId, ref })}`;
+		withBasePath(
+			`/api/backend/api/pictures?${new URLSearchParams({ source, document_id: documentId, ref })}`,
+		);
 
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">

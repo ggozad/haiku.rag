@@ -22,6 +22,7 @@ import {
 } from "@/lib/chat";
 import { useDatabases } from "@/lib/databases";
 import { type Attachment, MAX_IMAGES, userContent } from "@/lib/images";
+import { withBasePath } from "@/lib/paths";
 import {
 	getSession,
 	reconcile,
@@ -47,7 +48,7 @@ function ChatSession({
 	const [agent] = useState(
 		() =>
 			new HttpAgent({
-				url: "/api/backend/v1/chat/stream",
+				url: withBasePath("/api/backend/v1/chat/stream"),
 				threadId: sessionId,
 				initialMessages: initial.messages,
 				initialState: initial.state,

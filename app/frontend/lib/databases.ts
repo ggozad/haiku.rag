@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { decoded } from "./http";
+import { withBasePath } from "./paths";
 
 export interface DatabaseEntry {
 	name: string;
@@ -41,7 +42,7 @@ export function databasesSnapshot(): DatabasesSnapshot {
 // Reads the configured databases once for every concurrent caller. A failure
 // keeps the last list and reports the error beside it.
 export function refreshDatabases(): Promise<void> {
-	pending ??= fetch("/api/backend/api/databases")
+	pending ??= fetch(withBasePath("/api/backend/api/databases"))
 		.then(async (res) => {
 			publish({ info: await decoded<DatabasesInfo>(res), error: null });
 		})
