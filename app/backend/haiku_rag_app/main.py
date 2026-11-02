@@ -1,19 +1,34 @@
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
+from starlette.middleware import Middleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.scope import DatabaseScope
-from haiku.rag.config import AppConfig, get_config
+from haiku.rag.config import (
+    AppConfig,
+    changed_sections,
+    find_config_file,
+    get_config,
+    load_yaml_config,
+)
 from haiku_rag_app import chat, doctor, images, inspect, jobs, projection, sessions
 from haiku_rag_app.sessions import Sessions
+
+if TYPE_CHECKING:
+    from pydantic_ai import Agent
+
+    from haiku_rag_app.chat import ChatDeps
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +45,9 @@ class Databases:
         self.scope = DatabaseScope.resolve(config)
         self._client: HaikuRAG | None = None
         self._lock = asyncio.Lock()
+        self.agent: Agent[ChatDeps, str] | None = None
+        self.agent_lock = asyncio.Lock()
+        self.requests = 0
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -71,6 +89,96 @@ class Databases:
             self._client = None
 
 
+class Configuration:
+    """The database set requests are served from, replaced by `reload`.
+
+    A replaced set closes once the last request using it ends.
+    """
+
+    def __init__(self, config: AppConfig, path: Path | None = None) -> None:
+        self.path = path
+        self.current = Databases(config)
+        self._closing: set[asyncio.Task] = set()
+        self._reload_lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def use(self) -> AsyncIterator[Databases]:
+        databases = self.current
+        databases.requests += 1
+        try:
+            yield databases
+        finally:
+            databases.requests -= 1
+            self._close_if_unused(databases)
+
+    def _close_if_unused(self, databases: Databases) -> None:
+        if databases.requests == 0 and databases is not self.current:
+            task = asyncio.ensure_future(databases.aclose())
+            self._closing.add(task)
+            task.add_done_callback(self._closing.discard)
+
+    async def reload(self) -> dict[str, list[str]]:
+        """Read the configuration file again and serve its `lancedb.databases`."""
+        if self.path is None:
+            raise HTTPException(
+                409, "the app was started without a configuration file to reload"
+            )
+        async with self._reload_lock:
+            return await self._reload(self.path)
+
+    async def _reload(self, path: Path) -> dict[str, list[str]]:
+        try:
+            config = AppConfig.model_validate(
+                await asyncio.to_thread(load_yaml_config, path)
+            )
+            databases = Databases(config)
+        except Exception as error:
+            raise HTTPException(422, f"{path}: {error}") from error
+        changed = changed_sections(
+            self.current.config,
+            config,
+            ignored={"lancedb": {"databases"}, "ingester": True},
+        )
+        if changed:
+            raise HTTPException(
+                409,
+                f"{', '.join(changed)} changed, and only lancedb.databases is "
+                "reloaded. Restart to apply the rest",
+            )
+        replaced = self.current
+        before = {ref.name: ref for ref in replaced.scope.databases}
+        after = {ref.name: ref for ref in databases.scope.databases}
+        if databases.scope != replaced.scope:
+            self.current = databases
+            self._close_if_unused(replaced)
+            logger.info("Reloaded databases: %s", ", ".join(databases.names))
+        return {
+            "added": [name for name, ref in after.items() if before.get(name) != ref],
+            "removed": [name for name, ref in before.items() if after.get(name) != ref],
+            "databases": list(self.current.names),
+        }
+
+    async def aclose(self) -> None:
+        await asyncio.gather(*self._closing)
+        await self.current.aclose()
+
+
+class PinDatabases:
+    """Serves each request from the database set current when it started, read
+    as `request.state.databases` until its response ends."""
+
+    def __init__(self, app: ASGIApp, configuration: Configuration) -> None:
+        self.app = app
+        self.configuration = configuration
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        async with self.configuration.use() as databases:
+            scope.setdefault("state", {})["databases"] = databases
+            await self.app(scope, receive, send)
+
+
 async def health(request: Request) -> JSONResponse:
     config: AppConfig = request.app.state.config
     return JSONResponse(
@@ -79,7 +187,7 @@ async def health(request: Request) -> JSONResponse:
             "qa_provider": config.qa.model.provider,
             "qa_model": config.qa.model.name,
             "vision": config.qa.model.vision,
-            "databases": list(request.app.state.databases.names),
+            "databases": list(request.state.databases.names),
         }
     )
 
@@ -88,7 +196,7 @@ async def list_databases(request: Request) -> JSONResponse:
     """Each configured database with its availability and size."""
     from haiku.rag.store.info import get_database_stats
 
-    databases: Databases = request.app.state.databases
+    databases: Databases = request.state.databases
     entries = []
     for name in databases.names:
         try:
@@ -115,13 +223,22 @@ async def list_databases(request: Request) -> JSONResponse:
     )
 
 
+async def reload(request: Request) -> JSONResponse:
+    """Read the configuration file again and serve the databases it places."""
+    return JSONResponse(await request.app.state.configuration.reload())
+
+
 async def http_error(_: Request, error: Exception) -> JSONResponse:
     assert isinstance(error, HTTPException)
     return JSONResponse({"error": error.detail}, status_code=error.status_code)
 
 
-def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlette:
-    databases = Databases(config)
+def create_app(
+    config: AppConfig,
+    sessions_path: Path | None = None,
+    config_path: Path | None = None,
+) -> Starlette:
+    configuration = Configuration(config, config_path)
     session_store = Sessions(sessions_path or sessions.default_path())
 
     @asynccontextmanager
@@ -129,32 +246,32 @@ def create_app(config: AppConfig, sessions_path: Path | None = None) -> Starlett
         try:
             yield
         finally:
-            await databases.aclose()
+            await configuration.aclose()
             await session_store.aclose()
 
     app = Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
             Route("/api/databases", list_databases, methods=["GET"]),
+            Route("/reload", reload, methods=["POST"]),
             *chat.routes,
             *images.routes,
             *sessions.routes,
             *inspect.routes,
             *doctor.routes,
         ],
+        middleware=[Middleware(PinDatabases, configuration=configuration)],
         exception_handlers={HTTPException: http_error},
         lifespan=lifespan,
     )
     app.state.config = config
-    app.state.databases = databases
+    app.state.configuration = configuration
     app.state.sessions = session_store
     app.state.jobs = jobs.Jobs()
     app.state.retained = projection.Retained()
-    app.state.agent = None
-    app.state.agent_lock = asyncio.Lock()
     logger.info(
         "Databases: %s; QA model: %s/%s",
-        ", ".join(databases.names),
+        ", ".join(configuration.current.names),
         config.qa.model.provider,
         config.qa.model.name,
     )
@@ -173,4 +290,4 @@ def app() -> Starlette:
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    return create_app(get_config())
+    return create_app(get_config(), config_path=find_config_file())

@@ -1,14 +1,13 @@
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ag_ui.core import BaseEvent, CustomEvent, EventType, Message, StateSnapshotEvent
 from pydantic import TypeAdapter
 from pydantic_ai import Agent, AgentRunResult
 from pydantic_ai.ui import SSE_CONTENT_TYPE
 from pydantic_ai.ui.ag_ui import AGUIAdapter
-from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
@@ -20,12 +19,14 @@ from haiku.rag.capabilities.policy import STATE_NAMESPACE as POLICY_NAMESPACE
 from haiku.rag.capabilities.policy import CitationPolicyState
 from haiku.rag.capabilities.policy import create_capability as create_citation_policy
 from haiku.rag.capabilities.rag import RAGState, create_capability
-from haiku.rag.config import AppConfig
 from haiku.rag.utils.models import get_model
 from haiku.rag.utils.sql import build_document_id_filter, title_or_uri_filter
 from haiku_rag_app.images import checked_image
 from haiku_rag_app.inspect import query_int
 from haiku_rag_app.sessions import Sessions
+
+if TYPE_CHECKING:
+    from haiku_rag_app.main import Databases
 
 
 @dataclass
@@ -33,18 +34,18 @@ class ChatDeps:
     state: dict[str, Any] = field(default_factory=dict)
 
 
-async def agent_for(app: Starlette) -> Agent[ChatDeps, str]:
-    """The chat agent, built on first use over the app's client.
+async def agent_for(databases: "Databases") -> Agent[ChatDeps, str]:
+    """The chat agent of a database set, built on first use over its client.
 
     The capability borrows the client, so searches, citations and the sandbox
     read through the connections the rest of the app holds.
     """
-    if app.state.agent is None:
-        async with app.state.agent_lock:
-            if app.state.agent is None:
-                config: AppConfig = app.state.config
-                client = await app.state.databases.covering()
-                app.state.agent = Agent(
+    if databases.agent is None:
+        async with databases.agent_lock:
+            if databases.agent is None:
+                config = databases.config
+                client = await databases.covering()
+                databases.agent = Agent(
                     get_model(config.qa.model, config),
                     deps_type=ChatDeps,
                     # Earlier questions are reduced to the evidence they cited,
@@ -56,7 +57,7 @@ async def agent_for(app: Starlette) -> Agent[ChatDeps, str]:
                         create_citation_policy(),
                     ],
                 )
-    return app.state.agent
+    return databases.agent
 
 
 def _scope_to_selection(
@@ -213,14 +214,22 @@ async def stream_chat(request: Request) -> Response:
             raise HTTPException(400, f"run {run_id!r} is already stored")
         user_message = _dumped(new[0])
         await asyncio.to_thread(
-            _check_images, user_message, request.app.state.config.qa.model.vision
+            _check_images, user_message, request.state.databases.config.qa.model.vision
         )
 
+        databases = request.state.databases
+        unknown = sorted(
+            {doc["source"] for doc in session["selection"]} - set(databases.names)
+        )
+        if unknown:
+            raise HTTPException(
+                400,
+                f"the selection names {', '.join(map(repr, unknown))}, which is not "
+                "configured: remove its documents from the selection",
+            )
         state = session["state"]
         _scope_to_selection(
-            state,
-            session["selection"],
-            request.app.state.databases.scope.covers_multiple,
+            state, session["selection"], databases.scope.covers_multiple
         )
         authoritative = run_input.model_copy(
             update={
@@ -237,7 +246,7 @@ async def stream_chat(request: Request) -> Response:
                 "resume": None,
             }
         )
-        agent = await agent_for(request.app)
+        agent = await agent_for(databases)
         adapter = AGUIAdapter(agent=agent, run_input=authoritative, accept=accept)
         events = chat_events(
             adapter, ChatDeps(state=state), sessions, session_id, run_id, user_message
@@ -256,7 +265,7 @@ async def stream_chat(request: Request) -> Response:
 async def list_documents(request: Request) -> JSONResponse:
     """A page of documents of one database, or of each database with failures
     named, matching `q` in a title or URI, and each database's count of them."""
-    databases = request.app.state.databases
+    databases = request.state.databases
     source = request.query_params.get("source")
     names = [source] if source is not None else list(databases.names)
     limit = query_int(request, "limit", 50, 500)

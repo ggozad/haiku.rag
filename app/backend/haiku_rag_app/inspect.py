@@ -16,7 +16,7 @@ from haiku_rag_app.images import MAX_IMAGE_BYTES, checked_image
 
 
 async def _reader(request: Request) -> HaikuRAG:
-    return await request.app.state.databases.reader(request.path_params["source"])
+    return await request.state.databases.reader(request.path_params["source"])
 
 
 def query_int(request: Request, name: str, default: int, most: int) -> int:
@@ -383,7 +383,7 @@ async def search(request: Request) -> JSONResponse:
         raise HTTPException(400, "the body must be JSON") from error
     if not isinstance(body, dict):
         raise HTTPException(400, "the body must be a JSON object")
-    databases = request.app.state.databases
+    databases = request.state.databases
     client = await databases.covering()
     limit = body.get("limit", 10)
     if not isinstance(limit, int) or not 1 <= limit <= 50:
@@ -434,7 +434,7 @@ async def database_info(request: Request) -> JSONResponse:
     from haiku.rag.store.info import gather_database_info
 
     name = request.path_params["source"]
-    databases = request.app.state.databases
+    databases = request.state.databases
     ref = next((r for r in databases.scope.databases if r.name == name), None)
     if ref is None:
         raise HTTPException(404, f"unknown database {name!r}")

@@ -26,17 +26,17 @@ def png(width: int = 8, height: int = 8) -> str:
 
 @asynccontextmanager
 async def served(
-    config: AppConfig, sessions_path: Path
+    config: AppConfig, sessions_path: Path, config_path: Path | None = None
 ) -> AsyncIterator[tuple[Starlette, httpx.AsyncClient]]:
     """An app over `config` and a client of it, closed on exit."""
-    app = create_app(config, sessions_path=sessions_path)
+    app = create_app(config, sessions_path=sessions_path, config_path=config_path)
     try:
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://testserver"
         ) as http:
             yield app, http
     finally:
-        await app.state.databases.aclose()
+        await app.state.configuration.aclose()
         await app.state.sessions.aclose()
 
 

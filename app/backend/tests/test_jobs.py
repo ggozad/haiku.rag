@@ -2,6 +2,7 @@ import asyncio
 
 import pytest
 
+from haiku.rag.client.scope import DatabaseRef
 from haiku_rag_app import jobs
 
 
@@ -42,7 +43,12 @@ async def test_the_worker_lets_go_of_a_delivered_result():
         refs.append(weakref.ref(result))
         return result
 
-    job = runner.submit("alpha", "doctor", work, on_done=lambda result: "delivered")
+    job = runner.submit(
+        DatabaseRef.configured("alpha", "alpha.lancedb"),
+        "doctor",
+        work,
+        on_done=lambda result: "delivered",
+    )
     for _ in range(500):
         if job.status == "done":
             break

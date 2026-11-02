@@ -1,3 +1,5 @@
+from typing import Any
+
 from haiku.rag.config.loader import (
     MissingEnvVarError,
     expand_env_vars,
@@ -69,6 +71,7 @@ __all__ = [
     "WebDAVSourceConfig",
     "WorkerConfig",
     "MissingEnvVarError",
+    "changed_sections",
     "expand_env_vars",
     "find_config_file",
     "generate_default_config",
@@ -103,3 +106,23 @@ def get_config() -> AppConfig:
     if _config is None:
         _config = _load_default_config()
     return _config
+
+
+def changed_sections(
+    running: AppConfig, read: AppConfig, ignored: dict[str, Any]
+) -> list[str]:
+    """The sections of `read` that differ from `running`, named to their second
+    level. `ignored` is a pydantic `exclude` of the sections not compared."""
+    before = running.model_dump(mode="json", exclude=ignored)
+    after = read.model_dump(mode="json", exclude=ignored)
+    changed = []
+    for section, value in before.items():
+        if value == after[section]:
+            continue
+        if isinstance(value, dict):
+            changed.extend(
+                f"{section}.{key}" for key in value if value[key] != after[section][key]
+            )
+        else:
+            changed.append(section)
+    return changed

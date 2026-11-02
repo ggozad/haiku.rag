@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 from sklearn.manifold import TSNE
 
+from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.config.models import DuplicateDetectionConfig
 from haiku.rag.doctor import DuplicateFamily, VectorScan, duplicate_families
 
@@ -125,21 +126,21 @@ class Retained:
 
     def __init__(self, budget: int = 256 * 1024**2) -> None:
         self.budget = budget
-        self._kept: dict[str, Centroids] = {}
+        self._kept: dict[DatabaseRef, Centroids] = {}
 
     def keep(
-        self, source: str, generation: str, ids: list[str], unit: np.ndarray
+        self, database: DatabaseRef, generation: str, ids: list[str], unit: np.ndarray
     ) -> bool:
-        self._kept.pop(source, None)
+        self._kept.pop(database, None)
         if unit.nbytes > self.budget:
             return False
         while self._kept and self._used() + unit.nbytes > self.budget:
             del self._kept[next(iter(self._kept))]
-        self._kept[source] = Centroids(generation, ids, unit)
+        self._kept[database] = Centroids(generation, ids, unit)
         return True
 
-    def get(self, source: str) -> Centroids | None:
-        return self._kept.get(source)
+    def get(self, database: DatabaseRef) -> Centroids | None:
+        return self._kept.get(database)
 
     def _used(self) -> int:
         return sum(kept.unit.nbytes for kept in self._kept.values())
