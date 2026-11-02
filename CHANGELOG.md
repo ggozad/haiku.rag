@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Ingester dashboard: "Processed in" column in recent jobs, the time from the last attempt's claim to completion (#789).
+
 ### Fixed
 
 - Discovery no longer re-enqueues an unchanged file whose job went dead after `max_attempts` (#792).
