@@ -1750,7 +1750,7 @@ dev = [
 
 [[package]]
 name = "haiku-rag-app"
-version = "0.1.0"
+version = "0.104.0"
 source = { editable = "app/backend" }
 dependencies = [
     { name = "aiosqlite" },
