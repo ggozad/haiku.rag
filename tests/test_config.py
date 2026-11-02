@@ -760,8 +760,9 @@ def test_example_configs_are_present():
 @pytest.mark.parametrize(
     "path", _EXAMPLE_CONFIGS, ids=lambda p: p.parent.name + "/" + p.name
 )
-def test_example_config_validates(path: Path):
-    AppConfig.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+def test_example_config_validates(path: Path, monkeypatch):
+    monkeypatch.setenv("INGESTER_TOKEN", "token")
+    AppConfig.model_validate(load_yaml_config(path))
 
 
 def _use_config(monkeypatch, cfg):
