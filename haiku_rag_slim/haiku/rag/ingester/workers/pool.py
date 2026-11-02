@@ -413,6 +413,14 @@ class WorkerPool:
                 worker_id,
                 conversion_stalled=error.conversion_stalled,
             )
+        if recorded and error.rejected:
+            logger.info("Job %s rejected: %s", job.id, error)
+        elif recorded:
+            logger.info("Job %s dead (permanent): %s", job.id, error)
+        await self._record_failed_revision(job, recorded)
+
+    async def _record_failed_revision(self, job: Job, recorded: bool) -> None:
+        """Record a dead or rejected job's revision as accounted for."""
         if not recorded:
             logger.warning(
                 "Job %s lost claim before it was recorded (likely reaper race); "
@@ -420,14 +428,9 @@ class WorkerPool:
                 job.id,
             )
             return
-        if error.rejected:
-            logger.info("Job %s rejected: %s", job.id, error)
-        else:
-            logger.info("Job %s dead (permanent): %s", job.id, error)
-        # Record the failed revision so discovery treats the unchanged file as
-        # accounted-for and stops re-enqueuing it every sweep. sync_state.revision
-        # means "last accounted-for revision": ingested, permanently failed or
-        # rejected. Revision-less sources (no ETag) can't be suppressed this way.
+        # sync_state.revision is the last accounted-for revision: ingested, dead
+        # or rejected. Discovery skips an unchanged file at that revision, so a
+        # revision-less source (no ETag) cannot be suppressed this way.
         if job.revision is None:
             return
         try:
@@ -518,10 +521,15 @@ class WorkerPool:
                     _WORKER_BREAKER_COOLDOWN_S,
                 )
             if job.attempts >= job.max_attempts:
-                await self._jobs.mark_dead(job.id, str(e), worker_id)
-                logger.info(
-                    "Job %s dead (max attempts %d): %s", job.id, job.max_attempts, e
-                )
+                recorded = await self._jobs.mark_dead(job.id, str(e), worker_id)
+                if recorded:
+                    logger.info(
+                        "Job %s dead (max attempts %d): %s",
+                        job.id,
+                        job.max_attempts,
+                        e,
+                    )
+                await self._record_failed_revision(job, recorded)
                 return
             delay = compute_backoff(
                 job.attempts, self._source_retry.get(job.source_id, self._retry)

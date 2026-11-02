@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Discovery no longer re-enqueues an unchanged file whose job went dead after `max_attempts` (#792).
+
 ## [0.104.0] - 2026-10-30
 
 ### Added
