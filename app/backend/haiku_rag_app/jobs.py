@@ -1,7 +1,7 @@
 import asyncio
 import queue
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -9,6 +9,7 @@ from typing import Any
 from starlette.exceptions import HTTPException
 
 from haiku.rag.client.scope import DatabaseRef
+from haiku.rag.telemetry import attach_context, get_context, logfire
 
 Progress = Callable[[str], None]
 Work = Callable[[Progress], Awaitable[Any]]
@@ -59,9 +60,9 @@ class Jobs:
 
     def __init__(self) -> None:
         self._jobs: dict[tuple[DatabaseRef, str], Job] = {}
-        self._queue: queue.Queue[tuple[Job, Work, asyncio.AbstractEventLoop]] = (
-            queue.Queue()
-        )
+        self._queue: queue.Queue[
+            tuple[Job, Work, asyncio.AbstractEventLoop, Mapping[str, Any]]
+        ] = queue.Queue()
         self._thread: threading.Thread | None = None
 
     def get(self, database: DatabaseRef, kind: str) -> Job | None:
@@ -86,24 +87,28 @@ class Jobs:
                 target=self._serve, name="haiku-rag-app-jobs", daemon=True
             )
             self._thread.start()
-        self._queue.put((job, work, asyncio.get_running_loop()))
+        self._queue.put((job, work, asyncio.get_running_loop(), get_context()))
         return job
 
     def _serve(self) -> None:
         loop = asyncio.new_event_loop()
         while True:
-            job, work, requests = self._queue.get()
+            job, work, requests, context = self._queue.get()
 
             def relay(label: str, job: Job = job) -> None:
                 self._post(requests, job.progress.append, label)
 
             self._post(requests, self._start, job)
             try:
-                result = loop.run_until_complete(work(relay))
+                with (
+                    attach_context(context),
+                    logfire.span("app.job", kind=job.kind, database=job.source),
+                ):
+                    result = loop.run_until_complete(work(relay))
             except Exception as error:
-                self._post(requests, self._finish, job, None, str(error))
+                self._post(requests, self._finish, job, None, str(error), context)
             else:
-                self._post(requests, self._finish, job, result, None)
+                self._post(requests, self._finish, job, result, None, context)
                 # Held until the next job otherwise, outside the centroid budget.
                 del result
 
@@ -122,9 +127,18 @@ class Jobs:
         job.started_at = _now()
 
     @staticmethod
-    def _finish(job: Job, result: Any, error: str | None) -> None:
+    def _finish(
+        job: Job, result: Any, error: str | None, context: Mapping[str, Any]
+    ) -> None:
         if error is None and job.on_done is not None:
-            result = job.on_done(result)
+            try:
+                result = job.on_done(result)
+            except Exception as failure:
+                with attach_context(context):
+                    logfire.exception(
+                        "app.job result failed", kind=job.kind, database=job.source
+                    )
+                result, error = None, str(failure)
         job.result = result
         job.error = error
         job.status = "failed" if error is not None else "done"

@@ -280,6 +280,7 @@ def create_app(
 
 def app() -> Starlette:
     """The application as uvicorn serves it, configured from the environment."""
+    import logfire
     from dotenv import find_dotenv, load_dotenv
 
     from haiku.rag.telemetry import configure as configure_telemetry
@@ -290,4 +291,6 @@ def app() -> Starlette:
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    return create_app(get_config(), config_path=find_config_file())
+    served = create_app(get_config(), config_path=find_config_file())
+    logfire.instrument_starlette(served)
+    return served

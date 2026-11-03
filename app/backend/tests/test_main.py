@@ -123,3 +123,32 @@ async def test_the_served_app_is_configured_from_the_environment(monkeypatch, tm
     assert configured == ["haiku-rag-app"]
     assert served.state.config is config
     assert served.state.sessions.path == tmp_path / "sessions.db"
+
+
+async def test_the_served_app_traces_each_request(monkeypatch, tmp_path, exporter):
+    import httpx
+
+    import haiku.rag.telemetry
+
+    monkeypatch.setattr(haiku.rag.telemetry, "configure", lambda service_name: None)
+    config = AppConfig(
+        lancedb=LanceDBConfig(databases={"only": str(tmp_path / "only.lancedb")})
+    )
+    monkeypatch.setattr(main, "get_config", lambda: config)
+    monkeypatch.setenv("HAIKU_RAG_APP_SESSIONS", str(tmp_path / "sessions.db"))
+    served = main.app()
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=served), base_url="http://testserver"
+        ) as http:
+            assert (await http.get("/health")).status_code == 200
+    finally:
+        await served.state.configuration.aclose()
+        await served.state.sessions.aclose()
+
+    routes = [
+        (span.attributes or {}).get("http.route")
+        for span in exporter.exported_spans
+        if (span.attributes or {}).get("logfire.span_type") == "span"
+    ]
+    assert "/health" in routes
