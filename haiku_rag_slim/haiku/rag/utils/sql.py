@@ -18,6 +18,11 @@ def build_document_id_filter(document_ids: list[str]) -> str | None:
     return f"id IN ({ids})"
 
 
+def build_uri_filter(uris: list[str]) -> str:
+    """SQL filter matching the documents at these URIs."""
+    return f"uri IN ({', '.join(f"'{escape_sql_string(uri)}'" for uri in uris)})"
+
+
 def title_or_uri_filter(term: str) -> str | None:
     """A document filter matching `term` in a title or URI, or None for no term.
 

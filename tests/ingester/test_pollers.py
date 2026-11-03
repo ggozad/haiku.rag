@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.circuit_breaker import CircuitBreaker
+from haiku.rag.client import HaikuRAG
 from haiku.rag.config import (
     CircuitBreakerConfig,
     FSSourceConfig,
@@ -14,6 +15,7 @@ from haiku.rag.config import (
     WebDAVSourceConfig,
 )
 from haiku.rag.ingester.exceptions import EmptyListingError
+from haiku.rag.ingester.pollers import base
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
@@ -22,7 +24,9 @@ from haiku.rag.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
+from haiku.rag.store.models.chunk import Chunk
 from tests.conftest import capture_logs
+from tests.documents import docling_doc
 
 _POLLER_LOGGER = logging.getLogger("haiku.rag.ingester.pollers.base")
 
@@ -218,6 +222,171 @@ async def test_empty_listing_succeeds_when_delete_orphans_false(fs_config, jobs,
 
     assert await poller._sweep_once() is True
     assert await jobs.list_jobs(source_id="src") == []
+
+
+@pytest.fixture
+async def documents(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as rag:
+        yield rag
+
+
+async def _stored(documents: HaikuRAG, uri: str, source_id: str | None = "src"):
+    """A stored document at `uri`, owned by `source_id`, without an embedder call."""
+    vector_dim = documents.store.embedder.vector_dim
+    doc = await documents.import_document(
+        docling_doc("guard", f"Content of {uri}."),
+        [Chunk(content=f"Content of {uri}.", embedding=[0.1] * vector_dim)],
+        uri=uri,
+    )
+    assert doc.id is not None
+    if source_id is not None:
+        await documents.set_document_source([doc.id], source_id)
+
+
+def _emptied(fs_config, jobs, sync, documents, *uris: str) -> PeriodicPoller:
+    """A poller over a source that lists nothing and was known to list `uris`."""
+    source = _StubSource(
+        "src", [[_event(uri, kind=SourceEventKind.DELETE) for uri in uris]]
+    )
+    poller = _periodic(source, fs_config, jobs, sync)
+    poller.documents = documents
+    return poller
+
+
+async def _deletes(jobs) -> set[str]:
+    return {
+        job.uri
+        for job in await jobs.list_jobs(source_id="src")
+        if job.op is JobOp.DELETE
+    }
+
+
+async def test_empty_listing_of_rows_without_documents_enqueues_deletes(
+    fs_config, jobs, sync, documents
+):
+    """Discovery rows of cancelled jobs and markers of dead ones have no
+    document for a DELETE to remove."""
+    await sync.upsert("src", "file:///cancelled.md")
+    await sync.upsert("src", "file:///dead.md", revision="r1")
+    poller = _emptied(
+        fs_config, jobs, sync, documents, "file:///cancelled.md", "file:///dead.md"
+    )
+
+    assert await poller._sweep_once() is True
+
+    assert await _deletes(jobs) == {"file:///cancelled.md", "file:///dead.md"}
+
+
+async def test_empty_listing_whose_documents_are_gone_enqueues_deletes(
+    fs_config, jobs, sync, documents
+):
+    await sync.upsert("src", "file:///lost.md", ingested=True)
+    poller = _emptied(fs_config, jobs, sync, documents, "file:///lost.md")
+
+    assert await poller._sweep_once() is True
+
+    assert await _deletes(jobs) == {"file:///lost.md"}
+
+
+@pytest.mark.parametrize("owner", ["other", None])
+async def test_empty_listing_of_documents_the_source_does_not_own_enqueues_deletes(
+    fs_config, jobs, sync, documents, owner
+):
+    """The DELETE leaves another source's document, or an unowned one, alone."""
+    await _stored(documents, "file:///theirs.md", source_id=owner)
+    poller = _emptied(fs_config, jobs, sync, documents, "file:///theirs.md")
+
+    assert await poller._sweep_once() is True
+
+    assert await _deletes(jobs) == {"file:///theirs.md"}
+
+
+@pytest.mark.parametrize("ingested", [True, False])
+async def test_empty_listing_of_an_owned_document_fails_the_sweep(
+    fs_config, jobs, sync, documents, ingested
+):
+    """A row recovered by reconcile has no ingestion history and still
+    guards its document."""
+    await _stored(documents, "file:///mine.md")
+    await sync.upsert("src", "file:///mine.md", ingested=ingested)
+    await sync.upsert("src", "file:///cancelled.md")
+    poller = _emptied(
+        fs_config, jobs, sync, documents, "file:///mine.md", "file:///cancelled.md"
+    )
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        assert await poller._sweep_once() is False
+
+    assert await jobs.list_jobs(source_id="src") == []
+    assert await sync.list_known_uris("src") == {
+        "file:///mine.md",
+        "file:///cancelled.md",
+    }
+    assert poller.last_error == str(EmptyListingError("src", 1, documents=True))
+
+
+async def test_ownership_lookup_reads_every_batch(
+    fs_config, jobs, sync, documents, monkeypatch
+):
+    monkeypatch.setattr(base, "OWNERSHIP_BATCH", 1)
+    await _stored(documents, "file:///c.md")
+    poller = _emptied(
+        fs_config, jobs, sync, documents, "file:///a.md", "file:///b.md", "file:///c.md"
+    )
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        assert await poller._sweep_once() is False
+
+    assert poller.last_error == str(EmptyListingError("src", 1, documents=True))
+
+
+async def test_a_failed_ownership_lookup_enqueues_nothing(
+    fs_config, jobs, sync, documents, monkeypatch
+):
+    """An unreadable store is not an empty one, even after an empty batch."""
+    monkeypatch.setattr(base, "OWNERSHIP_BATCH", 1)
+    listings = {"n": 0}
+    list_documents = documents.list_documents
+
+    async def fails_on_the_second(*args, **kwargs):
+        listings["n"] += 1
+        if listings["n"] == 2:
+            raise OSError("store unreachable")
+        return await list_documents(*args, **kwargs)
+
+    monkeypatch.setattr(documents, "list_documents", fails_on_the_second)
+    await sync.upsert("src", "file:///a.md")
+    await sync.upsert("src", "file:///b.md", revision="r1")
+    poller = _emptied(fs_config, jobs, sync, documents, "file:///a.md", "file:///b.md")
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        assert await poller._sweep_once() is False
+
+    assert listings["n"] == 2
+    assert await jobs.list_jobs(source_id="src") == []
+    assert await sync.list_known_uris("src") == {"file:///a.md", "file:///b.md"}
+    assert await sync.get_revision_snapshot("src") == {"file:///b.md": "r1"}
+    assert poller._breaker.consecutive_failures == 1
+    assert any(isinstance(r.exc_info[1], OSError) for r in records if r.exc_info)
+
+
+async def test_dry_run_of_an_empty_listing_fails_without_a_document_store(
+    fs_config, jobs, sync
+):
+    """A dry-run opens no store, so it cannot tell an abandoned row from a
+    recovered one, and `--manifest` enqueues its DELETEs unguarded."""
+    await sync.upsert("src", "file:///cancelled.md")
+    source = _StubSource(
+        "src", [[_event("file:///cancelled.md", kind=SourceEventKind.DELETE)]]
+    )
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.ERROR):
+        ok, _summary, changes = await poller._dry_run_once()
+
+    assert ok is False
+    assert changes == []
+    assert poller.last_error == str(EmptyListingError("src", 1))
 
 
 async def test_deletes_before_a_failed_listing_are_not_enqueued(fs_config, jobs, sync):

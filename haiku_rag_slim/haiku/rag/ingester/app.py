@@ -514,6 +514,8 @@ class IngesterApp:
             },
             metadata_providers=database.metadata_providers,
         )
+        for poller in database.pollers:
+            poller.documents = database.client
         self._pollers.add(database.pollers)
         name = database.ref.name
         self._running[name] = database

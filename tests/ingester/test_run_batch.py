@@ -44,6 +44,7 @@ from tests.ingester.conftest import (
     _two_databases,
     _wait_until,
     covering_stub,
+    finished_job,
 )
 
 _POLLER_LOGGER = logging.getLogger("haiku.rag.ingester.pollers.base")
@@ -206,6 +207,37 @@ async def test_run_batch_keeps_recovered_documents_when_the_source_empties(
     assert any(
         isinstance(r.exc_info[1], EmptyListingError) for r in records if r.exc_info
     )
+
+
+async def test_run_batch_drains_rows_of_an_emptied_source_that_stored_nothing(
+    tmp_path,
+):
+    """An aborted corpus leaves discovery rows and dead jobs but no document,
+    and its directory is emptied."""
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    cancelled = (docs / "cancelled.md").as_uri()
+    dead = (docs / "dead.md").as_uri()
+    config = _config(tmp_path, root=docs)
+    engine = await open_queue(config.ingester.queue)
+    try:
+        jobs, sync = JobRepo(engine), SyncStateRepo(engine)
+        await sync.upsert("local", cancelled)
+        await finished_job(jobs, JobStatus.DEAD, dead, source_id="local")
+        await sync.upsert("local", dead, revision="r1")
+    finally:
+        await engine.dispose()
+
+    report = await IngesterApp(config=config).run_batch()
+
+    assert report.failed_sweeps == []
+    assert report.dead == 0
+    engine = await open_queue(config.ingester.queue)
+    try:
+        assert await SyncStateRepo(engine).list_known_uris("local") == set()
+        assert await JobRepo(engine).counts_by_status() == {"succeeded": 2}
+    finally:
+        await engine.dispose()
 
 
 async def test_run_batch_retries_with_the_sources_backoff(tmp_path, use_client):

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.config import SourceConfig
@@ -15,10 +16,17 @@ from haiku.rag.sources.base import (
     SourceEventKind,
 )
 from haiku.rag.telemetry import get_context, logfire
+from haiku.rag.utils.sql import build_uri_filter
+
+if TYPE_CHECKING:
+    from haiku.rag.client import HaikuRAG
 
 logger = logging.getLogger(__name__)
 
 _STAGGER_FRACTION = 0.25
+
+# URIs per ownership lookup, bounding the filter's length.
+OWNERSHIP_BATCH = 500
 
 
 def _enqueue_extra() -> dict | None:
@@ -66,6 +74,9 @@ class BasePoller:
         self._last_error_at: datetime | None = None
         self._unsupported_files: dict[str, int] = {}
         self._default_max_attempts = default_max_attempts
+        # The database receiving the source's documents. Unset on a dry-run,
+        # which opens no store.
+        self.documents: HaikuRAG | None = None
 
     @property
     def source_id(self) -> str:
@@ -197,10 +208,10 @@ class BasePoller:
                         deletes.append(event)
                     else:
                         await self._handle_event(event, sync_batch)
-                self._check_listing(
+                await self._check_listing(
                     listed=counts[SourceEventKind.UPSERT]
                     + counts[SourceEventKind.UNCHANGED],
-                    deletes=len(deletes),
+                    deletes=[event.uri for event in deletes],
                 )
                 for event in deletes:
                     await self._handle_event(event, sync_batch)
@@ -295,9 +306,9 @@ class BasePoller:
                             )
                         else:
                             summary.ignored_delete_count += 1
-                self._check_listing(
+                await self._check_listing(
                     listed=summary.upsert_count + summary.unchanged_count,
-                    deletes=summary.delete_count,
+                    deletes=[c.uri for c in changes if c.op is JobOp.DELETE],
                 )
                 self._breaker.record_success()
                 self._last_polled_at = started
@@ -322,10 +333,22 @@ class BasePoller:
                 )
                 return False, BatchSourceSummary(source_id=self.source_id), []
 
-    def _check_listing(self, *, listed: int, deletes: int) -> None:
-        """Raise for a listing that returned nothing but deletes."""
-        if deletes and not listed and self.config.delete_orphans:
-            raise EmptyListingError(self.source_id, deletes)
+    async def _check_listing(self, *, listed: int, deletes: list[str]) -> None:
+        """Raise for a listing that returned nothing but deletes of stored
+        documents owned by this source. Without a store, every delete counts."""
+        if not deletes or listed or not self.config.delete_orphans:
+            return
+        if self.documents is None:
+            raise EmptyListingError(self.source_id, len(deletes))
+        owned = 0
+        for start in range(0, len(deletes), OWNERSHIP_BATCH):
+            batch = deletes[start : start + OWNERSHIP_BATCH]
+            stored = await self.documents.list_documents(filter=build_uri_filter(batch))
+            owned += sum(
+                1 for doc in stored if doc.metadata.get("source_id") == self.source_id
+            )
+        if owned:
+            raise EmptyListingError(self.source_id, owned, documents=True)
 
     async def _handle_event(
         self,
