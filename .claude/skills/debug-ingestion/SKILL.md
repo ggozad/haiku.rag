@@ -67,6 +67,21 @@ shares its `trace_id`:
     `lock_wait_ms` also lands on `ingester.job` for a DELETE, which writes
     without a `document.store` span. The lock is in-process, so contention
     between two ingester processes on one database is not measured.
+- Hooks: one `hook.<point>` span per hook per call, `attributes->>'hook'` the
+  qualified class name. Under `ingester.job`, siblings of the `document.*`
+  phases: `hook.before_ingest` (`uri`, `content_type`, and `rejected` /
+  `reason` on a rejection, with no exception. A parent PDF's job succeeds
+  while an attachment's span says `rejected`), `hook.after_ingest`
+  (`operation`, `documents`), `hook.after_delete` (`documents`). A swallowed
+  `after_*` failure is an exception on the hook span only, at level 17, while
+  the job stays green. A `before_ingest` failure is `HookError` on the hook
+  span and the classified `PermanentError` / `TransientError` on the job.
+  Outside any job: `hook.lifespan.enter` / `hook.lifespan.exit` when a
+  database's client opens or closes (startup, reload, shutdown). An entry
+  failure is an exception on the enter span and fails the client. An exit
+  failure is an exception at level 17 and is swallowed.
+  `hook.before_search` and `hook.after_search` (`results_in`, `results`)
+  appear wherever a search runs.
 - docling-serve: `docling_serve.request` — `attributes->>'name'` (operation),
   `->>'url'` (instance), `(->>'attempt')::int`. A retry emits a new span with a
   different `url`, so failover shows as sibling spans.
