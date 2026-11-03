@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.106.0] - 2026-11-03
+
 ### Added
 
 - A Logfire span per hook call: `hook.before_ingest`, `hook.after_ingest`, `hook.after_delete`, `hook.lifespan.enter`, `hook.lifespan.exit`, `hook.before_search`, `hook.after_search`. Failures of `after_ingest`, `after_delete` and `lifespan` exit are recorded on the span at level error, and a rejection sets `rejected` and `reason` (#807).
@@ -3208,7 +3210,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.105.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.106.0...HEAD
+[0.106.0]: https://github.com/ggozad/haiku.rag/compare/0.105.0...0.106.0
 [0.105.0]: https://github.com/ggozad/haiku.rag/compare/0.104.0...0.105.0
 [0.104.0]: https://github.com/ggozad/haiku.rag/compare/0.103.0...0.104.0
 [0.103.0]: https://github.com/ggozad/haiku.rag/compare/0.102.0...0.103.0

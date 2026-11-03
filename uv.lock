@@ -1687,7 +1687,7 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.105.0"
+version = "0.106.0"
 source = { editable = "." }
 dependencies = [
     { name = "haiku-rag-slim", extra = ["cohere", "cross-encoder", "docling", "jina", "tui", "voyageai", "zeroentropy"] },
@@ -1759,7 +1759,7 @@ dev = [
 
 [[package]]
 name = "haiku-rag-app"
-version = "0.105.0"
+version = "0.106.0"
 source = { editable = "app/backend" }
 dependencies = [
     { name = "aiosqlite" },
@@ -1786,7 +1786,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-evals"
-version = "0.105.0"
+version = "0.106.0"
 source = { editable = "evaluations" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1813,7 +1813,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-slim"
-version = "0.105.0"
+version = "0.106.0"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "charset-normalizer" },
