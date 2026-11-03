@@ -15,6 +15,7 @@
 
 - A Logfire configuration failure is logged at WARNING with its traceback (#810).
 - `EmptyListingError.known` renamed to `count`.
+- `docker/Dockerfile`, `docker/Dockerfile.slim` and the web app's backend image build and run on Debian 13 (trixie): `uv:python3.13-trixie-slim` and `python:3.13-slim-trixie`.
 
 ### Fixed
 

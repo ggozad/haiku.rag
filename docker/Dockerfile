@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim AS builder
 
 WORKDIR /app
 
@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         --reinstall-package haiku.rag --reinstall-package haiku.rag-slim
 
 # Final layer
-FROM python:3.13-slim
+FROM python:3.13-slim-trixie
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app /app
