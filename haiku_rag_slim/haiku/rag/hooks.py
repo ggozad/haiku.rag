@@ -114,6 +114,9 @@ class Hook:
         tasks before whatever awaits them: a clean ``asyncio.TaskGroup`` exit
         waits for its children without cancelling them, so an endless task
         parked in one hangs shutdown instead of ending it.
+
+        Readers enter lifespans too. Start background work that writes only
+        when ``client.is_read_only`` is false.
         """
         yield
 
