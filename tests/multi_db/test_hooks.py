@@ -89,11 +89,16 @@ async def test_facades_borrow_without_hooks(tmp_path, monkeypatch):
     config = _config(tmp_path, ["a", "b"])
     config.hooks = ["spy"]
     await _seed(config, "a", ["alpha one"])
+    await _seed(config, "b", ["beta one"])
+    built = len(spies)
 
     async with HaikuRAG(config=config) as client:
         [facade] = await client.clients_for(["a"])
+        reader = await client.reader_for("b")
         assert facade._hooks == []
+        assert reader is not None and reader._hooks == []
         assert client._hooks != []
+    assert len(spies) == built + 1
 
 
 @pytest.mark.asyncio

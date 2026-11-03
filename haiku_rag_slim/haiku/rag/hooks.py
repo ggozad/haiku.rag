@@ -1,5 +1,5 @@
 import logging
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
@@ -100,7 +100,7 @@ class Hook:
     """
 
     @asynccontextmanager
-    async def lifespan(self, client: "HaikuRAG") -> AsyncIterator[None]:
+    async def lifespan(self, client: "HaikuRAG") -> AsyncGenerator[None]:
         """Hold whatever resources the hook needs for as long as the client is
         open. Factories stay resource-free; acquire here instead.
 
@@ -114,6 +114,9 @@ class Hook:
         tasks before whatever awaits them: a clean ``asyncio.TaskGroup`` exit
         waits for its children without cancelling them, so an endless task
         parked in one hangs shutdown instead of ending it.
+
+        Readers enter lifespans too. Start background work that writes only
+        when ``client.is_read_only`` is false.
         """
         yield
 

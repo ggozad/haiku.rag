@@ -152,17 +152,22 @@ class GlossaryHook(Hook):
 
 Lifespans are entered in the order listed in config, once the session is open, and exited in reverse order while the session, embedder and reranker are all still usable.
 
+A lifespan enters for every client that owns its session, in every process that builds a client from the configuration: the ingester, the CLI, the MCP server, the RAG capability and the web app's backend. Readers run the configured hooks, search hooks included, so the hook packages must be installed wherever the configuration is loaded. To open a client with other hooks, or none, pass it a copy of the configuration: `HaikuRAG(config=config.model_copy(update={"hooks": []}))`.
+
 Failing on entry fails `async with HaikuRAG(...)` and unwinds the lifespans already started: an activated hook that cannot start is a startup failure, not something to run degraded. Failing on exit is logged and swallowed, so one hook's teardown cannot strand another's. A hook is told which exception is being unwound, whether it came from the client's caller or from a later hook failing to start, but cannot suppress it.
 
 ## Background work
 
-A hook that runs a background task owns stopping it. Cancel it on the way out, before anything awaits it:
+Background work that writes, such as a sweep that enriches documents ingested during a hook's downtime, starts only on a client that can write. On a read-only client the lifespan acquires what the hook's own methods need and starts nothing else. A hook that runs a background task also owns stopping it. Cancel it on the way out, before anything awaits it:
 
 ```python
 @asynccontextmanager
 async def lifespan(self, client):
+    if client.is_read_only:
+        yield
+        return
     async with asyncio.TaskGroup() as tg:
-        task = tg.create_task(self.refresh_periodically(client))
+        task = tg.create_task(self.enrich_pending(client))
         try:
             yield
         finally:
@@ -170,6 +175,8 @@ async def lifespan(self, client):
 ```
 
 The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop parked in one never returns and client shutdown hangs.
+
+The work runs in every writer: the ingester, and the CLI's `init`, `add`, `add-src`, `delete`, `rebuild`, `vacuum` and `create-index`. A CLI command closes its client when it ends, which cancels the task. A federating client's `is_read_only` is true when any database it covers is read at a tag, so check each database's client from `clients_for` instead, as in [Several databases](#several-databases).
 
 ## Telemetry
 
