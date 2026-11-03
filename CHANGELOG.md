@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The `docling` extra installs `ocrmac` (macOS) and `onnxruntime`. `ocr_engine: auto` then picks Apple Vision on macOS and RapidOCR on onnxruntime elsewhere, where it fell back to RapidOCR on torch. RapidOCR on onnxruntime converted a 50-page PDF in 169 s, against 300 s on torch, on an M-series Mac.
+
 ## [0.106.0] - 2026-11-03
 
 ### Added

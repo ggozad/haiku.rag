@@ -79,6 +79,10 @@ docling = [
     "docling-ibm-models==4.0.4",
     "docling-parse==7.23.0",
     "opencv-python-headless>=4.6.0.66,<5.0.0.0",
+    # Apple Vision OCR on macOS, and the runtime RapidOCR runs on: without
+    # it RapidOCR falls back to torch, at about half the speed.
+    "ocrmac>=1.0.1,<2.0.0; sys_platform == 'darwin'",
+    "onnxruntime>=1.22.0,<2.0.0",
 ]
 # S3 / object-storage monitoring
 s3 = ["obstore>=0.9,<0.10"]

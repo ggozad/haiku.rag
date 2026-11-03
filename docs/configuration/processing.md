@@ -121,7 +121,7 @@ processing:
 - **do_ocr**: When `true`, applies OCR to images and scanned pages. Disable it for documents with only embedded text, which converts faster.
 - **force_ocr**: When `true`, replaces existing text layers with OCR output, for documents whose embedded text is poor.
 - **ocr_engine**: Select the OCR engine to use. Options:
-  - `auto` (default): Automatically select the best available engine
+  - `auto` (default): the first engine installed of `ocrmac` (macOS), `rapidocr` on onnxruntime, `easyocr`, and `rapidocr` on torch. The `docling` extra installs `ocrmac` on macOS and onnxruntime
   - `easyocr`: EasyOCR - supports many languages, good accuracy
   - `rapidocr`: RapidOCR - fast processing
   - `tesseract`: the Tesseract command-line binary
