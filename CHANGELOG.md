@@ -9,6 +9,10 @@
 - Ingester: `GET /sources` returns `unsupported_files`, the files an `fs`, `s3` or `webdav` source's last successful sweep skipped for their extension, counted by extension. A change in the counts is logged at INFO (#805).
 - Ingester dashboard and web app ingestion page: a source shows a badge for the files its last sweep skipped for their extension, with the count per extension in its tooltip (#805).
 
+### Changed
+
+- A Logfire configuration failure is logged at WARNING with its traceback (#810).
+
 ### Fixed
 
 - Web app: chat sends messages when the frontend is served over plain HTTP from a host other than localhost (#809).
