@@ -27,6 +27,8 @@ from haiku.rag.hooks import (
     HookError,
     IngestEvent,
     IngestRequest,
+    hook_name,
+    hook_span,
     notify,
 )
 from haiku.rag.store.models.chunk import Chunk
@@ -622,23 +624,30 @@ async def _before_ingest(
         content_type=result.content_type,
     )
     for hook in client._hooks:
-        try:
-            request = await hook.before_ingest(client, request)
-            if not isinstance(request, IngestRequest):
-                raise TypeError(f"returned {type(request).__name__}")
-            if not isinstance(request.body, bytes):
-                raise TypeError(f"body is {type(request.body).__name__}")
-            # The store serialises metadata after conversion and embedding.
-            json.dumps(_storable(request.metadata))
-        except DocumentRejected as e:
-            e.uri = uri
-            raise
-        except Exception as e:
-            cls = type(hook)
-            raise HookError(
-                f"{cls.__module__}.{cls.__qualname__}.before_ingest failed for "
-                f"{uri}: {type(e).__name__}: {e}"
-            ) from e
+        rejected: DocumentRejected | None = None
+        with hook_span(
+            "before_ingest", hook, uri=uri, content_type=result.content_type
+        ) as span:
+            try:
+                request = await hook.before_ingest(client, request)
+                if not isinstance(request, IngestRequest):
+                    raise TypeError(f"returned {type(request).__name__}")
+                if not isinstance(request.body, bytes):
+                    raise TypeError(f"body is {type(request.body).__name__}")
+                # The store serialises metadata after conversion and embedding.
+                json.dumps(_storable(request.metadata))
+            except DocumentRejected as e:
+                span.set_attributes({"rejected": True, "reason": e.reason})
+                rejected = e
+            except Exception as e:
+                raise HookError(
+                    f"{hook_name(hook)}.before_ingest failed for "
+                    f"{uri}: {type(e).__name__}: {e}"
+                ) from e
+        # Raised outside the span, so a rejection is not recorded as an error.
+        if rejected is not None:
+            rejected.uri = uri
+            raise rejected
     if request.body != result.body:
         result = result.model_copy(
             update={

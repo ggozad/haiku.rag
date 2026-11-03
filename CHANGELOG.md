@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- A Logfire span per hook call: `hook.before_ingest`, `hook.after_ingest`, `hook.after_delete`, `hook.lifespan.enter`, `hook.lifespan.exit`, `hook.before_search`, `hook.after_search`. Failures of `after_ingest`, `after_delete` and `lifespan` exit are recorded on the span at level error, and a rejection sets `rejected` and `reason` (#807).
+
 ### Fixed
 
 - Web app: chat sends messages when the frontend is served over plain HTTP from a host other than localhost (#809).

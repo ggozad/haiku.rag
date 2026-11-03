@@ -171,6 +171,45 @@ async def lifespan(self, client):
 
 The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop parked in one never returns and client shutdown hangs.
 
+## Telemetry
+
+Each hook call runs in a span of its own, from the `haiku.rag` instrumentation scope. With Logfire configured (`haiku.rag.telemetry.configure()`), the spans show each hook's time and failures:
+
+| Span | Attributes |
+|---|---|
+| `hook.before_ingest` | `hook`, `uri`, `content_type`, and `rejected` and `reason` when the hook raises `DocumentRejected` |
+| `hook.after_ingest` | `hook`, `operation`, `documents` (count) |
+| `hook.after_delete` | `hook`, `documents` (count) |
+| `hook.lifespan.enter`, `hook.lifespan.exit` | `hook` |
+| `hook.before_search` | `hook` |
+| `hook.after_search` | `hook`, `results_in` (count passed in), `results` (count returned) |
+
+`hook` is the hook's qualified class name. A span nests under the operation that called the hook. In the ingester, the `before_ingest`, `after_ingest` and `after_delete` spans sit under `ingester.job` as siblings of the `document.*` phases. The lifespan spans sit under whatever span is active while the client opens or closes, and the search spans under the caller of the search.
+
+When `after_ingest`, `after_delete` or a `lifespan` exit fails, the span records the exception at level error, the failure is still logged, and the operation goes on. A failure that propagates is recorded on the span as it leaves. A `before_ingest` failure is recorded on its span as the `HookError`, and the ingester's job span records the `PermanentError` or `TransientError` that failed the job. A rejection is an outcome, not an error: the span carries `rejected` and `reason` and no exception.
+
+A hook can attach its background work to the operation that fired it. Capture the context inside the hook and attach it in the task:
+
+```python
+import asyncio
+
+import logfire
+
+from haiku.rag.hooks import Hook
+
+
+class Summarise(Hook):
+    async def after_ingest(self, client, event):
+        context = logfire.get_context()
+        asyncio.create_task(self.summarise(event.documents, context))
+
+    async def summarise(self, documents, context):
+        with logfire.attach_context(context), logfire.span("summarise"):
+            ...
+```
+
+The task's spans then belong to the trace of the ingest, under `hook.after_ingest`. A real hook keeps a reference to the task and stops it in its `lifespan`, as in [Background work](#background-work).
+
 ## Result annotations
 
 `after_search` hooks can attach free-text notes on `SearchResult.annotations`. Annotations survive context expansion (merged results union the notes of their constituents, deduplicated) and render as `Note: text` lines in the agent-facing output of the RAG capability and the MCP search tools. This keeps the context cost proportional to what was retrieved instead of the size of your vocabulary.

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, overload, runtime_chec
 from haiku.rag.config.models import HookConfig
 from haiku.rag.store.models.chunk import SearchResult, SearchType
 from haiku.rag.store.models.document import Document
+from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
@@ -174,6 +175,17 @@ class Hook:
         return results
 
 
+def hook_name(hook: Hook) -> str:
+    cls = type(hook)
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def hook_span(point: str, hook: Hook, **attributes: Any):
+    # logfire names a span after an f-string argument's template.
+    name = f"hook.{point}"
+    return logfire.span(name, hook=hook_name(hook), **attributes)
+
+
 def _lifespan_exit(hook: Hook, lifespan: AbstractAsyncContextManager[None]):
     """Wrap a started lifespan's exit so a teardown failure is logged rather
     than raised, and so the hook cannot suppress the caller's exception."""
@@ -183,13 +195,13 @@ def _lifespan_exit(hook: Hook, lifespan: AbstractAsyncContextManager[None]):
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> bool:
-        try:
-            await lifespan.__aexit__(exc_type, exc, tb)
-        except Exception:
-            cls = type(hook)
-            logger.exception(
-                "%s.%s lifespan teardown failed", cls.__module__, cls.__qualname__
-            )
+        with hook_span("lifespan.exit", hook) as span:
+            try:
+                await lifespan.__aexit__(exc_type, exc, tb)
+            except Exception as e:
+                span.record_exception(e)
+                span.set_level("error")
+                logger.exception("%s lifespan teardown failed", hook_name(hook))
         return False
 
     return _exit
@@ -203,7 +215,8 @@ async def enter_lifespans(
     caller to unwind."""
     for hook in hooks:
         lifespan = hook.lifespan(client)
-        await lifespan.__aenter__()
+        with hook_span("lifespan.enter", hook):
+            await lifespan.__aenter__()
         stack.push_async_exit(_lifespan_exit(hook, lifespan))
 
 
@@ -234,18 +247,22 @@ async def notify(
     """Fire post-commit observer hooks best-effort: a hook failure is logged
     and never raised (the operation already committed), and subsequent hooks
     still run."""
+    attributes: dict[str, Any] = {"documents": len(event.documents)}
+    if isinstance(event, IngestEvent):
+        attributes["operation"] = event.operation
     for hook in hooks:
-        try:
-            await getattr(hook, method)(client, event)
-        except Exception:
-            cls = type(hook)
-            logger.exception(
-                "%s.%s.%s failed for documents %s",
-                cls.__module__,
-                cls.__qualname__,
-                method,
-                [d.id for d in event.documents],
-            )
+        with hook_span(method, hook, **attributes) as span:
+            try:
+                await getattr(hook, method)(client, event)
+            except Exception as e:
+                span.record_exception(e)
+                span.set_level("error")
+                logger.exception(
+                    "%s.%s failed for documents %s",
+                    hook_name(hook),
+                    method,
+                    [d.id for d in event.documents],
+                )
 
 
 HookFactory = Callable[..., Hook]

@@ -20,6 +20,7 @@ from haiku.rag.hooks import (
     DeleteEvent,
     build_hooks,
     enter_lifespans,
+    hook_span,
     load_hooks,
     notify,
 )
@@ -1032,7 +1033,8 @@ class HaikuRAG:
         )
         if isinstance(query, str):
             for hook in self._hooks:
-                request = await hook.before_search(self, request)
+                with hook_span("before_search", hook):
+                    request = await hook.before_search(self, request)
             query = request.query
             assert isinstance(query, str), "before_search must keep text queries text"
             filter = request.filter
@@ -1057,7 +1059,9 @@ class HaikuRAG:
                 result.source = self.source
 
         for hook in self._hooks:
-            results = await hook.after_search(self, request, results)
+            with hook_span("after_search", hook, results_in=len(results)) as span:
+                results = await hook.after_search(self, request, results)
+                span.set_attribute("results", len(results))
         return results
 
     async def expand_context(

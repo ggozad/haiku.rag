@@ -816,3 +816,30 @@ async def test_a_rejected_attachment_leaves_its_parent_job_succeeding(
 
     assert [c.uri for c in children] == [f"{pdf_path.as_uri()}#attachment=a.txt"]
     assert result.content_hash == parent.metadata["md5"]
+
+
+class _RaisingIngestHook(Hook):
+    async def before_ingest(self, client, request):
+        raise RuntimeError("hook refused")
+
+
+async def test_a_hook_span_nests_under_the_job_that_classifies_its_failure(
+    temp_db_path, tmp_path, exporter
+):
+    from tests.spans import Tree
+
+    path = tmp_path / "doc.md"
+    path.write_text("hello")
+    fs = FSSource(root=tmp_path, source_id="src")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [_RaisingIngestHook()]
+        with pytest.raises(PermanentError):
+            await run_job(client, _job(uri=path.as_uri()), sources=[fs])
+
+    tree = Tree(exporter)
+    assert tree.parent_of("hook.before_ingest") == "ingester.job"
+    assert tree.exceptions("hook.before_ingest") == ["haiku.rag.hooks.HookError"]
+    assert tree.exceptions("ingester.job") == [
+        "haiku.rag.ingester.exceptions.PermanentError"
+    ]
