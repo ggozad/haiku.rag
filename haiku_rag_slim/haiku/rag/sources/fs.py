@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import mimetypes
 import os
+from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -81,6 +82,8 @@ class FSSource:
             include_patterns=include_patterns,
             supported_extensions=self.supported_extensions,
         )
+        # Files the latest discover() skipped for their extension, by extension.
+        self.unsupported_files: Counter[str] = Counter()
         self._max_file_size = max_file_size
 
     def _resolve_within_root(self, uri: str) -> Path | None:
@@ -154,6 +157,7 @@ class FSSource:
         known = known_uris or set()
         now = datetime.now(UTC)
         seen: set[str] = set()
+        self.unsupported_files = Counter()
 
         # os.walk with followlinks=False so symlinked directories aren't
         # traversed (avoids cycles and unbounded recursion). File symlinks
@@ -164,7 +168,7 @@ class FSSource:
         for path in walk_files(self.root):
             if not path.is_file():
                 continue
-            if not self.filter.include_file(str(path)):
+            if not self.filter.include_file(str(path), self.unsupported_files):
                 continue
             uri = path.as_uri()
             try:

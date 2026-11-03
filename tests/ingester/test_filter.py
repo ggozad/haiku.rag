@@ -1,6 +1,13 @@
+import re
+from collections import Counter
+from pathlib import Path
+
 import pytest
 from watchfiles import Change
 
+from haiku.rag.converters.docling_local import DoclingLocalConverter
+from haiku.rag.converters.docling_serve import DoclingServeConverter
+from haiku.rag.converters.text_utils import TextFileHandler
 from haiku.rag.sources.filter import FileFilter, _default_supported_extensions
 
 
@@ -44,3 +51,40 @@ def test_call_delegates_to_include_file_then_default_filter():
     assert f(Change.added, "/tmp/docs/readme.md") is True
     # Wrong extension — include_file returns False before DefaultFilter runs.
     assert f(Change.added, "/tmp/docs/readme.log") is False
+
+
+def test_unsupported_extensions_are_counted_by_lowercased_suffix():
+    f = FileFilter(supported_extensions=[".md"])
+    unsupported: Counter[str] = Counter()
+    for path in ["docs/a.rst", "docs/B.RST", "docs/c.md", "Makefile", "x.tar.gz"]:
+        f.include_file(path, unsupported)
+    assert unsupported == {".rst": 2, "": 1, ".gz": 1}
+
+
+def test_files_excluded_by_patterns_are_not_counted():
+    f = FileFilter(
+        supported_extensions=[".md"],
+        include_patterns=["docs/**"],
+        ignore_patterns=["docs/drafts/**"],
+    )
+    unsupported: Counter[str] = Counter()
+    for path in ["other/a.rst", "docs/drafts/b.rst", "docs/c.rst"]:
+        assert f.include_file(path, unsupported) is False
+    assert unsupported == {".rst": 1}
+
+
+def _documented_extensions(label: str) -> list[str]:
+    docs = Path(__file__).resolve().parents[2] / "docs" / "ingester.md"
+    [line] = [
+        line
+        for line in docs.read_text(encoding="utf-8").splitlines()
+        if line.startswith(f"- {label}: ")
+    ]
+    return re.findall(r"`([^`]+)`", line)
+
+
+def test_documented_extensions_match_the_converters():
+    docling = _documented_extensions("Converted by docling, with either converter")
+    assert docling == DoclingLocalConverter.docling_extensions
+    assert docling == DoclingServeConverter.docling_serve_extensions
+    assert _documented_extensions("Read as text") == TextFileHandler.text_extensions

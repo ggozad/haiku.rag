@@ -398,3 +398,15 @@ async def test_discover_raises_on_unreadable_subdirectory(fs_root: Path):
             [e async for e in src.discover(known_uris={(sub / "c.md").as_uri()})]
     finally:
         sub.chmod(0o755)
+
+
+async def test_fs_source_discover_counts_unsupported_extensions_per_run(
+    fs_root: Path,
+):
+    src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
+    [e async for e in src.discover()]
+    assert src.unsupported_files == {".log": 1}
+
+    (fs_root / "skip.log").unlink()
+    [e async for e in src.discover()]
+    assert src.unsupported_files == {}

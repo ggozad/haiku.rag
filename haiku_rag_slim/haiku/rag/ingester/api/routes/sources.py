@@ -30,6 +30,7 @@ async def list_sources(
                 last_skip_reason=poller.last_skip_reason,
                 last_error=poller.last_error,
                 last_error_at=poller.last_error_at,
+                unsupported_files=poller.unsupported_files,
             )
         )
     return summaries

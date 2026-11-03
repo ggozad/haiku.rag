@@ -1046,3 +1046,68 @@ async def test_a_poller_added_before_start_runs_when_the_manager_starts(
         assert manager.live_pollers == 2
     finally:
         await manager.stop()
+
+
+# --- unsupported files ---
+
+
+class _CountingSource(_StubSource):
+    """Reports scripted unsupported-file counts, one dict per discover()."""
+
+    def __init__(self, source_id: str, counts: list[dict[str, int]]):
+        super().__init__(source_id, [])
+        self._counts = list(counts)
+        self.unsupported_files: dict[str, int] = {}
+
+    async def discover(self, since=None, *, known_uris=None):
+        self.unsupported_files = self._counts.pop(0)
+        async for event in super().discover(since, known_uris=known_uris):
+            yield event
+
+
+async def test_a_sweep_reports_unsupported_files_and_logs_only_changes(
+    fs_config, jobs, sync, caplog
+):
+    caplog.set_level(logging.INFO, logger=_POLLER_LOGGER.name)
+    source = _CountingSource(
+        "src",
+        [{".rst": 366, "": 3, ".rtf": 2}, {".rst": 366, "": 3, ".rtf": 2}, {}],
+    )
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with capture_logs(_POLLER_LOGGER, logging.INFO) as records:
+        assert await poller._sweep_once() is True
+        assert poller.unsupported_files == {".rst": 366, "": 3, ".rtf": 2}
+        assert await poller._sweep_once() is True
+        assert await poller._sweep_once() is True
+        assert poller.unsupported_files == {}
+
+    assert [r.getMessage() for r in records] == [
+        "Skipped 371 files with unsupported extensions in src: "
+        ".rst (366), no extension (3), .rtf (2)"
+    ]
+
+
+async def test_a_failed_sweep_keeps_the_unsupported_files(fs_config, jobs, sync):
+    source = _CountingSource("src", [{".rst": 1}, {".rtf": 5}])
+    poller = _periodic(source, fs_config, jobs, sync)
+    with capture_logs(_POLLER_LOGGER, logging.INFO):
+        assert await poller._sweep_once() is True
+
+    source.fail_with = RuntimeError("upstream down")
+    with capture_logs(_POLLER_LOGGER, logging.ERROR) as records:
+        assert await poller._sweep_once() is False
+
+    assert [r.getMessage() for r in records] == [
+        "discover() failed for src (consecutive=1): upstream down"
+    ]
+    assert source.unsupported_files == {".rtf": 5}
+    assert poller.unsupported_files == {".rst": 1}
+
+
+async def test_a_source_without_counts_reports_no_unsupported_files(
+    fs_config, jobs, sync
+):
+    poller = _periodic(_StubSource("src", []), fs_config, jobs, sync)
+    assert await poller._sweep_once() is True
+    assert poller.unsupported_files == {}

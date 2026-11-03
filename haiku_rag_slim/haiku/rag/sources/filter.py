@@ -1,3 +1,6 @@
+from collections import Counter
+from pathlib import PurePath
+
 import pathspec
 from watchfiles import Change, DefaultFilter
 
@@ -38,14 +41,18 @@ class FileFilter(DefaultFilter):
             return False
         return super().__call__(change, path)
 
-    def include_file(self, path: str) -> bool:
-        if not path.lower().endswith(self.extensions):
-            return False
-
+    def include_file(self, path: str, unsupported: Counter[str] | None = None) -> bool:
+        """`unsupported` counts, by lowercased suffix, the files that pass the
+        patterns and fail the extension check."""
         if self.include_spec and not self.include_spec.match_file(path):
             return False
 
         if self.ignore_spec and self.ignore_spec.match_file(path):
+            return False
+
+        if not path.lower().endswith(self.extensions):
+            if unsupported is not None:
+                unsupported[PurePath(path).suffix.lower()] += 1
             return False
 
         return True

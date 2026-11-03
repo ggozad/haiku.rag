@@ -689,6 +689,15 @@ class TestDoclingLocalConverter:
 
         assert "Body under an uppercase extension." in doc.export_to_markdown()
 
+    async def test_convert_file_reads_rst_as_plain_text(self, converter, tmp_path):
+        source = tmp_path / "guide.rst"
+        source.write_text("Install\n=======\n\nRun the installer.")
+
+        markdown = (await converter.convert_file(source)).export_to_markdown()
+
+        assert "Run the installer." in markdown
+        assert "```" not in markdown
+
     @pytest.mark.parametrize("name", ["doc.txt", "doc.py"])
     async def test_convert_file_reads_cp932(self, converter, tmp_path, name):
         source = tmp_path / name

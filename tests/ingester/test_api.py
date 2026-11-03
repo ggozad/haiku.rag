@@ -406,6 +406,19 @@ async def test_sources_lists_configured(tmp_path, jobs, sync):
     assert payload[0]["last_error"] is None
     assert payload[0]["last_error_at"] is None
     assert payload[0]["circuit_breaker_open"] is False
+    assert payload[0]["unsupported_files"] == {}
+
+
+async def test_sources_report_files_skipped_for_their_extension(tmp_path, jobs, sync):
+    root = tmp_path / "docs"
+    root.mkdir()
+    (root / "a.md").write_text("alpha")
+    (root / "b.xyz").write_text("beta")
+    state, manager = _build_pollers_state(root, jobs, sync)
+    async with _client(state) as client:
+        await client.post(f"/sources/{manager.pollers[0].source_id}/refresh")
+        resp = await client.get("/sources")
+    assert resp.json()[0]["unsupported_files"] == {".xyz": 1}
 
 
 async def test_source_refresh_triggers_sweep(tmp_path, jobs, sync):

@@ -71,6 +71,13 @@ Source ids are unique across every database: startup fails when two sources shar
 
 Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document another source ingested last, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing while it still has documents it listed before. The sweep fails instead. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format). Supported file extensions are matched case-insensitively (`.pdf`, `.PDF` and `.PdF` are equivalent); include and ignore patterns are case-sensitive.
 
+An `fs`, `s3` or `webdav` source lists only the files that pass its patterns and carry one of these extensions:
+
+- Converted by docling, with either converter: `.adoc`, `.asc`, `.asciidoc`, `.bmp`, `.csv`, `.docx`, `.eml`, `.epub`, `.html`, `.xhtml`, `.jpeg`, `.jpg`, `.latex`, `.md`, `.msg`, `.pdf`, `.png`, `.pptx`, `.qmd`, `.rmd`, `.tex`, `.tiff`, `.xlsx`, `.xml`, `.webp`
+- Read as text: `.astro`, `.bash`, `.c`, `.clj`, `.cljs`, `.cpp`, `.cs`, `.css`, `.dart`, `.elm`, `.ex`, `.exs`, `.fs`, `.fsx`, `.go`, `.gql`, `.graphql`, `.groovy`, `.h`, `.hcl`, `.hpp`, `.hs`, `.java`, `.jl`, `.js`, `.json`, `.kt`, `.less`, `.lua`, `.mdx`, `.mjs`, `.ml`, `.mli`, `.nim`, `.nix`, `.php`, `.pl`, `.plantuml`, `.pm`, `.proto`, `.pu`, `.puml`, `.ps1`, `.py`, `.r`, `.rb`, `.rs`, `.rst`, `.sass`, `.scala`, `.scss`, `.sh`, `.sql`, `.svelte`, `.swift`, `.tf`, `.toml`, `.ts`, `.tsx`, `.txt`, `.vue`, `.yaml`, `.yml`, `.zig`
+
+Files that pass the patterns with any other extension are skipped and counted by extension in `unsupported_files` of `GET /sources`, as of its last successful sweep. Watch events do not change the counts. An `http` source fetches the URLs it is given and filters none of them.
+
 ### Removing or moving a source
 
 To retire a source, remove it from the configuration, and delete its documents by hand if they should go. Its queued and claimed jobs are deleted when `serve`, `run-batch` or a manifest replay next starts, never by `--dry-run`, or when a reload removes its database. Its finished jobs stay until `retention_days` prunes them. This relies on one ingester per queue namespace (see [Postgres](#postgres)).
