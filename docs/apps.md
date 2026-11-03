@@ -71,6 +71,10 @@ The backend's reload applies `lancedb.databases` only. It answers 409 and names 
 - One backend covers databases that share one `embeddings` configuration. The backend embeds every query with that configuration. A database embedded at another vector dimension fails to open. One embedded by another model at the same dimension opens with a warning, and its search results are meaningless. Run a separate app for databases with a different embedder.
 - The backend runs as one replica with one worker. It holds runs in process and stores sessions in a SQLite file.
 
+### Telemetry
+
+With `LOGFIRE_TOKEN` set, the backend sends spans to Logfire with `service.name` `haiku-rag-app`, or the value of `OTEL_SERVICE_NAME`. Every HTTP request is a span, and a chat run's agent and model spans nest under its request. Each doctor run and corpus map is an `app.job` span with `kind` (`doctor` or `projection`) and `database`, nested under the request that started it. A job that fails records its exception on that span. A corpus map whose result cannot be built records an `app.job result failed` exception under the request instead.
+
 ### Serve under a URL prefix
 
 The frontend serves at the root of its origin unless it is built with `BASE_PATH`, a prefix such as `/rag`. The prefix is fixed when the frontend image is built, and the published frontend image serves at the root. To serve the app under a prefix, build the frontend image yourself and keep the published backend and ingester images, which never see the prefix. Changing the prefix means building the frontend image again. Setting `BASE_PATH` on a built image moves only its health check, so the container reports unhealthy.

@@ -1,3 +1,4 @@
+import logging
 from importlib import metadata
 
 import logfire
@@ -5,6 +6,7 @@ import pytest
 from opentelemetry import trace
 
 from haiku.rag import telemetry
+from tests.conftest import capture_logs
 
 
 @pytest.fixture
@@ -70,3 +72,19 @@ def test_attach_env_context_without_traceparent_keeps_the_active_trace(monkeypat
         with telemetry.attach_env_context():
             current = trace.get_current_span().get_span_context()
         assert current.trace_id == span.get_span_context().trace_id
+
+
+def test_configure_failure_logs_a_warning_and_returns(monkeypatch):
+    def _failing_configure(**kwargs):
+        raise RuntimeError("bad token")
+
+    monkeypatch.setattr(logfire, "configure", _failing_configure)
+
+    with capture_logs(logging.getLogger("haiku.rag"), logging.WARNING) as records:
+        telemetry.configure(service_name="haiku-rag")
+
+    assert [record.getMessage() for record in records] == [
+        "Logfire configuration failed: bad token"
+    ]
+    assert records[0].levelno == logging.WARNING
+    assert records[0].exc_info is not None

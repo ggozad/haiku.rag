@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import AbstractContextManager, nullcontext
 from importlib import metadata
@@ -17,6 +18,8 @@ from logfire import Logfire, attach_context, get_context
 # own scopes — this only retags the spans WE write.
 logfire = Logfire(otel_scope="haiku.rag")
 
+logger = logging.getLogger(__name__)
+
 
 def configure(
     *,
@@ -26,8 +29,7 @@ def configure(
 ) -> None:
     """Configure Logfire and enable pydantic-ai instrumentation for the
     running process. Each CLI entry point calls this once at startup.
-    Silently no-ops on failure so a missing/misconfigured LOGFIRE_TOKEN
-    never crashes the app.
+    A failure is logged at WARNING and never raised.
 
     - service_name: the default name for this process in the Logfire UI
       (e.g. "haiku-ingester"). The OTEL_SERVICE_NAME / LOGFIRE_SERVICE_NAME
@@ -63,8 +65,8 @@ def configure(
             scrubbing=scrubbing,
         )
         _lf.instrument_pydantic_ai()
-    except Exception:  # pragma: no cover
-        pass
+    except Exception as error:
+        logger.warning("Logfire configuration failed: %s", error, exc_info=True)
 
 
 def attach_env_context() -> AbstractContextManager[None]:

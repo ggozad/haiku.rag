@@ -92,6 +92,22 @@ def two_databases(tmp_path) -> AppConfig:
 
 
 @pytest.fixture
+def exporter():
+    """Collect spans in memory, restoring logfire's inert default on teardown."""
+    import logfire
+    from logfire.testing import SimpleSpanProcessor, TestExporter
+
+    test_exporter = TestExporter()
+    logfire.configure(
+        send_to_logfire=False,
+        console=False,
+        additional_span_processors=[SimpleSpanProcessor(test_exporter)],
+    )
+    yield test_exporter
+    logfire.configure(send_to_logfire=False, console=False)
+
+
+@pytest.fixture
 def seed_database():
     return seed
 

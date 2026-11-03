@@ -1,8 +1,10 @@
 import asyncio
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import logfire
 from fastapi import Depends, FastAPI, Request
 
 from haiku.rag.ingester.api.auth import require_auth
@@ -93,5 +95,11 @@ def build_app(
     app.include_router(database.router, dependencies=auth_dep)
     app.include_router(config_route.router, dependencies=auth_dep)
     app.include_router(reload.router, dependencies=auth_dep)
+    # The dashboards poll these every few seconds.
+    polled = "|".join(("health", "sources", "providers", "stats", "jobs"))
+    logfire.instrument_fastapi(
+        app,
+        excluded_urls=[f"^[^:]+://[^/]+(?:{re.escape(root_path)})?/(?:{polled})$"],
+    )
 
     return app
