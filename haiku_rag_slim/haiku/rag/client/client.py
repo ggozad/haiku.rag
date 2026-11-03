@@ -434,14 +434,16 @@ class HaikuRAG:
 
         `lender` is the client that opened it, whose reranker this one borrows.
         """
-        client = cls(config=session.config, read_only=session.read_only)
+        # Hooks belong to the client that owns the session, so a facade builds
+        # none and each hook runs once per operation.
+        client = cls(
+            config=session.config.model_copy(update={"hooks": []}),
+            read_only=session.read_only,
+        )
         client._scope = DatabaseScope((session.ref,))
         client._session = session
         client._owns_session = False
         client._lender = lender
-        # Hooks belong to the client that owns the session: a facade firing its
-        # own copy would run every hook once per database it was borrowed for.
-        client._hooks = []
         return client
 
     def _require_one_embedder(self, clients: "list[HaikuRAG]") -> None:
