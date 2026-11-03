@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `coreml` embedding provider: runs a converted Core ML model in-process on the Apple Neural Engine through PyObjC's Core ML bindings (macOS 15+, `coreml` extra). `examples/coreml` converts `jina-embeddings-v5-omni-nano-retrieval` (#819).
+
 ## [0.106.0] - 2026-11-03
 
 ### Added

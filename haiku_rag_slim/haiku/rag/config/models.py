@@ -67,8 +67,9 @@ class EmbeddingModelConfig(ConfigModel):
 
     Attributes:
         provider: Model provider (ollama, openai, openrouter, voyageai, cohere,
-            sentence-transformers, vllm)
-        name: Model name/identifier
+            sentence-transformers, vllm, coreml)
+        name: Model name/identifier. For coreml, the directory holding
+            model.mlpackage and tokenizer.json
         vector_dim: Vector dimensions produced by the model
         base_url: Optional base URL for OpenAI-compatible servers (vLLM, LM Studio, etc.)
         api_key: Key sent to the endpoint, overriding the provider's own
@@ -79,8 +80,8 @@ class EmbeddingModelConfig(ConfigModel):
             providers; other providers raise when this is set.
         query_prefix: Text prepended to every query before embedding.
         document_prefix: Text prepended to every chunk before embedding. Both
-            prefixes are honored on the ollama, openai, openrouter and vllm
-            providers; voyageai, cohere and sentence-transformers raise when
+            prefixes are honored on the coreml, ollama, openai, openrouter and
+            vllm providers; voyageai, cohere and sentence-transformers raise when
             either is set.
     """
 

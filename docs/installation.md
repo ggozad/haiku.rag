@@ -11,11 +11,12 @@ uv pip install haiku.rag        # full
 uv pip install haiku.rag-slim   # core, extras chosen by you
 ```
 
-`haiku.rag` is `haiku.rag-slim` with the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines four extras of its own, `tui`, `s3`, `cross-encoder` and `ingester`:
+`haiku.rag` is `haiku.rag-slim` with the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines five extras of its own, `tui`, `s3`, `cross-encoder`, `ingester` and `coreml`:
 
 ```bash
 uv pip install 'haiku.rag[ingester]'   # the haiku-ingester service
 uv pip install 'haiku.rag[s3]'         # S3 and object storage
+uv pip install 'haiku.rag[coreml]'     # Core ML embeddings on the Apple Neural Engine
 ```
 
 The model-provider extras exist only on `haiku.rag-slim`. With the full package, install them beside it:
@@ -33,6 +34,7 @@ Every extra `haiku.rag-slim` defines:
 | `docling` | PDF, DOCX, PPTX, XLSX, HTML, EPUB, LaTeX, email and images, converted locally | yes |
 | `tui` | Terminal UI for `chat` and `inspect` | yes |
 | `voyageai` | VoyageAI embeddings | yes |
+| `coreml` | Core ML embeddings on the Apple Neural Engine, macOS only | no |
 | `cohere` | Cohere embeddings and reranking | yes |
 | `zeroentropy` | Zero Entropy reranking | yes |
 | `cross-encoder` | Local reranking and embeddings via sentence-transformers | yes |

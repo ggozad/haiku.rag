@@ -10,6 +10,17 @@ Docker Compose setup with docling-serve, continuous ingestion of a watched direc
 
 See `docker/README.md` for setup instructions.
 
+## Core ML Embeddings
+
+**Script:** `coreml/convert_jina_nano.py`
+
+Converts `jinaai/jina-embeddings-v5-omni-nano-retrieval`'s text tower into the model directory the `coreml` embedding provider reads, for the Apple Neural Engine. Conversion needs `torch`, `sentence-transformers` and `coremltools`:
+
+```bash
+uv run --with torch --with sentence-transformers --with coremltools python \
+    examples/coreml/convert_jina_nano.py jinaai/jina-embeddings-v5-omni-nano-retrieval ./jina-nano-coreml
+```
+
 ## Custom Agent
 
 **Script:** `custom_agent.py`

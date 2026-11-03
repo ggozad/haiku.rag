@@ -55,6 +55,7 @@ tui = ["textual>=8.2.4"]
 s3 = ["haiku.rag-slim[s3]==0.106.0"]
 cross-encoder = ["haiku.rag-slim[cross-encoder]==0.106.0"]
 ingester = ["haiku.rag-slim[ingester]==0.106.0"]
+coreml = ["haiku.rag-slim[coreml]==0.106.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -87,6 +88,9 @@ dev = [
     "haiku.rag-evals",
     "haiku-rag-app",
     "haiku.rag-slim[ingester]",
+    "haiku.rag-slim[coreml]",
+    # Builds the Core ML model the coreml provider test runs.
+    "coremltools>=9.0,<10.0.0; sys_platform == 'darwin'",
     "zensical",
     "pre-commit>=4.5.1",
     "pydantic-ai-slim[anthropic]",
@@ -136,6 +140,16 @@ line-ending = "auto"
 
 [tool.ty.src]
 exclude = ["examples/**"]
+
+[tool.ty.analysis]
+# PyObjC and coremltools install on macOS only.
+allowed-unresolved-imports = [
+    "CoreML",
+    "Foundation",
+    "objc",
+    "coremltools",
+    "coremltools.**",
+]
 
 [tool.ty.environment]
 python-version = "3.12"

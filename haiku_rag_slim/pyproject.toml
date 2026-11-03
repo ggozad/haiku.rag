@@ -84,6 +84,11 @@ docling = [
 s3 = ["obstore>=0.9,<0.10"]
 # Embedding providers
 voyageai = ["pydantic-ai-slim[voyageai]"]
+# Core ML embedder on the Apple Neural Engine (macOS)
+coreml = [
+    "pyobjc-framework-CoreML>=13.0,<14.0; sys_platform == 'darwin'",
+    "tokenizers>=0.22.0,<1.0.0",
+]
 # Rerankers
 cohere = ["cohere>=5.21.1"]
 zeroentropy = ["zeroentropy>=0.1.0a11"]

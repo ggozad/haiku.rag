@@ -297,7 +297,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 **Config classes** (config/models.py):
 - `AppConfig` - Root config
 - `StorageConfig` - data_dir, auto_vacuum, vacuum_retention_seconds, compaction_target_bytes
-- `EmbeddingsConfig` / `EmbeddingModelConfig` - provider, name, vector_dim, multimodal (gates image embedding), query_prefix, document_prefix (prepended to query and chunk text, ollama/openai/vllm/openrouter only), batch_size
+- `EmbeddingsConfig` / `EmbeddingModelConfig` - provider, name, vector_dim, multimodal (gates image embedding), query_prefix, document_prefix (prepended to query and chunk text, coreml/ollama/openai/vllm/openrouter only), batch_size
 - `RerankingConfig` - optional reranker model, multimodal (vllm and openrouter)
 - `ModelConfig` - provider, name, base_url, api_key, thinking, temperature, max_tokens, vision, extra_body
 - `QAConfig` - model, max_searches (default 5), max_executions (default 15). The budgets are per question. `max_searches` counts search *units*: searches emitted in one model response (same `RunContext.run_step`) share a unit, up to `FREE_SIBLINGS_PER_ROUND` (3) per unit, so a run searches at most `max_searches × 3` times and a sequential searcher pays one unit per search. A budget-rejected round fails its remaining siblings
