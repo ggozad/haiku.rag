@@ -14,11 +14,13 @@
 ### Changed
 
 - A Logfire configuration failure is logged at WARNING with its traceback (#810).
+- `EmptyListingError.known` renamed to `count`.
 
 ### Fixed
 
 - Web app: chat sends messages when the frontend is served over plain HTTP from a host other than localhost (#809).
 - Web app: a corpus map whose result cannot be built is reported failed and no longer blocks the database's next map (#810).
+- Ingester: outside `--dry-run`, a sweep that lists nothing fails only when its deletes would remove stored documents owned by the source, and otherwise enqueues them (#806).
 
 ## [0.105.0] - 2026-11-02
 

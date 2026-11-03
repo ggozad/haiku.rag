@@ -67,17 +67,29 @@ class NoDatabaseStartedError(IngesterError):
 
 
 class EmptyListingError(IngesterError):
-    """A source listed nothing while URIs it listed before remain known."""
+    """A source listed nothing, and its deletes may remove its documents.
 
-    def __init__(self, source_id: str, known: int):
-        super().__init__(
-            f"Source {source_id!r} listed no documents, and {known} URIs it "
-            f"listed before are still known. Nothing was deleted. If the source "
-            f"was emptied on purpose, remove it from the configuration, and "
-            f"delete its documents by hand if they should go."
-        )
+    With `documents`, `count` counts the source's stored documents at the
+    deleted URIs. Without, as on a dry-run, it counts every deleted URI."""
+
+    def __init__(self, source_id: str, count: int, *, documents: bool = False):
+        if documents:
+            message = (
+                f"Source {source_id!r} listed no documents, and {count} of its "
+                f"stored documents would be deleted. Nothing was deleted. If the "
+                f"source was emptied on purpose, delete those documents by hand, "
+                f"or remove the source from the configuration."
+            )
+        else:
+            message = (
+                f"Source {source_id!r} listed no documents, and {count} URIs it "
+                f"listed before are still known. Nothing was deleted. If the "
+                f"source was emptied on purpose, remove it from the configuration, "
+                f"and delete its documents by hand if they should go."
+            )
+        super().__init__(message)
         self.source_id = source_id
-        self.known = known
+        self.count = count
 
 
 class ReloadRefusedError(IngesterError):
