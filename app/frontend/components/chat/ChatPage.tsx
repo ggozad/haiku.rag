@@ -21,6 +21,7 @@ import {
 	settlePending,
 } from "@/lib/chat";
 import { useDatabases } from "@/lib/databases";
+import { newId } from "@/lib/id";
 import { type Attachment, MAX_IMAGES, userContent } from "@/lib/images";
 import { withBasePath } from "@/lib/paths";
 import {
@@ -201,7 +202,7 @@ function ChatSession({
 		setImages([]);
 		setNotice(null);
 		setRunning(true);
-		const run = { runId: crypto.randomUUID(), text, images: attached };
+		const run = { runId: newId(), text, images: attached };
 		saveDraftImages(sessionId, []);
 		savePending(sessionId, run);
 		const outcome = await runTurn(

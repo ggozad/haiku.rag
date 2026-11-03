@@ -1,4 +1,5 @@
 import type { InputContent, Message } from "@ag-ui/client";
+import { newId } from "./id";
 import { type Attachment, MAX_IMAGES } from "./images";
 
 export interface Citation {
@@ -116,7 +117,7 @@ export async function runTurn(
 	forwardedProps: Record<string, unknown>,
 ): Promise<TurnOutcome> {
 	const saved = checkpoint(agent.messages, agent.state);
-	agent.addMessage({ id: crypto.randomUUID(), role: "user", content });
+	agent.addMessage({ id: newId(), role: "user", content });
 	let finished = false;
 	let failure: string | null = null;
 	try {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Web app: chat sends messages when the frontend is served over plain HTTP from a host other than localhost (#809).
+
 ## [0.105.0] - 2026-11-02
 
 ### Added
