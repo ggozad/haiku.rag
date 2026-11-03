@@ -967,26 +967,34 @@ async def _reconcile_pdf_attachments(
             if force and existing_child
             else {}
         )
-        await _ingest_fetch_result(
-            session,
-            client,
-            child_fr,
-            title=None,
-            user_metadata={
-                **caller_metadata,
-                **await _provider_metadata(metadata_provider, child_uri, fetched),
-                **hook_metadata,
-            },
-            stored_uri=child_uri,
-            existing_doc=existing_child,
-            source_id=source_id,
-            depth=depth + 1,
-            filename=name,
-            metadata_provider=metadata_provider,
-            force=force,
-            written_ids=written_ids,
-            notify_hooks=notify_hooks,
-        )
+        user_metadata = {
+            **caller_metadata,
+            **await _provider_metadata(metadata_provider, child_uri, fetched),
+            **hook_metadata,
+        }
+        try:
+            await _ingest_fetch_result(
+                session,
+                client,
+                child_fr,
+                title=None,
+                user_metadata=user_metadata,
+                stored_uri=child_uri,
+                existing_doc=existing_child,
+                source_id=source_id,
+                depth=depth + 1,
+                filename=name,
+                metadata_provider=metadata_provider,
+                force=force,
+                written_ids=written_ids,
+                notify_hooks=notify_hooks,
+            )
+        except ValueError as exc:
+            # docling raises ValueError for a file it cannot parse, which
+            # fails alike on every retry of the parent.
+            logger.warning(
+                "Skipping attachment %r in %s: %s", name, parent_doc.uri, exc
+            )
 
     deleted: list[Document] = []
     try:

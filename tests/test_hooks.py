@@ -1765,6 +1765,49 @@ async def test_a_failed_attachment_withholds_the_pdfs_event_until_a_retry(
 
 
 @pytest.mark.asyncio
+async def test_an_attachment_that_cannot_be_parsed_is_skipped(
+    temp_db_path, tmp_path, unconverted_ingest, monkeypatch
+):
+    """The PDF and its other attachments are stored and fire, the skip is logged."""
+    from haiku.rag.client import documents
+    from haiku.rag.client.documents import parent_uri_filter
+    from tests.conftest import build_pdf, capture_logs
+
+    path = tmp_path / "parent.pdf"
+    path.write_bytes(build_pdf([("a.txt", b"A"), ("equation-1.xml", b"<math/>")]))
+    parent_uri = path.as_uri()
+    unparseable = f"{parent_uri}#attachment=equation-1.xml"
+    convert = documents.convert
+
+    async def convert_or_fail(config, source, *, format="md", source_uri=None):
+        if source_uri == unparseable:
+            raise ValueError("File format not allowed")
+        return await convert(config, source, format=format, source_uri=source_uri)
+
+    monkeypatch.setattr(documents, "convert", convert_or_fail)
+    recording = MetadataRecordingHook()
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.client.documents"), logging.WARNING
+    ) as records:
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            client._hooks = [recording]
+            await client.create_document_from_source(path)
+            children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    assert [c.uri for c in children] == [f"{parent_uri}#attachment=a.txt"]
+    assert [r.getMessage() for r in records] == [
+        f"Skipping attachment 'equation-1.xml' in {parent_uri}: File format not allowed"
+    ]
+    assert _ingested(recording) == [
+        ("create", f"{parent_uri}#attachment=a.txt"),
+        ("create", parent_uri),
+    ]
+    _, [(_, metadata)] = recording.events[-1]
+    assert metadata["md5"] == _md5(path.read_bytes())
+
+
+@pytest.mark.asyncio
 async def test_a_rejected_attachment_lets_its_pdf_fire(
     temp_db_path, tmp_path, unconverted_ingest
 ):
