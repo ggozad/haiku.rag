@@ -96,6 +96,7 @@ ingester = [
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20",
     "asyncpg>=0.29",
+    "logfire[fastapi]>=3.17.0",
     "haiku.rag-slim[s3]",
 ]
 # TUI (chat and inspect commands)

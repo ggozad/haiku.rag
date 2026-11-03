@@ -9,6 +9,7 @@
 - Ingester: `GET /sources` returns `unsupported_files`, the files an `fs`, `s3` or `webdav` source's last successful sweep skipped for their extension, counted by extension. A change in the counts is logged at INFO (#805).
 - Ingester dashboard and web app ingestion page: a source shows a badge for the files its last sweep skipped for their extension, with the count per extension in its tooltip (#805).
 - Web app backend: a Logfire span per HTTP request, and an `app.job` span per doctor run and corpus map with `kind` and `database` (#810).
+- Ingester: a Logfire span per control-plane request, except the polled `/health`, `/sources`, `/providers`, `/stats` and `/jobs` (#810).
 
 ### Changed
 

@@ -1044,3 +1044,37 @@ async def test_retry_answers_409_and_names_the_blocking_tombstone(state, jobs, r
 
     assert resp.status_code == 409
     assert claimed_second.id in resp.json()["detail"]
+
+
+# --- tracing ---
+
+
+def _traced_paths(exporter) -> list[str]:
+    return [
+        str((span.attributes or {}).get("http.target", ""))
+        for span in exporter.exported_spans
+        if (span.attributes or {}).get("logfire.span_type") == "span"
+        and "http.target" in (span.attributes or {})
+    ]
+
+
+@pytest.mark.parametrize(
+    ("root_path", "prefix"),
+    [("", ""), ("/ingester", ""), ("/ingester", "/ingester")],
+)
+async def test_polled_routes_are_not_traced(state, exporter, root_path, prefix):
+    async with _client(state, root_path=root_path) as client:
+        for path in ("/health", "/sources", "/providers", "/stats"):
+            await client.get(prefix + path)
+        await client.get(prefix + "/jobs", params={"status": "claimed"})
+        await client.post(prefix + "/sources/src/refresh")
+        await client.get(prefix + "/databases/jobs")
+        await client.get(prefix + "/jobs/1")
+
+    assert sorted(_traced_paths(exporter)) == sorted(
+        [
+            prefix + "/sources/src/refresh",
+            prefix + "/databases/jobs",
+            prefix + "/jobs/1",
+        ]
+    )
