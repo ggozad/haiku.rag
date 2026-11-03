@@ -1,7 +1,6 @@
 import asyncio
 
 import logfire
-from logfire.testing import TestExporter
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import DocumentImport
@@ -10,6 +9,7 @@ from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.store.models.chunk import Chunk
 from tests.documents import docling_doc
 from tests.locks import ObservedLock, assert_waiting_for_lock
+from tests.spans import Tree
 
 
 class _StubEmbedder(EmbedderWrapper):
@@ -20,39 +20,6 @@ class _StubEmbedder(EmbedderWrapper):
 
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [[0.1] * self.vector_dim for _ in texts]
-
-
-class Tree:
-    """The exported spans, indexed for parent/child questions."""
-
-    def __init__(self, exporter: TestExporter):
-        # logfire exports a pending span when one opens and the real span when
-        # it closes; only the latter carries final attributes.
-        self.spans = [
-            span
-            for span in exporter.exported_spans
-            if (span.attributes or {}).get("logfire.span_type") != "pending_span"
-        ]
-        self._names = {
-            span.context.span_id: span.name for span in self.spans if span.context
-        }
-
-    def names(self) -> list[str]:
-        return [span.name for span in self.spans]
-
-    def one(self, name: str):
-        matches = [span for span in self.spans if span.name == name]
-        assert len(matches) == 1, f"expected exactly one {name!r}, got {len(matches)}"
-        return matches[0]
-
-    def parent_of(self, name: str) -> str | None:
-        span = self.one(name)
-        if span.parent is None:
-            return None
-        return self._names.get(span.parent.span_id)
-
-    def attrs(self, name: str) -> dict:
-        return dict(self.one(name).attributes or {})
 
 
 async def test_import_spans_report_each_phase(temp_db_path, exporter):
