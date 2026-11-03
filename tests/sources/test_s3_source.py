@@ -245,3 +245,14 @@ async def test_fetch_returns_an_object_within_the_limit(fake_obstore_io):
 
     src = S3Source(uri="s3://bucket/", max_file_size=1000)
     assert (await src.fetch("s3://bucket/file.txt")).body == b"small"
+
+
+async def test_discover_counts_unsupported_extensions_per_run(fake_s3_listing):
+    fake_s3_listing([[_meta("a.md"), _meta("b.rst"), _meta("c.RST"), _meta("folder/")]])
+    src = S3Source(uri="s3://bucket/", supported_extensions=[".md"])
+    [e async for e in src.discover()]
+    assert src.unsupported_files == {".rst": 2}
+
+    fake_s3_listing([[_meta("a.md")]])
+    [e async for e in src.discover()]
+    assert src.unsupported_files == {}

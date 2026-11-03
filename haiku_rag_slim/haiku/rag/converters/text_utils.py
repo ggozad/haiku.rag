@@ -127,6 +127,7 @@ class TextFileHandler:
         ".r",
         ".rb",
         ".rs",
+        ".rst",
         ".sass",
         ".scala",
         ".scss",

@@ -55,6 +55,8 @@ class SourceSummary(BaseModel):
     # The most recent failed discovery, cleared by the next successful sweep.
     last_error: str | None = None
     last_error_at: datetime | None = None
+    # Files the last successful sweep skipped for their extension, by extension.
+    unsupported_files: dict[str, int] = {}
 
 
 class RefreshResponse(BaseModel):

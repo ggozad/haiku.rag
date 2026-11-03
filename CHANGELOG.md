@@ -5,6 +5,9 @@
 ### Added
 
 - A Logfire span per hook call: `hook.before_ingest`, `hook.after_ingest`, `hook.after_delete`, `hook.lifespan.enter`, `hook.lifespan.exit`, `hook.before_search`, `hook.after_search`. Failures of `after_ingest`, `after_delete` and `lifespan` exit are recorded on the span at level error, and a rejection sets `rejected` and `reason` (#807).
+- `.rst` files are read as text (#805).
+- Ingester: `GET /sources` returns `unsupported_files`, the files an `fs`, `s3` or `webdav` source's last successful sweep skipped for their extension, counted by extension. A change in the counts is logged at INFO (#805).
+- Ingester dashboard and web app ingestion page: a source shows a badge for the files its last sweep skipped for their extension, with the count per extension in its tooltip (#805).
 
 ### Fixed
 

@@ -707,3 +707,32 @@ async def test_aclose_closes_the_http_client():
     )
     await src.aclose()
     assert src._http.is_closed
+
+
+async def test_discover_counts_unsupported_extensions_per_run():
+    listings = [
+        _multistatus(
+            {"href": "/dav/", "collection": True},
+            {"href": "/dav/a.md", "etag": '"rev-a"'},
+            {"href": "/dav/b.rst", "etag": '"rev-b"'},
+        ),
+        _multistatus(
+            {"href": "/dav/", "collection": True},
+            {"href": "/dav/a.md", "etag": '"rev-a"'},
+        ),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(207, content=listings.pop(0))
+
+    src = WebDAVSource(
+        source_id="nc",
+        base_url="https://nc.example.com/dav/",
+        supported_extensions=[".md"],
+        transport=_transport(handler),
+    )
+    [event async for event in src.discover()]
+    assert src.unsupported_files == {".rst": 1}
+
+    [event async for event in src.discover()]
+    assert src.unsupported_files == {}

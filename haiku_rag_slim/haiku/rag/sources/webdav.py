@@ -1,5 +1,6 @@
 import hashlib
 import re
+from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import unquote, urljoin, urlparse
@@ -192,6 +193,8 @@ class WebDAVSource:
             include_patterns=include_patterns,
             supported_extensions=self.supported_extensions,
         )
+        # Files the latest discover() skipped for their extension, by extension.
+        self.unsupported_files: Counter[str] = Counter()
         # transport is for testing — production callers leave it None.
         self._max_file_size = max_file_size
         auth = (
@@ -301,6 +304,7 @@ class WebDAVSource:
         known = known_uris or set()
         now = datetime.now(UTC)
         seen: set[str] = set()
+        self.unsupported_files = Counter()
 
         response, final_url = await self._propfind(self.base_url, depth="infinity")
         response.raise_for_status()
@@ -328,7 +332,7 @@ class WebDAVSource:
             # broken servers; skip anything that's not strictly under it.
             if uri == self.base_url.rstrip("/") or not uri.startswith(self.base_url):
                 continue
-            if not self.filter.include_file(uri):
+            if not self.filter.include_file(uri, self.unsupported_files):
                 continue
             seen.add(uri)
             revision = entry.revision

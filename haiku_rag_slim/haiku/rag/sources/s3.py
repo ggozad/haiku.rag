@@ -1,5 +1,6 @@
 import hashlib
 import mimetypes
+from collections import Counter
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from urllib.parse import urlparse
@@ -61,6 +62,8 @@ class S3Source:
             include_patterns=include_patterns,
             supported_extensions=self.supported_extensions,
         )
+        # Files the latest discover() skipped for their extension, by extension.
+        self.unsupported_files: Counter[str] = Counter()
         self._max_file_size = max_file_size
 
     def supports(self, uri: str) -> bool:
@@ -121,12 +124,16 @@ class S3Source:
         known = known_uris or set()
         now = datetime.now(UTC)
         seen: set[str] = set()
+        self.unsupported_files = Counter()
         store = make_s3_store(self.bucket, self.storage_options)
 
         async for batch in obstore.list(store, prefix=self.prefix or None):
             for obj in batch:
                 key = obj["path"]
-                if not self.filter.include_file(key):
+                # A key ending in "/" is a directory marker, not a file.
+                if key.endswith("/") or not self.filter.include_file(
+                    key, self.unsupported_files
+                ):
                     continue
                 uri = f"s3://{self.bucket}/{key}"
                 seen.add(uri)

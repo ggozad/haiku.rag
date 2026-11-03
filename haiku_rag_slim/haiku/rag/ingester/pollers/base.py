@@ -64,6 +64,7 @@ class BasePoller:
         self._last_skip_reason: str | None = None
         self._last_error: str | None = None
         self._last_error_at: datetime | None = None
+        self._unsupported_files: dict[str, int] = {}
         self._default_max_attempts = default_max_attempts
 
     @property
@@ -94,6 +95,24 @@ class BasePoller:
     @property
     def last_error_at(self) -> datetime | None:
         return self._last_error_at
+
+    @property
+    def unsupported_files(self) -> dict[str, int]:
+        """Files the last successful sweep skipped for their extension, by
+        extension. Empty for a source that does not count them."""
+        return self._unsupported_files
+
+    def _record_unsupported_files(self) -> None:
+        unsupported = dict(getattr(self.source, "unsupported_files", {}))
+        if unsupported and unsupported != self._unsupported_files:
+            ranked = sorted(unsupported.items(), key=lambda item: -item[1])
+            logger.info(
+                "Skipped %d files with unsupported extensions in %s: %s",
+                sum(unsupported.values()),
+                self.source_id,
+                ", ".join(f"{ext or 'no extension'} ({n})" for ext, n in ranked),
+            )
+        self._unsupported_files = unsupported
 
     def _record_error(self, exc: Exception) -> None:
         self._last_error = str(exc) or type(exc).__name__
@@ -186,6 +205,7 @@ class BasePoller:
                 for event in deletes:
                     await self._handle_event(event, sync_batch)
                 await self._sync.batch_upsert(sync_batch)
+                self._record_unsupported_files()
                 self._breaker.record_success()
                 self._last_polled_at = started
                 self._last_skip_reason = None
