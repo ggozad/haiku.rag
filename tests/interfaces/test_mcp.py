@@ -1248,3 +1248,42 @@ class TestMCPClientLifetime:
 
         async with create_mcp_server(mcp_db, config=drifted)._lifespan_manager():
             pass
+
+
+class TestFolderTools:
+    """The folder register tools, present when a register is configured."""
+
+    @pytest.fixture
+    def config(self, tmp_path, mcp_db):
+        from haiku.rag.config.models import AppConfig, IngesterConfig, LanceDBConfig
+
+        return AppConfig(
+            lancedb=LanceDBConfig(databases={"files": str(mcp_db)}),
+            ingester=IngesterConfig(folders_register=tmp_path / "folders.yaml"),
+        )
+
+    async def test_absent_without_a_register(self, mcp_db):
+        names = {t.name for t in await create_mcp_server(mcp_db).list_tools()}
+        assert not names & {"list_folders", "add_folder", "remove_folder"}
+
+    async def test_folders_are_added_listed_and_removed(self, tmp_path, config):
+        from fastmcp import Client
+
+        books = tmp_path / "books"
+        books.mkdir()
+        async with Client(create_mcp_server(config=config)) as client:
+            added = await client.call_tool(
+                "add_folder", {"path": str(books), "include": ["*.pdf"]}
+            )
+            assert added.structured_content is not None
+            assert added.structured_content["id"] == "books"
+            listed = await client.call_tool("list_folders", {})
+            assert listed.structured_content is not None
+            assert [f["id"] for f in listed.structured_content["result"]] == ["books"]
+            removed = await client.call_tool("remove_folder", {"folder_id": "books"})
+            assert removed.structured_content is not None
+            assert removed.structured_content["path"] == str(books.resolve())
+            with pytest.raises(ToolError, match="No folder 'books'"):
+                await client.call_tool("remove_folder", {"folder_id": "books"})
+            with pytest.raises(ToolError, match="not a directory"):
+                await client.call_tool("add_folder", {"path": str(tmp_path / "nope")})

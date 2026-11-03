@@ -729,6 +729,83 @@ class APIConfig(ConfigModel):
         return trimmed
 
 
+class ThrottleConfig(ConfigModel):
+    """When the service holds supervised conversions back to spare the
+    machine. Search is never held back."""
+
+    on_battery: Literal["run", "slow", "pause"] = Field(
+        default="slow",
+        description="On battery power: convert as usual, one unit at a time, "
+        "or not at all until on power again.",
+    )
+    max_load: float | None = Field(
+        default=0.7,
+        gt=0,
+        description="Pause while the one-minute load average per core is "
+        "above this. None never pauses for load.",
+    )
+    min_free_memory_percent: int | None = Field(
+        default=10,
+        ge=0,
+        le=100,
+        description="Pause while less memory than this is free (macOS). None "
+        "never pauses for memory.",
+    )
+    check_interval_s: float = Field(
+        default=15.0,
+        gt=0,
+        description="How often the conditions are read again.",
+    )
+
+
+class VacuumAfterIndexingConfig(ConfigModel):
+    """A vacuum the service runs once a large indexing run has finished."""
+
+    min_documents: int | None = Field(
+        default=None,
+        gt=0,
+        description="Vacuum a database once its queue has drained after at "
+        "least this many documents were indexed or removed since the last such "
+        "vacuum. None, the default, never does.",
+    )
+    quiet_s: float = Field(
+        default=60.0,
+        gt=0,
+        description="How long nothing may be queued or converting first.",
+    )
+    retention_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="Versions older than this are removed, tagged ones kept.",
+    )
+
+
+class ServiceConfig(ConfigModel):
+    """The local search service: `haiku-ingester serve` answering searches
+    over its HTTP API, and how lightly it runs."""
+
+    search_idle_s: float = Field(
+        default=300.0,
+        gt=0,
+        description="Seconds without a search after which the search client, "
+        "and the embedding model it holds, is closed.",
+    )
+    snippet_chars: int = Field(default=300, gt=0)
+    idle_exit_s: float | None = Field(
+        default=None,
+        gt=0,
+        description="Exit once this long has passed without an API request "
+        "while nothing is queued or converting. For a service a service "
+        "manager starts on demand (socket activation), which starts it again "
+        "on the next request; changes made "
+        "meanwhile are found by the sweep at that start. None never exits.",
+    )
+    throttle: ThrottleConfig = Field(default_factory=ThrottleConfig)
+    vacuum_after_indexing: VacuumAfterIndexingConfig = Field(
+        default_factory=VacuumAfterIndexingConfig
+    )
+
+
 class MetadataProviderConfig(ConfigModel):
     """A metadata provider named by entry point, with keyword arguments for its
     factory."""
@@ -839,9 +916,21 @@ SourceConfig = Annotated[
 
 
 class IngestedDatabase(ConfigModel):
-    """The sources one database is ingested from."""
+    """The sources one database is ingested from.
 
-    sources: list[SourceConfig] = Field(min_length=1)
+    `retired_sources` are ids of sources that were removed: the documents they
+    ingested are deleted when the database starts. A database may have no
+    sources while it has retired ones.
+    """
+
+    sources: list[SourceConfig] = Field(default_factory=list)
+    retired_sources: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _ingests_or_retires(self) -> "IngestedDatabase":
+        if not self.sources and not self.retired_sources:
+            raise ValueError("an ingested database needs at least one source")
+        return self
 
 
 class IngesterConfig(ConfigModel):
@@ -852,9 +941,18 @@ class IngesterConfig(ConfigModel):
     """
 
     databases: dict[str, IngestedDatabase] = Field(default_factory=dict)
+    folders_register: Path | None = Field(
+        default=None,
+        description="YAML file of the folders to index, managed with "
+        "`haiku-rag folders`, the API and MCP. Each folder is added to its "
+        "database's sources at load, and `serve` applies changes to the file "
+        "as they happen. A relative path is read from the config file's "
+        "directory.",
+    )
     queue: QueueConfig = Field(default_factory=QueueConfig)
     workers: WorkerConfig = Field(default_factory=WorkerConfig)
     api: APIConfig = Field(default_factory=APIConfig)
+    service: ServiceConfig = Field(default_factory=ServiceConfig)
 
     @model_validator(mode="before")
     @classmethod

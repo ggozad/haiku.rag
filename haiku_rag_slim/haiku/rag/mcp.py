@@ -124,6 +124,7 @@ def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolRe
             include_collection=covers_multiple,
             include_document_id=True,
             include_chunk_meta=True,
+            include_location=True,
         )
         for rank, result in enumerate(results, 1)
     )
@@ -250,8 +251,9 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         Use this first for any question the documents might answer; it needs
         no model and is the cheapest call. Results come best first, each with
         its rank, `Document ID`, `Collection` when the server covers several,
-        the document title, section headings, the matched chunk's metadata
-        when it has any, and the matching passage expanded to its section;
+        the local file's `Path` and the `Pages` it spans when known, the
+        document title, section headings, the matched chunk's metadata when it
+        has any, and the matching passage expanded to its section;
         pass the id and collection to the document tools. Pictures in the
         results follow as images, each labelled with its result. Ranks, not scores,
         are the signal: scores are not comparable across queries. If nothing
@@ -484,4 +486,65 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
             raise ToolError(f"{result.stderr}\n\nOutput: {result.stdout}")
         return result.stdout or "No output."
 
+    if config.ingester.folders_register is not None:
+        _add_folder_tools(mcp, config)
+
     return mcp
+
+
+def _add_folder_tools(mcp: FastMCP, config: AppConfig) -> None:
+    """Tools over the folder register, which a running ingester follows."""
+    from haiku.rag.folders import Folder, FolderRegister, FolderRegisterError
+
+    register = FolderRegister.of(config)
+
+    def _edit(title: str) -> ToolAnnotations:
+        return ToolAnnotations(title=title, read_only_hint=False, open_world_hint=False)
+
+    @mcp.tool(annotations=_read_only("List indexed folders"))
+    async def list_folders() -> list[Folder]:
+        """The local folders being indexed, with their include and exclude
+        patterns. Each folder's documents carry its id as `source_id` in their
+        metadata."""
+        return await asyncio.to_thread(register.folders)
+
+    @mcp.tool(annotations=_edit("Add a folder to index"))
+    async def add_folder(
+        path: str,
+        database: str | None = None,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+    ) -> Folder:
+        """Start indexing a local folder. The ingester picks it up within
+        seconds when it is running, and indexes it in the background.
+
+        Args:
+            path: Absolute path of the directory.
+            database: Database to index it into; required only when several
+                are configured.
+            include: Gitignore-style patterns of the files to index, matched
+                against absolute paths. Every supported file when omitted.
+            exclude: Patterns of the files to skip.
+        """
+        try:
+            return await asyncio.to_thread(
+                register.add, path, database=database, include=include, exclude=exclude
+            )
+        except FolderRegisterError as e:
+            raise ToolError(str(e)) from None
+
+    @mcp.tool(annotations=_edit("Stop indexing a folder"))
+    async def remove_folder(folder_id: str, keep_documents: bool = False) -> Folder:
+        """Stop indexing a folder. Its documents leave the index unless
+        `keep_documents`.
+
+        Args:
+            folder_id: The folder's id from `list_folders`.
+            keep_documents: Keep what was indexed from it.
+        """
+        try:
+            return await asyncio.to_thread(
+                register.remove, folder_id, keep_documents=keep_documents
+            )
+        except FolderRegisterError as e:
+            raise ToolError(str(e)) from None

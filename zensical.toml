@@ -39,6 +39,7 @@ nav = [
     { Production = [
         { Ingester = "ingester.md" },
         { MCP = "mcp.md" },
+        { "Local search API" = "local-search-api.md" },
         { "Remote processing" = "remote-processing.md" },
     ] },
     { Develop = [

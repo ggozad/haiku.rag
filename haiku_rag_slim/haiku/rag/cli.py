@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from haiku.rag.app import HaikuRAGApp
     from haiku.rag.client.scope import DatabaseScope
     from haiku.rag.config.models import AppConfig
+    from haiku.rag.folders import Folder, FolderRegister
 
 _cli = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -764,6 +765,121 @@ def history(
 ):
     app = create_app(db)
     asyncio.run(app.history(table=table, limit=limit))
+
+
+folders_cli = typer.Typer(
+    help="Manage the register of folders the ingester watches and indexes",
+    no_args_is_help=True,
+)
+_cli.add_typer(folders_cli, name="folders")
+
+
+def _folder_register() -> "FolderRegister":
+    from haiku.rag.folders import FolderRegister, FolderRegisterError
+
+    try:
+        return FolderRegister.of(get_config())
+    except FolderRegisterError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from None
+
+
+def _print_folder(folder: "Folder") -> None:
+    typer.echo(f"{folder.id}\t{folder.database}\t{folder.path}")
+    if folder.include:
+        typer.echo(f"  include: {', '.join(folder.include)}")
+    if folder.exclude:
+        typer.echo(f"  exclude: {', '.join(folder.exclude)}")
+
+
+@folders_cli.command("list", help="List the registered folders")
+def folders_list():
+    folders = _folder_register().folders()
+    if not folders:
+        typer.echo("No folders are registered.")
+    for folder in folders:
+        _print_folder(folder)
+
+
+@folders_cli.command("add", help="Register a folder to index")
+def folders_add(
+    path: Path = typer.Argument(help="The directory to index"),
+    database: str | None = typer.Option(
+        None, "--database", help="Database to index it into"
+    ),
+    include: list[str] | None = typer.Option(
+        None, "--include", help="Pattern of files to index (repeatable)"
+    ),
+    exclude: list[str] | None = typer.Option(
+        None, "--exclude", help="Pattern of files to skip (repeatable)"
+    ),
+    folder_id: str | None = typer.Option(
+        None, "--id", help="Folder id; derived from the directory name if omitted"
+    ),
+):
+    from haiku.rag.folders import FolderRegisterError
+
+    try:
+        folder = _folder_register().add(
+            path,
+            database=database,
+            include=include,
+            exclude=exclude,
+            folder_id=folder_id,
+        )
+    except FolderRegisterError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from None
+    _print_folder(folder)
+
+
+@folders_cli.command("update", help="Change a folder's include and exclude patterns")
+def folders_update(
+    folder_id: str = typer.Argument(help="The folder's id"),
+    include: list[str] | None = typer.Option(
+        None, "--include", help="Pattern of files to index (repeatable)"
+    ),
+    exclude: list[str] | None = typer.Option(
+        None, "--exclude", help="Pattern of files to skip (repeatable)"
+    ),
+    clear_include: bool = typer.Option(
+        False, "--clear-include", help="Index every supported file"
+    ),
+    clear_exclude: bool = typer.Option(
+        False, "--clear-exclude", help="Skip no file by pattern"
+    ),
+):
+    from haiku.rag.folders import FolderRegisterError
+
+    try:
+        folder = _folder_register().update(
+            folder_id,
+            include=[] if clear_include else include,
+            exclude=[] if clear_exclude else exclude,
+        )
+    except FolderRegisterError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from None
+    _print_folder(folder)
+
+
+@folders_cli.command("remove", help="Stop indexing a folder")
+def folders_remove(
+    folder_id: str = typer.Argument(help="The folder's id"),
+    keep_documents: bool = typer.Option(
+        False,
+        "--keep-documents",
+        help="Keep the folder's documents in the index",
+    ),
+):
+    from haiku.rag.folders import FolderRegisterError
+
+    try:
+        folder = _folder_register().remove(folder_id, keep_documents=keep_documents)
+    except FolderRegisterError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from None
+    typer.echo(f"Removed {folder.id} ({folder.path})")
 
 
 tag_cli = typer.Typer(

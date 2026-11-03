@@ -384,7 +384,9 @@ class TestStoreMiscellany:
         import asyncio
 
         async with Store(temp_db_path, create=True) as store:
+            assert not store.vacuuming
             async with store._vacuum_lock:
+                assert store.vacuuming
                 # Bounded: a regression here blocks on the held lock, and the
                 # timeout turns that deadlock into a clean failure.
                 await asyncio.wait_for(store.vacuum(), timeout=5)

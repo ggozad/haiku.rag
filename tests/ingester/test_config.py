@@ -300,4 +300,5 @@ def test_an_ingested_database_without_sources_is_refused():
         AppConfig.model_validate({"ingester": {"databases": {"haiku.rag": {}}}})
 
     [error] = raised.value.errors()
-    assert error["loc"] == ("ingester", "databases", "haiku.rag", "sources")
+    assert error["loc"] == ("ingester", "databases", "haiku.rag")
+    assert "at least one source" in error["msg"]

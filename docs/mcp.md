@@ -119,7 +119,8 @@ After restarting Claude Desktop, you can ask Claude to search your documents or 
 
 ## Tools
 
-Every tool is read-only and says so in its annotations. Each parameter carries
+Every tool but `add_folder` and `remove_folder` is read-only, and each says so in
+its annotations. Each parameter carries
 a description in the tool schema, so the listing below names them without
 repeating it.
 
@@ -132,10 +133,14 @@ repeating it.
 | `get_document_section` | always | `document_id`, `section_id`, `source` |
 | `list_documents` | always | `limit`, `offset`, `filter`, `sources` |
 | `execute_code` | always | `code`, `filter`, `sources` |
+| `list_folders` | `ingester.folders_register` set | |
+| `add_folder` | `ingester.folders_register` set | `path`, `database`, `include`, `exclude` |
+| `remove_folder` | `ingester.folders_register` set | `folder_id`, `keep_documents` |
 
 `search_documents` runs hybrid search, vector and full-text. Its text content
 is the rendering the in-process agents read: results best first, each with its
-rank, `Document ID`, `Collection` when the server covers several, the document
+rank, `Document ID`, `Collection` when the server covers several, the local
+file's `Path` and the `Pages` the passage spans when known, the document
 title, section headings, the matched chunk's metadata when it has any, and the
 passage expanded to its section the way the agents get it
 (`search.max_context_chars` caps it). Pictures in the results follow as
@@ -152,6 +157,9 @@ embeds the query image and searches by vector similarity alone.
 node's `id` in the outline is the `section_id`. A document without headings
 has an empty outline. `list_documents` returns titles, URIs and metadata,
 which is how a client learns what a filter can match.
+
+The folder tools manage the [folder register](ingester.md#folder-register): a
+running ingester starts or stops indexing a folder within seconds of the change.
 
 ### Code
 

@@ -134,7 +134,7 @@ class ConversionSupervisor:
         self.config = config
         self.settings = config.processing.supervisor
         self.command = tuple(command or WORKER_COMMAND)
-        self.gate = gate
+        self.gate = gate if gate is not None else _default_gate
         self._slots = asyncio.Semaphore(self.settings.workers)
         self._pool = _Pool()
         self._closing = False
@@ -372,6 +372,17 @@ def _keep_page_numbers(
         if page_no not in document.pages:
             width, height = sizes[page_no - 1]
             document.add_page(page_no=page_no, size=Size(width=width, height=height))
+
+
+_default_gate: "Callable[[], AbstractAsyncContextManager[None]] | None" = None
+
+
+def set_default_gate(
+    gate: "Callable[[], AbstractAsyncContextManager[None]] | None",
+) -> None:
+    """The gate of supervisors created without one from now on."""
+    global _default_gate
+    _default_gate = gate
 
 
 _SUPERVISORS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[str, ConversionSupervisor]]" = weakref.WeakKeyDictionary()

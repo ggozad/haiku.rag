@@ -116,7 +116,23 @@ def load_yaml_config(path: Path) -> dict:
     data = _read_yaml(path, config_dir)
     if isinstance(data, dict) and (include := data.pop("databases_include", None)):
         _merge_fragments(data, path, config_dir / include, config_dir)
+    if isinstance(data, dict) and isinstance(data.get("ingester"), dict):
+        _merge_folders(data["ingester"], data, config_dir)
     return data
+
+
+def _merge_folders(ingester: dict, data: dict, config_dir: Path) -> None:
+    """Make `folders_register` absolute and add its folders to the databases."""
+    register = ingester.get("folders_register")
+    if not register:
+        return
+    from haiku.rag.folders import merge_register
+
+    path = Path(register).expanduser()
+    if not path.is_absolute():
+        path = config_dir / path
+    ingester["folders_register"] = str(path)
+    merge_register(data, path)
 
 
 _FRAGMENT_SECTIONS = ("lancedb", "ingester")

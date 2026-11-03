@@ -5,6 +5,15 @@
 ### Added
 
 - Supervised conversion (`processing.supervisor`): docling-local converts each document, or each batch of a long PDF's pages, in a pooled worker process killed after `unit_timeout`, and retries a failed unit once with `retry_ocr_engine` (RapidOCR). A stalled conversion costs only its document, and the process keeps converting. Long PDFs convert as page batches in parallel. `add-src DIR` ingests concurrently under it and lists the files that failed. A document being converted when the ingester stops goes back to the queue.
+- Folder register (`ingester.folders_register`): local folders to index, with include and exclude patterns, managed with `haiku-rag folders`, the ingester API's `/folders` and MCP's `list_folders`, `add_folder` and `remove_folder`. `serve` follows changes to it as they happen, and a removed folder's documents leave the index.
+- Local search API on the ingester's HTTP API: `/search`, per-document search, documents and outlines, `/status` and `/failures`, with each hit's file path, document type, pages, line, headings, labels, snippet and per-page boxes. See `docs/local-search-api.md`.
+- Chunks record their boxes per page (`metadata.locations`), and MCP search results name their file `Path` and `Pages`.
+- `ingester.service`: the search client closes when idle, a throttle holds supervised conversions back on battery, under load and in low memory, and `idle_exit_s` ends an idle service. `HAIKU_RAG_LISTEN_FD` serves the API on an inherited socket.
+- `ingester.service.vacuum_after_indexing` (off by default): once the queue drains after at least `min_documents` documents were indexed or removed, `serve` vacuums that database with `retention_seconds` (0), holding searches back meanwhile.
+
+### Changed
+
+- `ingester.databases` entries may hold only `retired_sources` while their documents are deleted.
 
 ## [0.106.0] - 2026-11-03
 

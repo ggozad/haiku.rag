@@ -291,6 +291,17 @@ documents
   v4: 2025-01-14 10:00:00
 ```
 
+## Folders
+
+`haiku-rag folders` manages the [folder register](ingester.md#folder-register), the folders `haiku-ingester serve` watches and indexes. It needs `ingester.folders_register` in the configuration.
+
+```bash
+haiku-rag folders list
+haiku-rag folders add DIR [--database NAME] [--include PATTERN]... [--exclude PATTERN]... [--id ID]
+haiku-rag folders update ID [--include PATTERN]... [--exclude PATTERN]... [--clear-include] [--clear-exclude]
+haiku-rag folders remove ID [--keep-documents]
+```
+
 ## Servers
 
 ```bash

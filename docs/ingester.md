@@ -84,6 +84,29 @@ To retire a source, remove it from the configuration, and delete its documents b
 
 A source moved under another key keeps its id and its queue record. At the next start, reconciliation finds its documents missing from the new database and ingests them again there. The old database keeps its copies until they are deleted by hand.
 
+### Folder register
+
+`ingester.folders_register` names a YAML file of local folders to index, managed with the [CLI](cli.md#folders), the [local search API](local-search-api.md#folders) and the [MCP folder tools](mcp.md#tools) rather than by hand. A relative path is read from the config file's directory.
+
+```yaml
+lancedb:
+  databases:
+    files: ~/Library/Application Support/haiku.rag/files.lancedb
+ingester:
+  folders_register: folders.yaml
+```
+
+```bash
+haiku-rag folders add ~/Documents/Guitar --include "*.pdf" --exclude "drafts/"
+haiku-rag folders list
+haiku-rag folders update guitar --clear-exclude
+haiku-rag folders remove guitar            # --keep-documents keeps what it indexed
+```
+
+Each folder becomes an FS source of its database when the configuration loads, its id the folder id and its patterns the source's `include_patterns` and `ignore_patterns`: gitignore-style patterns matched against each file's absolute path, so `*.pdf` and `drafts/` match at any depth. A folder's database defaults to the only configured one. Folders may not overlap, since a file must belong to one source.
+
+`serve` watches the register file and reloads when it changes, which removes and adds the changed database (see [Reloading databases](#reloading-databases)): its in-flight jobs finish first, and documents already indexed are kept and not converted again. Removing a folder records it as retired, and when its database next starts the ingester deletes the documents it indexed and its queue records. A database may be left with retired folders and no sources while that happens.
+
 ### Filesystem
 
 ```yaml
@@ -481,6 +504,12 @@ ingester:
     auth_token: ${INGESTER_TOKEN}             # unset: unauthenticated
     root_path: ""                             # e.g. /ingester behind a proxy
 ```
+
+### Search endpoints
+
+The API also answers searches over the configured databases, the documents' outlines, the folder register, a status summary and the list of failed documents: the [local search API](local-search-api.md). Searches go through one read-only client opened on the first search and closed after `ingester.service.search_idle_s` without one, which releases its embedding model.
+
+With supervised conversion on, `ingester.service.throttle` holds conversions back to spare the machine: one at a time on battery (`on_battery: slow`, or `pause`), and none while the load per core is above `max_load` or less than `min_free_memory_percent` of memory is free (macOS). A conversion already running is never stopped, and search is never held back.
 
 ### Behind a reverse proxy
 

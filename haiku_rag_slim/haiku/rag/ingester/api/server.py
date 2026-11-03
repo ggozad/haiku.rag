@@ -1,5 +1,6 @@
 import asyncio
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
     from haiku.rag.ingester.pollers.manager import PollerManager
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
     from haiku.rag.ingester.workers.pool import WorkerPool
+    from haiku.rag.service.search import SearchService
+    from haiku.rag.service.throttle import Throttle
 
 
 @dataclass
@@ -26,7 +29,10 @@ class APIState:
     that failed to start, with their errors, and `source_databases` maps a
     served source id to the name of its database. A retry holds `claim_lock`, the
     pool's, so it cannot land between a removal's unserve and its delete.
-    `reload` is the running app's."""
+    `reload` is the running app's, and `request_reload` queues one without
+    waiting for it. `search` answers the search and document endpoints, and
+    `throttle` is what holds conversions back, when the app runs one.
+    `last_request_at` is the monotonic time of the latest request."""
 
     config: "AppConfig"
     job_repo: "JobRepo"
@@ -38,6 +44,10 @@ class APIState:
     source_databases: Mapping[str, str] = field(default_factory=dict)
     claim_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     reload: "Callable[[], Awaitable[ReloadReport]] | None" = None
+    request_reload: "Callable[[], None] | None" = None
+    search: "SearchService | None" = None
+    throttle: "Throttle | None" = None
+    last_request_at: float = field(default_factory=time.monotonic)
 
 
 def get_state(request: Request) -> APIState:
@@ -64,10 +74,12 @@ def build_app(
         dashboard,
         database,
         dlq,
+        folders,
         health,
         jobs,
         providers,
         reload,
+        service,
         sources,
         stats,
     )
@@ -80,6 +92,11 @@ def build_app(
     )
     app.state.api_state = state
     app.state.auth_token = auth_token
+
+    @app.middleware("http")
+    async def _note_activity(request: Request, call_next):
+        state.last_request_at = time.monotonic()
+        return await call_next(request)
 
     auth_dep = [Depends(require_auth)]
     app.include_router(health.router)  # /health is unauthenticated by design
@@ -95,6 +112,8 @@ def build_app(
     app.include_router(database.router, dependencies=auth_dep)
     app.include_router(config_route.router, dependencies=auth_dep)
     app.include_router(reload.router, dependencies=auth_dep)
+    app.include_router(folders.router, dependencies=auth_dep)
+    app.include_router(service.router, dependencies=auth_dep)
     # The dashboards poll these every few seconds.
     polled = "|".join(("health", "sources", "providers", "stats", "jobs"))
     logfire.instrument_fastapi(

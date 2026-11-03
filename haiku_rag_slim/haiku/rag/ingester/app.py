@@ -1,7 +1,10 @@
 import asyncio
 import logging
+import os
 import signal
+import socket
 import sys
+import time
 from collections.abc import Awaitable, Callable, Collection, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
@@ -44,10 +47,16 @@ if TYPE_CHECKING:
     from haiku.rag.ingester.api.server import APIState
     from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.ingester.pollers.base import BasePoller
+    from haiku.rag.service.throttle import Throttle
 
 logger = logging.getLogger(__name__)
 
 _MANIFEST_EXTRA_KEY = "_manifest"
+
+# A listening socket the process inherited, as its file descriptor: a launcher
+# taking a service manager's activated socket (launchd's, systemd's) hands it
+# on through this variable.
+LISTEN_FD_VARIABLE = "HAIKU_RAG_LISTEN_FD"
 
 
 def _api_access_log_enabled() -> bool:
@@ -235,6 +244,7 @@ class IngesterApp:
             for source in sources
         ]
         self._configured_source_ids: set[str] = set()
+        self._retired = _retired_sources(config)
         self._running: dict[str, _Database] = {}
         self._ingested: dict[str, DatabaseRef] = {}
         self._source_databases: dict[str, str] = {}
@@ -255,6 +265,7 @@ class IngesterApp:
         self._pool: WorkerPool | None = None
         self._pollers: PollerManager | None = None
         self._api: APIState | None = None
+        self._throttle: Throttle | None = None
         self._reload_lock = asyncio.Lock()
         self._reloads: set[asyncio.Task] = set()
         self._signal_reload_queued = False
@@ -501,6 +512,7 @@ class IngesterApp:
             and self._pollers is not None
             and self._sync is not None
         )
+        await self._purge_retired(database)
         await reconcile(database.client, self._sync, database.source_ids)
         self._pool.add_sources(
             clients={source_id: database.client for source_id in database.source_ids},
@@ -523,6 +535,32 @@ class IngesterApp:
         self._source_databases.update(
             {source_id: name for source_id in database.source_ids}
         )
+
+    async def _purge_retired(self, database: _Database) -> None:
+        """Delete the documents of `database`'s retired sources, and what the
+        queue knows of those sources."""
+        assert self._sync is not None
+        retired = set(self._retired.get(database.ref.name, ())) - set(
+            database.source_ids
+        )
+        if not retired:
+            return
+        doomed = [
+            (doc.id, owner)
+            for doc in await database.client.list_documents()
+            if (owner := (doc.metadata or {}).get("source_id")) in retired
+            and doc.id is not None
+        ]
+        for document_id, owner in doomed:
+            await database.client.delete_document(document_id, source_id=owner)
+        await self._sync.delete_sources(sorted(retired))
+        if doomed:
+            logger.info(
+                "Deleted %d document(s) of removed source(s) %s from %s",
+                len(doomed),
+                ", ".join(sorted(retired)),
+                database.ref.name,
+            )
 
     async def _close(
         self,
@@ -699,6 +737,22 @@ class IngesterApp:
         """Run pollers + workers (and the HTTP API when enabled) until a
         SIGINT/SIGTERM is received. Drains in-flight work on shutdown."""
         ingester_cfg = self._config.ingester
+        if self._config.processing.supervisor.enabled:
+            from haiku.rag.converters.supervisor import set_default_gate
+            from haiku.rag.service.throttle import Throttle
+
+            self._throttle = Throttle(ingester_cfg.service.throttle)
+            set_default_gate(self._throttle.gate)
+        try:
+            await self._serve(api)
+        finally:
+            if self._throttle is not None:
+                from haiku.rag.converters.supervisor import set_default_gate
+
+                set_default_gate(None)
+
+    async def _serve(self, api: bool) -> None:
+        ingester_cfg = self._config.ingester
         async with self._resources():
             assert self._pollers is not None and self._pool is not None
             await self._pollers.start()
@@ -730,6 +784,9 @@ class IngesterApp:
             api_task, api_server = await self._maybe_start_api(api)
 
             stop_event = asyncio.Event()
+            watcher = self._watch_register()
+            idle_exit = self._exit_when_idle(stop_event)
+            vacuum = self._vacuum_after_indexing()
             loop = asyncio.get_running_loop()
             handlers: dict[int, Callable[[], None]] = {
                 signal.SIGINT: stop_event.set,
@@ -762,6 +819,13 @@ class IngesterApp:
                     api_server.should_exit = True
                 if api_task is not None:
                     await asyncio.gather(api_task, return_exceptions=True)
+                for task in (watcher, idle_exit, vacuum):
+                    if task is not None:
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                if self._api is not None:
+                    assert self._api.search is not None
+                    await self._api.search.aclose()
                 await self._pollers.stop()
                 await self._stop_pool()
                 await self._pollers.close_sources()
@@ -924,6 +988,105 @@ class IngesterApp:
                 await self._stop_pool()
                 await self._pollers.close_sources()
 
+    def _vacuum_after_indexing(self) -> asyncio.Task | None:
+        """Vacuum each database whose queue drained after `min_documents`
+        documents were indexed or removed since its last such vacuum."""
+        settings = self._config.ingester.service.vacuum_after_indexing
+        threshold = settings.min_documents
+        if threshold is None:
+            return None
+
+        async def watch() -> None:
+            assert self._jobs is not None
+            started = datetime.now(UTC)
+            marks: dict[str, datetime] = {}
+            quiet_since: float | None = None
+            while True:
+                await asyncio.sleep(min(15.0, settings.quiet_s / 4))
+                counts = await self._jobs.counts_by_status()
+                if counts.get("queued", 0) + counts.get("claimed", 0):
+                    quiet_since = None
+                    continue
+                now = time.monotonic()
+                quiet_since = quiet_since if quiet_since is not None else now
+                if now - quiet_since < settings.quiet_s:
+                    continue
+                for name, database in list(self._running.items()):
+                    done = await self._jobs.counts_by_status_since(
+                        marks.get(name, started), source_ids=database.source_ids
+                    )
+                    if done.get("succeeded", 0) < threshold:
+                        continue
+                    if database.client.store.vacuuming:
+                        continue
+                    mark = datetime.now(UTC)
+                    if await self._vacuum(name, database, settings.retention_seconds):
+                        marks[name] = mark
+
+        return asyncio.create_task(watch())
+
+    async def _vacuum(self, name: str, database: _Database, retention: int) -> bool:
+        """Vacuum one database while no search runs. False when one did."""
+        started = time.monotonic()
+
+        async def work() -> None:
+            await database.client.vacuum(retention_seconds=retention)
+
+        search = self._api.search if self._api is not None else None
+        try:
+            if search is None:
+                await work()
+            elif not await search.while_idle(work):
+                return False
+        except Exception:
+            logger.exception("Vacuum of %s after indexing failed", name)
+            return True
+        logger.info(
+            "Vacuumed %s after indexing in %.1fs", name, time.monotonic() - started
+        )
+        return True
+
+    def _exit_when_idle(self, stop: asyncio.Event) -> asyncio.Task | None:
+        """Set `stop` once `idle_exit_s` passed with no request and no work."""
+        idle_s = self._config.ingester.service.idle_exit_s
+        if idle_s is None:
+            return None
+
+        async def watch() -> None:
+            assert self._jobs is not None
+            started = time.monotonic()
+            while True:
+                await asyncio.sleep(min(30.0, idle_s / 4))
+                last = self._api.last_request_at if self._api is not None else 0.0
+                counts = await self._jobs.counts_by_status()
+                busy = counts.get("queued", 0) + counts.get("claimed", 0)
+                if busy or time.monotonic() - max(started, last) < idle_s:
+                    continue
+                logger.info("Idle for %gs with nothing to ingest: exiting", idle_s)
+                stop.set()
+                return
+
+        return asyncio.create_task(watch())
+
+    def _watch_register(self) -> asyncio.Task | None:
+        """Reload whenever the folder register file changes, until cancelled."""
+        register = self._config.ingester.folders_register
+        if register is None or self._config_path is None:
+            return None
+
+        async def watch() -> None:
+            from watchfiles import awatch
+
+            register.parent.mkdir(parents=True, exist_ok=True)
+            async for _ in awatch(
+                register.parent,
+                watch_filter=lambda _change, path: Path(path).name == register.name,
+                recursive=False,
+            ):
+                self._reload_on_signal()
+
+        return asyncio.create_task(watch())
+
     async def reload(self) -> ReloadReport:
         """Read the configuration file again and add, remove or replace the
         databases that changed. Reloads run one at a time, and a caller that
@@ -986,6 +1149,7 @@ class IngesterApp:
 
     async def _reload(self) -> ReloadReport:
         config, wanted = await self._read_configuration()
+        self._retired = _retired_sources(config)
         report = ReloadReport()
         if not await self._close_prepared(report):
             return report
@@ -1084,6 +1248,8 @@ class IngesterApp:
         self._databases = list(wanted.values())
         if self._api is not None:
             self._api.config = config
+            assert self._api.search is not None, "the app's API state searches"
+            self._api.search.reconfigure(config)
         return report
 
     async def _read_configuration(
@@ -1127,6 +1293,7 @@ class IngesterApp:
         """The API's view of the running app: the maps it reads are the app's
         own, so they follow databases as they are added and removed."""
         from haiku.rag.ingester.api.server import APIState
+        from haiku.rag.service.search import SearchService
 
         assert (
             self._jobs is not None and self._sync is not None and self._pool is not None
@@ -1143,6 +1310,9 @@ class IngesterApp:
                 source_databases=self._source_databases,
                 claim_lock=self._pool.claim_lock,
                 reload=self.reload,
+                request_reload=self._reload_on_signal,
+                search=SearchService(self._config),
+                throttle=self._throttle,
             )
         return self._api
 
@@ -1174,13 +1344,18 @@ class IngesterApp:
             lifespan="off",
         )
         server = uvicorn.Server(config)
-        logger.info(
-            "API listening on %s:%d%s",
-            ingester_cfg.api.host,
-            ingester_cfg.api.port,
-            ingester_cfg.api.root_path,
-        )
-        return asyncio.create_task(server.serve()), server
+        sockets = None
+        if (fd := os.environ.get(LISTEN_FD_VARIABLE)) is not None:
+            sockets = [socket.socket(fileno=int(fd))]
+            logger.info("API listening on inherited socket %s", fd)
+        else:
+            logger.info(
+                "API listening on %s:%d%s",
+                ingester_cfg.api.host,
+                ingester_cfg.api.port,
+                ingester_cfg.api.root_path,
+            )
+        return asyncio.create_task(server.serve(sockets=sockets)), server
 
 
 def _ingested_databases(
@@ -1199,6 +1374,14 @@ def _ingested_databases(
     ]
     _refuse_shared_locations([ref for ref, _ in databases])
     return databases
+
+
+def _retired_sources(config: AppConfig) -> dict[str, list[str]]:
+    return {
+        name: entry.retired_sources
+        for name, entry in config.ingester.databases.items()
+        if entry.retired_sources
+    }
 
 
 def _refuse_duplicate_ids(ids: list[str]) -> None:

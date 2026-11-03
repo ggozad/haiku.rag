@@ -551,6 +551,11 @@ class Store:
         """The tag every table is read at, or None for the live state."""
         return self._tag
 
+    @property
+    def vacuuming(self) -> bool:
+        """Whether a vacuum is running, which a second `vacuum()` skips."""
+        return self._vacuum_lock.locked()
+
     async def _read_stored_settings(self) -> dict:
         """The settings blob."""
         return await read_settings(self.settings_table)

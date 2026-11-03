@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, PrivateAttr
 
+from haiku.rag.locations import LOCATIONS_KEY
+
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
 
@@ -211,6 +213,7 @@ class SearchResult(BaseModel):
         include_collection: bool = False,
         include_document_id: bool = False,
         include_chunk_meta: bool = False,
+        include_location: bool = False,
     ) -> str:
         """Format this search result for inclusion in agent context.
 
@@ -228,7 +231,8 @@ class SearchResult(BaseModel):
         that will fetch the document by id from the text alone.
         `include_chunk_meta` renders the metadata stored with the matched
         chunk beyond haiku.rag's own structural keys; on an expanded result it
-        locates the hit, not the whole passage.
+        locates the hit, not the whole passage. `include_location` names the
+        local file a result came from and its pages.
         """
         if rank is not None and total is not None:
             parts = [f"[{self.chunk_id}] [rank {rank} of {total}]"]
@@ -242,6 +246,14 @@ class SearchResult(BaseModel):
 
         if include_collection and self.source:
             parts.append(f"Collection: {self.source}")
+
+        if include_location:
+            from haiku.rag.uri import is_local_uri, uri_to_path
+
+            if self.document_uri and is_local_uri(self.document_uri):
+                parts.append(f"Path: {uri_to_path(self.document_uri)}")
+            if self.page_numbers:
+                parts.append(f"Pages: {', '.join(map(str, self.page_numbers))}")
 
         # Document source info
         source_parts = []
@@ -262,7 +274,7 @@ class SearchResult(BaseModel):
             custom = {
                 key: value
                 for key, value in self.chunk_meta.items()
-                if key not in ChunkMetadata.model_fields
+                if key not in ChunkMetadata.model_fields and key != LOCATIONS_KEY
             }
             if custom:
                 rendered = json.dumps(custom, ensure_ascii=False, sort_keys=True)

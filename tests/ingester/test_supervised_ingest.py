@@ -175,6 +175,22 @@ async def test_a_directory_ingest_keeps_going_past_a_failing_file(tmp_path):
     assert [doc.uri for doc in failed.value.documents] == [(folder / "a.md").as_uri()]
 
 
+async def test_serving_holds_conversions_through_the_throttle(tmp_path, use_client):
+    from tests.ingester.conftest import _mock_client, _serving
+
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    config = _config(tmp_path, folder)
+    config.ingester.workers.shutdown_grace_s = 0.2
+    use_client(_mock_client())
+    app = IngesterApp(config=config)
+
+    async with _serving(app):
+        assert app._throttle is not None
+        assert supervisor_module._default_gate == app._throttle.gate
+    assert supervisor_module._default_gate is None
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(
     sys.platform == "win32", reason="Windows has no signals to send a process"
@@ -185,6 +201,9 @@ async def test_a_document_converting_when_serve_stops_is_queued_again(tmp_path):
     (folder / "hang-always.md").write_text("# hang\n", encoding="utf-8")
     config = _config(tmp_path, folder)
     config.processing.supervisor.unit_timeout = 60.0
+    config.ingester.service.throttle.max_load = None
+    config.ingester.service.throttle.min_free_memory_percent = None
+    config.ingester.service.throttle.on_battery = "run"
     # Long enough for a retry to start, and to be signalled in turn.
     config.ingester.workers.shutdown_grace_s = 4.0
     serving = asyncio.create_task(IngesterApp(config=config).serve(api=False))

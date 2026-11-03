@@ -247,25 +247,29 @@ async def chunk(
     ``existing_picture_data`` (snapshot keyed by ``self_ref``) supplies bytes
     for pictures whose ``image.uri`` has been stripped — used by the rebuild
     path where the docling is loaded from the stored blob.
+
+    Each chunk's metadata records its boxes per page under ``locations``.
     """
     from haiku.rag.chunkers import get_chunker
+    from haiku.rag.locations import attach_locations
 
     chunker = get_chunker(config)
-    text_chunks = await chunker.chunk(docling_document)
+    chunks = await chunker.chunk(docling_document)
 
     if not embedder.supports_images:
-        for i, c in enumerate(text_chunks):
+        for i, c in enumerate(chunks):
             c.order = i
-        return text_chunks
-
-    return await asyncio.to_thread(
-        _merge_picture_chunks,
-        docling_document,
-        text_chunks,
-        document_id,
-        existing_picture_data,
-        config.processing.min_picture_size,
-    )
+    else:
+        chunks = await asyncio.to_thread(
+            _merge_picture_chunks,
+            docling_document,
+            chunks,
+            document_id,
+            existing_picture_data,
+            config.processing.min_picture_size,
+        )
+    await asyncio.to_thread(attach_locations, docling_document, chunks)
+    return chunks
 
 
 def _min_picture_side(picture: "PictureItem", data: bytes) -> float | None:

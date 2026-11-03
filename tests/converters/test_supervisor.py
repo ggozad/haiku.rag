@@ -25,6 +25,7 @@ from haiku.rag.converters.supervisor import (
     close_supervisors,
     get_supervisor,
     running_supervisors,
+    set_default_gate,
 )
 from haiku.rag.converters.supervisor_worker import read_frame, write_frame
 
@@ -304,6 +305,28 @@ async def test_closing_lets_a_running_unit_finish(tmp_path):
     release.set()
     assert _texts(await task) == ["a.md by ocrmac"]
     assert supervisor.processes == 0
+
+
+async def test_the_default_gate_applies_to_new_supervisors(tmp_path):
+    entered = []
+
+    @asynccontextmanager
+    async def gate():
+        entered.append(1)
+        yield
+
+    set_default_gate(gate)
+    try:
+        supervisor = ConversionSupervisor(_config(), command=STUB)
+    finally:
+        set_default_gate(None)
+    [path] = _files(tmp_path, "a.md")
+    try:
+        await supervisor.convert_file(path)
+    finally:
+        await supervisor.aclose()
+    assert entered == [1]
+    assert ConversionSupervisor(_config(), command=STUB).gate is None
 
 
 async def test_closing_cancels_idle_timers(tmp_path):
