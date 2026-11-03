@@ -22,6 +22,10 @@
 - Web app: a corpus map whose result cannot be built is reported failed and no longer blocks the database's next map (#810).
 - Ingester: outside `--dry-run`, a sweep that lists nothing fails only when its deletes would remove stored documents owned by the source, and otherwise enqueues them (#806).
 
+### Security
+
+- Lock pyasn1 to 0.6.5 and joserfc to 1.8.0.
+
 ## [0.105.0] - 2026-11-02
 
 ### Added
