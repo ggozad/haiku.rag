@@ -303,6 +303,58 @@ Only `docling-local` reads this. A docling-serve conversion is bounded by
   to be restarted. HTML and Markdown get a converter per call, so later
   conversions still run.
 
+### Supervised conversion
+
+```yaml
+processing:
+  conversion_options:
+    ocr_engine: ocrmac       # Apple Vision
+  supervisor:
+    enabled: true
+    workers: 3               # conversion processes at once
+    unit_timeout: 300        # seconds one unit may take
+    page_batch: 20           # pages per unit for longer PDFs; 0 = whole file
+    retry_ocr_engine: rapidocr
+    threads_per_worker: 2
+    background: true         # nice + background QoS on macOS
+    max_units_per_worker: 50
+    idle_shutdown_s: 60
+```
+
+With `supervisor.enabled`, `docling-local` converts every docling format (PDF,
+Office, images, HTML, Markdown, EPUB) in a pool of worker processes instead of
+in the calling process. Plain text and code files still convert in-process,
+since they never reach a model. The CLI, the Python client and the
+[ingester](../ingester.md) all take this path.
+
+- **A unit** is one file, or one batch of `page_batch` pages of a PDF longer
+  than that. A long PDF's batches convert in parallel across the pool, using
+  docling's page-range conversion, so pages keep their numbers and bounding
+  boxes. A paragraph or caption crossing a batch boundary can be grouped
+  differently than in a single pass, as with `split_pages`, which the
+  supervisor does not use.
+- **A failed unit** (an error, a crashed process, or a process killed after
+  `unit_timeout`) is retried once with `retry_ocr_engine` (`null` retries with
+  the configured engine). If the retry fails too, the document fails with
+  `ConversionFailedError`, or `ConversionTimeoutError` when the last attempt
+  timed out, naming both attempts. No other document is affected: the killed
+  process is replaced and the pool keeps converting.
+- **`processing.conversion_timeout`** does not apply: `unit_timeout` bounds a
+  unit, and it starts once the process is ready.
+- **Load on the machine**: `workers` defaults to a quarter of the cores, at most
+  three. Each process loads docling's models (1 to 4 GB), limits its libraries
+  to `threads_per_worker` threads and, with `background`, runs niced and in
+  macOS's background band. A process exits after `idle_shutdown_s` without work
+  and is replaced after `max_units_per_worker` units.
+- **Stopping**: the conversion processes ignore SIGINT and SIGTERM, which a
+  terminal's Ctrl+C or a service manager sends to every process of the service.
+  The host stops them: an idle one when it closes, a busy one when its unit
+  ends or is cancelled. A document the ingester was converting when it stopped
+  goes back to the queue, its attempt not counted.
+- **Directories**: `haiku-rag add-src DIR` ingests `workers` files at a time,
+  keeps going past a file that fails, lists each failure with its reason and
+  exits 1 when any failed.
+
 ### Chunking strategies
 
 `chunker_type` picks the docling chunker:

@@ -333,10 +333,16 @@ class DoclingLocalConverter(DocumentConverter):
         return converter
 
     def _sync_convert_timed(
-        self, source: "Path | DocumentStream", source_uri: str | None = None
+        self,
+        source: "Path | DocumentStream",
+        source_uri: str | None = None,
+        page_range: tuple[int, int] | None = None,
     ) -> "DoclingDocument":
         """The part of a conversion the deadline covers. For shared formats the
         caller holds `_CONVERTER_LOCK`."""
+        from docling.datamodel.settings import DEFAULT_PAGE_RANGE
+
+        pages = page_range or DEFAULT_PAGE_RANGE
         if Path(source.name).suffix.lower() in _URI_AWARE_EXTENSIONS:
             from docling.document_converter import (
                 DocumentConverter as DoclingDocConverter,
@@ -345,12 +351,49 @@ class DoclingLocalConverter(DocumentConverter):
             converter = DoclingDocConverter(
                 format_options=self._build_format_options(source_uri=source_uri)
             )
-            doc = converter.convert(source).document
+            doc = converter.convert(source, page_range=pages).document
         else:
-            doc = self._cached_converter().convert(source).document
+            doc = self._cached_converter().convert(source, page_range=pages).document
 
         flatten_inline_groups(doc)
         return doc
+
+    def convert_file_sync(
+        self,
+        path: Path,
+        source_uri: str | None = None,
+        page_range: tuple[int, int] | None = None,
+    ) -> "DoclingDocument":
+        """Convert in the calling thread, with no deadline and no shared lock.
+
+        For a process that converts one document at a time and is killed from
+        outside when it overruns. `page_range` is 1-based and inclusive, and
+        the pages keep their numbers in the file.
+        """
+        from io import BytesIO
+
+        from docling_core.types.io import DocumentStream
+
+        self.require_supported(path)
+        try:
+            file_extension = path.suffix.lower()
+            if file_extension in self.docling_extensions:
+                source: Path | DocumentStream = path
+                if file_extension in DOCLING_TEXT_EXTENSIONS and (
+                    content := transcode(path)
+                ):
+                    source = DocumentStream(
+                        name=docling_safe_name(path.name), stream=BytesIO(content)
+                    )
+                return self._sync_convert_timed(source, source_uri, page_range)
+            prepared = TextFileHandler.prepare_text_content(
+                read_text(path), file_extension
+            )
+            return self._sync_convert_docling_text(
+                prepared, docling_safe_name(f"{path.stem}.md"), source_uri
+            )
+        except Exception as exc:
+            raise ValueError(f"Failed to parse file: {path}: {exc}") from exc
 
     async def _convert_docling_file(
         self, path: Path, source_uri: str | None, content: bytes | None = None

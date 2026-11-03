@@ -150,6 +150,20 @@ async def test_add_document_from_source_reports_a_directory_count(app, client):
     assert "2 documents added successfully" in out(app)
 
 
+async def test_add_document_from_source_reports_the_files_that_failed(app, client):
+    from haiku.rag.client.exceptions import DirectoryIngestError
+
+    client.create_document_from_source.side_effect = DirectoryIngestError(
+        [_doc("a")], {"/tmp/dir/b.pdf": "timed out"}
+    )
+
+    with pytest.raises(DirectoryIngestError):
+        await app.add_document_from_source("/tmp/dir")
+
+    assert "1 documents added successfully" in out(app)
+    assert "Failed: /tmp/dir/b.pdf: timed out" in out(app)
+
+
 async def test_get_document_reports_a_missing_id(app, client):
     client.get_document_by_id.return_value = None
 

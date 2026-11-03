@@ -11,6 +11,8 @@ DEFAULT_DATABASE_NAME = "haiku.rag"
 # pydantic-ai's `ThinkingEffort`; importing it loads the whole package at config import.
 ThinkingEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 
+OcrEngine = Literal["auto", "easyocr", "ocrmac", "rapidocr", "tesserocr", "tesseract"]
+
 
 class ConfigModel(BaseModel):
     """Base for every configuration section.
@@ -268,9 +270,7 @@ class ConversionOptions(ConfigModel):
     # OCR options
     do_ocr: bool = True
     force_ocr: bool = False
-    ocr_engine: Literal[
-        "auto", "easyocr", "ocrmac", "rapidocr", "tesserocr", "tesseract"
-    ] = "auto"
+    ocr_engine: OcrEngine = "auto"
     ocr_lang: list[str] = []
 
     # Table options
@@ -333,6 +333,65 @@ class ConversionOptions(ConfigModel):
 PicturesMode = Literal["none", "description", "image"]
 
 
+def default_supervisor_workers() -> int:
+    """A quarter of the cores at most, never more than three."""
+    import os
+
+    return max(1, min(3, (os.cpu_count() or 4) // 4))
+
+
+class SupervisorConfig(ConfigModel):
+    """docling-local conversion in supervised worker processes.
+
+    Each unit (a document, or a batch of a PDF's pages) converts in a child
+    process that is killed when it overruns `unit_timeout`, so a stalled
+    conversion costs that unit and never the process or the other documents.
+    """
+
+    enabled: bool = False
+    workers: int = Field(
+        default_factory=default_supervisor_workers,
+        gt=0,
+        description="Conversion processes running at once.",
+    )
+    unit_timeout: float = Field(
+        default=300.0,
+        gt=0,
+        description="Seconds one unit may take before its process is killed.",
+    )
+    page_batch: int = Field(
+        default=20,
+        ge=0,
+        description="Pages per unit for a PDF longer than this. 0 converts "
+        "every PDF as one unit.",
+    )
+    retry_ocr_engine: OcrEngine | None = Field(
+        default="rapidocr",
+        description="OCR engine of the one retry a failed unit gets. None "
+        "retries with the configured engine.",
+    )
+    threads_per_worker: int = Field(
+        default=2,
+        gt=0,
+        description="Threads one conversion process may use.",
+    )
+    background: bool = Field(
+        default=True,
+        description="Run the conversion processes at background priority.",
+    )
+    max_units_per_worker: int = Field(
+        default=50,
+        gt=0,
+        description="Units a process converts before it is replaced, which "
+        "returns the memory docling accumulates.",
+    )
+    idle_shutdown_s: float = Field(
+        default=60.0,
+        gt=0,
+        description="Seconds an idle conversion process waits for work before exiting.",
+    )
+
+
 class ProcessingConfig(ConfigModel):
     chunk_size: int = Field(default=256, gt=0)
     converter: Literal["docling-local", "docling-serve"] = "docling-local"
@@ -362,6 +421,7 @@ class ProcessingConfig(ConfigModel):
             "for memory-bound or large (>100 page) PDFs."
         ),
     )
+    supervisor: SupervisorConfig = Field(default_factory=SupervisorConfig)
     pictures: PicturesMode = "image"
     """How embedded pictures are handled at ingest.
 

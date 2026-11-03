@@ -17,6 +17,7 @@ from haiku.rag.uri import is_local_uri, uri_to_path
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument, PictureItem
 
+    from haiku.rag.converters.base import DocumentConverter
     from haiku.rag.embeddings import EmbedderWrapper
 
 
@@ -69,6 +70,19 @@ async def _write_fetch_body(body: bytes, suffix: str) -> Path:
     return await asyncio.to_thread(_write_fetch_body_sync, body, suffix)
 
 
+def _supervised(config: AppConfig, converter: "DocumentConverter", path: Path) -> bool:
+    """Whether `path` converts in a supervised process: a docling format, under
+    docling-local, with the supervisor on. Other text files never reach a
+    model."""
+    from haiku.rag.converters.docling_local import DoclingLocalConverter
+
+    return (
+        config.processing.supervisor.enabled
+        and isinstance(converter, DoclingLocalConverter)
+        and path.suffix.lower() in DoclingLocalConverter.docling_extensions
+    )
+
+
 async def convert(
     config: AppConfig,
     source: Path | str,
@@ -105,8 +119,12 @@ async def convert(
     async def _convert_file(
         file_path: Path, effective_uri: str | None
     ) -> "DoclingDocument":
-        """Dispatch through split-and-merge for large PDFs when configured,
-        otherwise call the converter directly."""
+        """Dispatch through the supervised processes, or split-and-merge for
+        large PDFs, when configured, otherwise call the converter directly."""
+        if _supervised(config, converter, file_path):
+            from haiku.rag.converters.supervisor import get_supervisor
+
+            return await get_supervisor(config).convert_file(file_path, effective_uri)
         if file_path.suffix.lower() == ".pdf" and config.processing.split_pages > 0:
             from haiku.rag.converters.pdf_split import convert_pdf_with_splitting
 

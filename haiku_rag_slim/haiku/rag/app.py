@@ -570,23 +570,37 @@ class HaikuRAGApp:
     async def add_document_from_source(
         self, source: str, title: str | None = None, metadata: dict | None = None
     ):
-        async with HaikuRAG._covering(
-            self.scope, self.config, read_only=self.read_only
-        ) as self.client:
-            result = await self.client.create_document_from_source(
-                source, title=title, metadata=metadata
+        from haiku.rag.client.exceptions import DirectoryIngestError
+        from haiku.rag.converters.supervisor import close_supervisors
+
+        failures: dict[str, str] = {}
+        try:
+            async with HaikuRAG._covering(
+                self.scope, self.config, read_only=self.read_only
+            ) as self.client:
+                try:
+                    result = await self.client.create_document_from_source(
+                        source, title=title, metadata=metadata
+                    )
+                except DirectoryIngestError as error:
+                    result, failures = error.documents, error.failures
+        finally:
+            await close_supervisors()
+        if isinstance(result, list):
+            for doc in result:
+                self._rich_print_document(doc, truncate=True)
+            self.console.print(
+                f"[bold green]{len(result)} documents added successfully.[/bold green]"
             )
-            if isinstance(result, list):
-                for doc in result:
-                    self._rich_print_document(doc, truncate=True)
-                self.console.print(
-                    f"[bold green]{len(result)} documents added successfully.[/bold green]"
-                )
-            else:
-                self._rich_print_document(result, truncate=True)
-                self.console.print(
-                    f"[bold green]Document {result.id} added successfully.[/bold green]"
-                )
+        else:
+            self._rich_print_document(result, truncate=True)
+            self.console.print(
+                f"[bold green]Document {result.id} added successfully.[/bold green]"
+            )
+        for path, reason in failures.items():
+            self.console.print(f"[red]Failed: {escape(path)}: {escape(reason)}[/red]")
+        if failures:
+            raise DirectoryIngestError(result, failures)
 
     async def get_document(self, doc_id: str):
         async with HaikuRAG._covering(

@@ -440,6 +440,8 @@ The stalled document is not retried by itself. Its dead job keeps discovery from
 
 An HTML or Markdown stall is recorded the same way but does not end the process, since those formats do not share a converter.
 
+With [supervised conversion](configuration/processing.md#supervised-conversion) (`processing.supervisor.enabled`), a stall never ends the process: the unit's conversion process is killed after `unit_timeout`, the unit is retried once with `retry_ocr_engine`, and a document whose retry also stalls is recorded dead with both attempts in its error, as above. Size `ingester.workers.worker_count` at or above `processing.supervisor.workers` so the conversion pool is kept busy.
+
 ## HTTP control plane
 
 The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.auth_token` requires a bearer token on every route except `/` and `/health`. Without a token the API is open and the service logs a warning.

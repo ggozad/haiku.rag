@@ -12,7 +12,10 @@ from dotenv import find_dotenv, load_dotenv
 # Env loading needs to be before config import; usecwd=True searches from cwd, not this .py file's location
 load_dotenv(find_dotenv(usecwd=True))
 
-from haiku.rag.client.exceptions import AttachmentDeletionError  # noqa: E402
+from haiku.rag.client.exceptions import (  # noqa: E402
+    AttachmentDeletionError,
+    DirectoryIngestError,
+)
 from haiku.rag.config import (  # noqa: E402
     AppConfig,
     find_config_file,
@@ -53,6 +56,7 @@ def cli():
         AmbiguousDatabaseError,
         AttachmentDeletionError,
         ConfigMismatchError,
+        DirectoryIngestError,
         FileNotFoundError,
         ImportError,
         MigrationRequiredError,

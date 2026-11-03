@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.converters.exceptions import (
+    ConversionFailedError,
     ConversionTimeoutError,
     ConverterWedgedError,
 )
@@ -113,6 +114,11 @@ def _classify(exc: BaseException) -> Exception:
             conversion_stalled=True,
             fatal_to_process=exc.converter_wedged,
         )
+
+    if isinstance(exc, ConversionFailedError):
+        # Every supervised attempt failed, the retry with the other OCR engine
+        # included.
+        return PermanentError(f"conversion failed: {exc.reason}")
 
     if isinstance(exc, ConverterWedgedError):
         # Another document wedged the converter. This one is not at fault and

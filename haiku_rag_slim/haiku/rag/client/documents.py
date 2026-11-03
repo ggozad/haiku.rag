@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import quote, urlparse
 
-from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.client.exceptions import DirectoryIngestError, UnsupportedSourceError
 from haiku.rag.client.processing import (
     _write_fetch_body,
     chunk,
@@ -1001,6 +1001,34 @@ async def _reconcile_pdf_attachments(
             await notify(client._hooks, "after_delete", client, DeleteEvent(deleted))
 
 
+async def _ingest_files_concurrently(
+    files: list[Path],
+    ingest: Callable[[Path], Awaitable[Document | None]],
+    concurrency: int,
+) -> list[Document]:
+    """Ingest `files`, `concurrency` at a time, a failure costing only its file.
+
+    Raises `DirectoryIngestError` after every file was tried when any failed.
+    """
+    gate = asyncio.Semaphore(concurrency)
+    failures: dict[str, str] = {}
+
+    async def one(path: Path) -> Document | None:
+        async with gate:
+            try:
+                return await ingest(path)
+            except Exception as exc:
+                logger.error("Failed to ingest %s: %s", path, exc)
+                failures[str(path)] = str(exc)
+                return None
+
+    results = await asyncio.gather(*(one(path) for path in files))
+    documents = [doc for doc in results if doc is not None]
+    if failures:
+        raise DirectoryIngestError(documents, failures)
+    return documents
+
+
 async def create_document_from_source(
     session: SingleDatabaseSession,
     client: "HaikuRAG | None",
@@ -1059,28 +1087,41 @@ async def create_document_from_source(
             # One-shot CLI directory ingest filters by the docling-local and text
             # extensions, with no include/ignore patterns. For pattern-based
             # filtering use `haiku-ingester serve` with an FS source.
-            documents: list[Document] = []
             filter = FileFilter()
-            for child in walk_files(local_path):
-                if child.is_file() and filter.include_file(str(child)):
-                    try:
-                        doc = await create_document_from_source(
-                            session,
-                            client,
-                            child,
-                            title=None,
-                            metadata=metadata,
-                            sources=sources,
-                            source_id=source_id,
-                            metadata_provider=metadata_provider,
-                            force=force,
-                            written_ids=written_ids,
-                            notify_hooks=notify_hooks,
-                        )
-                    except DocumentRejected as e:
-                        logger.warning("%s", e)
-                        continue
-                    assert isinstance(doc, Document)
+            files = [
+                child
+                for child in walk_files(local_path)
+                if child.is_file() and filter.include_file(str(child))
+            ]
+
+            async def ingest(child: Path) -> Document | None:
+                try:
+                    doc = await create_document_from_source(
+                        session,
+                        client,
+                        child,
+                        title=None,
+                        metadata=metadata,
+                        sources=sources,
+                        source_id=source_id,
+                        metadata_provider=metadata_provider,
+                        force=force,
+                        written_ids=written_ids,
+                        notify_hooks=notify_hooks,
+                    )
+                except DocumentRejected as e:
+                    logger.warning("%s", e)
+                    return None
+                assert isinstance(doc, Document)
+                return doc
+
+            if session.config.processing.supervisor.enabled:
+                return await _ingest_files_concurrently(
+                    files, ingest, session.config.processing.supervisor.workers
+                )
+            documents: list[Document] = []
+            for child in files:
+                if (doc := await ingest(child)) is not None:
                     documents.append(doc)
             return documents
 

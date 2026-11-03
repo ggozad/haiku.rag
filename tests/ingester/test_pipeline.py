@@ -590,6 +590,22 @@ async def test_conversion_deadline_is_permanent_and_fatal_only_to_a_wedged_conve
     assert excinfo.value.conversion_stalled is True
 
 
+async def test_a_failed_supervised_conversion_is_permanent():
+    """Every attempt failed, the retry with the other OCR engine included."""
+    from haiku.rag.converters.exceptions import ConversionFailedError
+
+    client = _mock_client()
+    client._ingest_observed.side_effect = ConversionFailedError(
+        "Failed to convert x.pdf: died", reason="died (ocrmac); retried: died"
+    )
+
+    with pytest.raises(PermanentError) as excinfo:
+        await run_job(client, _job())
+
+    assert str(excinfo.value) == "conversion failed: died (ocrmac); retried: died"
+    assert excinfo.value.conversion_stalled is False
+
+
 async def test_wedged_converter_is_transient_and_never_kills_the_document():
     """A document refused by a converter another document wedged is not at
     fault, so it must not be dead-lettered."""

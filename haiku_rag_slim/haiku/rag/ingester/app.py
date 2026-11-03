@@ -639,6 +639,9 @@ class IngesterApp:
         landed = await self._pool.drain_pending_releases(timeout=2.0)
         if landed:
             logger.info("Drained %d cancel-cleanup release(s) before close", landed)
+        from haiku.rag.converters.supervisor import close_supervisors
+
+        await close_supervisors()
 
     async def _drain_batch(
         self,

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Supervised conversion (`processing.supervisor`): docling-local converts each document, or each batch of a long PDF's pages, in a pooled worker process killed after `unit_timeout`, and retries a failed unit once with `retry_ocr_engine` (RapidOCR). A stalled conversion costs only its document, and the process keeps converting. Long PDFs convert as page batches in parallel. `add-src DIR` ingests concurrently under it and lists the files that failed. A document being converted when the ingester stops goes back to the queue.
+
 ## [0.106.0] - 2026-11-03
 
 ### Added
