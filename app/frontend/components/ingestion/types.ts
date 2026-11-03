@@ -32,6 +32,7 @@ export interface Source {
 	last_skip_reason: string | null;
 	last_error: string | null;
 	last_error_at: string | null;
+	unsupported_files: Record<string, number>;
 }
 
 export interface Providers {

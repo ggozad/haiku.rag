@@ -497,12 +497,23 @@
             const errorBadge = s.last_error
               ? ` <span class="badge bad" data-tip="${escapeHtml(s.last_error)} (${relTime(s.last_error_at)})">sweep failed</span>`
               : "";
+            // Files the last sweep skipped for their extension, naming the
+            // three most frequent; "" is a file without one.
+            const skipped = Object.entries(s.unsupported_files).sort(
+              ([, a], [, b]) => b - a,
+            );
+            const extName = (ext) => ext || "no extension";
+            const skippedBadge = skipped.length
+              ? ` <span class="badge warn" data-tip="${escapeHtml(skipped.map(([ext, n]) => `${extName(ext)}: ${n}`).join("\n"))}">${skipped.reduce((sum, [, n]) => sum + n, 0)} skipped: ${escapeHtml(skipped.slice(0, 3).map(([ext]) => extName(ext)).join(", "))}${skipped.length > 3 ? ` +${skipped.length - 3}` : ""}</span>`
+              : "";
             const polledCell =
               (s.last_polled_at
                 ? relTime(s.last_polled_at) + skipBadge
                 : reason
                   ? skipBadge.trim()
-                  : "—") + errorBadge;
+                  : "—") +
+              errorBadge +
+              skippedBadge;
             const databaseCell = showDatabase
               ? `<td>${escapeHtml(s.database ?? "—")}</td>`
               : "";

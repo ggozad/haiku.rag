@@ -173,6 +173,27 @@ export function ingestedDatabases(sources: { database: string | null }[]) {
 	];
 }
 
+// A source's badge for the files its last sweep skipped for their extension,
+// naming the three most frequent, and one line per extension for its tooltip.
+// An empty extension is a file without one.
+export function unsupportedFiles(
+	counts: Record<string, number>,
+): { label: string; detail: string } | null {
+	const ranked = Object.entries(counts).sort(([, a], [, b]) => b - a);
+	if (ranked.length === 0) return null;
+	const name = (extension: string) => extension || "no extension";
+	const total = ranked.reduce((sum, [, count]) => sum + count, 0);
+	return {
+		label: `${total} skipped: ${ranked
+			.slice(0, 3)
+			.map(([extension]) => name(extension))
+			.join(", ")}${ranked.length > 3 ? ` +${ranked.length - 3}` : ""}`,
+		detail: ranked
+			.map(([extension, count]) => `${name(extension)}: ${count}`)
+			.join("\n"),
+	};
+}
+
 export interface IngestionState {
 	state: "unreachable" | "degraded" | "dead" | "busy" | "idle";
 	label: string;

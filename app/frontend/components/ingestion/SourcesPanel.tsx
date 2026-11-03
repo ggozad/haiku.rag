@@ -12,7 +12,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
-import { ingestedDatabases } from "@/lib/ingestion";
+import { ingestedDatabases, unsupportedFiles } from "@/lib/ingestion";
 import type { Source, Stats } from "./types";
 
 // The configured sources, their queued, dead and rejected counts, Refresh and
@@ -92,6 +92,7 @@ export default function SourcesPanel({
 										</span>
 									</>
 								)}
+								<SkippedFiles counts={source.unsupported_files} />
 							</TableCell>
 							<TableCell className="space-x-1 text-right whitespace-nowrap">
 								<Button
@@ -126,5 +127,15 @@ export default function SourcesPanel({
 				</TableBody>
 			</Table>
 		</div>
+	);
+}
+
+function SkippedFiles({ counts }: { counts: Record<string, number> }) {
+	const skipped = unsupportedFiles(counts);
+	if (!skipped) return null;
+	return (
+		<Badge variant="outline" title={skipped.detail}>
+			{skipped.label}
+		</Badge>
 	);
 }

@@ -8,6 +8,7 @@ import {
 	ingestionState,
 	Poller,
 	type Snapshot,
+	unsupportedFiles,
 } from "./ingestion";
 
 type Responder = (path: string, signal: AbortSignal) => Promise<Response>;
@@ -248,6 +249,25 @@ describe("ingestedDatabases", () => {
 				{ database: "papers" },
 			]),
 		).toEqual(["papers", "docs"]);
+	});
+});
+
+describe("unsupportedFiles", () => {
+	it("totals the skipped files and names their extensions, most first", () => {
+		expect(unsupportedFiles({ ".rtf": 2, "": 3, ".rst": 366 })).toEqual({
+			label: "371 skipped: .rst, no extension, .rtf",
+			detail: ".rst: 366\nno extension: 3\n.rtf: 2",
+		});
+	});
+
+	it("names the three most frequent extensions and counts the rest", () => {
+		expect(
+			unsupportedFiles({ ".a": 1, ".b": 5, ".c": 4, ".d": 3, ".e": 2 })?.label,
+		).toBe("15 skipped: .b, .c, .d +2");
+	});
+
+	it("is absent when no file was skipped", () => {
+		expect(unsupportedFiles({})).toBeNull();
 	});
 });
 

@@ -55,6 +55,7 @@ const answers: Record<string, unknown> = {
 			last_skip_reason: null,
 			last_error: null,
 			last_error_at: null,
+			unsupported_files: {},
 		},
 	],
 	providers: { docling_serve: [] },
@@ -180,6 +181,18 @@ describe("IngestionPage", () => {
 			expect(within(row).getByText("papers")).toBeTruthy();
 			expect(within(row).getByText("discovery failed")).toBeTruthy();
 			expect(within(row).getByText("bucket unreadable")).toBeTruthy();
+		} finally {
+			answers.sources = [docs];
+		}
+	});
+
+	it("shows the files a source skipped for their extension", async () => {
+		const [docs] = answers.sources as Record<string, unknown>[];
+		answers.sources = [{ ...docs, unsupported_files: { ".rst": 366 } }];
+		try {
+			render(<IngestionPage />);
+			const badge = await screen.findByText("366 skipped: .rst");
+			expect(badge.getAttribute("title")).toBe(".rst: 366");
 		} finally {
 			answers.sources = [docs];
 		}
