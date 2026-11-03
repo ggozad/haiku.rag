@@ -165,6 +165,24 @@ describe("runTurn", () => {
 			failure: "network down",
 		});
 	});
+
+	it("sends outside a secure context", async () => {
+		const real = crypto;
+		vi.stubGlobal("crypto", {
+			getRandomValues: real.getRandomValues.bind(real),
+		});
+		try {
+			const agent = new FakeAgent(async (_a, s) => {
+				s.onRunFinishedEvent();
+			});
+			expect(await runTurn(agent, "q", "run-1", {})).toEqual({
+				finished: true,
+			});
+			expect(agent.messages.at(-1)?.content).toBe("q");
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
 });
 
 describe("drafts", () => {
