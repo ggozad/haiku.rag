@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.13-trixie-slim AS builder
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-editable --no-dev --package haiku-rag-app \
         --reinstall-package haiku-rag-app --reinstall-package haiku.rag-slim
 
-FROM python:3.13-slim
+FROM python:3.13-slim-trixie
 ARG VERSION
 LABEL org.opencontainers.image.source="https://github.com/ggozad/haiku.rag" \
       org.opencontainers.image.version="${VERSION}"

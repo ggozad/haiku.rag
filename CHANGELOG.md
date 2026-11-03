@@ -15,12 +15,17 @@
 
 - A Logfire configuration failure is logged at WARNING with its traceback (#810).
 - `EmptyListingError.known` renamed to `count`.
+- `docker/Dockerfile`, `docker/Dockerfile.slim` and the web app's backend image build and run on Debian 13 (trixie): `uv:python3.13-trixie-slim` and `python:3.13-slim-trixie`.
 
 ### Fixed
 
 - Web app: chat sends messages when the frontend is served over plain HTTP from a host other than localhost (#809).
 - Web app: a corpus map whose result cannot be built is reported failed and no longer blocks the database's next map (#810).
 - Ingester: outside `--dry-run`, a sweep that lists nothing fails only when its deletes would remove stored documents owned by the source, and otherwise enqueues them (#806).
+
+### Security
+
+- Lock pyasn1 to 0.6.5 and joserfc to 1.8.0.
 
 ## [0.105.0] - 2026-11-02
 
