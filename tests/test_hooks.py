@@ -1631,6 +1631,10 @@ def unconverted_ingest(monkeypatch):
     """Run the real ingest path with conversion and chunking stubbed: every
     document converts to its URI's text and one pre-embedded chunk. A source
     URI listed in the returned set fails to convert."""
+    # rebuild binds `chunk_document` at import, so a first import under the
+    # patch below keeps the fake for the rest of the process.
+    import haiku.rag.client.rebuild  # noqa: F401
+
     failing: set[str] = set()
 
     async def fake_convert(config, source, *, format="md", source_uri=None):
