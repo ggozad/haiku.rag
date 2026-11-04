@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.107.0] - 2026-11-04
+
 ### Added
 
 - `Hook.ingester_lifespan(client)`: entered per database by `haiku-ingester serve`, `run-batch` and reload, inside the client's `lifespan`, with spans `hook.ingester_lifespan.enter` and `hook.ingester_lifespan.exit` (#815).
@@ -3226,7 +3228,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.106.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.107.0...HEAD
+[0.107.0]: https://github.com/ggozad/haiku.rag/compare/0.106.0...0.107.0
 [0.106.0]: https://github.com/ggozad/haiku.rag/compare/0.105.0...0.106.0
 [0.105.0]: https://github.com/ggozad/haiku.rag/compare/0.104.0...0.105.0
 [0.104.0]: https://github.com/ggozad/haiku.rag/compare/0.103.0...0.104.0
