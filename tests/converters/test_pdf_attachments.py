@@ -4,6 +4,7 @@ from collections import Counter
 from functools import partial
 
 import pytest
+from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG, RebuildMode
 from haiku.rag.client import documents as client_documents
@@ -14,7 +15,10 @@ from haiku.rag.client.documents import (
     _reconcile_pdf_attachments,
     parent_uri_filter,
 )
+from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.converters.exceptions import ConversionFailedError
 from haiku.rag.sources import FetchResult
+from haiku.rag.store.exceptions import TagError
 from haiku.rag.store.models.document import Document
 from tests.conftest import (
     build_pdf,
@@ -217,6 +221,59 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, fake_ingest):
         )
         children = await client.list_documents(filter=parent_uri_filter(parent_uri))
         assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
+
+
+async def test_unparseable_attachment_is_skipped(temp_db_path, monkeypatch):
+    """An attachment the converter cannot parse is skipped with a warning, and
+    its siblings land."""
+
+    async def ingest(session, client, result, **kwargs):
+        if kwargs["filename"] == "equation-1.xml":
+            raise ConversionFailedError("Failed to parse file: File format not allowed")
+        return await fake_ingest_fetch_result(session, client, result, **kwargs)
+
+    monkeypatch.setattr(client_documents, "_ingest_fetch_result", ingest)
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        pdf_bytes = build_pdf([("equation-1.xml", b"<math/>"), ("ok.txt", b"keep")])
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        with capture_logs(client_documents.logger, logging.WARNING) as records:
+            await _reconcile_pdf_attachments(
+                writing(client), None, parent, pdf_bytes, depth=0
+            )
+        children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
+    assert [r.getMessage() for r in records] == [
+        f"Skipping attachment 'equation-1.xml' in {parent_uri}: "
+        "Failed to parse file: File format not allowed"
+    ]
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(lambda: ValueError("boom"), id="value-error"),
+        pytest.param(
+            lambda: ValidationError.from_exception_data("Document", []),
+            id="validation-error",
+        ),
+        pytest.param(lambda: UnsupportedSourceError("boom"), id="unsupported-source"),
+        pytest.param(lambda: TagError("boom"), id="tag-error"),
+    ],
+)
+async def test_other_attachment_errors_fail_the_pdf(temp_db_path, monkeypatch, error):
+    async def ingest(session, client, result, **kwargs):
+        raise error()
+
+    monkeypatch.setattr(client_documents, "_ingest_fetch_result", ingest)
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        pdf_bytes = build_pdf([("ok.txt", b"keep")])
+        parent = await _make_parent(client, "file:///fixtures/parent.pdf", pdf_bytes)
+        with pytest.raises(ValueError):
+            await _reconcile_pdf_attachments(
+                writing(client), None, parent, pdf_bytes, depth=0
+            )
 
 
 async def test_attachment_children_carry_no_source_id(

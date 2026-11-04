@@ -46,6 +46,7 @@ from haiku.rag.converters.base import (
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
 from haiku.rag.converters.exceptions import (
+    ConversionFailedError,
     ConversionTimeoutError,
     ConverterWedgedError,
 )
@@ -731,6 +732,19 @@ class TestDoclingLocalConverter:
         source.write_bytes(UNDETECTABLE)
 
         with pytest.raises(ValueError, match="Failed to parse file"):
+            await converter.convert_file(source)
+
+    async def test_convert_file_raises_conversion_failed_for_unknown_xml(
+        self, converter, tmp_path
+    ):
+        """An XML dialect docling does not recognise fails as unparseable."""
+        source = tmp_path / "equation-1.xml"
+        source.write_text(
+            '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>',
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ConversionFailedError, match="File format not allowed"):
             await converter.convert_file(source)
 
     @pytest.mark.parametrize(

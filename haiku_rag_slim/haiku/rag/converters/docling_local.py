@@ -19,6 +19,7 @@ from haiku.rag.converters.base import (
     vlm_api_url,
 )
 from haiku.rag.converters.exceptions import (
+    ConversionFailedError,
     ConversionTimeoutError,
     ConverterWedgedError,
 )
@@ -542,7 +543,8 @@ class DoclingLocalConverter(DocumentConverter):
 
         Raises:
             UnsupportedSourceError: If the extension is not supported.
-            ValueError: If the file cannot be converted, chaining the cause.
+            ConversionFailedError: If the file cannot be converted, chaining the
+                cause.
             TimeoutError: If it exceeds `processing.conversion_timeout`.
         """
         self.require_supported(path)
@@ -566,7 +568,7 @@ class DoclingLocalConverter(DocumentConverter):
         except (TimeoutError, ConverterWedgedError):
             raise
         except Exception as exc:
-            raise ValueError(f"Failed to parse file: {path}: {exc}") from exc
+            raise ConversionFailedError(f"Failed to parse file: {path}: {exc}") from exc
 
     async def convert_text(
         self,

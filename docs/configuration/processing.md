@@ -383,6 +383,7 @@ Behavior:
 - `parent_uri` is set by attachment extraction only. It is stripped from caller metadata and kept across `update_document`.
 - Nested attachments (a PDF whose attachment is itself a PDF with attachments) recurse up to 3 levels. Deeper chains log a warning and skip.
 - Attachments whose extension or content type the converter does not support log a warning and are skipped without aborting the rest of the set.
+- An attachment `docling-local` cannot parse, such as a MathML `.xml` file, logs a warning and is skipped the same way.
 
 Set `extract_pdf_attachments: false` to ingest only the wrapper.
 

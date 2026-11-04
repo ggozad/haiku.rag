@@ -15,3 +15,7 @@ class ConverterWedgedError(RuntimeError):
     """The shared docling converter was abandoned by a timed-out conversion
     and this process cannot convert through it again. The document is not at
     fault."""
+
+
+class ConversionFailedError(ValueError):
+    """The converter could not parse the file."""

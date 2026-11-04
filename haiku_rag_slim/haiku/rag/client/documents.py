@@ -22,6 +22,7 @@ from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
 from haiku.rag.converters.exceptions import (
+    ConversionFailedError,
     ConversionTimeoutError,
     ConverterWedgedError,
 )
@@ -970,26 +971,29 @@ async def _reconcile_pdf_attachments(
             if force and existing_child
             else {}
         )
-        await _ingest_fetch_result(
-            session,
-            client,
-            child_fr,
-            title=None,
-            user_metadata={
-                **caller_metadata,
-                **await _provider_metadata(metadata_provider, child_uri, fetched),
-                **hook_metadata,
-            },
-            stored_uri=child_uri,
-            existing_doc=existing_child,
-            source_id=source_id,
-            depth=depth + 1,
-            filename=name,
-            metadata_provider=metadata_provider,
-            force=force,
-            written_ids=written_ids,
-            notify_hooks=notify_hooks,
-        )
+        try:
+            await _ingest_fetch_result(
+                session,
+                client,
+                child_fr,
+                title=None,
+                user_metadata={
+                    **caller_metadata,
+                    **await _provider_metadata(metadata_provider, child_uri, fetched),
+                    **hook_metadata,
+                },
+                stored_uri=child_uri,
+                existing_doc=existing_child,
+                source_id=source_id,
+                depth=depth + 1,
+                filename=name,
+                metadata_provider=metadata_provider,
+                force=force,
+                written_ids=written_ids,
+                notify_hooks=notify_hooks,
+            )
+        except ConversionFailedError as e:
+            logger.warning("Skipping attachment %r in %s: %s", name, parent_doc.uri, e)
 
     deleted: list[Document] = []
     try:
