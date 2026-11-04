@@ -84,6 +84,8 @@ class SingleDatabaseSession:
         self._vacuum_tasks: set[asyncio.Task] = set()
         self._last_vacuum_at: float | None = None
         self._vacuum_dirty = False
+        self.unmaintained_since: float | None = None
+        self.last_write_at: float | None = None
 
     @property
     def source(self) -> str:
@@ -159,6 +161,16 @@ class SingleDatabaseSession:
             await self.store.vacuum()
         except Exception:
             logger.debug("Final vacuum on close failed", exc_info=True)
+
+    def record_write(self) -> None:
+        """Record a write, and schedule a vacuum under `storage.auto_vacuum`.
+        `unmaintained_since` is the first write since a caller last cleared it."""
+        now = monotonic()
+        if self.unmaintained_since is None:
+            self.unmaintained_since = now
+        self.last_write_at = now
+        if self.config.storage.auto_vacuum:
+            self.schedule_vacuum()
 
     def schedule_vacuum(self) -> None:
         """Schedule a background vacuum, throttled to at most one per
@@ -284,8 +296,7 @@ class SingleDatabaseSession:
                 f"Document {document_id} is an attachment of {owner.id} "
                 f"({parent_uri}). Delete that document instead."
             )
-        if self.config.storage.auto_vacuum:
-            self.schedule_vacuum()
+        self.record_write()
         return docs_to_delete
 
     async def aclose(self) -> None:

@@ -180,7 +180,7 @@ class TestVacuumByConnectionMode:
             ) as maintenance,
         ):
             async with _remote_store_with_mock_tables("db://test-database") as store:
-                await store.vacuum()
+                assert await store.vacuum() is False
                 maintenance.assert_not_awaited()
 
     async def test_object_storage_runs_vacuum(self):
@@ -206,7 +206,7 @@ class TestVacuumByConnectionMode:
             with patch.object(
                 Store, "_run_lance_maintenance", new_callable=AsyncMock
             ) as maintenance:
-                await store.vacuum()
+                assert await store.vacuum() is True
                 maintenance.assert_awaited()
 
 
@@ -387,7 +387,7 @@ class TestStoreMiscellany:
             async with store._vacuum_lock:
                 # Bounded: a regression here blocks on the held lock, and the
                 # timeout turns that deadlock into a clean failure.
-                await asyncio.wait_for(store.vacuum(), timeout=5)
+                assert await asyncio.wait_for(store.vacuum(), timeout=5) is False
 
     async def test_history_rejects_unknown_table(self, temp_db_path):
         async with Store(temp_db_path, create=True) as store:

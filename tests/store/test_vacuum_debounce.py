@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 import haiku.rag.client.session as session_mod
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.documents import _refresh_doc_metadata
@@ -111,3 +113,53 @@ async def test_metadata_refresh_waits_for_write_lock(temp_db_path, monkeypatch):
             await assert_waiting_for_lock(task, lock)
         refreshed = await task
         assert refreshed.metadata["source_revision"] == "r2"
+
+
+@pytest.mark.parametrize("auto_vacuum", [True, False])
+async def test_every_write_is_recorded(temp_db_path, monkeypatch, auto_vacuum):
+    """Each write records its time, whatever `auto_vacuum` says, and schedules a
+    vacuum only under it. The first write since the record was cleared stays."""
+    t = {"now": 1000.0}
+    monkeypatch.setattr(session_mod, "monotonic", lambda: t["now"])
+    config = get_config().model_copy(deep=True)
+    config.storage.auto_vacuum = auto_vacuum
+    dim = config.embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        session = client._session
+        scheduled: list[int] = []
+        monkeypatch.setattr(session, "schedule_vacuum", lambda: scheduled.append(1))
+        assert session.unmaintained_since is None
+        assert session.last_write_at is None
+
+        doc = await client.import_document(
+            docling_doc("d", "body"),
+            [Chunk(content="body", embedding=[0.1] * dim, order=0)],
+            uri="mem://written",
+        )
+        assert doc.id is not None
+        assert (session.unmaintained_since, session.last_write_at) == (1000.0, 1000.0)
+
+        writes = [
+            lambda: client.update_document(
+                doc.id,
+                chunks=[Chunk(content="new", embedding=[0.2] * dim, order=0)],
+            ),
+            lambda: _refresh_doc_metadata(
+                writing(client),
+                doc,
+                title=None,
+                user_metadata={},
+                source_metadata={"source_revision": "r2"},
+            ),
+            lambda: client.update_document(doc.id, metadata={"k": "v"}),
+            lambda: client.set_document_source([doc.id], "src"),
+            lambda: client.delete_document(doc.id),
+        ]
+        for write in writes:
+            t["now"] += 10
+            await write()
+            assert session.unmaintained_since == 1000.0
+            assert session.last_write_at == t["now"]
+
+        assert len(scheduled) == (6 if auto_vacuum else 0)

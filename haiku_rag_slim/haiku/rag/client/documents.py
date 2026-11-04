@@ -258,8 +258,7 @@ async def _store_document_with_chunks(
 
     _note_source_change(stored_doc, replaced_owner)
 
-    if session.config.storage.auto_vacuum:
-        session.schedule_vacuum()
+    session.record_write()
 
     session.name(stored_doc)
     if client is not None and notify_hooks:
@@ -345,8 +344,7 @@ async def _update_document_with_chunks(
                     updated_doc.id, items
                 )
 
-    if session.config.storage.auto_vacuum:
-        session.schedule_vacuum()
+    session.record_write()
 
     session.name(updated_doc)
     if client is not None and notify_hooks:
@@ -477,8 +475,7 @@ async def _store_documents_with_chunks(
             await session.chunk_repository.create(all_chunks)
             await session.document_item_repository.create_all(all_items)
 
-    if session.config.storage.auto_vacuum:
-        session.schedule_vacuum()
+    session.record_write()
 
     session.name_all(created)
     event = IngestEvent(documents=created, operation="create")
@@ -547,8 +544,7 @@ async def _refresh_doc_metadata(
     if updated:
         # Reclaim the document_meta churn from rolling source_revision sweeps.
         # The vacuum is debounced, and document_meta is tiny, so this is cheap.
-        if session.config.storage.auto_vacuum:
-            session.schedule_vacuum()
+        session.record_write()
     session.name(doc)
     return doc
 
@@ -1261,8 +1257,7 @@ async def set_document_source(
     for doc, previous in zip(updated, previous_owners, strict=True):
         _note_source_change(doc, previous)
         session.name(doc)
-    if session.config.storage.auto_vacuum:
-        session.schedule_vacuum()
+    session.record_write()
     return updated
 
 
@@ -1316,8 +1311,7 @@ async def update_document(
             updated = await session.document_repository.update_meta(
                 await read_and_apply()
             )
-        if session.config.storage.auto_vacuum:
-            session.schedule_vacuum()
+        session.record_write()
         session.name(updated)
         return updated
 
