@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "starlette>=0.50.0",
     "uvicorn[standard]>=0.40.0",
-    "pydantic-ai-slim[ag-ui,anthropic,openai]>=2.54.0,<2.60.0",
+    "pydantic-ai-slim[ag-ui,anthropic,openai]>=2.66.0,<2.67.0",
     "python-dotenv>=1.2.1",
     "haiku.rag-slim>=0.107.0",
     "logfire[starlette]>=3.17.0",

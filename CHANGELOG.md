@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `thinking: max` effort level.
+
+### Changed
+
+- `pydantic-ai-slim` requires `>=2.66.0,<2.67.0`.
+
 ## [0.107.0] - 2026-11-04
 
 ### Added

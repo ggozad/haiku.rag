@@ -20,9 +20,10 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
+    RetryFeedbackPart,
     ToolCallPart,
     ToolReturn,
+    ToolReturnPart,
 )
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
@@ -172,8 +173,8 @@ def _awaits_the_model(messages: list[ModelMessage]) -> bool:
 
     Used to validate what the record already says, never to decide it. Only two
     shapes are unambiguous: a response whose tool calls have no returns, and a
-    retry the model has not answered. A trailing tool return is not one of them,
-    being both how a settled structured answer ends and how results reach a
+    retry the model has not answered. A trailing tool return that is not a retry
+    is not one of them, being both how a settled structured answer ends and how results reach a
     question still in progress.
     """
     if not messages:
@@ -181,7 +182,11 @@ def _awaits_the_model(messages: list[ModelMessage]) -> bool:
     last = messages[-1]
     if isinstance(last, ModelResponse):
         return any(isinstance(part, ToolCallPart) for part in last.parts)
-    return any(isinstance(part, RetryPromptPart) for part in last.parts)
+    return any(
+        isinstance(part, RetryFeedbackPart)
+        or (isinstance(part, ToolReturnPart) and part.outcome == "retried")
+        for part in last.parts
+    )
 
 
 def _called_own_tool(messages: list[ModelMessage], tool_names: frozenset[str]) -> bool:

@@ -83,7 +83,7 @@ embeddings:
 
 ### Thinking
 
-`thinking` takes `false`, `true`, or an effort level: `minimal`, `low`, `medium`, `high`, `xhigh`. Unset leaves the model's default.
+`thinking` takes `false`, `true`, or an effort level: `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Unset leaves the model's default.
 
 How the value reaches the model depends on the provider:
 

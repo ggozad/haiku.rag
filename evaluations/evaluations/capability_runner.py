@@ -9,7 +9,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -75,7 +74,7 @@ def _count_tool_traffic(
     Only search failures mean an exhausted budget. A failed code call may be
     either the execution budget or any error in model-written Python, so
     ``n_failed_tools`` covers both without claiming to tell them apart. It counts
-    ``RetryPromptPart`` too, since ``_cite`` rejects with ``ModelRetry`` and only
+    ``outcome="retried"`` too, since ``_cite`` rejects with ``ModelRetry`` and only
     ``ToolFailed`` sets ``outcome="failed"``. Both are restricted to
     ``tool_names``, excluding host tools and output-validation retries.
 
@@ -98,11 +97,11 @@ def _count_tool_traffic(
             )
             continue
         for part in message.parts:
-            if not isinstance(part, RetryPromptPart | ToolReturnPart):
+            if not isinstance(part, ToolReturnPart):
                 continue
             if part.tool_name not in tool_names:
                 continue
-            if isinstance(part, RetryPromptPart):
+            if part.outcome == "retried":
                 failed_tools += 1
             elif part.outcome == "failed":
                 failed_tools += 1
