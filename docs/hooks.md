@@ -211,7 +211,7 @@ async def ingester_lifespan(self, client):
 
 The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop parked in one never returns and ingester shutdown hangs.
 
-`run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it.
+`run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it. With [maintenance](ingester.md#maintenance) enabled, the batch's maintenance pass runs after the exit and covers those writes.
 
 Failures follow the `lifespan` rules. A failure on entry fails that database's start: the ingester logs it, skips the database and starts the others, and a reload reports the database failed. An exception on exit is logged and swallowed, and a cancellation propagates.
 

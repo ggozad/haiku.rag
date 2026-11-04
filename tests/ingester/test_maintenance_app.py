@@ -108,6 +108,27 @@ async def test_run_batch_maintains_a_written_database(tmp_path, monkeypatch):
     assert status.finished_at is not None and status.error is None
 
 
+async def test_run_batch_maintains_writes_from_the_ingester_lifespan_exit(
+    tmp_path, monkeypatch
+):
+    from contextlib import asynccontextmanager
+
+    from haiku.rag.client import HaikuRAG
+
+    @asynccontextmanager
+    async def _flushing_on_exit(client):
+        yield
+        client._single_session("test").record_write()
+
+    monkeypatch.setattr(HaikuRAG, "_ingester_lifespans", _flushing_on_exit)
+    app = IngesterApp(config=_config(tmp_path, quiet_s=3600))
+
+    report = await app.run_batch()
+
+    assert report.failed_maintenance == []
+    assert app._maintenance[NAME].status.finished_at is not None
+
+
 async def test_run_batch_leaves_an_unwritten_database_alone(tmp_path):
     app = IngesterApp(config=_config(tmp_path, quiet_s=3600))
 
