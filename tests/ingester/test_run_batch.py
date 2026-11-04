@@ -925,6 +925,34 @@ async def test_serve_starts_workers_pollers_and_shuts_down(
     assert app._pollers.live_pollers == 0
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="uvicorn serves no fd on Windows")
+async def test_serve_listens_on_an_inherited_socket(tmp_path, use_client):
+    import socket
+
+    import httpx
+
+    use_client(_mock_client())
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    config = _config(tmp_path)
+    config.ingester.api = APIConfig(port=1, fd=listener.fileno(), auth_token="t")
+    app = IngesterApp(config=config)
+
+    task = asyncio.create_task(app.serve(api=True))
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await asyncio.wait_for(
+                client.get(f"http://127.0.0.1:{port}/health"), timeout=10.0
+            )
+    finally:
+        task.cancel()
+        listener.close()
+
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=5.0)
+    assert response.status_code == 200
+
+
 class _SlowPool(WorkerPool):
     """A WorkerPool whose stop never finishes within the grace, to exercise
     _stop_pool's timeout path. The real wiring is bypassed since _stop_pool
