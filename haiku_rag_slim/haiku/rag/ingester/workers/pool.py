@@ -46,7 +46,8 @@ class WorkerPool:
     """`worker_count` async tasks each pull jobs from the queue and run them
     through `run_job`. `clients` maps a source id to the client that writes
     its jobs, and only served sources' jobs are claimed. `add_sources` and
-    `unserve` change what is served while the pool runs. While a worker
+    `unserve` change what is served while the pool runs, and `pause` and
+    `resume` hold a served source's claims. While a worker
     processes a job it renews the job's lease on a `heartbeat_interval_s`
     cadence; a reaper task resets claims whose lease has gone stale
     (`lease_ttl_s`) so a crashed worker doesn't strand its job, without
@@ -86,8 +87,12 @@ class WorkerPool:
             source.source_id: source for source in sources or ()
         }
         self._served: set[str] = set(self._clients)
-        # Claims and `unserve` take it, so once `unserve` returns no claim
-        # names its sources, and every claim that did is in `_executions`.
+        # Served sources whose claims are held. A resume must never serve a
+        # source that `unserve` removed, so this is kept apart from `_served`.
+        self._paused: set[str] = set()
+        # Claims, `unserve` and `pause` take it, so once `unserve` or `pause`
+        # returns no claim names its sources, and every claim that did is in
+        # `_executions`.
         self.claim_lock = asyncio.Lock()
         self._metadata_providers: dict[str, MetadataProvider] = (
             dict(metadata_providers) if metadata_providers else {}
@@ -175,11 +180,14 @@ class WorkerPool:
             self._breakers[source_id] = breaker
         return breaker
 
+    def _unpaused_source_ids(self) -> set[str]:
+        return self._served - self._paused
+
     def _claimable_source_ids(self) -> set[str]:
-        """Served sources whose breaker is closed."""
+        """Served, unpaused sources whose breaker is closed."""
         return {
             source_id
-            for source_id in self._served
+            for source_id in self._unpaused_source_ids()
             if not self.breaker_open_for(source_id)
         }
 
@@ -204,6 +212,16 @@ class WorkerPool:
         async with self.claim_lock:
             self._served.difference_update(source_ids)
 
+    async def pause(self, source_ids: "Collection[str]") -> None:
+        """Stop claiming jobs of `source_ids` until `resume`. Their jobs in
+        flight run on: `wait_idle` waits for them."""
+        async with self.claim_lock:
+            self._paused.update(source_ids)
+
+    def resume(self, source_ids: "Collection[str]") -> None:
+        """Claim jobs of `source_ids` again, those still served."""
+        self._paused.difference_update(source_ids)
+
     async def wait_idle(self, source_ids: "Collection[str]") -> None:
         """Return once no job of `source_ids` is in flight."""
         while True:
@@ -221,6 +239,7 @@ class WorkerPool:
             self._metadata_providers.pop(source_id, None)
             self._breakers.pop(source_id, None)
             self._last_claim.pop(source_id, None)
+        self._paused.difference_update(source_ids)
 
     async def _claim(
         self, worker_id: str, *, open_breakers: bool = False
@@ -230,7 +249,9 @@ class WorkerPool:
         the lock, so a claim queued behind `unserve` sees its result."""
         async with self.claim_lock:
             source_ids = (
-                set(self._served) if open_breakers else self._claimable_source_ids()
+                self._unpaused_source_ids()
+                if open_breakers
+                else self._claimable_source_ids()
             )
             if len(source_ids) > 1:
                 source_ids = await self._jobs.ready_sources(source_ids)
