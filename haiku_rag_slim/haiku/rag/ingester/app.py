@@ -189,12 +189,20 @@ class _Database:
         if task is not None:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-        lifespans, self.ingester_lifespans = self.ingester_lifespans, None
         try:
-            if lifespans is not None:
-                await lifespans.__aexit__(exc_type, exc, tb)
+            await self.exit_ingester_lifespans(exc_type, exc, tb)
         finally:
             await self.opened.__aexit__(exc_type, exc, tb)
+
+    async def exit_ingester_lifespans(
+        self,
+        exc_type: type[BaseException] | None = None,
+        exc: BaseException | None = None,
+        tb: TracebackType | None = None,
+    ) -> None:
+        lifespans, self.ingester_lifespans = self.ingester_lifespans, None
+        if lifespans is not None:
+            await lifespans.__aexit__(exc_type, exc, tb)
 
     @property
     def source_ids(self) -> list[str]:
@@ -737,8 +745,12 @@ class IngesterApp:
         )
 
     async def _maintain_written(self) -> list[FailedDatabase]:
-        """One pass over each database written since it opened, in turn. The
+        """Exit every ingester lifespan, keeping the clients open, then one
+        pass over each database written since it opened, in turn. The
         databases whose pass failed, with the error."""
+        await _close_each(
+            [database.exit_ingester_lifespans for database in self._running.values()]
+        )
         failed = []
         for database in self._running.values():
             if database.maintenance is None or not database.maintenance.due:
