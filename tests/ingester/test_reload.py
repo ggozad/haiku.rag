@@ -941,6 +941,305 @@ async def test_hooks_see_the_exception_that_fails_a_reload(tmp_path, monkeypatch
         assert seen == ["RuntimeError"]
 
 
+def _ingester_hooks(monkeypatch, *others, refuse=lambda client: False, cancel=False):
+    """Configure a hook recording each database's lifespan and ingester
+    lifespan, beside the entry points `others`. Its ingester lifespan fails
+    to start when `refuse(client)` is true, and is cancelled on exit when
+    `cancel` is."""
+    from haiku.rag.hooks import Hook
+
+    log: list[str] = []
+
+    class _Recording(Hook):
+        @asynccontextmanager
+        async def lifespan(self, client):
+            log.append(f"enter {client.source}")
+            try:
+                yield
+            finally:
+                log.append(f"exit {client.source}")
+
+        @asynccontextmanager
+        async def ingester_lifespan(self, client):
+            if refuse(client):
+                raise RuntimeError(f"refused {client.source}")
+            log.append(f"enter ingester {client.source}")
+            try:
+                yield
+            finally:
+                log.append(f"exit ingester {client.source}")
+                if cancel:
+                    raise asyncio.CancelledError
+
+    class _EntryPoint:
+        name = "recording"
+
+        def load(self):
+            return _Recording
+
+    monkeypatch.setattr(
+        "haiku.rag.hooks.entry_points", lambda group: [_EntryPoint(), *others]
+    )
+    return log
+
+
+async def test_a_database_added_by_reload_enters_its_ingester_lifespan(
+    tmp_path, monkeypatch
+):
+    log = _ingester_hooks(monkeypatch)
+    papers = ("papers.lancedb", [_fs(tmp_path, "papers")])
+    app = _hooked(tmp_path, {"papers": papers})
+    path = tmp_path / "haiku.rag.yaml"
+
+    async with _serving(app):
+        assert log == ["enter papers", "enter ingester papers"]
+
+        _write(
+            path,
+            {
+                **_settings(
+                    tmp_path,
+                    {
+                        "papers": papers,
+                        "wiki": ("wiki.lancedb", [_fs(tmp_path, "wiki")]),
+                    },
+                ),
+                "hooks": ["recording"],
+            },
+        )
+        assert (await app.reload()).outcome == "applied"
+        assert log[2:] == ["enter wiki", "enter ingester wiki"]
+
+        _write(
+            path, {**_settings(tmp_path, {"papers": papers}), "hooks": ["recording"]}
+        )
+        assert (await app.reload()).outcome == "applied"
+        assert log[4:] == ["exit ingester wiki", "exit wiki"]
+
+    assert log[6:] == ["exit ingester papers", "exit papers"]
+
+
+async def test_an_ingester_lifespan_failing_to_start_skips_its_database_at_startup(
+    tmp_path, monkeypatch
+):
+    log = _ingester_hooks(monkeypatch, refuse=lambda client: client.source == "wiki")
+    app = _hooked(
+        tmp_path,
+        {
+            "papers": ("papers.lancedb", [_fs(tmp_path, "papers")]),
+            "wiki": ("wiki.lancedb", [_fs(tmp_path, "wiki")]),
+        },
+    )
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        async with app._resources():
+            assert list(app._running) == ["papers"]
+            assert app._failed == {"wiki": "refused wiki"}
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: refused wiki"
+    ]
+
+    assert sorted(log) == sorted(
+        [
+            "enter papers",
+            "enter wiki",
+            "exit wiki",
+            "enter ingester papers",
+            "exit ingester papers",
+            "exit papers",
+        ]
+    )
+
+
+async def test_a_replacement_failing_its_ingester_lifespan_leaves_the_database_removed(
+    tmp_path, monkeypatch
+):
+    log = _ingester_hooks(
+        monkeypatch, refuse=lambda client: str(client.location).endswith("wiki-b")
+    )
+    app = _hooked(tmp_path, {"wiki": ("wiki-a", [_fs(tmp_path, "wiki")])})
+
+    async with _serving(app):
+        _write(
+            tmp_path / "haiku.rag.yaml",
+            {
+                **_settings(tmp_path, {"wiki": ("wiki-b", [_fs(tmp_path, "wiki")])}),
+                "hooks": ["recording"],
+            },
+        )
+        with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+            report = await app.reload()
+        assert [record.getMessage() for record in records] == [
+            "Database 'wiki' failed to start and is skipped: refused wiki"
+        ]
+
+        assert report.outcome == "partial"
+        assert [(c.change, c.error) for c in report.databases] == [
+            ("removed", None),
+            ("failed", "refused wiki"),
+        ]
+        assert list(app._running) == []
+        assert log == [
+            "enter wiki",
+            "enter ingester wiki",
+            "enter wiki",
+            "exit ingester wiki",
+            "exit wiki",
+            "exit wiki",
+        ]
+
+
+async def test_a_dry_run_enters_no_ingester_lifespan(tmp_path, monkeypatch):
+    log = _ingester_hooks(monkeypatch)
+    app = _hooked(tmp_path, {"papers": ("papers.lancedb", [_fs(tmp_path, "papers")])})
+
+    await app.run_batch_dry_run()
+
+    assert log == []
+
+
+async def test_a_cancelled_ingester_lifespan_exit_still_closes_the_client(
+    tmp_path, monkeypatch
+):
+    log = _ingester_hooks(monkeypatch, cancel=True)
+    app = _hooked(tmp_path, {"papers": ("papers.lancedb", [_fs(tmp_path, "papers")])})
+
+    with pytest.raises(asyncio.CancelledError):
+        async with app._resources():
+            pass
+
+    assert log == [
+        "enter papers",
+        "enter ingester papers",
+        "exit ingester papers",
+        "exit papers",
+    ]
+
+
+@pytest.mark.vcr()
+async def test_a_batch_ingest_runs_after_ingest_inside_the_ingester_lifespan(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.hooks import Hook
+
+    seen: list[bool] = []
+
+    class _Observing(Hook):
+        active = False
+
+        @asynccontextmanager
+        async def ingester_lifespan(self, client):
+            self.active = True
+            try:
+                yield
+            finally:
+                self.active = False
+
+        async def after_ingest(self, client, event):
+            seen.append(self.active)
+
+    class _EntryPoint:
+        name = "recording"
+
+        def load(self):
+            return _Observing
+
+    monkeypatch.setattr("haiku.rag.hooks.entry_points", lambda group: [_EntryPoint()])
+    app = _hooked(tmp_path, {"papers": ("papers.lancedb", [_fs(tmp_path, "papers")])})
+
+    report = await app.run_batch()
+
+    assert report.succeeded == 1
+    assert seen == [True]
+
+
+async def test_a_removal_exits_the_ingester_lifespan_after_its_job_in_flight(
+    tmp_path, clients
+):
+    path = tmp_path / "haiku.rag.yaml"
+    papers, wiki = _fs(tmp_path, "papers"), _fs(tmp_path, "wiki")
+    _write(
+        path,
+        _settings(
+            tmp_path,
+            {"papers": ("papers.lancedb", [papers]), "wiki": ("wiki.lancedb", [wiki])},
+        ),
+    )
+    log: list[str] = []
+
+    @asynccontextmanager
+    async def _ingester_lifespans():
+        log.append("enter")
+        try:
+            yield
+        finally:
+            log.append("exit")
+
+    clients["papers"]._ingester_lifespans = _ingester_lifespans
+    gate = asyncio.Event()
+    _gate(clients["papers"], gate)
+    held = clients["papers"]._ingest_observed.side_effect
+
+    async def _ingest(*args, **kwargs):
+        result = await held(*args, **kwargs)
+        log.append("ingested")
+        return result
+
+    clients["papers"]._ingest_observed.side_effect = _ingest
+    app = _app(path)
+
+    async with _serving(app):
+        await _wait_until(lambda: "papers" in _pool(app)._executions.values())
+        _write(path, _settings(tmp_path, {"wiki": ("wiki.lancedb", [wiki])}))
+        removal = asyncio.create_task(app.reload())
+        await _wait_until(lambda: "papers" not in _pool(app)._served)
+        await asyncio.sleep(0.1)
+        assert log == ["enter"]
+
+        gate.set()
+        report = await asyncio.wait_for(removal, timeout=5.0)
+
+    assert _changes(report) == {("papers", "removed")}
+    assert log == ["enter", "ingested", "exit"]
+
+
+async def test_a_cancelled_unwind_after_a_failed_ingester_lifespan_closes_the_client(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.hooks import Hook
+
+    class _Refusing(Hook):
+        @asynccontextmanager
+        async def ingester_lifespan(self, client):
+            raise RuntimeError("cannot start")
+            yield  # unreachable; asynccontextmanager needs a generator
+
+    class _RefusingEntryPoint:
+        name = "refusing"
+
+        def load(self):
+            return _Refusing
+
+    log = _ingester_hooks(monkeypatch, _RefusingEntryPoint(), cancel=True)
+    settings = _settings(
+        tmp_path, {"papers": ("papers.lancedb", [_fs(tmp_path, "papers")])}
+    )
+    settings["hooks"] = ["recording", "refusing"]
+    path = tmp_path / "haiku.rag.yaml"
+    _write(path, settings)
+
+    with pytest.raises(asyncio.CancelledError):
+        async with _app(path)._resources():
+            pass
+
+    assert log == [
+        "enter papers",
+        "enter ingester papers",
+        "exit ingester papers",
+        "exit papers",
+    ]
+
+
 class _Closing:
     """Opens `client`, failing its first `fail` closes and holding the next
     one until `release` is set when `hold` is."""

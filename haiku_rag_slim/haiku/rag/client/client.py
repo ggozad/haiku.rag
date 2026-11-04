@@ -1,6 +1,6 @@
 import logging
 from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from enum import Enum
 from functools import cached_property
 from itertools import zip_longest
@@ -548,6 +548,14 @@ class HaikuRAG:
         stack, self._stack = self._stack, None
         if stack is not None:
             await stack.__aexit__(exc_type, exc_val, exc_tb)
+
+    @asynccontextmanager
+    async def _ingester_lifespans(self) -> AsyncGenerator[None]:
+        """The hooks' ingester lifespans, entered in configured order and
+        exited in reverse. Only haiku-ingester enters them, on an open client."""
+        async with AsyncExitStack() as stack:
+            await enter_lifespans(stack, self._hooks, self, point="ingester_lifespan")
+            yield
 
     async def _release_own(self) -> None:
         """Release what this client built, leaving the database to its owner.

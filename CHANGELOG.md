@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Hook.ingester_lifespan(client)`: entered per database by `haiku-ingester serve`, `run-batch` and reload, inside the client's `lifespan`, with spans `hook.ingester_lifespan.enter` and `hook.ingester_lifespan.exit` (#815).
+
 ## [0.106.0] - 2026-11-03
 
 ### Added

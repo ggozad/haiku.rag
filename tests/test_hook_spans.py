@@ -141,6 +141,27 @@ async def test_a_lifespan_exit_failure_is_recorded_and_swallowed(
     ]
 
 
+async def test_ingester_lifespan_entry_and_exit_each_get_a_span(temp_db_path, exporter):
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [Hook()]
+    async with client:
+        with logfire.span("caller"):
+            async with client._ingester_lifespans():
+                pass
+
+    tree = Tree(exporter)
+    assert _hook_names(tree) == [
+        "hook.lifespan.enter",
+        "hook.ingester_lifespan.enter",
+        "hook.ingester_lifespan.exit",
+        "hook.lifespan.exit",
+    ]
+    assert tree.parent_of("hook.ingester_lifespan.enter") == "caller"
+    assert tree.parent_of("hook.ingester_lifespan.exit") == "caller"
+    assert tree.attrs("hook.ingester_lifespan.enter")["hook"] == "haiku.rag.hooks.Hook"
+    assert tree.attrs("hook.ingester_lifespan.exit")["hook"] == "haiku.rag.hooks.Hook"
+
+
 async def test_a_lifespan_entry_failure_is_recorded_and_raised(temp_db_path, exporter):
     client = HaikuRAG(temp_db_path, create=True)
     client._hooks = [FailingEntryHook()]

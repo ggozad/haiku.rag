@@ -11,6 +11,7 @@ from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, HookConfig
 from haiku.rag.hooks import ENTRY_POINT_GROUP, Hook, build_hooks
 from haiku.rag.store.models.chunk import Chunk
+from tests.conftest import capture_logs
 from tests.documents import docling_doc, document_import
 from tests.platform import converts_pdf_locally, requires_symlinks
 
@@ -756,6 +757,155 @@ async def test_default_lifespan_is_a_noop(temp_db_path):
 
     # A hook that overrides no lifespan still reaches its other hook points.
     assert spy.events == [("ingest", "create", ((doc.id, "mem://default-lifespan"),))]
+
+
+class IngesterLifespanHook(LifespanHook):
+    """Records its ingester lifespan's transitions beside its lifespan's."""
+
+    @asynccontextmanager
+    async def ingester_lifespan(self, client):
+        self.log.append(f"enter ingester {self.name}")
+        try:
+            yield
+        finally:
+            self.log.append(f"exit ingester {self.name}")
+
+
+@pytest.mark.asyncio
+async def test_a_writable_client_enters_no_ingester_lifespan(temp_db_path):
+    log: list[str] = []
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [IngesterLifespanHook("a", log)]
+
+    async with client:
+        pass
+
+    assert log == ["enter a", "exit a"]
+
+
+@pytest.mark.asyncio
+async def test_ingester_lifespans_nest_inside_the_lifespans(temp_db_path):
+    log: list[str] = []
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [IngesterLifespanHook("a", log), IngesterLifespanHook("b", log)]
+
+    async with client:
+        async with client._ingester_lifespans():
+            assert log == [
+                "enter a",
+                "enter b",
+                "enter ingester a",
+                "enter ingester b",
+            ]
+
+    assert log[4:] == ["exit ingester b", "exit ingester a", "exit b", "exit a"]
+
+
+@pytest.mark.asyncio
+async def test_an_ingester_lifespan_failing_to_start_unwinds_the_started_ones(
+    temp_db_path,
+):
+    log: list[str] = []
+    seen: list[str] = []
+
+    class _Recording(IngesterLifespanHook):
+        @asynccontextmanager
+        async def ingester_lifespan(self, client):
+            try:
+                yield
+            except Exception as exc:
+                seen.append(str(exc))
+                raise
+
+    class _Refusing(Hook):
+        @asynccontextmanager
+        async def ingester_lifespan(self, client):
+            raise RuntimeError("cannot start")
+            yield  # unreachable; asynccontextmanager needs a generator
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [_Recording("a", log), _Refusing()]
+
+    async with client:
+        with pytest.raises(RuntimeError, match="cannot start"):
+            async with client._ingester_lifespans():
+                pass
+        assert seen == ["cannot start"]
+
+    assert log == ["enter a", "exit a"]
+
+
+@pytest.mark.asyncio
+async def test_ingester_lifespans_see_the_exception_being_unwound(temp_db_path):
+    seen: list[str] = []
+
+    class _Recording(Hook):
+        @asynccontextmanager
+        async def ingester_lifespan(self, client):
+            try:
+                yield
+            except Exception as exc:
+                seen.append(str(exc))
+                raise
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [_Recording()]
+
+    async with client:
+        with pytest.raises(ValueError, match="from the body"):
+            async with client._ingester_lifespans():
+                raise ValueError("from the body")
+
+    assert seen == ["from the body"]
+
+
+class FailingIngesterExitHook(Hook):
+    @asynccontextmanager
+    async def ingester_lifespan(self, client):
+        yield
+        raise RuntimeError("cannot stop")
+
+
+@pytest.mark.asyncio
+async def test_an_ingester_lifespan_teardown_failure_is_logged_and_suppressed(
+    temp_db_path,
+):
+    log: list[str] = []
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [IngesterLifespanHook("a", log), FailingIngesterExitHook()]
+
+    with capture_logs(logging.getLogger("haiku.rag.hooks"), logging.ERROR) as records:
+        async with client:
+            async with client._ingester_lifespans():
+                pass
+
+    assert log == ["enter a", "enter ingester a", "exit ingester a", "exit a"]
+    assert [r.getMessage() for r in records] == [
+        "tests.test_hooks.FailingIngesterExitHook ingester_lifespan teardown failed"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_ingester_lifespan_teardown_propagates(temp_db_path):
+    log: list[str] = []
+
+    class _CancelledExit(Hook):
+        @asynccontextmanager
+        async def ingester_lifespan(self, client):
+            try:
+                yield
+            finally:
+                raise asyncio.CancelledError
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [IngesterLifespanHook("a", log), _CancelledExit()]
+
+    async with client:
+        with pytest.raises(asyncio.CancelledError):
+            async with client._ingester_lifespans():
+                pass
+
+    assert log == ["enter a", "enter ingester a", "exit ingester a", "exit a"]
 
 
 @pytest.mark.asyncio

@@ -858,6 +858,80 @@ async def test_startup_fails_when_every_database_fails_and_deletes_no_job(
     }
 
 
+async def test_run_batch_runs_its_jobs_inside_the_ingester_lifespans(
+    tmp_path, monkeypatch
+):
+    log: list[str] = []
+    papers = _mock_client()
+
+    @asynccontextmanager
+    async def _ingester_lifespans():
+        log.append("enter")
+        try:
+            yield
+        finally:
+            log.append("exit")
+
+    papers._ingester_lifespans = _ingester_lifespans
+    ingest = papers._ingest_observed.side_effect
+
+    async def _ingest(*args, **kwargs):
+        log.append("ingest")
+        return await ingest(*args, **kwargs)
+
+    papers._ingest_observed.side_effect = _ingest
+
+    class _Closing(_Opened):
+        async def __aexit__(self, *exc_info):
+            log.append("close")
+            return await super().__aexit__(*exc_info)
+
+    async def _reconcile(rag, sync, source_ids):
+        log.append("reconcile")
+        return await reconcile(rag, sync, source_ids)
+
+    monkeypatch.setattr("haiku.rag.ingester.app.reconcile", _reconcile)
+    monkeypatch.setattr(
+        "haiku.rag.client.HaikuRAG", _opening({"papers": _Closing(papers)})
+    )
+
+    report = await IngesterApp(config=_papers_only(tmp_path)).run_batch()
+
+    assert report.succeeded == 1
+    assert log == ["reconcile", "enter", "ingest", "exit", "close"]
+
+
+async def test_run_batch_ingests_past_a_database_whose_ingester_lifespan_fails(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.ingester.app import FailedDatabase
+
+    papers, wiki = _mock_client(), _mock_client()
+
+    @asynccontextmanager
+    async def _refused():
+        raise RuntimeError("hook refused wiki")
+        yield  # unreachable; asynccontextmanager needs a generator
+
+    wiki._ingester_lifespans = _refused
+    opened = {"papers": _Opened(papers), "wiki": _Opened(wiki)}
+    monkeypatch.setattr("haiku.rag.client.HaikuRAG", _opening(opened))
+
+    with capture_logs(_APP_LOGGER, logging.ERROR) as records:
+        report = await IngesterApp(config=_two_databases(tmp_path)).run_batch()
+    assert [record.getMessage() for record in records] == [
+        "Database 'wiki' failed to start and is skipped: hook refused wiki"
+    ]
+
+    assert report.succeeded == 1
+    assert _ingested(papers) == ["papers.md"]
+    assert _ingested(wiki) == []
+    assert report.failed_databases == [
+        FailedDatabase(database="wiki", error="hook refused wiki")
+    ]
+    assert {name: o.closes for name, o in opened.items()} == {"papers": 1, "wiki": 1}
+
+
 async def test_run_batch_ingests_the_databases_that_started(tmp_path, monkeypatch):
     from haiku.rag.ingester.app import FailedDatabase
 

@@ -21,6 +21,7 @@ ENTRY_POINT_GROUP = "haiku.rag.hooks"
 logger = logging.getLogger(__name__)
 
 IngestOperation = Literal["create", "update"]
+LifespanPoint = Literal["lifespan", "ingester_lifespan"]
 
 
 class HookError(Exception):
@@ -115,8 +116,22 @@ class Hook:
         waits for its children without cancelling them, so an endless task
         parked in one hangs shutdown instead of ending it.
 
-        Readers enter lifespans too. Start background work that writes only
-        when ``client.is_read_only`` is false.
+        Every process that opens a client enters it, readers included. Start
+        background work in ``ingester_lifespan``.
+        """
+        yield
+
+    @asynccontextmanager
+    async def ingester_lifespan(self, client: "HaikuRAG") -> AsyncGenerator[None]:
+        """Run background work while haiku-ingester ingests into the client's
+        database.
+
+        Only haiku-ingester enters it, once per database, on that database's
+        writable client: inside ``lifespan``, after reconciliation and before
+        the first job. It exits after the last job, so every ``after_ingest``
+        and ``after_delete`` from the ingester's jobs runs inside it. Failures
+        follow ``lifespan``'s rules, and a failure on entry fails the
+        database's start.
         """
         yield
 
@@ -189,7 +204,9 @@ def hook_span(point: str, hook: Hook, **attributes: Any):
     return logfire.span(name, hook=hook_name(hook), **attributes)
 
 
-def _lifespan_exit(hook: Hook, lifespan: AbstractAsyncContextManager[None]):
+def _lifespan_exit(
+    hook: Hook, lifespan: AbstractAsyncContextManager[None], point: LifespanPoint
+):
     """Wrap a started lifespan's exit so a teardown failure is logged rather
     than raised, and so the hook cannot suppress the caller's exception."""
 
@@ -198,29 +215,32 @@ def _lifespan_exit(hook: Hook, lifespan: AbstractAsyncContextManager[None]):
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> bool:
-        with hook_span("lifespan.exit", hook) as span:
+        with hook_span(f"{point}.exit", hook) as span:
             try:
                 await lifespan.__aexit__(exc_type, exc, tb)
             except Exception as e:
                 span.record_exception(e)
                 span.set_level("error")
-                logger.exception("%s lifespan teardown failed", hook_name(hook))
+                logger.exception("%s %s teardown failed", hook_name(hook), point)
         return False
 
     return _exit
 
 
 async def enter_lifespans(
-    stack: AsyncExitStack, hooks: Sequence[Hook], client: "HaikuRAG"
+    stack: AsyncExitStack,
+    hooks: Sequence[Hook],
+    client: "HaikuRAG",
+    point: LifespanPoint = "lifespan",
 ) -> None:
-    """Start each hook's lifespan on ``stack`` in order. A hook that fails to
+    """Start each hook's ``point`` on ``stack`` in order. A hook that fails to
     start propagates, leaving the earlier hooks registered on the stack for the
     caller to unwind."""
     for hook in hooks:
-        lifespan = hook.lifespan(client)
-        with hook_span("lifespan.enter", hook):
+        lifespan = getattr(hook, point)(client)
+        with hook_span(f"{point}.enter", hook):
             await lifespan.__aenter__()
-        stack.push_async_exit(_lifespan_exit(hook, lifespan))
+        stack.push_async_exit(_lifespan_exit(hook, lifespan, point))
 
 
 @overload
