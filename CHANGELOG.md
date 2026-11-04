@@ -7,6 +7,7 @@
 - `Hook.ingester_lifespan(client)`: entered per database by `haiku-ingester serve`, `run-batch` and reload, inside the client's `lifespan`, with spans `hook.ingester_lifespan.enter` and `hook.ingester_lifespan.exit` (#815).
 - `search.fts_language` sets the language of the full-text index. Default `English`. An existing database takes it on `haiku-rag rebuild --reindex`.
 - `doctor` warns when the full-text index was built in a language other than `search.fts_language`.
+- Ingester: `ingester.maintenance` (`enabled`, default false, `quiet_s`, `max_wait_s`) vacuums each database and builds a missing vector index, with the database's claims paused: in `serve` once the database is quiet, in `run-batch` and manifest replay after the drain. A failed pass makes `run-batch` exit non-zero. The ingester's clients do not auto-vacuum while it is enabled. `/stats` gains `maintenance_by_database`, and each pass is an `ingester.maintenance` span.
 
 ## [0.106.0] - 2026-11-03
 

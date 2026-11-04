@@ -59,7 +59,7 @@ storage:
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
-- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`. Vacuum is also what adds newly written rows to the indexes, so with `false` they stay outside them until `haiku-rag vacuum`, or `haiku-rag rebuild --reindex` for the full-text and scalar indexes
+- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`. Vacuum is also what adds newly written rows to the indexes, so with `false` they stay outside them until `haiku-rag vacuum`, or `haiku-rag rebuild --reindex` for the full-text and scalar indexes. With the ingester's [maintenance](../ingester.md#maintenance) enabled, the ingester's clients ignore it and the maintenance pass vacuums
 - **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
 - **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum memory](#vacuum-memory) below
 
@@ -254,7 +254,7 @@ Retrieval MAP with and without an index, measured on copies of the benchmark dat
 
 An index costs no accuracy at 70k and 121k chunks and 0.0044 MAP at 426k. A larger corpus holds more IVF partitions, so the default probes cover less of it, and `vector_refine_factor` only re-scores what the probes returned. Raise `vector_nprobes` to trade latency for recall on a large corpus. Build time depends more on vector dimension than on row count, since training samples the data.
 
-Ingestion never creates a vector index. Once the database holds at least 256 chunks, build one:
+Writing documents never creates a vector index. The ingester's [maintenance](../ingester.md#maintenance) builds one when it is enabled. Without it, once the database holds at least 256 chunks, build one:
 
 ```bash
 haiku-rag create-index
@@ -264,4 +264,4 @@ It builds an IVF_PQ index, with LanceDB choosing the parameters from the row cou
 
 New chunks reach the index without a rebuild. `optimize()`, which runs after writes while `auto_vacuum` is on, adds them as a delta part. Between a write and the next optimize, LanceDB serves ANN over the indexed rows and a brute-force scan over the remainder, then combines the results.
 
-The centroids are fitted when the index is built and never recomputed, so as a corpus grows past what they were trained on the partitioning fits it less well and delta parts accumulate. Run `haiku-rag create-index` again after substantial growth to retrain them. A full `rebuild`, `--rechunk`, `--embed-only` and `--descriptions` retrain an existing index, and no `rebuild` creates one.
+Vacuum also splits the index's partitions as the table grows. An index built over 300 chunks and grown only by vacuum matched a fresh build's recall@10 over 200 held-out chunks, with the default `vector_nprobes` and `vector_refine_factor`: 0.999 against 0.999 on `hotpotqa`, 1.000 against 0.995 on `frames`. A grown index keeps more than one delta part, so its queries are slower: 21 ms against 15 ms on `frames`. `haiku-rag create-index` builds it again as one part. A full `rebuild`, `--rechunk`, `--embed-only` and `--descriptions` retrain an existing index, and no `rebuild` creates one.

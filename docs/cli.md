@@ -240,7 +240,7 @@ Compacts the tables and removes old versions older than `storage.vacuum_retentio
 haiku-rag create-index [--db /path/to/your.lancedb]
 ```
 
-Builds an IVF_PQ vector index over the chunks, using `search.vector_index_metric`. It needs at least 256 chunks, and builds nothing on LanceDB Cloud, which manages its own index. `HaikuRAG.create_vector_index()` does the same from Python. Without an index, search is exact brute-force kNN, which is fast enough below about 100,000 chunks. Re-run it after substantial growth to retrain the centroids. A `rebuild` that rewrites chunks retrains an existing index and never creates one. See [Vector indexing](configuration/storage.md#vector-indexing).
+Builds an IVF_PQ vector index over the chunks, using `search.vector_index_metric`. It needs at least 256 chunks, and builds nothing on LanceDB Cloud, which manages its own index. `HaikuRAG.create_vector_index()` does the same from Python. Without an index, search is exact brute-force kNN, which is fast enough below about 100,000 chunks. Vacuum keeps an existing index current as the corpus grows. `create-index` on an indexed database builds the index again as one part, which answers queries faster than one grown by vacuum. A `rebuild` that rewrites chunks retrains an existing index and never creates one. See [Vector indexing](configuration/storage.md#vector-indexing).
 
 ## Tags and history
 

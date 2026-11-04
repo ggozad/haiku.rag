@@ -332,7 +332,7 @@ async def test_vacuum_reraises_runtime_error(temp_db_path, monkeypatch):
         monkeypatch.setattr(
             lance.LanceDataset, "cleanup_old_versions", failing_cleanup_os
         )
-        await store.vacuum(retention_seconds=0)
+        assert await store.vacuum(retention_seconds=0) is False
 
 
 async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):

@@ -1828,6 +1828,63 @@ async def test_wait_idle_ignores_other_sources_jobs(jobs, sync):
         await pool.stop()
 
 
+async def test_a_paused_source_is_not_claimed_until_resumed(jobs, sync):
+    pool = _pool(_ingesting_client(), jobs, sync, source_ids=("kept", "paused"))
+    await pool.pause(["paused"])
+    paused = await jobs.enqueue("paused", "p", JobOp.UPSERT)
+    assert paused is not None
+    assert await jobs.enqueue("kept", "k", JobOp.UPSERT) is not None
+
+    assert await pool.drain_once() == 1
+    left = await jobs.get_job(paused.id)
+    assert left is not None and left.status is JobStatus.QUEUED
+
+    pool.resume(["paused"])
+    assert await pool.drain_once() == 1
+    done = await jobs.get_job(paused.id)
+    assert done is not None and done.status is JobStatus.SUCCEEDED
+
+
+async def test_a_claim_queued_behind_pause_skips_the_paused_source(jobs, sync):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    pool = _pool(_ingesting_client(), jobs, sync, worker_count=1)
+    async with pool.claim_lock:
+        pause = asyncio.create_task(pool.pause(["src"]))
+        await asyncio.sleep(0)
+        await pool.start()
+        await asyncio.sleep(0.05)
+    try:
+        await asyncio.wait_for(pause, timeout=5.0)
+        await asyncio.sleep(0.2)
+    finally:
+        await pool.stop()
+    left = await jobs.get_job(job.id)
+    assert left is not None and left.status is JobStatus.QUEUED
+
+
+async def test_resuming_an_unserved_source_does_not_serve_it(jobs, sync):
+    pool = _pool(_ingesting_client(), jobs, sync)
+    await pool.pause(["src"])
+    await pool.unserve(["src"])
+    pool.resume(["src"])
+    assert await jobs.enqueue("src", "u", JobOp.UPSERT) is not None
+
+    assert await pool.drain_once() == 0
+
+
+async def test_a_removed_source_added_again_is_not_paused(jobs, sync):
+    client = _ingesting_client()
+    pool = _pool(client, jobs, sync)
+    await pool.pause(["src"])
+    await pool.unserve(["src"])
+    pool.remove_sources(["src"])
+    pool.add_sources(clients={"src": client}, sources=[])
+    assert await jobs.enqueue("src", "u", JobOp.UPSERT) is not None
+
+    assert await pool.drain_once() == 1
+
+
 async def test_a_source_added_to_a_running_pool_is_served(jobs, sync):
     first, second = _ingesting_client(), _ingesting_client()
     pool = _pool(first, jobs, sync, source_ids=("first",))

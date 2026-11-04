@@ -807,6 +807,28 @@ class IngestedDatabase(ConfigModel):
     sources: list[SourceConfig] = Field(min_length=1)
 
 
+class MaintenanceConfig(ConfigModel):
+    """Per-database maintenance run by the ingester: vacuum, then the vector
+    index when there is none, with the database's claims paused."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Run maintenance. The ingester's clients then do not "
+        "auto-vacuum, whatever storage.auto_vacuum says.",
+    )
+    quiet_s: float = Field(
+        default=300.0,
+        gt=0,
+        description="Run once a database has had no write for this long.",
+    )
+    max_wait_s: float = Field(
+        default=3600.0,
+        gt=0,
+        description="Run at the latest this long after the first write since "
+        "the last run, quiet or not.",
+    )
+
+
 class IngesterConfig(ConfigModel):
     """Production ingester settings.
 
@@ -818,6 +840,7 @@ class IngesterConfig(ConfigModel):
     queue: QueueConfig = Field(default_factory=QueueConfig)
     workers: WorkerConfig = Field(default_factory=WorkerConfig)
     api: APIConfig = Field(default_factory=APIConfig)
+    maintenance: MaintenanceConfig = Field(default_factory=MaintenanceConfig)
 
     @model_validator(mode="before")
     @classmethod

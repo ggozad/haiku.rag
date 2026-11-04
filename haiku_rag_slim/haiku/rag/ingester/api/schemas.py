@@ -94,6 +94,15 @@ class ConfigResponse(BaseModel):
     yaml: str
 
 
+class MaintenanceStats(BaseModel):
+    """A database's last maintenance pass. All None before the first."""
+
+    finished_at: datetime | None
+    vacuumed: bool | None
+    index_built: bool | None
+    error: str | None
+
+
 class StatsResponse(BaseModel):
     """Aggregated counters and per-source breakdowns that drive the dashboard.
     Cheap to compute (all SQL aggregations against the queue file)."""
@@ -104,3 +113,4 @@ class StatsResponse(BaseModel):
     dlq_by_source: dict[str, int]
     rejected_by_source: dict[str, int]
     queue_depth_by_source: dict[str, int]
+    maintenance_by_database: dict[str, MaintenanceStats]

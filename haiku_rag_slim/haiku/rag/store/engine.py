@@ -588,8 +588,9 @@ class Store:
                 for name, table in self._tables().items()
             }
 
-    async def vacuum(self, retention_seconds: int | None = None) -> None:
+    async def vacuum(self, retention_seconds: int | None = None) -> bool:
         """Optimize and clean up old versions across all tables to reduce disk usage.
+        Returns whether the pass ran to completion.
 
         Args:
             retention_seconds: Retention threshold in seconds. Only versions older
@@ -607,11 +608,11 @@ class Store:
         self._assert_writable()
 
         if self._connection_mode == ConnectionMode.CLOUD:
-            return
+            return False
 
         # Skip if already running (non-blocking)
         if self._vacuum_lock.locked():
-            return
+            return False
 
         async with self._vacuum_lock, self._write_lock:
             try:
@@ -642,6 +643,8 @@ class Store:
                 # errors surface as RuntimeError and must not be swallowed —
                 # a silently skipped cleanup hides tag-interaction bugs.
                 logger.debug(f"Vacuum skipped due to resource constraints: {e}")
+                return False
+        return True
 
     async def _run_lance_maintenance(
         self, table: lancedb.AsyncTable, step: "Callable[[lance.LanceDataset], Any]"

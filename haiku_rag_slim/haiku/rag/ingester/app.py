@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from haiku.rag.client import HaikuRAG
     from haiku.rag.client.scope import DatabaseRef
     from haiku.rag.ingester.api.server import APIState
+    from haiku.rag.ingester.maintenance import DatabaseMaintenance
     from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.ingester.pollers.base import BasePoller
 
@@ -75,6 +76,7 @@ class BatchReport(BaseModel):
     retried: int = 0
     failed_sweeps: list[str] = []
     failed_databases: list[FailedDatabase] = []
+    failed_maintenance: list[FailedDatabase] = []
 
 
 class BatchProgress(BaseModel):
@@ -172,6 +174,8 @@ class _Database:
     metadata_providers: "dict[str, MetadataProvider]"
     removing: bool = False
     ingester_lifespans: AbstractAsyncContextManager[None] | None = None
+    maintenance: "DatabaseMaintenance | None" = None
+    maintenance_task: asyncio.Task | None = None
 
     async def close_client(
         self,
@@ -179,7 +183,12 @@ class _Database:
         exc: BaseException | None = None,
         tb: TracebackType | None = None,
     ) -> None:
-        """Close the client, telling its hooks which exception is unwound."""
+        """Stop its maintenance, then close the client, telling its hooks
+        which exception is unwound."""
+        task, self.maintenance_task = self.maintenance_task, None
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         lifespans, self.ingester_lifespans = self.ingester_lifespans, None
         try:
             if lifespans is not None:
@@ -245,6 +254,10 @@ class IngesterApp:
         self._running: dict[str, _Database] = {}
         self._ingested: dict[str, DatabaseRef] = {}
         self._source_databases: dict[str, str] = {}
+        # Maintenance of the running databases, by name, read by the API.
+        self._maintenance: dict[str, DatabaseMaintenance] = {}
+        # Set by `serve`: each database then maintains itself while it runs.
+        self._maintaining = False
         queue = config.ingester.queue
         if (
             queue.dburi
@@ -485,6 +498,7 @@ class IngesterApp:
         await self._close(database)
         del self._running[name]
         del self._ingested[name]
+        self._maintenance.pop(name, None)
 
     async def _prepare(
         self, ref: "DatabaseRef", pollers: "list[BasePoller]"
@@ -528,6 +542,22 @@ class IngesterApp:
             poller.documents = database.client
         self._pollers.add(database.pollers)
         name = database.ref.name
+        maintenance_config = self._config.ingester.maintenance
+        if maintenance_config.enabled:
+            from haiku.rag.ingester.maintenance import DatabaseMaintenance
+
+            database.maintenance = DatabaseMaintenance(
+                name,
+                database.client,
+                self._pool,
+                database.source_ids,
+                maintenance_config,
+            )
+            self._maintenance[name] = database.maintenance
+            if self._maintaining:
+                database.maintenance_task = asyncio.create_task(
+                    database.maintenance.run()
+                )
         self._running[name] = database
         self._ingested[name] = database.ref
         self._source_databases.update(
@@ -560,7 +590,11 @@ class IngesterApp:
             UpgradeRequiredError,
         )
 
-        opened = HaikuRAG._covering(DatabaseScope((ref,)), self._config, create=True)
+        config = self._config
+        if config.ingester.maintenance.enabled:
+            config = config.model_copy(deep=True)
+            config.storage.auto_vacuum = False
+        opened = HaikuRAG._covering(DatabaseScope((ref,)), config, create=True)
         try:
             return opened, await opened.__aenter__()
         except (
@@ -702,10 +736,29 @@ class IngesterApp:
             rejected=completed.get("rejected", 0),
         )
 
+    async def _maintain_written(self) -> list[FailedDatabase]:
+        """One pass over each database written since it opened, in turn. The
+        databases whose pass failed, with the error."""
+        failed = []
+        for database in self._running.values():
+            if database.maintenance is None or not database.maintenance.due:
+                continue
+            try:
+                await database.maintenance.run_once()
+            except Exception as error:
+                logger.error(
+                    "Maintenance of database %r failed: %s", database.ref.name, error
+                )
+                failed.append(
+                    FailedDatabase(database=database.ref.name, error=_message(error))
+                )
+        return failed
+
     async def serve(self, *, api: bool = True) -> None:
         """Run pollers + workers (and the HTTP API when enabled) until a
         SIGINT/SIGTERM is received. Drains in-flight work on shutdown."""
         ingester_cfg = self._config.ingester
+        self._maintaining = True
         async with self._resources():
             assert self._pollers is not None and self._pool is not None
             await self._pollers.start()
@@ -810,10 +863,11 @@ class IngesterApp:
                 report.failed_sweeps = failed_sweeps
                 report.retried = retried
                 report.failed_databases = failed_databases(self._failed)
-                return report
             finally:
                 await self._stop_pool()
                 await self._pollers.close_sources()
+            report.failed_maintenance = await self._maintain_written()
+            return report
 
     async def run_batch_dry_run(self) -> BatchDryRunReport:
         """Run one discover() sweep across every configured source and return
@@ -926,10 +980,11 @@ class IngesterApp:
                     started_at, progress_callback=progress_callback
                 )
                 report.failed_databases = failed_databases(self._failed)
-                return report
             finally:
                 await self._stop_pool()
                 await self._pollers.close_sources()
+            report.failed_maintenance = await self._maintain_written()
+            return report
 
     async def reload(self) -> ReloadReport:
         """Read the configuration file again and add, remove or replace the
@@ -1148,6 +1203,7 @@ class IngesterApp:
                 databases=self._ingested,
                 failed_databases=self._failed,
                 source_databases=self._source_databases,
+                maintenance=self._maintenance,
                 claim_lock=self._pool.claim_lock,
                 reload=self.reload,
             )
