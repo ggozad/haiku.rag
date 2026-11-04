@@ -270,6 +270,72 @@ async def test_fts_coverage_passes_an_empty_table(temp_db_path):
     assert _result(report, "fts_index_coverage").severity is Severity.OK
 
 
+def _greek_config() -> AppConfig:
+    config = _config()
+    config.search.fts_language = "Greek"
+    return config
+
+
+async def test_fts_language_mismatch_warns(temp_db_path):
+    await _build_db(temp_db_path)
+    report = await run_doctor(_greek_config(), temp_db_path, {})
+    result = _result(report, "fts_index_language")
+    assert result.severity is Severity.WARN
+    assert result.details == ["chunks.content_fts: English, configured Greek"]
+    assert "rebuild --reindex" in (result.remediation or "")
+    assert not report.failed
+
+
+async def test_fts_language_match_passes(temp_db_path):
+    await _build_db(temp_db_path)
+    report = await run_doctor(_config(), temp_db_path, {})
+    assert _result(report, "fts_index_language").severity is Severity.OK
+
+
+async def test_fts_language_skips_an_index_without_details(temp_db_path, monkeypatch):
+    from lancedb.table import AsyncTable
+
+    await _build_db(temp_db_path)
+    original = AsyncTable.list_indices
+
+    class WithoutDetails:
+        index_details = None
+
+        def __init__(self, index):
+            self._index = index
+
+        def __getattr__(self, name):
+            return getattr(self._index, name)
+
+    async def without_details(self):
+        return [WithoutDetails(index) for index in await original(self)]
+
+    monkeypatch.setattr(AsyncTable, "list_indices", without_details)
+    report = await run_doctor(_greek_config(), temp_db_path, {})
+    assert _result(report, "fts_index_language").severity is Severity.OK
+
+
+async def test_fts_language_and_coverage_report_separately(temp_db_path):
+    await _build_db(temp_db_path, fts_index="empty")
+    report = await run_doctor(_greek_config(), temp_db_path, {})
+    assert _result(report, "fts_index_coverage").severity is Severity.FAIL
+    assert _result(report, "fts_index_language").severity is Severity.WARN
+
+
+async def test_fts_language_skips_an_empty_table(temp_db_path):
+    db = await _build_db(temp_db_path)
+    chunks_tbl = await db.open_table("chunks")
+    await chunks_tbl.delete("id = 'c1'")
+    report = await run_doctor(_greek_config(), temp_db_path, {})
+    assert _result(report, "fts_index_language").severity is Severity.OK
+
+
+async def test_fts_language_skips_a_missing_index(temp_db_path):
+    await _build_db(temp_db_path, fts_index=None)
+    report = await run_doctor(_greek_config(), temp_db_path, {})
+    assert _result(report, "fts_index_language").severity is Severity.OK
+
+
 async def test_orphaned_chunk_fails(temp_db_path):
     db = await _build_db(temp_db_path)
     chunks_tbl = await db.open_table("chunks")

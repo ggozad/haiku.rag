@@ -141,10 +141,11 @@ Checks the database and prints a pass, warn or fail report. It makes no changes,
 - exactly one settings row exists, and the configured embedder matches it
 - no migrations are pending
 - the vector index covers all chunks, and the full-text index exists and covers rows. Rows written since it was last built are a warning
+- the full-text index was built in the language `search.fts_language` names
 - near-identical documents, by embedding-centroid similarity. Advisory only, tuned by `doctor.duplicates`. The largest member of each group is suggested to keep
 - API keys are set for the configured providers
 
-These are warnings and do not change the exit code: rows outside the full-text or vector index, no vector index on a large table, near-duplicate documents, picture-only documents without chunks, pictures without image data, an embedder that differs from the recorded one at the same vector dimension, and an Ollama endpoint missing a configured model. Every other problem fails.
+These are warnings and do not change the exit code: rows outside the full-text or vector index, a full-text index in another language, no vector index on a large table, near-duplicate documents, picture-only documents without chunks, pictures without image data, an embedder that differs from the recorded one at the same vector dimension, and an Ollama endpoint missing a configured model. Every other problem fails.
 
 It also probes the endpoints the configuration uses: Ollama and its models (`{base_url}/api/tags`), docling-serve when configured (`{base_url}/health`), and custom OpenAI-compatible and vLLM endpoints (`{base_url}/models`). Hosted providers get only the API-key check. In-process models have no endpoint and are reported as such. `--skip-providers` skips the API-key check and the endpoint probes.
 
@@ -209,7 +210,7 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Title only | `--title-only` | Documents lack titles |
 | Descriptions | `--descriptions` | Adding VLM picture descriptions to an existing database |
 | Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
-| Reindex | `--reindex` | `doctor` reports rows outside the full-text index, or an index is missing |
+| Reindex | `--reindex` | `doctor` reports rows outside the full-text index, an index is missing, or `search.fts_language` changed |
 
 A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment its PDF did not rebuild, are re-chunked and re-embedded from their stored content.
 
