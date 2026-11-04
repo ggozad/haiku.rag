@@ -246,7 +246,11 @@ async def _check_fts_coverage(store: Store) -> CheckResult:
     missing: list[str] = []
     partial: list[str] = []
     for table_name, table in store._tables().items():
-        declared = [c for c, cfg in index_specs(table_name) if isinstance(cfg, FTS)]
+        declared = [
+            c
+            for c, cfg in index_specs(table_name, store._config.search.fts_language)
+            if isinstance(cfg, FTS)
+        ]
         if not declared:
             continue
         rows = await table.count_rows()

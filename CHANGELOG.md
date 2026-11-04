@@ -5,6 +5,7 @@
 ### Added
 
 - `Hook.ingester_lifespan(client)`: entered per database by `haiku-ingester serve`, `run-batch` and reload, inside the client's `lifespan`, with spans `hook.ingester_lifespan.enter` and `hook.ingester_lifespan.exit` (#815).
+- `search.fts_language` sets the language of the full-text index. Default `English`. An existing database takes it on `haiku-rag rebuild --reindex`.
 
 ## [0.106.0] - 2026-11-03
 

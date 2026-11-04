@@ -439,7 +439,11 @@ class DocumentRepository:
         self.store.document_items_table = await self.store.db.create_table(
             "document_items", schema=get_document_items_arrow_schema()
         )
-        await ensure_indexes(self.store.document_items_table, "document_items")
+        await ensure_indexes(
+            self.store.document_items_table,
+            "document_items",
+            self.store._config.search.fts_language,
+        )
 
         count = len(
             await query_to_pydantic(
@@ -452,9 +456,17 @@ class DocumentRepository:
             self.store.documents_table = await self.store.db.create_table(
                 "documents", schema=get_documents_arrow_schema()
             )
-            await ensure_indexes(self.store.documents_table, "documents")
+            await ensure_indexes(
+                self.store.documents_table,
+                "documents",
+                self.store._config.search.fts_language,
+            )
             await self.store.db.drop_table("document_meta")
             self.store.document_meta_table = await self.store.db.create_table(
                 "document_meta", schema=DocumentMetaRecord
             )
-            await ensure_indexes(self.store.document_meta_table, "document_meta")
+            await ensure_indexes(
+                self.store.document_meta_table,
+                "document_meta",
+                self.store._config.search.fts_language,
+            )

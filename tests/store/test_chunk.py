@@ -1022,7 +1022,7 @@ async def test_searching_a_document_whose_id_holds_a_quote(temp_db_path):
                 )
             ]
         )
-        await ensure_indexes(store.chunks_table, "chunks")
+        await ensure_indexes(store.chunks_table, "chunks", "English")
 
         results = await client.chunk_repository.search(
             "stored", search_type="fts", filter="uri = 'mem://quoted'"

@@ -9,11 +9,13 @@ search:
   limit: 5                     # Default number of results to return
   max_context_chars: 5000     # Maximum characters in expanded context
   rerank_pool_factor: 10      # Candidates per result a reranker scores
+  fts_language: English       # Stemmer and normalization of the full-text index
 ```
 
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and QA. Default: 5
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 5000.
 - **rerank_pool_factor**: With a reranker configured, a text search fetches `limit × rerank_pool_factor` candidates and reranks them down to `limit`. Default: 10.
+- **fts_language**: The language of the full-text index: its stemmer, and how it lowercases and folds accents. One of Arabic, Danish, Dutch, English, Finnish, French, German, Greek, Hungarian, Italian, Norwegian, Portuguese, Romanian, Russian, Spanish, Swedish, Tamil, Turkish. It applies when the index is built: on a new database, and on `haiku-rag rebuild` in any mode but `--title-only` and `--set-embedder`. A write rebuilds the index only when it covers no rows, so an existing database takes a new language on `haiku-rag rebuild --reindex`. Queries are tokenized by the index, so they always match it. One database has one language. Default: English.
 
 Context expansion is section-aware. The capability's search tool, the MCP search tools and in-code `search()` expand every result. `HaikuRAG.search` returns chunks as matched, and `HaikuRAG.expand_context` expands them. For structured documents (with section headers), expansion includes the entire section containing the match when it fits the budget. A section larger than the budget grows outward item-by-item from the match, staying inside the section. A section under 20% of the budget (e.g., a title+authors area) grows across section boundaries until the budget is filled, except when the match is a picture or table, which returns its section as-is. Noise labels (page headers, page footers, table of contents) are skipped. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded. Results whose expanded ranges overlap within a document are merged into one.
 

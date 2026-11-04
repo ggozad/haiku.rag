@@ -2,6 +2,8 @@ import pyarrow as pa
 import pytest
 from lancedb.index import FTS, BTree
 
+from haiku.rag.config import AppConfig
+from haiku.rag.config.models import FTSLanguage
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Chunk, Document
 from haiku.rag.store.repositories.chunk import ChunkRepository
@@ -74,7 +76,7 @@ async def test_ensure_indexes_skips_existing_instead_of_rebuilding(temp_db_path)
         table = store.chunks_table
         version_before = await table.version()
 
-        await ensure_indexes(table, "chunks")
+        await ensure_indexes(table, "chunks", "English")
 
         assert await table.version() == version_before
         assert await _indexed_columns(table) == EXPECTED_INDEXED_COLUMNS["chunks"]
@@ -89,7 +91,7 @@ async def test_ensure_indexes_corrects_an_index_of_the_wrong_type(temp_db_path):
         )
         assert await _index_type(table, "label") == "BTree"
 
-        await ensure_indexes(table, "document_items")
+        await ensure_indexes(table, "document_items", "English")
 
         assert await _index_type(table, "label") == "Bitmap"
         assert (
@@ -106,7 +108,7 @@ async def test_ensure_indexes_adds_the_declared_type_beside_a_custom_index(
         await table.drop_index("label_idx")
         await table.create_index("label", config=BTree(), name="operator_label")
 
-        await ensure_indexes(table, "document_items")
+        await ensure_indexes(table, "document_items", "English")
 
         covering = dict(await _covering(table, "label"))
         assert covering["operator_label"] == "BTree"
@@ -121,7 +123,7 @@ async def test_ensure_indexes_keeps_an_operator_index_on_a_declared_column(
         table = store.document_items_table
         await table.create_index("label", config=BTree(), name="operator_label")
 
-        await ensure_indexes(table, "document_items")
+        await ensure_indexes(table, "document_items", "English")
 
         covering = dict(await _covering(table, "label"))
         assert covering == {"label_idx": "Bitmap", "operator_label": "BTree"}
@@ -164,7 +166,7 @@ async def test_empty_chunks_table_carries_no_fts_index(temp_db_path):
 
 async def test_ensure_indexes_skips_fts_while_the_table_is_empty(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
-        await ensure_indexes(store.chunks_table, "chunks")
+        await ensure_indexes(store.chunks_table, "chunks", "English")
 
         assert await _fts_indexed_rows(store.chunks_table) is None
         assert (
@@ -188,7 +190,7 @@ async def test_ensure_indexes_builds_fts_over_existing_rows(temp_db_path):
             ]
         )
 
-        await ensure_indexes(store.chunks_table, "chunks")
+        await ensure_indexes(store.chunks_table, "chunks", "English")
 
         assert await _fts_indexed_rows(store.chunks_table) == 1
         assert await _indexed_columns(store.chunks_table) == (
@@ -324,7 +326,7 @@ async def test_unavailable_index_stats_repair_matches_doctor(temp_db_path, monke
             return await original(self, name)
 
         monkeypatch.setattr(AsyncTable, "index_stats", no_stats)
-        applied = await ensure_indexes(store.chunks_table, "chunks")
+        applied = await ensure_indexes(store.chunks_table, "chunks", "English")
 
         assert applied == ["content_fts"]
 
@@ -340,7 +342,7 @@ async def test_rebuild_indexes_covers_rows_written_past_the_index(temp_db_path):
         await _add_chunk(store, "second", document_id="doc-b")
         assert (await _fts_index(store.chunks_table)).num_unindexed_rows == 1
 
-        applied = await rebuild_indexes(store.chunks_table, "chunks")
+        applied = await rebuild_indexes(store.chunks_table, "chunks", "English")
 
         assert sorted(applied) == sorted(EXPECTED_POPULATED_CHUNK_COLUMNS)
         for index in await store.chunks_table.list_indices():
@@ -366,7 +368,7 @@ async def test_rebuild_indexes_writes_the_current_fts_format(temp_db_path):
         await store.chunks_table.checkout_latest()
         assert (await _fts_index(store.chunks_table)).index_version == 1
 
-        await rebuild_indexes(store.chunks_table, "chunks")
+        await rebuild_indexes(store.chunks_table, "chunks", "English")
 
         index = await _fts_index(store.chunks_table)
         assert (index.name, index.index_version) == ("content_fts_idx", 2)
@@ -381,14 +383,14 @@ async def test_rebuild_indexes_folds_delta_segments(temp_db_path):
         await store.chunks_table.checkout_latest()
         assert (await _fts_index(store.chunks_table)).num_segments == 2
 
-        await rebuild_indexes(store.chunks_table, "chunks")
+        await rebuild_indexes(store.chunks_table, "chunks", "English")
 
         assert (await _fts_index(store.chunks_table)).num_segments == 1
 
 
 async def test_rebuild_indexes_skips_fts_while_the_table_is_empty(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
-        applied = await rebuild_indexes(store.chunks_table, "chunks")
+        applied = await rebuild_indexes(store.chunks_table, "chunks", "English")
 
         assert sorted(applied) == ["document_id", "id"]
         assert await _fts_indexed_rows(store.chunks_table) is None
@@ -405,7 +407,7 @@ async def test_rebuild_indexes_keeps_a_custom_named_index(temp_db_path):
             name="operator_fts",
         )
 
-        await rebuild_indexes(store.chunks_table, "chunks")
+        await rebuild_indexes(store.chunks_table, "chunks", "English")
 
         assert await _covering(store.chunks_table, "content_fts") == [
             ("operator_fts", "FTS")
@@ -417,7 +419,7 @@ async def test_rebuild_indexes_leaves_undeclared_indexes_alone(temp_db_path):
         table = store.document_items_table
         await table.create_index("label", config=BTree(), name="operator_label")
 
-        await rebuild_indexes(table, "document_items")
+        await rebuild_indexes(table, "document_items", "English")
 
         covering = dict(await _covering(table, "label"))
         assert covering == {"label_idx": "Bitmap", "operator_label": "BTree"}
@@ -456,9 +458,99 @@ async def test_rebuild_indexes_builds_a_missing_fts_index(temp_db_path):
         await _add_chunk(store)
         await store.chunks_table.drop_index("content_fts_idx")
 
-        await rebuild_indexes(store.chunks_table, "chunks")
+        await rebuild_indexes(store.chunks_table, "chunks", "English")
 
         assert await _covering(store.chunks_table, "content_fts") == [
             ("content_fts_idx", "FTS")
         ]
         assert await _fts_indexed_rows(store.chunks_table) == 1
+
+
+GREEK_CHUNKS = [
+    "Ο λόγος του προέδρου ήταν σύντομος",
+    "Οι λόγοι της απόφασης δεν δόθηκαν",
+    "Το κείμενο του λόγου δημοσιεύτηκε",
+]
+
+
+def _fts_config(language: FTSLanguage):
+
+    config = AppConfig()
+    config.search.fts_language = language
+    return config
+
+
+async def _fts_language(table) -> str:
+    return (await _fts_index(table)).index_details["language"]
+
+
+async def _add_greek_chunks(store) -> None:
+    for order, content in enumerate(GREEK_CHUNKS):
+        await _add_chunk(store, content, document_id=f"doc-{order}")
+
+
+@pytest.mark.parametrize("query", ["λόγος", "λογος", "λόγοι", "ΛΟΓΟΣ"])
+async def test_fts_language_stems_and_folds_greek(temp_db_path, query):
+    async with Store(temp_db_path, config=_fts_config("Greek"), create=True) as store:
+        await _add_greek_chunks(store)
+
+        results = await ChunkRepository(store).search(
+            query, limit=10, search_type="fts"
+        )
+
+        assert len(results) == len(GREEK_CHUNKS)
+
+
+@pytest.mark.parametrize(
+    ("query", "found"), [("λόγος", 1), ("λογος", 0), ("λόγοι", 1), ("ΛΟΓΟΣ", 0)]
+)
+async def test_english_fts_misses_greek_inflections(temp_db_path, query, found):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_greek_chunks(store)
+
+        results = await ChunkRepository(store).search(
+            query, limit=10, search_type="fts"
+        )
+
+        assert len(results) == found
+
+
+async def test_a_write_keeps_the_language_of_an_existing_index(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store, "first", document_id="doc-a")
+    async with Store(temp_db_path, config=_fts_config("Greek")) as store:
+        await _add_chunk(store, "second", document_id="doc-b")
+
+        assert await _fts_language(store.chunks_table) == "English"
+
+
+async def test_zero_coverage_repair_builds_the_configured_language(temp_db_path):
+    async with Store(temp_db_path, config=_fts_config("Greek"), create=True) as store:
+        await store.chunks_table.create_index(
+            "content_fts", config=FTS(with_position=True, remove_stop_words=False)
+        )
+        await store.chunks_table.add(
+            [
+                store.ChunkRecord(
+                    document_id="doc-a",
+                    content="a legacy chunk",
+                    content_fts="a legacy chunk",
+                    metadata="{}",
+                    order=0,
+                    vector=[0.1] * store.embedder.vector_dim,
+                )
+            ]
+        )
+
+        await ensure_indexes(store.chunks_table, "chunks", "Greek")
+
+        assert await _fts_language(store.chunks_table) == "Greek"
+
+
+async def test_rebuild_indexes_builds_the_configured_language(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        await _add_chunk(store)
+    async with Store(temp_db_path, config=_fts_config("Greek")) as store:
+        await store.rebuild_indexes()
+
+        assert await _fts_language(store.chunks_table) == "Greek"
