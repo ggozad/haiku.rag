@@ -13,7 +13,9 @@ async def _apply_index_hot_lookup_keys(store: Store) -> None:
     Rewrites no rows. Each index build reads the column it indexes.
     """
     for table_name, table in store._tables().items():
-        applied = await ensure_indexes(table, table_name)
+        applied = await ensure_indexes(
+            table, table_name, store._config.search.fts_language
+        )
         if applied:
             logger.info(f"Indexed {table_name}: {', '.join(sorted(applied))}")
 

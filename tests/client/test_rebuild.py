@@ -2004,6 +2004,26 @@ async def test_rebuild_reindex_covers_rows_and_writes_nothing_else(temp_db_path)
         assert rows_after == rows_before
 
 
+async def test_rebuild_reindex_builds_the_configured_fts_language(temp_db_path):
+    from haiku.rag.config import AppConfig
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await _import_documents(client, ("one",))
+    config = AppConfig()
+    config.search.fts_language = "Greek"
+
+    async with HaikuRAG(temp_db_path, config=config) as client:
+        async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
+            pass
+
+        [index] = [
+            i
+            for i in await client.store.chunks_table.list_indices()
+            if i.index_type == "FTS"
+        ]
+        assert index.index_details["language"] == "Greek"
+
+
 async def test_rebuild_reindex_works_on_empty_database(temp_db_path):
     async with HaikuRAG(temp_db_path, create=True) as client:
         async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):

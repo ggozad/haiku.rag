@@ -398,6 +398,28 @@ class ProcessingConfig(ConfigModel):
     )
 
 
+FTSLanguage = Literal[
+    "Arabic",
+    "Danish",
+    "Dutch",
+    "English",
+    "Finnish",
+    "French",
+    "German",
+    "Greek",
+    "Hungarian",
+    "Italian",
+    "Norwegian",
+    "Portuguese",
+    "Romanian",
+    "Russian",
+    "Spanish",
+    "Swedish",
+    "Tamil",
+    "Turkish",
+]
+
+
 class SearchConfig(ConfigModel):
     limit: int = Field(default=5, gt=0)
     max_context_chars: int = Field(default=5000, gt=0)
@@ -405,6 +427,7 @@ class SearchConfig(ConfigModel):
     vector_index_metric: Literal["cosine", "l2"] = "cosine"
     vector_refine_factor: int = Field(default=30, gt=0)
     vector_nprobes: int = Field(default=20, gt=0)
+    fts_language: FTSLanguage = "English"
 
 
 class OllamaConfig(ConfigModel):

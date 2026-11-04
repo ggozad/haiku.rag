@@ -234,6 +234,48 @@ def _classify_unchunked(
     return results
 
 
+async def _check_fts_language(store: Store) -> CheckResult:
+    """An FTS index keeps the language it was built with. An empty table, and an
+    index that reports no language, are skipped."""
+    from lancedb.index import FTS
+
+    configured = store._config.search.fts_language
+    mismatched: list[str] = []
+    for table_name, table in store._tables().items():
+        declared = [
+            c for c, cfg in index_specs(table_name, configured) if isinstance(cfg, FTS)
+        ]
+        if not declared or not await table.count_rows():
+            continue
+        indices = await table.list_indices()
+        for column in declared:
+            index = next(
+                (i for i in indices if column in i.columns and i.index_type == "FTS"),
+                None,
+            )
+            details = index.index_details if index else None
+            language = details.get("language") if details else None
+            if language not in (None, configured):
+                mismatched.append(
+                    f"{table_name}.{column}: {language}, configured {configured}"
+                )
+    if mismatched:
+        return CheckResult(
+            name="fts_index_language",
+            severity=Severity.WARN,
+            message=(
+                "Full-text search index language differs from search.fts_language."
+            ),
+            remediation="Run 'haiku-rag rebuild --reindex' to rebuild it.",
+            details=mismatched,
+        )
+    return CheckResult(
+        name="fts_index_language",
+        severity=Severity.OK,
+        message="Full-text search index language matches search.fts_language.",
+    )
+
+
 async def _check_fts_coverage(store: Store) -> CheckResult:
     """An FTS index that covers no rows, and a populated table with no FTS
     index at all, both make lance serve results unsorted by score with
@@ -246,7 +288,11 @@ async def _check_fts_coverage(store: Store) -> CheckResult:
     missing: list[str] = []
     partial: list[str] = []
     for table_name, table in store._tables().items():
-        declared = [c for c, cfg in index_specs(table_name) if isinstance(cfg, FTS)]
+        declared = [
+            c
+            for c, cfg in index_specs(table_name, store._config.search.fts_language)
+            if isinstance(cfg, FTS)
+        ]
         if not declared:
             continue
         rows = await table.count_rows()
@@ -852,6 +898,7 @@ async def run_db_checks(
 
     notify("Checking index coverage")
     results.append(await _check_fts_coverage(store))
+    results.append(await _check_fts_language(store))
 
     notify("Checking referential integrity")
     results.append(_check_document_meta_parity(doc_ids, meta_doc_ids))

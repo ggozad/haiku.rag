@@ -891,6 +891,7 @@ def test_unknown_keys_are_rejected(data, bad_key):
         {"processing": {"chunker": "docling-remote"}},
         {"processing": {"chunker_type": "semantic"}},
         {"search": {"vector_index_metric": "dot"}},
+        {"search": {"fts_language": "greek"}},
     ],
 )
 def test_finite_switches_reject_unknown_values(data):

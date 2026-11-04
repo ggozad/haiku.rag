@@ -106,7 +106,11 @@ class ChunkRepository:
 
             await self.store.chunks_table.add([chunk_record])
             entity.id = chunk_id
-            await ensure_indexes(self.store.chunks_table, "chunks")
+            await ensure_indexes(
+                self.store.chunks_table,
+                "chunks",
+                self.store._config.search.fts_language,
+            )
 
             return entity
 
@@ -128,7 +132,9 @@ class ChunkRepository:
             chunk.id = chunk_id
 
         await self.store.chunks_table.add(chunk_records)
-        await ensure_indexes(self.store.chunks_table, "chunks")
+        await ensure_indexes(
+            self.store.chunks_table, "chunks", self.store._config.search.fts_language
+        )
 
         return chunks
 
@@ -162,7 +168,9 @@ class ChunkRepository:
             .when_not_matched_by_source_delete(f"document_id = '{safe_id}'")
             .execute(records)
         )
-        await ensure_indexes(self.store.chunks_table, "chunks")
+        await ensure_indexes(
+            self.store.chunks_table, "chunks", self.store._config.search.fts_language
+        )
         return chunks
 
     async def get_by_id(self, entity_id: str) -> Chunk | None:
@@ -222,7 +230,9 @@ class ChunkRepository:
         self.store.chunks_table = await self.store.db.create_table(
             "chunks", schema=self.store.ChunkRecord
         )
-        await ensure_indexes(self.store.chunks_table, "chunks")
+        await ensure_indexes(
+            self.store.chunks_table, "chunks", self.store._config.search.fts_language
+        )
 
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
@@ -235,7 +245,9 @@ class ChunkRepository:
         await self.store.chunks_table.delete(
             f"document_id = '{escape_sql_string(document_id)}'"
         )
-        await ensure_indexes(self.store.chunks_table, "chunks")
+        await ensure_indexes(
+            self.store.chunks_table, "chunks", self.store._config.search.fts_language
+        )
         return True
 
     async def delete_by_document_ids(self, document_ids: Sequence[str]) -> None:

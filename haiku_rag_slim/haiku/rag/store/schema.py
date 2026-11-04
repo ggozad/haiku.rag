@@ -140,7 +140,9 @@ def get_document_items_arrow_schema() -> pa.Schema:
     return pa.schema(fields)
 
 
-def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
+def index_specs(
+    table_name: str, fts_language: str
+) -> list[tuple[str, Bitmap | BTree | FTS]]:
     """The index set each table carries."""
     match table_name:
         case "documents":
@@ -150,7 +152,14 @@ def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
         case "chunks":
             return [
                 # Positions and stop words are required for phrase queries.
-                ("content_fts", FTS(with_position=True, remove_stop_words=False)),
+                (
+                    "content_fts",
+                    FTS(
+                        with_position=True,
+                        remove_stop_words=False,
+                        language=fts_language,
+                    ),
+                ),
                 ("id", BTree()),
                 ("document_id", BTree()),
             ]
@@ -165,14 +174,17 @@ def index_specs(table_name: str) -> list[tuple[str, Bitmap | BTree | FTS]]:
             return []
 
 
-async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str]:
+async def ensure_indexes(
+    table: lancedb.AsyncTable, table_name: str, fts_language: str
+) -> list[str]:
     """Create any declared index missing from a column. Returns the columns indexed.
 
     Matches on index type, not column coverage, so a BTree does not satisfy a
     declared Bitmap. Never drops or converts an index it did not declare.
     Re-creating is not free: `create_index(replace=True)` rebuilds. A declared
     FTS index covering no rows of a populated table is rebuilt in place: it
-    serves the same broken scan path as a missing one.
+    serves the same broken scan path as a missing one. A covering FTS index
+    keeps its language whatever `fts_language` says.
     """
     covering: dict[str, set[str]] = {}
     fts_names: dict[str, str] = {}
@@ -183,7 +195,7 @@ async def ensure_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str
                 fts_names.setdefault(column, index.name)
 
     applied: list[str] = []
-    for column, config in index_specs(table_name):
+    for column, config in index_specs(table_name, fts_language):
         declared = type(config).__name__
         present = covering.get(column, set())
         if declared in present:
@@ -227,7 +239,9 @@ async def has_vector_index(table: lancedb.AsyncTable) -> bool:
     return await vector_index_name(table) is not None
 
 
-async def rebuild_indexes(table: lancedb.AsyncTable, table_name: str) -> list[str]:
+async def rebuild_indexes(
+    table: lancedb.AsyncTable, table_name: str, fts_language: str
+) -> list[str]:
     """Rebuild every declared index from scratch. Returns the columns indexed.
 
     The rebuilt index covers every row in the current on-disk format, in one
@@ -241,7 +255,7 @@ async def rebuild_indexes(table: lancedb.AsyncTable, table_name: str) -> list[st
 
     populated = await table.count_rows() > 0
     applied: list[str] = []
-    for column, config in index_specs(table_name):
+    for column, config in index_specs(table_name, fts_language):
         if isinstance(config, FTS) and not populated:
             continue
         name = names.get((column, type(config).__name__), f"{column}_idx")

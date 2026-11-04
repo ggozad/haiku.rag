@@ -582,7 +582,9 @@ class Store:
         self._assert_writable()
         async with self._write_lock:
             return {
-                name: await rebuild_indexes(table, name)
+                name: await rebuild_indexes(
+                    table, name, self._config.search.fts_language
+                )
                 for name, table in self._tables().items()
             }
 
@@ -813,7 +815,9 @@ class Store:
             self.documents_table = await self.db.create_table(
                 "documents", schema=get_documents_arrow_schema()
             )
-            await ensure_indexes(self.documents_table, "documents")
+            await ensure_indexes(
+                self.documents_table, "documents", self._config.search.fts_language
+            )
 
         # Create or open document_meta table (mutable attributes kept out of the
         # blob-bearing documents row).
@@ -823,7 +827,11 @@ class Store:
             self.document_meta_table = await self.db.create_table(
                 "document_meta", schema=DocumentMetaRecord
             )
-            await ensure_indexes(self.document_meta_table, "document_meta")
+            await ensure_indexes(
+                self.document_meta_table,
+                "document_meta",
+                self._config.search.fts_language,
+            )
 
         # Create or open chunks table
         if "chunks" in existing_tables:
@@ -832,7 +840,9 @@ class Store:
             self.chunks_table = await self.db.create_table(
                 "chunks", schema=self.ChunkRecord
             )
-            await ensure_indexes(self.chunks_table, "chunks")
+            await ensure_indexes(
+                self.chunks_table, "chunks", self._config.search.fts_language
+            )
 
         # Create or open document_items table
         if "document_items" in existing_tables:
@@ -841,7 +851,11 @@ class Store:
             self.document_items_table = await self.db.create_table(
                 "document_items", schema=get_document_items_arrow_schema()
             )
-            await ensure_indexes(self.document_items_table, "document_items")
+            await ensure_indexes(
+                self.document_items_table,
+                "document_items",
+                self._config.search.fts_language,
+            )
 
         # _initialize opened the settings table when the database had one.
         if "settings" not in existing_tables:
@@ -983,7 +997,9 @@ class Store:
         self.chunks_table = await self.db.create_table(
             "chunks", schema=self.ChunkRecord
         )
-        await ensure_indexes(self.chunks_table, "chunks")
+        await ensure_indexes(
+            self.chunks_table, "chunks", self._config.search.fts_language
+        )
 
     def close(self):
         """Close the database connection."""

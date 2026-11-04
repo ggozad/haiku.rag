@@ -17,7 +17,11 @@ async def _apply_fts_format_v2(store: Store) -> None:
     version.
     """
     for table_name, table in store._tables().items():
-        declared = {c for c, cfg in index_specs(table_name) if isinstance(cfg, FTS)}
+        declared = {
+            c
+            for c, cfg in index_specs(table_name, store._config.search.fts_language)
+            if isinstance(cfg, FTS)
+        }
         if any(
             i.index_type == "FTS"
             and declared.intersection(i.columns)
@@ -25,7 +29,9 @@ async def _apply_fts_format_v2(store: Store) -> None:
             and i.index_version < 2
             for i in await table.list_indices()
         ):
-            applied = await rebuild_indexes(table, table_name)
+            applied = await rebuild_indexes(
+                table, table_name, store._config.search.fts_language
+            )
             logger.info(f"Reindexed {table_name}: {', '.join(sorted(applied))}")
 
 
