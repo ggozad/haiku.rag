@@ -8,6 +8,14 @@
 - `search.fts_language` sets the language of the full-text index. Default `English`. An existing database takes it on `haiku-rag rebuild --reindex`.
 - `doctor` warns when the full-text index was built in a language other than `search.fts_language`.
 
+### Changed
+
+- `docling` 2.142.1, paired with `docling-serve` v1.38.2.
+
+### Security
+
+- Lock pydantic to 2.14.2 (GHSA-gj4f-r7mf-jjxh, GHSA-955g-x97g-8mcp).
+
 ## [0.106.0] - 2026-11-03
 
 ### Added
