@@ -79,6 +79,8 @@ docling = [
     "docling-ibm-models==4.0.4",
     "docling-parse==7.23.0",
     "opencv-python-headless>=4.6.0.66,<5.0.0.0",
+    # `ocr_engine: auto` runs RapidOCR on onnxruntime only when it is installed.
+    "onnxruntime>=1.24.1,<2.0.0",
 ]
 # S3 / object-storage monitoring
 s3 = ["obstore>=0.9,<0.10"]
