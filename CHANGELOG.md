@@ -9,6 +9,14 @@
 - `doctor` warns when the full-text index was built in a language other than `search.fts_language`.
 - Ingester: `ingester.maintenance` (`enabled`, default false, `quiet_s`, `max_wait_s`) vacuums each database and builds a missing vector index, with the database's claims paused: in `serve` once the database is quiet, in `run-batch` and manifest replay after the drain. A failed pass makes `run-batch` exit non-zero. The ingester's clients do not auto-vacuum while it is enabled. `/stats` gains `maintenance_by_database`, and each pass is an `ingester.maintenance` span.
 
+### Changed
+
+- `docling` 2.142.1, paired with `docling-serve` v1.38.2.
+
+### Security
+
+- Lock pydantic to 2.14.2 (GHSA-gj4f-r7mf-jjxh, GHSA-955g-x97g-8mcp).
+
 ## [0.106.0] - 2026-11-03
 
 ### Added

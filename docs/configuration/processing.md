@@ -188,7 +188,7 @@ processing:
 
 Every configured header is sent to allowed origins. Only list hosts trusted to receive all of `fetch_headers`; redirects to unlisted origins receive none of those headers. Without this setting, a Wikipedia article can ingest successfully with no image bytes.
 
-**Markdown HTML blocks:** docling 2.142.0 with docling-core 2.104.0 converts embedded HTML blocks to literal text in both local and remote conversion. An `<img>` block yields no picture, and a `data:` image URI remains in the text, including its base64 payload. Use native Markdown image syntax (`![alt](url)`) for image references.
+**Markdown HTML blocks:** docling 2.142.1 with docling-core 2.104.0 converts embedded HTML blocks to literal text in both local and remote conversion. An `<img>` block yields no picture, and a `data:` image URI remains in the text, including its base64 payload. Use native Markdown image syntax (`![alt](url)`) for image references.
 
 **Scope of conversion options across formats:**
 
