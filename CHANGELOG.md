@@ -12,6 +12,7 @@
 ### Changed
 
 - `docling` 2.142.1, paired with `docling-serve` v1.38.2.
+- `lancedb` 0.41.0 and `pylance` 14.0.2.
 
 ### Security
 
