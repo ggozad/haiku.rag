@@ -17,11 +17,45 @@ Subclass `haiku.rag.hooks.Hook` and override any subset:
 | `after_delete(client, event)` | Documents were deleted, including attachments a re-ingested PDF no longer carries | Cleaning up derived state |
 | `before_search(client, request)` | Before retrieval, text queries only | Query expansion, filter injection |
 | `after_search(client, request, results)` | After retrieval, reranking, and deduplication | Annotating, reordering, or filtering results |
-| `lifespan(client)` | Around the whole client lifetime | Owning connections, clients, background tasks |
+| `lifespan(client)` | Around the whole client lifetime | Owning connections and clients |
+| `ingester_lifespan(client)` | Around the time haiku-ingester ingests into the client's database | Background tasks |
 
 Events are batch shaped. `IngestEvent` carries `documents` (a batch import arrives as one event with the whole batch) and `operation` (`"create"` or `"update"`). `DeleteEvent` carries the deleted `documents` in their last-known state, since the rows are already gone; a cascade arrives as one event. `SearchRequest` carries `query`, `filter`, `search_type`, and `limit`. `before_search` returns the request to search with, and may modify any of its fields. The query feeds both the vector and the full-text side. `after_search` returns the result list, and reads a request whose `search_type` is the one retrieval actually used: `hybrid` where a text search left it unset, `vector` for an image query. Hooks run in the order listed in config, each receiving the previous hook's output.
 
 Hooks receive the `HaikuRAG` client, so they can search, read repositories, and store their own state.
+
+Each box runs inside the one around it. A lifespan enters before the first hook point inside it and exits after the last. A hook point fires only when its event happens: `after_ingest` when content is written, `after_delete` when documents are deleted, `before_search` for a text query.
+
+```mermaid
+flowchart LR
+    subgraph ingester["haiku-ingester, per database"]
+        subgraph l1["lifespan"]
+            subgraph il["ingester_lifespan"]
+                bi1[before_ingest] --> ai1[after_ingest]
+                ad1[after_delete]
+            end
+        end
+    end
+```
+
+```mermaid
+flowchart LR
+    subgraph writer["CLI writer: add-src, delete"]
+        subgraph l2["lifespan"]
+            bi2[before_ingest] --> ai2[after_ingest]
+            ad2[after_delete]
+        end
+    end
+```
+
+```mermaid
+flowchart LR
+    subgraph reader["reader: MCP server, RAG capability, search, ask"]
+        subgraph l3["lifespan"]
+            bs[before_search] --> afs[after_search]
+        end
+    end
+```
 
 ## Transforming documents before ingestion
 
@@ -80,7 +114,7 @@ class LanguageHook(Hook):
 
 Hooks fire once, at the client you call, whatever it covers. A search across several configured databases runs `before_search` once and hands `after_search` the fused, ranked list, with each result's `source` naming the database it came from. The per-database clients a federating client lends out through `clients_for` run no hooks of their own.
 
-Lifespans follow the same ownership: they enter for a client that owns its session, single-database or federating, and never for a borrowed one. A federating client has no `client.store`; a lifespan running on one reaches a database through `clients_for` or keeps its own state.
+Lifespans follow the same ownership: they enter for a client that owns its session, single-database or federating, and never for a borrowed one. A federating client has no `client.store`; a lifespan running on one reaches a database through `clients_for` or keeps its own state. An ingester lifespan always runs on one database's client.
 
 ## Registering a hook
 
@@ -154,18 +188,19 @@ Lifespans are entered in the order listed in config, once the session is open, a
 
 A lifespan enters for every client that owns its session, in every process that builds a client from the configuration: the ingester, the CLI, the MCP server, the RAG capability and the web app's backend. Readers run the configured hooks, search hooks included, so the hook packages must be installed wherever the configuration is loaded. To open a client with other hooks, or none, pass it a copy of the configuration: `HaikuRAG(config=config.model_copy(update={"hooks": []}))`.
 
-Failing on entry fails `async with HaikuRAG(...)` and unwinds the lifespans already started: an activated hook that cannot start is a startup failure, not something to run degraded. Failing on exit is logged and swallowed, so one hook's teardown cannot strand another's. A hook is told which exception is being unwound, whether it came from the client's caller or from a later hook failing to start, but cannot suppress it.
+A lifespan that fails on entry fails `async with HaikuRAG(...)` and unwinds the lifespans already started: an activated hook that cannot start is a startup failure, not something to run degraded. An exception on exit is logged and swallowed, so one hook's teardown cannot strand another's. A cancellation propagates, and the client still closes. A hook is told which exception is being unwound, whether it came from the client's caller or from a later hook failing to start, but cannot suppress it.
 
 ## Background work
 
-Background work that writes, such as a sweep that enriches documents ingested during a hook's downtime, starts only on a client that can write. On a read-only client the lifespan acquires what the hook's own methods need and starts nothing else. A hook that runs a background task also owns stopping it. Cancel it on the way out, before anything awaits it:
+Background work, such as a sweep that enriches documents ingested during a hook's downtime, belongs in `ingester_lifespan`. Only haiku-ingester enters it: `serve`, `run-batch` and a database added by a reload, once per database, on that database's writable client. The CLI, the MCP server, the RAG capability, the web app's backend and your own code never enter it. `run-batch --dry-run` opens no database and enters none.
+
+The ingester enters it inside the client's `lifespan`, after reconciling the database and before any of its jobs runs, and exits it once the database's jobs have stopped, before `lifespan` exits. So every `after_ingest` and `after_delete` from the ingester's jobs runs inside it. One from another writer, such as `haiku-rag add-src`, runs with no ingester lifespan entered, so a hook whose `after_ingest` hands documents to its background task checks first that the task is running.
+
+A hook that runs a background task also owns stopping it. Cancel it on the way out, before anything awaits it:
 
 ```python
 @asynccontextmanager
-async def lifespan(self, client):
-    if client.is_read_only:
-        yield
-        return
+async def ingester_lifespan(self, client):
     async with asyncio.TaskGroup() as tg:
         task = tg.create_task(self.enrich_pending(client))
         try:
@@ -174,9 +209,11 @@ async def lifespan(self, client):
             task.cancel()
 ```
 
-The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop parked in one never returns and client shutdown hangs.
+The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop parked in one never returns and ingester shutdown hangs.
 
-The work runs in every writer: the ingester, and the CLI's `init`, `add`, `add-src`, `delete`, `rebuild`, `vacuum` and `create-index`. A CLI command closes its client when it ends, which cancels the task. A federating client's `is_read_only` is true when any database it covers is read at a tag, so check each database's client from `clients_for` instead, as in [Several databases](#several-databases).
+`run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it.
+
+Failures follow the `lifespan` rules. A failure on entry fails that database's start: the ingester logs it, skips the database and starts the others, and a reload reports the database failed. An exception on exit is logged and swallowed, and a cancellation propagates.
 
 ## Telemetry
 
@@ -188,12 +225,13 @@ Each hook call runs in a span of its own, from the `haiku.rag` instrumentation s
 | `hook.after_ingest` | `hook`, `operation`, `documents` (count) |
 | `hook.after_delete` | `hook`, `documents` (count) |
 | `hook.lifespan.enter`, `hook.lifespan.exit` | `hook` |
+| `hook.ingester_lifespan.enter`, `hook.ingester_lifespan.exit` | `hook` |
 | `hook.before_search` | `hook` |
 | `hook.after_search` | `hook`, `results_in` (count passed in), `results` (count returned) |
 
-`hook` is the hook's qualified class name. A span nests under the operation that called the hook. In the ingester, the `before_ingest`, `after_ingest` and `after_delete` spans sit under `ingester.job` as siblings of the `document.*` phases. The lifespan spans sit under whatever span is active while the client opens or closes, and the search spans under the caller of the search.
+`hook` is the hook's qualified class name. A span nests under the operation that called the hook. In the ingester, the `before_ingest`, `after_ingest` and `after_delete` spans sit under `ingester.job` as siblings of the `document.*` phases. The lifespan spans sit under whatever span is active while the client opens or closes, the ingester lifespan spans under whatever is active while the ingester starts or stops the database, and the search spans under the caller of the search.
 
-When `after_ingest`, `after_delete` or a `lifespan` exit fails, the span records the exception at level error, the failure is still logged, and the operation goes on. A failure that propagates is recorded on the span as it leaves. A `before_ingest` failure is recorded on its span as the `HookError`, and the ingester's job span records the `PermanentError` or `TransientError` that failed the job. A rejection is an outcome, not an error: the span carries `rejected` and `reason` and no exception.
+When `after_ingest`, `after_delete`, or a `lifespan` or `ingester_lifespan` exit raises an exception, the span records it at level error, the failure is still logged, and the operation goes on. A cancellation propagates. A failure that propagates is recorded on the span as it leaves. A `before_ingest` failure is recorded on its span as the `HookError`, and the ingester's job span records the `PermanentError` or `TransientError` that failed the job. A rejection is an outcome, not an error: the span carries `rejected` and `reason` and no exception.
 
 A hook can attach its background work to the operation that fired it. Capture the context inside the hook and attach it in the task:
 
@@ -215,7 +253,7 @@ class Summarise(Hook):
             ...
 ```
 
-The task's spans then belong to the trace of the ingest, under `hook.after_ingest`. A real hook keeps a reference to the task and stops it in its `lifespan`, as in [Background work](#background-work).
+The task's spans then belong to the trace of the ingest, under `hook.after_ingest`. A real hook keeps a reference to the task and stops it in its `ingester_lifespan`, as in [Background work](#background-work).
 
 ## Result annotations
 

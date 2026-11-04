@@ -3,7 +3,7 @@ import logging
 import signal
 import sys
 from collections.abc import Awaitable, Callable, Collection, Mapping
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
@@ -162,7 +162,8 @@ def _manifest_job_key(job: Job) -> tuple[str, str, str, str | None]:
 class _Database:
     """A database the app ingests into, with its sources' pollers. `opened`
     is what `_covering` returned, and `client` is what entering it returned.
-    Closing exits `opened`, which retries a close that failed."""
+    `ingester_lifespans` are its hooks' ingester lifespans, once entered.
+    Closing exits them, then `opened`, which retries a close that failed."""
 
     ref: "DatabaseRef"
     opened: "HaikuRAG"
@@ -170,6 +171,7 @@ class _Database:
     pollers: "list[BasePoller]"
     metadata_providers: "dict[str, MetadataProvider]"
     removing: bool = False
+    ingester_lifespans: AbstractAsyncContextManager[None] | None = None
 
     async def close_client(
         self,
@@ -178,7 +180,12 @@ class _Database:
         tb: TracebackType | None = None,
     ) -> None:
         """Close the client, telling its hooks which exception is unwound."""
-        await self.opened.__aexit__(exc_type, exc, tb)
+        lifespans, self.ingester_lifespans = self.ingester_lifespans, None
+        try:
+            if lifespans is not None:
+                await lifespans.__aexit__(exc_type, exc, tb)
+        finally:
+            await self.opened.__aexit__(exc_type, exc, tb)
 
     @property
     def source_ids(self) -> list[str]:
@@ -502,6 +509,9 @@ class IngesterApp:
             and self._sync is not None
         )
         await reconcile(database.client, self._sync, database.source_ids)
+        lifespans = database.client._ingester_lifespans()
+        await lifespans.__aenter__()
+        database.ingester_lifespans = lifespans
         self._pool.add_sources(
             clients={source_id: database.client for source_id in database.source_ids},
             # The pollers' own adapters: workers fetch through them, so
