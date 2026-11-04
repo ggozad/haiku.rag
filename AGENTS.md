@@ -79,6 +79,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── cli.py, app.py      # haiku-ingester entry point + application layer
 │   ├── batch.py            # run-batch, dry-run manifests
 │   ├── reconcile.py        # Startup reconciliation of LanceDB and sync_state
+│   ├── maintenance.py      # maintain(), DatabaseMaintenance: vacuum + missing vector index per database
 │   ├── metadata.py         # Metadata provider loading
 │   ├── queue/              # db.py, migrations.py, repository.py (JobRepo/SyncStateRepo), models.py
 │   ├── workers/            # pool.py (WorkerPool), pipeline.py (run_job), retry.py
@@ -309,7 +310,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `DoctorConfig` - duplicates (DuplicateDetectionConfig: similarity_threshold 0.97, min_chunks 3)
 - `ProvidersConfig` - ollama, docling_serve (OllamaConfig, DoclingServeConfig)
 - `PromptsConfig` - domain_preamble, picture_description
-- `IngesterConfig` - databases (database name → `IngestedDatabase`: sources), queue (QueueConfig), workers (WorkerConfig), api (APIConfig)
+- `IngesterConfig` - databases (database name → `IngestedDatabase`: sources), queue (QueueConfig), workers (WorkerConfig), api (APIConfig), maintenance (MaintenanceConfig: enabled, quiet_s, max_wait_s)
 - `EvaluationsConfig` - judge (ModelConfig | None), system_one (SystemOneConfig | None: provider, base_url, model; key from `TYPESAFE_API_KEY`)
 - `LanceDBConfig` - databases (name → local path or URI), api_key, region, storage_options, read_consistency_interval_seconds, index_cache_size_bytes, metadata_cache_size_bytes
 
@@ -582,6 +583,7 @@ Each entry is the trap and what to do. The evidence behind them is in the commit
 - **Queue engine.** SQLAlchemy Core async. SQLite is `pool_size=5, max_overflow=5` with PRAGMA listeners. Postgres (`postgresql+asyncpg://`) gets `pool_pre_ping=True` and claims with `FOR UPDATE SKIP LOCKED`. `claim_next` must stay one `UPDATE … WHERE id=(SELECT … LIMIT 1) RETURNING`. Build the SQLite URL with `URL.create("sqlite+aiosqlite", database=str(path))`, never an f-string: `?` and `#` in a path become query and fragment.
 - **Postgres queue tests** build the engine inside the test with `NullPool` (asyncpg binds a connection to its loop) and isolate xdist workers with a per-test schema, since `--dist load` ignores `xdist_group`.
 - **Coverage** uses `concurrency = ["greenlet", "thread"]` for the aiosqlite worker thread. Postgres-only construction branches are covered by build-without-connect tests (`make_engine(QueueConfig(dburi=...))`, `_insert(jobs, "postgresql")`).
+- **Maintenance** (`ingester.maintenance`, off by default): `DatabaseMaintenance` per database, built in `_apply`, run as a task only under `serve` (`_maintaining`), once per written database after the drain in `run-batch` and manifest replay. A pass holds claims with `WorkerPool.pause`, a set apart from `_served`, so `resume` in a `finally` never re-serves a source that a reload unserved. `close_client` cancels the task before the ingester lifespans exit. Dirty state is `SingleDatabaseSession.unmaintained_since`, set by `record_write()` at every client write. While enabled, `_open` passes a config copy with `storage.auto_vacuum` off. The pass never retrains the vector index: pylance's `optimize_indices` splits IVF partitions as the table grows, and a grown index measured equal recall to a fresh one.
 - **Reaping is lease-based.** Workers renew `last_heartbeat_at` every `heartbeat_interval_s`. `reap_stale` resets a claim when `COALESCE(last_heartbeat_at, claimed_at)` is older than `lease_ttl_s`, and never cancels a live coroutine. `WorkerConfig` enforces `heartbeat_interval_s <= lease_ttl_s / 3`. `claim_timeout_s` is gone.
 - **Worker ids** are `{pid}-{uuid}-{n}`. Boot-reap is scoped to `lease_ttl_s`, so a peer's live claims survive. `_untrack_inflight` drops only the pool's own entry for a job, or it stops renewing a sibling's re-claim.
 - **`POST /sources/{id}/refresh`** runs `_sweep_once`, which skips (`refreshed: false`) while the source has pending jobs or an open breaker. Default FS `poll_interval_s` is 300.

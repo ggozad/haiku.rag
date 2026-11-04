@@ -385,6 +385,26 @@ ingester:
 
 Workers keep a second breaker per source over job failures. After 5 consecutive transient job failures they stop claiming that source's jobs for 60 seconds. Both values are fixed. `/health` reports the breaker, and opening it emits an `ingester.worker breaker opened` event.
 
+## Maintenance
+
+With `ingester.maintenance.enabled`, the ingester maintains each database it writes. A pass stops claiming the database's jobs, waits for its jobs in flight, vacuums it, builds the vector index when there is none, and claims its jobs again. Other databases keep ingesting during the pass.
+
+```yaml
+ingester:
+  maintenance:
+    enabled: true     # default false
+    quiet_s: 300      # pass once the database has had no write for this long
+    max_wait_s: 3600  # or this long after the first write since the last pass
+```
+
+Vacuum keeps every existing index current: it adds rows written since the last vacuum to the full-text, scalar and vector indexes, and splits the vector index's partitions as the table grows, so a pass never retrains an index. See [Vector indexing](configuration/storage.md#vector-indexing). The ingester's clients do not auto-vacuum while maintenance is enabled, whatever `storage.auto_vacuum` says. Other writers, `haiku-rag add-src` included, still do.
+
+`serve` makes every database due at start, and runs a pass `quiet_s` after its last write or `max_wait_s` after its first write since the last pass, whichever is sooner. A database under constant ingestion is still vacuumed every `max_wait_s`. A failed pass is logged and retried after `quiet_s`. `run-batch` and manifest replay run one pass over each database written during the run, after the queue drains, and exit non-zero naming a database whose pass failed. Nothing runs on LanceDB Cloud.
+
+A pass holds the database's write lock while it vacuums and while it builds an index (see the build times under [Vector indexing](configuration/storage.md#vector-indexing)). Shutdown, and a reload that removes the database, wait for a running vacuum step and cancel an index build. `/stats` reports each database's last pass under `maintenance_by_database`.
+
+A reload refuses a change to `ingester.maintenance`. Restart to apply one.
+
 ## Run it
 
 ```bash
@@ -460,7 +480,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `DELETE` | `/jobs/{id}` | Cancel a queued or claimed job |
 | `GET` | `/dlq` | Dead jobs, filtered by `source_id`, `limit` (default 50, at most 500), `offset` |
 | `POST` | `/dlq/{id}/retry` | Re-queue a dead job, as `/jobs/{id}/retry` does |
-| `GET` | `/stats` | Throughput over 5 minutes, 30 minutes and 1 hour, worker occupancy, oldest queued age, per-source dead, rejected and backlog counts. The dead and rejected counts count jobs kept for history, not distinct URIs |
+| `GET` | `/stats` | Throughput over 5 minutes, 30 minutes and 1 hour, worker occupancy, oldest queued age, per-source dead, rejected and backlog counts, and, with [maintenance](#maintenance) enabled, each database's last pass as `{"finished_at", "vacuumed", "index_built", "error"}`. The dead and rejected counts count jobs kept for history, not distinct URIs |
 | `GET` | `/databases/{name}` | The report `haiku-rag info` prints, for one ingested database. 404 for any other name |
 | `GET` | `/config` | The effective configuration, defaults filled in and secrets redacted, as YAML text in a JSON `yaml` field |
 | `POST` | `/reload` | Read the configuration file again and apply its changes to the databases. 500 when a database failed (see [Reloading databases](#reloading-databases)) |
@@ -510,7 +530,7 @@ haiku-ingester run-batch --db-name papers    # one of them
 
 `--db-name` sweeps that database's sources and drains their jobs only. `--retry` and `--dry-run` follow the selection, and the other databases' queued jobs stay queued. `--manifest` takes a manifest from a dry run with the same `--db-name`, and refuses one naming another database's sources. It is still a writer of that database, so it must not run while `serve` writes it.
 
-It ingests the databases that started and exits non-zero naming each skipped one, as it does when a job dead-letters or a source's sweep does not complete. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
+It ingests the databases that started and exits non-zero naming each skipped one, as it does when a job dead-letters, a source's sweep does not complete or a database's [maintenance](#maintenance) pass fails. A job whose document a hook rejected is `rejected`, not dead, and does not change the exit code. The summary counts it apart: `Batch complete: 12 succeeded, 0 dead, 2 rejected`. Deletion compares each source against the queue's record of what it ingested, so keep `ingester.db` between runs.
 
 `--retry dead`, `--retry rejected` or `--retry all` re-queues failed jobs after the sweep, and the batch drains them with the rest. A dead or rejected job records its source revision, so a sweep does not queue the unchanged file again:
 
@@ -729,7 +749,7 @@ Each request to the control plane is a span, except `GET /health`, `/sources`, `
 
 A one-shot command (`run-batch`, or the `queue` commands) started with `TRACEPARENT` / `TRACESTATE` in its environment joins that trace. `serve` never joins. The parent's sampling decision applies, so a `TRACEPARENT` with the sampled flag `00` suppresses the command's spans.
 
-The span tree is `ingester.poller.sweep` → `ingester.job` (with `source_id` and `uri`) → one span per phase: `document.fetch`, `document.convert`, `document.chunk`, `document.embed`, `document.items` and `document.store`. The phase spans are siblings: each times one phase, so a slow `document.store` is a slow write. `document.embed` reports `chunks`, `chunks_embedded`, `images` and `batch_size`, and is emitted when no chunk needs embedding. `document.store` reports `op` (`create` / `update` / `create_batch`), `document_id`, `chunks`, `items` and `lock_wait_ms`, the time spent waiting on the write lock. That lock is in-process, so contention between two ingester processes on one database is not measured. `_prepare_and_title` and `get_all_picture_data` run outside any phase span, so the phases do not sum to the job. Each docling-serve request adds a `docling_serve.request` span with the instance `url` and `attempt`. A worker breaker opening emits an `ingester.worker breaker opened` event with `source_id`, `threshold` and `cooldown_s`.
+The span tree is `ingester.poller.sweep` → `ingester.job` (with `source_id` and `uri`) → one span per phase: `document.fetch`, `document.convert`, `document.chunk`, `document.embed`, `document.items` and `document.store`. The phase spans are siblings: each times one phase, so a slow `document.store` is a slow write. `document.embed` reports `chunks`, `chunks_embedded`, `images` and `batch_size`, and is emitted when no chunk needs embedding. `document.store` reports `op` (`create` / `update` / `create_batch`), `document_id`, `chunks`, `items` and `lock_wait_ms`, the time spent waiting on the write lock. That lock is in-process, so contention between two ingester processes on one database is not measured. `_prepare_and_title` and `get_all_picture_data` run outside any phase span, so the phases do not sum to the job. Each docling-serve request adds a `docling_serve.request` span with the instance `url` and `attempt`. A worker breaker opening emits an `ingester.worker breaker opened` event with `source_id`, `threshold` and `cooldown_s`. A [maintenance](#maintenance) pass is an `ingester.maintenance` span with `database`, `vacuumed` and `index_built`.
 
 ### Operating against the API
 

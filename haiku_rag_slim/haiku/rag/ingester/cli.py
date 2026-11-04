@@ -270,6 +270,12 @@ def _echo_failed_databases(report: "BatchReport") -> None:
             f"{failed.database} ({failed.error})" for failed in report.failed_databases
         )
         typer.echo(f"Databases that failed to start: {failed}", err=True)
+    if report.failed_maintenance:
+        failed = ", ".join(
+            f"{failed.database} ({failed.error})"
+            for failed in report.failed_maintenance
+        )
+        typer.echo(f"Databases that failed maintenance: {failed}", err=True)
 
 
 def _load_manifest(path: Path) -> BatchManifest:
@@ -431,7 +437,7 @@ async def _run_batch(
             f"{report.rejected} rejected"
         )
         _echo_failed_databases(report)
-        if report.dead or report.failed_databases:
+        if report.dead or report.failed_databases or report.failed_maintenance:
             raise typer.Exit(1)
         return
 
@@ -454,5 +460,10 @@ async def _run_batch(
             err=True,
         )
     _echo_failed_databases(report)
-    if report.dead or report.failed_sweeps or report.failed_databases:
+    if (
+        report.dead
+        or report.failed_sweeps
+        or report.failed_databases
+        or report.failed_maintenance
+    ):
         raise typer.Exit(1)

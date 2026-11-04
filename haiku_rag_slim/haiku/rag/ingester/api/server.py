@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from haiku.rag.client.scope import DatabaseRef
     from haiku.rag.config import AppConfig
     from haiku.rag.ingester.app import ReloadReport
+    from haiku.rag.ingester.maintenance import DatabaseMaintenance
     from haiku.rag.ingester.pollers.manager import PollerManager
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
     from haiku.rag.ingester.workers.pool import WorkerPool
@@ -24,7 +25,8 @@ class APIState:
     optional so the FastAPI app can be tested in isolation. `databases` holds
     the ingested databases by name, `failed_databases` the configured ones
     that failed to start, with their errors, and `source_databases` maps a
-    served source id to the name of its database. A retry holds `claim_lock`, the
+    served source id to the name of its database, and `maintenance` each
+    maintained database's pass state. A retry holds `claim_lock`, the
     pool's, so it cannot land between a removal's unserve and its delete.
     `reload` is the running app's."""
 
@@ -36,6 +38,7 @@ class APIState:
     databases: "Mapping[str, DatabaseRef]" = field(default_factory=dict)
     failed_databases: Mapping[str, str] = field(default_factory=dict)
     source_databases: Mapping[str, str] = field(default_factory=dict)
+    maintenance: "Mapping[str, DatabaseMaintenance]" = field(default_factory=dict)
     claim_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     reload: "Callable[[], Awaitable[ReloadReport]] | None" = None
 

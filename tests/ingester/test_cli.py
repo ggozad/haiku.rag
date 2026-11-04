@@ -262,6 +262,22 @@ def test_run_batch_exits_nonzero_naming_a_skipped_database(
     assert "Databases that failed to start: wiki (needs a migration)" in result.output
 
 
+@_BATCH_MODES
+def test_run_batch_exits_nonzero_naming_a_failed_maintenance(
+    monkeypatch, tmp_path, mode, complete
+):
+    report = BatchReport(
+        succeeded=2,
+        failed_maintenance=[FailedDatabase(database="wiki", error="disk full")],
+    )
+
+    result = _run_batch_in(mode, report, monkeypatch, tmp_path)
+
+    assert result.exit_code == 1
+    assert f"{complete}: 2 succeeded" in result.output
+    assert "Databases that failed maintenance: wiki (disk full)" in result.output
+
+
 def test_run_batch_exits_nonzero_when_sweep_fails(monkeypatch):
     _fake_app(BatchReport(succeeded=2, dead=0, failed_sweeps=["docs"]), monkeypatch)
 
