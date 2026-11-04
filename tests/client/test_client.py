@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -22,12 +23,18 @@ from haiku.rag.client.documents import (
 )
 from haiku.rag.client.processing import _write_fetch_body
 from haiku.rag.config import get_config
+from haiku.rag.converters.exceptions import ConverterWedgedError
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
-from tests.conftest import serving_url, writing
+from tests.conftest import (
+    capture_logs,
+    fake_ingest_fetch_result,
+    serving_url,
+    writing,
+)
 from tests.documents import docling_doc, document_import
 from tests.locks import ObservedLock, assert_waiting_for_lock
 from tests.platform import requires_symlinks
@@ -520,6 +527,60 @@ async def test_directory_ingest_raises_on_unreadable_subdirectory(
             assert await client.count_documents() == 0
     finally:
         sub.chmod(0o755)
+
+
+def _failing_on(name: str, error: Exception):
+    async def ingest(session, client, result, **kwargs):
+        if result.uri.endswith(name):
+            raise error
+        return await fake_ingest_fetch_result(session, client, result, **kwargs)
+
+    return ingest
+
+
+async def test_directory_ingest_logs_a_failed_file_and_continues(
+    temp_db_path, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        _failing_on("a.md", ValueError("cannot parse")),
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A")
+    (docs / "b.md").write_text("# B")
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.client.documents"), logging.ERROR
+    ) as records:
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            stored = await client.create_document_from_source(docs)
+            listed = await client.list_documents()
+
+    assert isinstance(stored, list)
+    assert [d.uri for d in stored] == [(docs / "b.md").as_uri()]
+    assert [d.uri for d in listed] == [(docs / "b.md").as_uri()]
+    assert [r.getMessage() for r in records] == [
+        f"{(docs / 'a.md').as_uri()} failed: cannot parse"
+    ]
+
+
+async def test_directory_ingest_stops_on_a_wedged_converter(
+    temp_db_path, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        _failing_on("a.md", ConverterWedgedError("wedged")),
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A")
+    (docs / "b.md").write_text("# B")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ConverterWedgedError):
+            await client.create_document_from_source(docs)
+        assert await client.count_documents() == 0
 
 
 @pytest.mark.vcr()

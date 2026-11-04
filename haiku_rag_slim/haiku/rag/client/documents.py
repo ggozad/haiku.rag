@@ -21,6 +21,7 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.exceptions import ConverterWedgedError
 from haiku.rag.hooks import (
     DeleteEvent,
     DocumentRejected,
@@ -1075,6 +1076,11 @@ async def create_document_from_source(
                         )
                     except DocumentRejected as e:
                         logger.warning("%s", e)
+                        continue
+                    except ConverterWedgedError:
+                        raise
+                    except Exception as e:
+                        logger.error("%s failed: %s", child.as_uri(), e)
                         continue
                     assert isinstance(doc, Document)
                     documents.append(doc)

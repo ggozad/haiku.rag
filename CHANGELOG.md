@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `add-src DIR` logs a file that fails to ingest and continues with the rest of the directory. A wedged docling converter still stops the run (#827).
+
 ## [0.107.0] - 2026-11-04
 
 ### Added
