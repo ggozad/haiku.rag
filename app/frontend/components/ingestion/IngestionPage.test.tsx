@@ -245,7 +245,7 @@ describe("IngestionPage", () => {
 		const sources = answers.sources;
 		answers.sources = new Response("down", { status: 502 });
 		try {
-			await user.click(screen.getByRole("button", { name: "Refresh" }));
+			await user.click(screen.getByRole("button", { name: "Scan now" }));
 			await screen.findByText("The ingester answered 502.");
 			expect(screen.getByText(/\/data\/docs\.lancedb/)).toBeTruthy();
 		} finally {
@@ -253,14 +253,14 @@ describe("IngestionPage", () => {
 		}
 	});
 
-	it("refreshes a source, says so, and reads everything again", async () => {
+	it("scans a source, says so, and reads everything again", async () => {
 		const user = userEvent.setup();
 		render(<IngestionPage />);
 		await screen.findByText("filesystem");
 		const polls = calls.filter((call) => call.path === "health").length;
 		const browsed = browserReads();
-		await user.click(screen.getByRole("button", { name: "Refresh" }));
-		await screen.findByText("Refreshed docs.");
+		await user.click(screen.getByRole("button", { name: "Scan now" }));
+		await screen.findByText("Scanned docs.");
 		expect(writes()).toEqual([
 			{ path: "sources/docs/refresh", method: "POST" },
 		]);
@@ -270,6 +270,67 @@ describe("IngestionPage", () => {
 			),
 		);
 		await waitFor(() => expect(browserReads()).toBe(browsed + 1));
+	});
+
+	it("says it is loading until the first poll, not that nothing is configured", async () => {
+		render(<IngestionPage />);
+		expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
+		expect(screen.queryByText("No sources are configured.")).toBeNull();
+		await screen.findByText("filesystem");
+	});
+
+	it("shows a scan in progress and holds the source's actions until it ends", async () => {
+		let finish: (value: unknown) => void = () => {};
+		actions["sources/docs/refresh"] = () =>
+			new Promise((resolve) => {
+				finish = resolve;
+			});
+		const user = userEvent.setup();
+		render(<IngestionPage />);
+		await screen.findByText("filesystem");
+		await user.click(screen.getByRole("button", { name: "Scan now" }));
+		const scanning = await screen.findByRole("button", { name: "Scanning…" });
+		expect(scanning.hasAttribute("disabled")).toBe(true);
+		expect(
+			screen
+				.getByRole("button", { name: "Retry failed" })
+				.hasAttribute("disabled"),
+		).toBe(true);
+		await act(async () => finish({ refreshed: true }));
+		await screen.findByText("Scanned docs.");
+		expect(
+			screen.getByRole("button", { name: "Scan now" }).hasAttribute("disabled"),
+		).toBe(false);
+	});
+
+	it("offers no retry to a source without dead jobs, and says it is ok", async () => {
+		const stats = answers.stats as Record<string, unknown>;
+		answers.stats = { ...stats, dlq_by_source: {} };
+		try {
+			render(<IngestionPage />);
+			await screen.findByText("filesystem");
+			const row = screen.getByRole("row", { name: /^docs/ });
+			expect(
+				within(row)
+					.getByRole("button", { name: "Retry failed" })
+					.hasAttribute("disabled"),
+			).toBe(true);
+			expect(within(row).getByText("ok")).toBeTruthy();
+		} finally {
+			answers.stats = stats;
+		}
+	});
+
+	it("says an empty section in one line, without a table", async () => {
+		const active = answers["jobs?status=claimed&limit=20"];
+		answers["jobs?status=claimed&limit=20"] = [];
+		try {
+			render(<IngestionPage />);
+			const line = await screen.findByText("Nothing is being ingested.");
+			expect(line.closest("table")).toBeNull();
+		} finally {
+			answers["jobs?status=claimed&limit=20"] = active;
+		}
 	});
 
 	it("retries a source's dead jobs", async () => {

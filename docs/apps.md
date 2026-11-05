@@ -139,9 +139,9 @@ docker compose run --rm --user root backend chown -R 1001:1001 /sessions
 
 ## Ask questions
 
-Type a question in Chat and press Enter. Shift+Enter starts a new line, and the stop button ends an answer early. The answer streams in with the agent's steps: its searches, and any program it wrote to count or compare across documents. Below the answer, a badge says whether the answer is grounded in its sources, and the sources follow.
+Type a question in Chat and press Enter. Shift+Enter starts a new line, and the stop button ends an answer early. The agent's steps show while it works: its searches, and any program it wrote to count or compare across documents. Once the answer starts, they fold into one line that counts them. Click the line to open them, or its source count to reach the sources. Below the answer, a badge says whether the answer is grounded in its sources, and the sources follow.
 
-Open a source to read the cited passage. For a document with page images, such as a PDF, "View in document" shows the passage highlighted on its pages, scanned pages included. "Open in the inspector" opens the passage's chunk in a new tab.
+Open a source to read the cited passage. For a document with page images, such as a PDF, "View in document" shows the passage highlighted on its pages, scanned pages included. "Open in the inspector" opens the passage's chunk in a new tab. A document whose metadata carries an http(s) `url` gets a link to it, named by its host.
 
 To ask about particular documents, choose them with the "All documents" filter above the conversation. With a vision model (`qa.model.vision: true`), a question can carry images: pick, paste or drop them into the box.
 
@@ -169,7 +169,7 @@ Ctrl+K, or Cmd+K on a Mac, searches from any page, by text or, with a multimodal
 
 ## Check its health
 
-The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". Each warning names its fix. The checks and the map run in the background. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
+The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". The report opens with its verdict, then the failures and warnings, each naming its fix. The passing checks fold into one line. The checks and the map run in the background. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
 
 ![The doctor: a near-duplicate pair and the checks](img/app-doctor.png)
 

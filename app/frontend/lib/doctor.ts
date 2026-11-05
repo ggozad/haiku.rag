@@ -25,6 +25,26 @@ export function counts(checks: Check[]): Record<Severity, number> {
 	return tally;
 }
 
+const count = (n: number, one: string, many: string) =>
+	`${n} ${n === 1 ? one : many}`;
+
+// The report in one line, toned by its worst result.
+export function verdict(tally: Record<Severity, number>): {
+	tone: Severity;
+	label: string;
+} {
+	const warnings = tally.warn ? count(tally.warn, "warning", "warnings") : "";
+	if (tally.fail) {
+		const failed = `${count(tally.fail, "check", "checks")} failed`;
+		return {
+			tone: "fail",
+			label: warnings ? `${failed}, ${warnings}` : failed,
+		};
+	}
+	if (tally.warn) return { tone: "warn", label: warnings };
+	return { tone: "ok", label: `All ${tally.ok} checks pass` };
+}
+
 // Failures first, then warnings, each in the doctor's own order.
 export function ordered(checks: Check[]): Check[] {
 	const rank: Record<Severity, number> = { fail: 0, warn: 1, ok: 2 };

@@ -6,6 +6,7 @@ import {
 	ordered,
 	scanBytes,
 	settled,
+	verdict,
 } from "./doctor";
 
 const check = (name: string, severity: Check["severity"]): Check => ({
@@ -49,5 +50,26 @@ describe("doctor report", () => {
 		};
 		expect(settled(job)).toBe(false);
 		expect(settled({ ...job, status: "failed" })).toBe(true);
+	});
+});
+
+describe("verdict", () => {
+	it("leads with failures, then warnings, else says everything passed", () => {
+		expect(verdict({ ok: 20, warn: 1, fail: 2 })).toEqual({
+			tone: "fail",
+			label: "2 checks failed, 1 warning",
+		});
+		expect(verdict({ ok: 20, warn: 2, fail: 0 })).toEqual({
+			tone: "warn",
+			label: "2 warnings",
+		});
+		expect(verdict({ ok: 22, warn: 0, fail: 0 })).toEqual({
+			tone: "ok",
+			label: "All 22 checks pass",
+		});
+		expect(verdict({ ok: 0, warn: 0, fail: 1 })).toEqual({
+			tone: "fail",
+			label: "1 check failed",
+		});
 	});
 });

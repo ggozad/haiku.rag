@@ -13,6 +13,8 @@
 - The `docling` extra installs `onnxruntime` (#828).
 - Web app: Inter and JetBrains Mono replace Geist and Geist Mono, and render Greek.
 - Web app: a chat answer's reasoning and tool calls fold into one summary line once the answer starts, with a link to its sources. A citation links the document's `metadata.url` when it is an http(s) address. An empty chat names the databases and document count a question covers.
+- Web app: the doctor's report opens with a verdict, lists failures and warnings, and folds the passing checks. The memory estimate follows the jobs.
+- Web app: the ingestion page shows loading until its first read, a running scan or retry on its button, empty sections as one line, and `ok` for a source with nothing to report. "Refresh" is renamed "Scan now", and "Retry failed" is disabled for a source without dead jobs.
 - Web app: URIs are shown decoded. The inspector renders table items as tables and chunk text in the sans font. Search results lead with the document title and show the passage without markdown markers.
 
 ### Fixed
