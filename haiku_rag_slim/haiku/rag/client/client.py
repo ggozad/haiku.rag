@@ -23,6 +23,7 @@ from haiku.rag.hooks import (
     hook_span,
     load_hooks,
     notify,
+    overrides,
 )
 from haiku.rag.reranking import get_reranker
 from haiku.rag.store.engine import EmbedderIdentity, Store
@@ -1043,6 +1044,8 @@ class HaikuRAG:
         )
         if isinstance(query, str):
             for hook in self._hooks:
+                if not overrides(hook, "before_search"):
+                    continue
                 with hook_span("before_search", hook):
                     request = await hook.before_search(self, request)
             query = request.query
@@ -1069,6 +1072,8 @@ class HaikuRAG:
                 result.source = self.source
 
         for hook in self._hooks:
+            if not overrides(hook, "after_search"):
+                continue
             with hook_span("after_search", hook, results_in=len(results)) as span:
                 results = await hook.after_search(self, request, results)
                 span.set_attribute("results", len(results))

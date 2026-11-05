@@ -10,6 +10,10 @@
 
 - `pydantic-ai-slim` requires `>=2.66.0,<2.67.0`.
 
+### Fixed
+
+- A hook gets a span only at a hook point it overrides (#840).
+
 ## [0.107.0] - 2026-11-04
 
 ### Added
