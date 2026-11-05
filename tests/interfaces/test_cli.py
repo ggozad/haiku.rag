@@ -766,11 +766,6 @@ DB_ARGS = ["--db", "/tmp/test.lancedb"]
             "add_document_from_text",
             {"text": "some text", "title": "T", "metadata": None},
         ),
-        (
-            ["add-src", "/tmp/doc.md"],
-            "add_document_from_source",
-            {"source": "/tmp/doc.md", "title": None, "metadata": None},
-        ),
         (["get", "doc-1"], "get_document", {"doc_id": "doc-1"}),
         (["delete", "doc-1"], "delete_document", {"doc_id": "doc-1"}),
         (
@@ -865,6 +860,18 @@ def test_command_dispatches_to_the_app(app_stub, argv, method, expected):
 
     assert result.exit_code == 0, result.output
     getattr(app_stub, method).assert_called_once_with(**expected)
+
+
+@pytest.mark.parametrize("failed, exit_code", [(0, 0), (2, 1)])
+def test_add_src_exits_1_when_files_failed(app_stub, failed, exit_code):
+    app_stub.add_document_from_source.return_value = failed
+
+    result = runner.invoke(cli, ["add-src", "/tmp/doc.md", *DB_ARGS])
+
+    assert result.exit_code == exit_code, result.output
+    app_stub.add_document_from_source.assert_called_once_with(
+        source="/tmp/doc.md", title=None, metadata=None
+    )
 
 
 @pytest.mark.parametrize(

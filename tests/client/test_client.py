@@ -23,7 +23,10 @@ from haiku.rag.client.documents import (
 )
 from haiku.rag.client.processing import _write_fetch_body
 from haiku.rag.config import get_config
-from haiku.rag.converters.exceptions import ConverterWedgedError
+from haiku.rag.converters.exceptions import (
+    ConversionTimeoutError,
+    ConverterWedgedError,
+)
 from haiku.rag.embeddings import EmbedderWrapper
 from haiku.rag.sources.base import FetchResult
 from haiku.rag.store.compression import decompress_json
@@ -565,6 +568,51 @@ async def test_directory_ingest_logs_a_failed_file_and_continues(
     ]
 
 
+async def test_directory_ingest_collects_the_failed_files(
+    temp_db_path, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        _failing_on("a.md", ValueError("cannot parse")),
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A")
+    (docs / "b.md").write_text("# B")
+    failed: list[str] = []
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        await client.create_document_from_source(docs, failed=failed)
+
+    assert failed == [(docs / "a.md").as_uri()]
+
+
+async def test_directory_ingest_of_a_relative_directory_continues_past_a_failure(
+    temp_db_path, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        _failing_on("a.md", ValueError("cannot parse")),
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A")
+    (docs / "b.md").write_text("# B")
+    monkeypatch.chdir(tmp_path)
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.client.documents"), logging.ERROR
+    ) as records:
+        async with HaikuRAG(temp_db_path, create=True) as client:
+            stored = await client.create_document_from_source("docs")
+
+    assert isinstance(stored, list)
+    assert [d.uri for d in stored] == [(docs / "b.md").as_uri()]
+    assert [r.getMessage() for r in records] == [
+        f"{(docs / 'a.md').as_uri()} failed: cannot parse"
+    ]
+
+
 async def test_directory_ingest_stops_on_a_wedged_converter(
     temp_db_path, tmp_path, monkeypatch
 ):
@@ -581,6 +629,45 @@ async def test_directory_ingest_stops_on_a_wedged_converter(
         with pytest.raises(ConverterWedgedError):
             await client.create_document_from_source(docs)
         assert await client.count_documents() == 0
+
+
+async def test_directory_ingest_stops_on_the_timeout_that_wedges_the_converter(
+    temp_db_path, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        _failing_on("a.md", ConversionTimeoutError("timed out", converter_wedged=True)),
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A")
+    (docs / "b.md").write_text("# B")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        with pytest.raises(ConversionTimeoutError):
+            await client.create_document_from_source(docs)
+        assert await client.count_documents() == 0
+
+
+async def test_directory_ingest_continues_past_a_timeout_that_left_the_converter(
+    temp_db_path, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result",
+        _failing_on(
+            "a.md", ConversionTimeoutError("timed out", converter_wedged=False)
+        ),
+    )
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A")
+    (docs / "b.md").write_text("# B")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        stored = await client.create_document_from_source(docs)
+
+    assert isinstance(stored, list)
+    assert [d.uri for d in stored] == [(docs / "b.md").as_uri()]
 
 
 @pytest.mark.vcr()

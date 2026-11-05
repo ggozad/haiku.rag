@@ -145,9 +145,22 @@ async def test_add_document_from_source_reports_one_document(app, client):
 async def test_add_document_from_source_reports_a_directory_count(app, client):
     client.create_document_from_source.return_value = [_doc("a"), _doc("b")]
 
-    await app.add_document_from_source("/tmp/dir")
+    assert await app.add_document_from_source("/tmp/dir") == 0
 
     assert "2 documents added successfully" in out(app)
+
+
+async def test_add_document_from_source_reports_failed_files(app, client):
+    async def ingest(source, *, title, metadata, failed):
+        failed += ["file:///tmp/dir/a.md", "file:///tmp/dir/b.md"]
+        return [_doc("c")]
+
+    client.create_document_from_source.side_effect = ingest
+
+    assert await app.add_document_from_source("/tmp/dir") == 2
+
+    assert "1 documents added, 2 failed." in out(app)
+    assert "successfully" not in out(app)
 
 
 async def test_get_document_reports_a_missing_id(app, client):

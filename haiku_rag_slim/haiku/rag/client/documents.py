@@ -21,7 +21,10 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
-from haiku.rag.converters.exceptions import ConverterWedgedError
+from haiku.rag.converters.exceptions import (
+    ConversionTimeoutError,
+    ConverterWedgedError,
+)
 from haiku.rag.hooks import (
     DeleteEvent,
     DocumentRejected,
@@ -1016,6 +1019,7 @@ async def create_document_from_source(
     force: bool = False,
     written_ids: set[str] | None = None,
     notify_hooks: bool = True,
+    failed: list[str] | None = None,
 ) -> Document | list[Document]:
     """Create or update document(s) from a file path, directory, or URL.
 
@@ -1035,6 +1039,9 @@ async def create_document_from_source(
     (which is normally ``file://`` for local files or the URL for remote
     sources). Not supported for directory sources, which produce one document
     per file.
+
+    A directory call logs and skips a file that fails, appending its URI to
+    ``failed`` when given. A wedged docling converter stops it.
 
     Returns a single Document for files/URLs, a list for directories.
     """
@@ -1083,7 +1090,12 @@ async def create_document_from_source(
                     except ConverterWedgedError:
                         raise
                     except Exception as e:
-                        logger.error("%s failed: %s", child.as_uri(), e)
+                        if isinstance(e, ConversionTimeoutError) and e.converter_wedged:
+                            raise
+                        child_uri = child.absolute().as_uri()
+                        logger.error("%s failed: %s", child_uri, e)
+                        if failed is not None:
+                            failed.append(child_uri)
                         continue
                     assert isinstance(doc, Document)
                     documents.append(doc)

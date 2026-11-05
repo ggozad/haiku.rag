@@ -569,24 +569,33 @@ class HaikuRAGApp:
 
     async def add_document_from_source(
         self, source: str, title: str | None = None, metadata: dict | None = None
-    ):
+    ) -> int:
+        """Add a file, directory or URL. Returns the number of files that failed."""
+        failed: list[str] = []
         async with HaikuRAG._covering(
             self.scope, self.config, read_only=self.read_only
         ) as self.client:
             result = await self.client.create_document_from_source(
-                source, title=title, metadata=metadata
+                source, title=title, metadata=metadata, failed=failed
             )
             if isinstance(result, list):
                 for doc in result:
                     self._rich_print_document(doc, truncate=True)
-                self.console.print(
-                    f"[bold green]{len(result)} documents added successfully.[/bold green]"
-                )
+                if failed:
+                    self.console.print(
+                        f"[bold red]{len(result)} documents added, "
+                        f"{len(failed)} failed.[/bold red]"
+                    )
+                else:
+                    self.console.print(
+                        f"[bold green]{len(result)} documents added successfully.[/bold green]"
+                    )
             else:
                 self._rich_print_document(result, truncate=True)
                 self.console.print(
                     f"[bold green]Document {result.id} added successfully.[/bold green]"
                 )
+        return len(failed)
 
     async def get_document(self, doc_id: str):
         async with HaikuRAG._covering(

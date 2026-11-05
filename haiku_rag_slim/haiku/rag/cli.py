@@ -321,11 +321,12 @@ def add_document_src(
 ):
     app = create_app(db)
     metadata = _parse_meta_options(meta)
-    asyncio.run(
+    if asyncio.run(
         app.add_document_from_source(
             source=source, title=title, metadata=metadata or None
         )
-    )
+    ):
+        raise typer.Exit(1)
 
 
 @_cli.command("get", help="Get and display a document by its ID")

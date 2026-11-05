@@ -680,6 +680,7 @@ class HaikuRAG:
         sources: "list[Source] | None" = None,
         source_id: str | None = None,
         metadata_provider: "MetadataProvider | None" = None,
+        failed: list[str] | None = None,
     ) -> Document | list[Document]:
         from haiku.rag.client.documents import create_document_from_source
 
@@ -696,6 +697,7 @@ class HaikuRAG:
             sources=sources,
             source_id=source_id,
             metadata_provider=metadata_provider,
+            failed=failed,
         )
 
     async def _ingest_observed(
