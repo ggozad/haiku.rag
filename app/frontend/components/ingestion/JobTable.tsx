@@ -8,7 +8,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, readableUri } from "@/lib/format";
 import { formatAge } from "@/lib/ingestion";
 import type { Job } from "./types";
 
@@ -47,7 +47,7 @@ function cell(job: Job, column: Column): React.ReactNode {
 		case "op":
 			return job.op;
 		case "uri":
-			return job.uri;
+			return readableUri(job.uri);
 		case "source":
 			return job.source_id;
 		case "attempts":
@@ -80,6 +80,8 @@ export default function JobTable({
 	action?: (job: Job) => React.ReactNode;
 	empty: string;
 }) {
+	if (jobs.length === 0)
+		return <p className="text-sm text-muted-foreground">{empty}</p>;
 	return (
 		<div className="overflow-x-auto rounded-md border">
 			<Table>
@@ -115,16 +117,6 @@ export default function JobTable({
 							)}
 						</TableRow>
 					))}
-					{jobs.length === 0 && (
-						<TableRow>
-							<TableCell
-								colSpan={columns.length + (action ? 1 : 0)}
-								className="text-muted-foreground"
-							>
-								{empty}
-							</TableCell>
-						</TableRow>
-					)}
 				</TableBody>
 			</Table>
 		</div>

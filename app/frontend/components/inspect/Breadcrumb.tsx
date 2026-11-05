@@ -5,6 +5,7 @@ import Link from "next/link";
 import { databaseHref, documentHref } from "@/lib/addresses";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
+import { cn } from "@/lib/utils";
 
 type Place =
 	| { kind: "database"; db: string }
@@ -60,7 +61,10 @@ export default function Breadcrumb({
 				{crumbs.map((crumb, n) => (
 					<li
 						key={`${n}:${crumb.label}`}
-						className="flex min-w-0 items-center gap-1"
+						className={cn(
+							"flex items-center gap-1",
+							n === 1 && "doc" in view ? "min-w-0" : "shrink-0",
+						)}
 					>
 						{n > 0 && (
 							<ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />

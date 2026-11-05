@@ -212,7 +212,7 @@ export default function ChunkView({
 					{!chunk.data && <Pending error={chunk.error} />}
 					{chunk.data && (
 						<>
-							<pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-sm">
+							<pre className="whitespace-pre-wrap rounded-md bg-muted p-3 font-sans text-sm leading-relaxed">
 								{chunk.data.content}
 							</pre>
 							<dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">

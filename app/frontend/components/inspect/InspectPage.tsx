@@ -1,5 +1,6 @@
 "use client";
 
+import { Info, Search } from "lucide-react";
 import {
 	useParams,
 	usePathname,
@@ -8,7 +9,6 @@ import {
 } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Estimate, useEstimate } from "@/components/doctor/MapJob";
-import { openSearch } from "@/components/SearchOverlay";
 import { Empty } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +32,7 @@ import {
 	withList,
 } from "@/lib/addresses";
 import { useDatabases } from "@/lib/databases";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, readableUri } from "@/lib/format";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
@@ -59,6 +59,8 @@ interface Listing {
 }
 
 const PAGE = 50;
+
+const fileName = (uri: string) => uri.split("/").filter(Boolean).at(-1) ?? uri;
 
 // A database's map, with `doc` selected, keeping the document list's query.
 function mapHref(db: string, list: URLSearchParams, doc?: string) {
@@ -206,11 +208,54 @@ export default function InspectPage() {
 
 	const documentQuery = new URLSearchParams(query);
 	documentQuery.delete("view");
+	// Below md one pane shows: the list on a database's page, else the view.
+	const listOnly = view.kind === "database" && !mapOpen;
 
 	return (
 		<div className="grid h-full grid-cols-1 md:grid-cols-[22rem_minmax(0,1fr)]">
-			<aside className="flex min-h-0 flex-col border-r">
+			<aside
+				className={cn(
+					"min-h-0 flex-col border-r md:flex",
+					listOnly ? "flex" : "hidden",
+				)}
+			>
 				<div className="space-y-2 border-b p-3">
+					<div className="flex gap-1">
+						<Select
+							value={source ?? ""}
+							onValueChange={(name) => router.push(databaseHref(name))}
+						>
+							<SelectTrigger className="min-w-0 flex-1" aria-label="Database">
+								<SelectValue placeholder="Database" />
+							</SelectTrigger>
+							<SelectContent>
+								{(info?.databases ?? []).map((db) => (
+									<SelectItem key={db.name} value={db.name}>
+										{db.available
+											? `${db.name} · ${db.documents} documents`
+											: `${db.name} · unavailable, Info only`}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+						<Button
+							size="icon"
+							variant="ghost"
+							aria-label="Database info"
+							title="Database info"
+							disabled={!source}
+							onClick={() => setInfoOpen(true)}
+						>
+							<Info />
+						</Button>
+					</div>
+					{selected && !selected.available && (
+						<p className="text-xs text-muted-foreground">
+							{selected.name} cannot be opened
+							{selected.error ? `: ${selected.error}` : ""}. Info still reads
+							it.
+						</p>
+					)}
 					<div className="flex gap-1">
 						<Button
 							size="sm"
@@ -237,44 +282,12 @@ export default function InspectPage() {
 						<Button
 							size="sm"
 							variant={view.kind === "search" ? "secondary" : "ghost"}
-							onClick={openSearch}
+							title="Search every database"
+							onClick={() => router.push("/search")}
 						>
 							Search
 						</Button>
-						<Button
-							size="sm"
-							variant="ghost"
-							className="ml-auto"
-							disabled={!source}
-							onClick={() => setInfoOpen(true)}
-						>
-							Info
-						</Button>
 					</div>
-					<Select
-						value={source ?? ""}
-						onValueChange={(name) => router.push(databaseHref(name))}
-					>
-						<SelectTrigger className="w-full" aria-label="Database">
-							<SelectValue placeholder="Database" />
-						</SelectTrigger>
-						<SelectContent>
-							{(info?.databases ?? []).map((db) => (
-								<SelectItem key={db.name} value={db.name}>
-									{db.available
-										? `${db.name} · ${db.documents} documents`
-										: `${db.name} · unavailable, Info only`}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-					{selected && !selected.available && (
-						<p className="text-xs text-muted-foreground">
-							{selected.name} cannot be opened
-							{selected.error ? `: ${selected.error}` : ""}. Info still reads
-							it.
-						</p>
-					)}
 					<form
 						hidden={!selected?.available}
 						onSubmit={(event) => {
@@ -285,24 +298,37 @@ export default function InspectPage() {
 								offset: 0,
 							});
 						}}
-						className="space-y-2"
+						className="space-y-1"
 					>
-						<Input
-							id="inspect-search"
-							placeholder="Title or URI contains"
-							value={text}
-							onChange={(event) => setText(event.target.value)}
-						/>
-						<Input
-							id="inspect-filter"
-							placeholder="SQL filter, e.g. metadata LIKE '%report%'"
-							value={filterText}
-							onChange={(event) => setFilterText(event.target.value)}
-							className="font-mono text-xs"
-						/>
-						<Button type="submit" size="sm" className="w-full">
-							Apply
-						</Button>
+						<div className="flex gap-1">
+							<Input
+								id="inspect-search"
+								placeholder="Filter by title or URI"
+								value={text}
+								onChange={(event) => setText(event.target.value)}
+							/>
+							<Button
+								type="submit"
+								size="icon"
+								variant="outline"
+								aria-label="Apply"
+								title="Apply"
+							>
+								<Search />
+							</Button>
+						</div>
+						<details open={Boolean(list.filter)} className="text-xs">
+							<summary className="cursor-pointer text-muted-foreground">
+								SQL filter
+							</summary>
+							<Input
+								id="inspect-filter"
+								placeholder="SQL filter, e.g. metadata LIKE '%report%'"
+								value={filterText}
+								onChange={(event) => setFilterText(event.target.value)}
+								className="mt-1 font-mono text-xs"
+							/>
+						</details>
 					</form>
 					{listing.error && (
 						<p className="text-xs text-destructive">{listing.error}</p>
@@ -322,19 +348,22 @@ export default function InspectPage() {
 									"doc" in view && doc.id === view.doc && "bg-muted",
 								)}
 							>
-								<div className="truncate font-medium">
-									{doc.title || doc.uri || doc.id}
+								<div className="line-clamp-2 font-medium">
+									{doc.title || (doc.uri && readableUri(doc.uri)) || doc.id}
 								</div>
-								{doc.title && doc.uri && doc.uri !== doc.title && (
-									<div className="truncate text-xs text-muted-foreground">
-										{doc.uri}
-									</div>
-								)}
-								<div className="flex gap-2 truncate text-xs text-muted-foreground">
-									{doc.source_id && <span>{doc.source_id}</span>}
-									{doc.content_type && <span>{doc.content_type}</span>}
-									<span>
-										created {formatRelativeTime(doc.created_at, true)}, updated{" "}
+								<div
+									className="mt-0.5 flex gap-1.5 text-xs text-muted-foreground"
+									title={doc.uri ? readableUri(doc.uri) : undefined}
+								>
+									{doc.source_id && (
+										<span className="shrink-0">{doc.source_id}</span>
+									)}
+									{doc.title && doc.uri && (
+										<span className="min-w-0 truncate">
+											{fileName(readableUri(doc.uri))}
+										</span>
+									)}
+									<span className="ml-auto shrink-0">
 										{formatRelativeTime(doc.updated_at, true)}
 									</span>
 								</div>
@@ -370,7 +399,12 @@ export default function InspectPage() {
 					</div>
 				)}
 			</aside>
-			<section className="flex min-h-0 min-w-0 flex-col">
+			<section
+				className={cn(
+					"min-h-0 min-w-0 flex-col md:flex",
+					listOnly ? "hidden" : "flex",
+				)}
+			>
 				{"db" in view && selected && (
 					<Breadcrumb
 						view={view}

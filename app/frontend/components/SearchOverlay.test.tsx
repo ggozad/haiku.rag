@@ -1,5 +1,12 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+	act,
+	cleanup,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SearchOverlay, { openSearch } from "./SearchOverlay";
@@ -69,6 +76,15 @@ describe("SearchOverlay", () => {
 		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 		await user.keyboard("{Meta>}k{/Meta}");
 		await screen.findByRole("dialog");
+	});
+
+	it("closes from a visible button", async () => {
+		const user = userEvent.setup();
+		render(<SearchOverlay />);
+		await user.keyboard("{Control>}k{/Control}");
+		const dialog = await screen.findByRole("dialog");
+		await user.click(within(dialog).getByRole("button", { name: "Close" }));
+		await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 	});
 
 	it("shows results in place, and opens a result's chunk page", async () => {

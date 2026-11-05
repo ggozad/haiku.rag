@@ -7,6 +7,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { readableUri } from "@/lib/format";
 import type { Job } from "./types";
 
 export default function JobDialog({
@@ -20,7 +21,9 @@ export default function JobDialog({
 		<Dialog open={job !== null} onOpenChange={(open) => !open && onClose()}>
 			<DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
 				<DialogHeader>
-					<DialogTitle className="break-all">{job?.uri}</DialogTitle>
+					<DialogTitle className="break-all">
+						{job && readableUri(job.uri)}
+					</DialogTitle>
 					<DialogDescription>Job {job?.id}</DialogDescription>
 				</DialogHeader>
 				{job && (

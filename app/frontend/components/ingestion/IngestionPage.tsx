@@ -101,6 +101,8 @@ export default function IngestionPage() {
 	const [confirming, setConfirming] = useState<Job | null>(null);
 	const [viewing, setViewing] = useState<Job | null>(null);
 	const [revision, setRevision] = useState(0);
+	// The source whose scan or retry is running.
+	const [busy, setBusy] = useState<string | null>(null);
 	// The last databases read, kept through a failed poll with their panels.
 	const [databases, setDatabases] = useState<string[]>([]);
 	const poller = useMemo(() => new Poller(setSnapshot), []);
@@ -128,12 +130,15 @@ export default function IngestionPage() {
 	}, [snapshot]);
 
 	const act = useCallback(
-		async (action: () => Promise<string | null>) => {
+		async (source: string | null, action: () => Promise<string | null>) => {
 			poller.interrupt();
+			setBusy(source);
 			try {
 				setNotice(await action());
 			} catch (error) {
 				setNotice(error instanceof Error ? error.message : String(error));
+			} finally {
+				setBusy(null);
 			}
 			setRevision((n) => n + 1);
 			await poller.refresh();
@@ -222,154 +227,167 @@ export default function IngestionPage() {
 				</Alert>
 			)}
 
-			<Section title="Queue" error={snapshot?.stats.error}>
-				{stats && health && <QueueSummary health={health} stats={stats} />}
-			</Section>
+			{!snapshot && <Loading />}
+			{snapshot && (
+				<>
+					<Section title="Queue" error={snapshot?.stats.error}>
+						{stats && health && <QueueSummary health={health} stats={stats} />}
+					</Section>
 
-			<Section title="Sources" error={snapshot?.sources.error}>
-				<SourcesPanel
-					sources={sources}
-					stats={stats}
-					onRefresh={(source) =>
-						act(async () => {
-							const result = (await ingester(
-								`sources/${encodeURIComponent(source)}/refresh`,
-								{ method: "POST" },
-								SWEEP_TIMEOUT_MS,
-							)) as { refreshed: boolean };
-							return result.refreshed
-								? `Refreshed ${source}.`
-								: `Refresh of ${source} skipped or failed.`;
-						})
-					}
-					onRetry={(source) =>
-						act(async () => {
-							const result = (await ingester(
-								`sources/${encodeURIComponent(source)}/retry?status=dead`,
-								{ method: "POST" },
-								SWEEP_TIMEOUT_MS,
-							)) as { retried: number; worker_breaker_open: boolean };
-							const one = result.retried === 1;
-							const queued = `Queued ${result.retried} dead ${one ? "job" : "jobs"} of ${source} again.`;
-							return result.worker_breaker_open
-								? `${queued} Its worker breaker is open, so ${one ? "it waits" : "they wait"} until the breaker closes.`
-								: queued;
-						})
-					}
-				/>
-			</Section>
-
-			<Section title="Providers" error={snapshot?.providers.error}>
-				<ul className="space-y-1 text-sm">
-					{providers?.docling_serve.map((endpoint) => (
-						<li key={endpoint.base_url} className="flex items-center gap-2">
-							<Badge variant={endpoint.reachable ? "secondary" : "destructive"}>
-								{endpoint.reachable ? "reachable" : "unreachable"}
-							</Badge>
-							<span className="font-mono text-xs">{endpoint.base_url}</span>
-							{endpoint.status_code !== null && (
-								<span className="text-muted-foreground">
-									HTTP {endpoint.status_code}
-								</span>
-							)}
-							{endpoint.error && (
-								<span className="text-muted-foreground">{endpoint.error}</span>
-							)}
-						</li>
-					))}
-					{providers && providers.docling_serve.length === 0 && (
-						<li className="text-muted-foreground">
-							No docling-serve endpoints are configured.
-						</li>
-					)}
-				</ul>
-			</Section>
-
-			<Section title="Active jobs" error={snapshot?.active.error}>
-				<JobTable
-					jobs={active}
-					columns={["op", "uri", "source", "attempts", "worker", "claimed"]}
-					onOpen={setViewing}
-					action={(job) => (
-						<Button
-							size="sm"
-							variant="outline"
-							onClick={() => setConfirming(job)}
-						>
-							<X />
-							Cancel
-						</Button>
-					)}
-					empty="Nothing is being ingested."
-				/>
-			</Section>
-
-			<Section title="Dead letter" error={snapshot?.dead.error}>
-				<JobTable
-					jobs={dead}
-					columns={["op", "uri", "source", "attempts", "error"]}
-					onOpen={setViewing}
-					action={(job) => (
-						<Button
-							size="sm"
-							variant="outline"
-							onClick={() =>
-								act(async () => {
-									await ingester(`jobs/${encodeURIComponent(job.id)}/retry`, {
-										method: "POST",
-									});
-									return `Queued ${job.uri} again.`;
+					<Section title="Sources" error={snapshot?.sources.error}>
+						<SourcesPanel
+							sources={sources}
+							stats={stats}
+							busy={busy}
+							onScan={(source) =>
+								act(source, async () => {
+									const result = (await ingester(
+										`sources/${encodeURIComponent(source)}/refresh`,
+										{ method: "POST" },
+										SWEEP_TIMEOUT_MS,
+									)) as { refreshed: boolean };
+									return result.refreshed
+										? `Scanned ${source}.`
+										: `Scan of ${source} skipped or failed.`;
 								})
 							}
-						>
-							<RotateCcw />
-							Retry
-						</Button>
-					)}
-					empty="No job has failed for good."
-				/>
-			</Section>
+							onRetry={(source) =>
+								act(source, async () => {
+									const result = (await ingester(
+										`sources/${encodeURIComponent(source)}/retry?status=dead`,
+										{ method: "POST" },
+										SWEEP_TIMEOUT_MS,
+									)) as { retried: number; worker_breaker_open: boolean };
+									const one = result.retried === 1;
+									const queued = `Queued ${result.retried} dead ${one ? "job" : "jobs"} of ${source} again.`;
+									return result.worker_breaker_open
+										? `${queued} Its worker breaker is open, so ${one ? "it waits" : "they wait"} until the breaker closes.`
+										: queued;
+								})
+							}
+						/>
+					</Section>
 
-			<Section
-				title="Latest succeeded, by enqueue time"
-				error={snapshot?.succeeded.error}
-			>
-				<JobTable
-					jobs={succeeded}
-					columns={["op", "uri", "source", "duration", "finished"]}
-					onOpen={setViewing}
-					empty="No job has succeeded yet."
-				/>
-			</Section>
+					<Section title="Providers" error={snapshot?.providers.error}>
+						<ul className="space-y-1 text-sm">
+							{providers?.docling_serve.map((endpoint) => (
+								<li key={endpoint.base_url} className="flex items-center gap-2">
+									<Badge
+										variant={endpoint.reachable ? "secondary" : "destructive"}
+									>
+										{endpoint.reachable ? "reachable" : "unreachable"}
+									</Badge>
+									<span className="font-mono text-xs">{endpoint.base_url}</span>
+									{endpoint.status_code !== null && (
+										<span className="text-muted-foreground">
+											HTTP {endpoint.status_code}
+										</span>
+									)}
+									{endpoint.error && (
+										<span className="text-muted-foreground">
+											{endpoint.error}
+										</span>
+									)}
+								</li>
+							))}
+							{providers && providers.docling_serve.length === 0 && (
+								<li className="text-muted-foreground">
+									No docling-serve endpoints are configured.
+								</li>
+							)}
+						</ul>
+					</Section>
 
-			<JobsBrowser
-				sources={sources.map((s) => s.source_id)}
-				revision={revision}
-			/>
+					<Section title="Active jobs" error={snapshot?.active.error}>
+						<JobTable
+							jobs={active}
+							columns={["op", "uri", "source", "attempts", "worker", "claimed"]}
+							onOpen={setViewing}
+							action={(job) => (
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => setConfirming(job)}
+								>
+									<X />
+									Cancel
+								</Button>
+							)}
+							empty="Nothing is being ingested."
+						/>
+					</Section>
 
-			<div className="space-y-2">
-				{databases.map((name) => (
-					<Lazy
-						key={name}
-						title={`Database ${name}`}
-						path={`databases/${encodeURIComponent(name)}`}
-						render={(data) => (
-							<pre className="overflow-x-auto font-mono text-xs">
-								{JSON.stringify(data, null, 2)}
-							</pre>
-						)}
+					<Section title="Dead letter" error={snapshot?.dead.error}>
+						<JobTable
+							jobs={dead}
+							columns={["op", "uri", "source", "attempts", "error"]}
+							onOpen={setViewing}
+							action={(job) => (
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() =>
+										act(null, async () => {
+											await ingester(
+												`jobs/${encodeURIComponent(job.id)}/retry`,
+												{
+													method: "POST",
+												},
+											);
+											return `Queued ${job.uri} again.`;
+										})
+									}
+								>
+									<RotateCcw />
+									Retry
+								</Button>
+							)}
+							empty="No job has failed for good."
+						/>
+					</Section>
+
+					<Section
+						title="Latest succeeded, by enqueue time"
+						error={snapshot?.succeeded.error}
+					>
+						<JobTable
+							jobs={succeeded}
+							columns={["op", "uri", "source", "duration", "finished"]}
+							onOpen={setViewing}
+							empty="No job has succeeded yet."
+						/>
+					</Section>
+
+					<JobsBrowser
+						sources={sources.map((s) => s.source_id)}
+						revision={revision}
 					/>
-				))}
-				<Lazy
-					title="Configuration"
-					path="config"
-					render={(data) => (
-						<pre className="overflow-x-auto font-mono text-xs">
-							{(data as { yaml: string }).yaml}
-						</pre>
-					)}
-				/>
-			</div>
+
+					<div className="space-y-2">
+						{databases.map((name) => (
+							<Lazy
+								key={name}
+								title={`Database ${name}`}
+								path={`databases/${encodeURIComponent(name)}`}
+								render={(data) => (
+									<pre className="overflow-x-auto font-mono text-xs">
+										{JSON.stringify(data, null, 2)}
+									</pre>
+								)}
+							/>
+						))}
+						<Lazy
+							title="Configuration"
+							path="config"
+							render={(data) => (
+								<pre className="overflow-x-auto font-mono text-xs">
+									{(data as { yaml: string }).yaml}
+								</pre>
+							)}
+						/>
+					</div>
+				</>
+			)}
 
 			<Dialog
 				open={confirming !== null}
@@ -393,7 +411,7 @@ export default function IngestionPage() {
 								const job = confirming;
 								setConfirming(null);
 								if (job) {
-									act(async () => {
+									act(null, async () => {
 										await ingester(`jobs/${encodeURIComponent(job.id)}`, {
 											method: "DELETE",
 										});

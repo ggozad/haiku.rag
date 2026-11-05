@@ -1,24 +1,20 @@
 "use client";
 
 import type { Message } from "@ag-ui/client";
-import { ArrowDown, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowDown, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
 	type Evidence,
 	evidenceAnchors,
+	segments,
 	textOf,
 	toolResults,
 } from "@/lib/chat";
 import { imagesOf } from "@/lib/images";
+import Activity from "./Activity";
 import EvidenceBlock from "./EvidenceBlock";
 import Markdown from "./Markdown";
-import ToolCallCard from "./ToolCallCard";
 
 export default function MessageList({
 	messages,
@@ -27,6 +23,7 @@ export default function MessageList({
 	messageRuns,
 	hidden,
 	showSource,
+	empty,
 }: {
 	messages: Message[];
 	running: boolean;
@@ -35,6 +32,7 @@ export default function MessageList({
 	// User-role messages a run inserted itself, which the person did not type.
 	hidden: Set<string>;
 	showSource: boolean;
+	empty: string;
 }) {
 	const bottom = useRef<HTMLDivElement>(null);
 	const region = useRef<HTMLDivElement>(null);
@@ -43,6 +41,7 @@ export default function MessageList({
 	const lastRole = messages.at(-1)?.role;
 	const results = toolResults(messages);
 	const anchors = running ? new Map() : evidenceAnchors(messages, messageRuns);
+	const parts = segments(messages);
 	const lastContent = messages.length
 		? JSON.stringify(messages[messages.length - 1]).length
 		: 0;
@@ -58,10 +57,10 @@ export default function MessageList({
 		if (lastRole === "user") jump();
 	}, [messages.length]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: scroll as the last message grows
+	// biome-ignore lint/correctness/useExhaustiveDependencies: scroll as the last message grows and when a finished run's evidence appears
 	useEffect(() => {
 		if (following) bottom.current?.scrollIntoView({ block: "end" });
-	}, [messages.length, lastContent]);
+	}, [messages.length, lastContent, running]);
 
 	return (
 		<div
@@ -76,24 +75,33 @@ export default function MessageList({
 		>
 			<div className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-6">
 				{messages.length === 0 && (
-					<p className="py-16 text-center text-sm text-muted-foreground">
-						Ask a question about the documents.
+					<p className="py-24 text-center text-base text-muted-foreground">
+						{empty}
 					</p>
 				)}
-				{messages.map((message, index) => {
-					if (message.role === "reasoning") {
+				{parts.map((part, position) => {
+					if (part.kind === "activity") {
+						const runId = part.messageIds
+							.map((id) => messageRuns[id])
+							.find(Boolean);
+						const evidence = runId ? evidenceByRun[runId] : undefined;
 						return (
-							<Collapsible key={message.id} className="text-xs">
-								<CollapsibleTrigger className="group flex items-center gap-1 text-muted-foreground">
-									<ChevronRight className="size-3 transition-transform group-data-[state=open]:rotate-90" />
-									Reasoning
-								</CollapsibleTrigger>
-								<CollapsibleContent className="mt-1 whitespace-pre-wrap border-l-2 pl-3 text-muted-foreground">
-									{message.content}
-								</CollapsibleContent>
-							</Collapsible>
+							<Activity
+								key={part.key}
+								steps={part.steps}
+								results={results}
+								live={running && position === parts.length - 1}
+								running={running}
+								sources={running ? 0 : (evidence?.citations.length ?? 0)}
+								onSources={() =>
+									document
+										.getElementById(`evidence-${runId}`)
+										?.scrollIntoView({ block: "start", behavior: "smooth" })
+								}
+							/>
 						);
 					}
+					const { message, index } = part;
 					if (message.role === "user" && hidden.has(message.id)) return null;
 					if (message.role === "user") {
 						return (
@@ -126,25 +134,22 @@ export default function MessageList({
 					if (message.role !== "assistant") return null;
 					return (
 						<div key={message.id} className="flex flex-col gap-2">
-							{message.toolCalls?.map((call) => (
-								<ToolCallCard
-									key={call.id}
-									call={call}
-									result={results.get(call.id)}
-									running={running}
-								/>
-							))}
 							{message.content && <Markdown>{message.content}</Markdown>}
 							{anchors.has(index) && evidenceByRun[anchors.get(index)] && (
-								<EvidenceBlock
-									evidence={evidenceByRun[anchors.get(index)]}
-									showSource={showSource}
-								/>
+								<div
+									id={`evidence-${anchors.get(index)}`}
+									className="scroll-mt-4"
+								>
+									<EvidenceBlock
+										evidence={evidenceByRun[anchors.get(index)]}
+										showSource={showSource}
+									/>
+								</div>
 							)}
 						</div>
 					);
 				})}
-				{running && (
+				{running && parts.at(-1)?.kind !== "activity" && (
 					<Loader2 className="size-4 animate-spin text-muted-foreground" />
 				)}
 				<div ref={bottom} />

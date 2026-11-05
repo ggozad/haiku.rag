@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import SearchPanel from "@/components/inspect/SearchPanel";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
 	chunkHref,
@@ -64,8 +65,11 @@ export default function SearchOverlay() {
 						router.push(chunkHref(ref.source, ref.documentId, ref.chunkId));
 					}}
 				/>
-				{inputs.dbs.length > 0 && (
-					<div className="border-t px-4 py-2 text-right text-xs">
+				<div className="flex items-center justify-between border-t px-4 py-2 text-xs">
+					<Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
+						Close
+					</Button>
+					{inputs.dbs.length > 0 && (
 						<Link
 							href={href}
 							className="underline"
@@ -73,8 +77,8 @@ export default function SearchOverlay() {
 						>
 							Open as a page
 						</Link>
-					</div>
-				)}
+					)}
+				</div>
 			</DialogContent>
 		</Dialog>
 	);

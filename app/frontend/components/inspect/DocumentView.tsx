@@ -1,8 +1,15 @@
 "use client";
 
+import { Globe } from "lucide-react";
 import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { blocksOf, type Item, type OutlineNode } from "@/lib/inspect";
+import { publicUrl, readableUri } from "@/lib/format";
+import {
+	blocksOf,
+	headlineMetadata,
+	type Item,
+	type OutlineNode,
+} from "@/lib/inspect";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import ChunksTab, { type ChunkPage, PAGE } from "./ChunksTab";
@@ -76,23 +83,51 @@ export default function DocumentView({
 			`/api/backend/api/pictures?${new URLSearchParams({ source, document_id: documentId, ref })}`,
 		);
 
+	const url = publicUrl(doc.data?.metadata);
+	const headline = doc.data ? headlineMetadata(doc.data.metadata) : [];
+
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 			<div className="space-y-1 border-b px-4 py-3">
 				<h2 className="font-semibold">
-					{doc.data?.title || doc.data?.uri || documentId}
+					{doc.data?.title ||
+						(doc.data?.uri && readableUri(doc.data.uri)) ||
+						documentId}
 				</h2>
-				{doc.data?.uri && doc.data.uri !== doc.data.title && (
-					<p className="break-all text-xs text-muted-foreground">
-						{doc.data.uri}
-					</p>
+				{doc.data && (
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+						{url && (
+							<a
+								href={url}
+								target="_blank"
+								rel="noreferrer"
+								className="flex items-center gap-1 text-foreground underline-offset-2 hover:underline"
+							>
+								<Globe className="size-3.5" />
+								{new URL(url).host}
+							</a>
+						)}
+						{doc.data.uri && doc.data.uri !== doc.data.title && (
+							<span className="break-all">{readableUri(doc.data.uri)}</span>
+						)}
+					</div>
+				)}
+				{headline.length > 0 && (
+					<dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+						{headline.map(([key, value]) => (
+							<div key={key} className="flex gap-1.5">
+								<dt className="text-muted-foreground">{key}</dt>
+								<dd>{value}</dd>
+							</div>
+						))}
+					</dl>
 				)}
 				{doc.error && <p className="text-sm text-destructive">{doc.error}</p>}
 				{doc.data && actions}
 				{doc.data && (
 					<details className="text-xs">
 						<summary className="cursor-pointer text-muted-foreground">
-							Metadata
+							All metadata
 						</summary>
 						<dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4">
 							{Object.entries({
