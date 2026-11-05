@@ -12,6 +12,7 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.telemetry import logfire
 
 if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument
     from PIL import Image as PILImage
 
     from haiku.rag.client import HaikuRAG
@@ -89,6 +90,19 @@ class IngestRequest:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class ConvertedDocument:
+    """A document haiku.rag converted, about to be chunked. ``after_convert``
+    hooks may change ``docling_document`` in place or replace it. ``uri`` and
+    ``source_id`` are those ``before_ingest`` saw. ``content_type`` is ``None``
+    for text given to ``create_document`` or ``update_document``."""
+
+    uri: str | None
+    source_id: str | None
+    content_type: str | None
+    docling_document: "DoclingDocument"
+
+
 class Hook:
     """Base class for client lifecycle hooks. Subclasses override any subset.
 
@@ -148,6 +162,18 @@ class Hook:
         to refuse the document. Any other exception fails the ingest as a
         ``HookError``."""
         return request
+
+    async def after_convert(
+        self, client: "HaikuRAG", document: ConvertedDocument
+    ) -> ConvertedDocument:
+        """Transform a document haiku.rag converted, before it is chunked and
+        embedded. Runs for sources, PDF attachments, a FULL rebuild (its
+        fallback to stored content included), and text given to
+        ``create_document`` or ``update_document``. Documents the
+        caller converted (``import_document(s)``, ``update_document`` with a
+        ``docling_document``) and ``rebuild --rechunk`` skip it. Any exception
+        fails the ingest as a ``HookError``."""
+        return document
 
     async def after_ingest(self, client: "HaikuRAG", event: IngestEvent) -> None:
         """Content was written for ``event.documents``. ``event.operation``

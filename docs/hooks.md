@@ -13,6 +13,7 @@ Subclass `haiku.rag.hooks.Hook` and override any subset:
 | Method | Fires | Use for |
 |--------|-------|---------|
 | `before_ingest(client, request)` | A source document was fetched, before conversion. Also each PDF attachment | Rewriting bytes, adding metadata |
+| `after_convert(client, document)` | haiku.rag converted a document, before chunking | Correcting converted text |
 | `after_ingest(client, event)` | Document content was written (create, import, batch import, update). Also each PDF attachment, before the PDF's own event | Deriving state from documents |
 | `after_delete(client, event)` | Documents were deleted, including attachments a re-ingested PDF no longer carries | Cleaning up derived state |
 | `before_search(client, request)` | Before retrieval, text queries only | Query expansion, filter injection |
@@ -31,7 +32,7 @@ flowchart LR
     subgraph ingester["haiku-ingester, per database"]
         subgraph l1["lifespan"]
             subgraph il["ingester_lifespan"]
-                bi1[before_ingest] --> ai1[after_ingest]
+                bi1[before_ingest] --> ac1[after_convert] --> ai1[after_ingest]
                 ad1[after_delete]
             end
         end
@@ -42,7 +43,7 @@ flowchart LR
 flowchart LR
     subgraph writer["CLI writer: add-src, delete"]
         subgraph l2["lifespan"]
-            bi2[before_ingest] --> ai2[after_ingest]
+            bi2[before_ingest] --> ac2[after_convert] --> ai2[after_ingest]
             ad2[after_delete]
         end
     end
@@ -78,6 +79,23 @@ class StripBoilerplateHook(Hook):
 - The ingester skips a document whose source revision is unchanged before fetching it, so a new hook, or new options, changes stored documents only when their source changes or a FULL rebuild runs.
 - A PDF's attachments are ingested after the PDF itself, and not atomically with it: an attachment failure leaves the PDF and the attachments before it stored, and fails the ingest. A retry re-reconciles the attachments. A rejected attachment, or one refused by `docling-local` or with an undetectable text encoding, fails nothing, and the PDF is stored complete, so the hook sees that attachment again only when the PDF changes or a FULL rebuild runs.
 - With `extract_pdf_attachments` on, a PDF's `after_ingest` fires once the attachment pass has run: after every attachment's own event, nested PDFs included, with `md5` and, when the source supplies one, `source_revision` on the document. A PDF that fails to open in pdfium, or one at the attachment depth cap, skips the pass and fires at once. An ingest that fails partway leaves the PDF stored and searchable with no `after_ingest`. A retry that succeeds fires it. A job that stays dead never does, so a later `after_delete` can name a PDF that never reached the hook's `after_ingest`.
+
+## Transforming converted documents
+
+`after_convert` runs each time haiku.rag converts a document, before it chunks and embeds it: a source ingest that converts (not one that stops at unchanged bytes or a rejection), PDF attachments, text given to `create_document` or `update_document(content=...)`, and a FULL rebuild, both when it re-fetches a source and when it falls back to the stored content. On that fallback the hook's output also replaces the stored content. It does not run where the caller supplies the converted document (`import_document`, `import_documents`, `update_document(docling_document=...)`), or for `rebuild --rechunk` and `--descriptions`, which chunk the stored document. `ConvertedDocument` carries `uri`, `source_id`, `content_type` and `docling_document`. `uri` and `source_id` are the ones `before_ingest` saw. For text, `content_type` is `None`, and `source_id` is the stored document's on `update_document` and the rebuild fallback, and `None` on `create_document`. A hook changes `docling_document` in place or replaces it, and returns the `ConvertedDocument`. The stored content, the docling document and the chunks all come from the returned document.
+
+```python
+class FixLettersHook(Hook):
+    async def after_convert(self, client, document):
+        for item in document.docling_document.texts:
+            item.text = fix_letters(item.text)
+        return document
+```
+
+- Any exception fails the ingest as a `HookError`, as does returning anything but a `ConvertedDocument` whose `docling_document` is a `DoclingDocument`. The ingester classifies it as it does a `before_ingest` failure. There is no rejection here: a hook refuses a document in `before_ingest`.
+- A new hook changes stored documents only when they are converted again: when their source changes or a FULL rebuild runs.
+- Body text lives in `docling_document.texts`, table cell text in `docling_document.tables[*].data.table_cells`.
+- Assigning an item's `text` is cheap. Deleting or inserting items rewrites the whole document on every call, so a hook doing that should batch its changes.
 
 ## Metadata lifetime
 
@@ -222,6 +240,7 @@ Each hook call runs in a span of its own, from the `haiku.rag` instrumentation s
 | Span | Attributes |
 |---|---|
 | `hook.before_ingest` | `hook`, `uri`, `content_type`, and `rejected` and `reason` when the hook raises `DocumentRejected` |
+| `hook.after_convert` | `hook`, `uri`, `content_type` |
 | `hook.after_ingest` | `hook`, `operation`, `documents` (count) |
 | `hook.after_delete` | `hook`, `documents` (count) |
 | `hook.lifespan.enter`, `hook.lifespan.exit` | `hook` |
@@ -229,9 +248,9 @@ Each hook call runs in a span of its own, from the `haiku.rag` instrumentation s
 | `hook.before_search` | `hook` |
 | `hook.after_search` | `hook`, `results_in` (count passed in), `results` (count returned) |
 
-`hook` is the hook's qualified class name. A span nests under the operation that called the hook. In the ingester, the `before_ingest`, `after_ingest` and `after_delete` spans sit under `ingester.job` as siblings of the `document.*` phases. The lifespan spans sit under whatever span is active while the client opens or closes, the ingester lifespan spans under whatever is active while the ingester starts or stops the database, and the search spans under the caller of the search.
+`hook` is the hook's qualified class name. A span nests under the operation that called the hook. In the ingester, the `before_ingest`, `after_convert`, `after_ingest` and `after_delete` spans sit under `ingester.job` as siblings of the `document.*` phases. The lifespan spans sit under whatever span is active while the client opens or closes, the ingester lifespan spans under whatever is active while the ingester starts or stops the database, and the search spans under the caller of the search.
 
-When `after_ingest`, `after_delete`, or a `lifespan` or `ingester_lifespan` exit raises an exception, the span records it at level error, the failure is still logged, and the operation goes on. A cancellation propagates. A failure that propagates is recorded on the span as it leaves. A `before_ingest` failure is recorded on its span as the `HookError`, and the ingester's job span records the `PermanentError` or `TransientError` that failed the job. A rejection is an outcome, not an error: the span carries `rejected` and `reason` and no exception.
+When `after_ingest`, `after_delete`, or a `lifespan` or `ingester_lifespan` exit raises an exception, the span records it at level error, the failure is still logged, and the operation goes on. A cancellation propagates. A failure that propagates is recorded on the span as it leaves. A `before_ingest` or `after_convert` failure is recorded on its span as the `HookError`, and the ingester's job span records the `PermanentError` or `TransientError` that failed the job. A rejection is an outcome, not an error: the span carries `rejected` and `reason` and no exception.
 
 A hook can attach its background work to the operation that fired it. Capture the context inside the hook and attach it in the task:
 
@@ -264,6 +283,6 @@ The task's spans then belong to the trace of the ingest, under `hook.after_inges
 - **Post-commit hooks are best-effort observers.** By the time `after_ingest` or `after_delete` runs, the operation has committed. A hook failure is logged, subsequent hooks still run, and the operation still returns success. Correctness-critical derived state therefore needs its own retry or reconciliation, such as the backfill loop below. Hooks run outside the store's write lock, so a hook may itself write to the database. `before_search` and `after_search` failures propagate: nothing has committed, and the caller sees the failed search.
 - **Post-commit hooks are not a supported transformation point.** A change to an event model leaves the committed record as it was. An explicit client write is a separate operation, not atomic with the original write.
 - **Batch your writes.** A batch import delivers all its documents in one event. A hook keeping LanceDB state should write once per event, not once per document, to avoid creating a table version per document.
-- **Rebuild fires no post-commit hooks.** A FULL rebuild re-fetches source-backed documents, runs `before_ingest` on them, and can change their content, so a hook keeping content-derived state backfills after one. A `HookError` ends the rebuild. A rejection, like any other refresh failure, falls back to the stored content. The other modes leave content unchanged.
+- **Rebuild fires no post-commit hooks.** A FULL rebuild re-fetches source-backed documents and runs `before_ingest` and `after_convert` on them. It runs `after_convert` on the documents it rebuilds from stored content. Both can change content, so a hook keeping content-derived state backfills after a FULL rebuild. A `HookError` ends the rebuild. A rejection, like any other refresh failure, falls back to the stored content. The other modes leave content unchanged.
 - **Backfill is your loop.** A hook enabled on an existing database can backfill by iterating `client.list_documents()` and calling its own `after_ingest`.
 - **State lives in the database.** Hooks may create their own LanceDB tables via `client.store`. Prefix table names with `hook_` so they never collide with core tables or future migrations. State then travels with the database and its backups.
