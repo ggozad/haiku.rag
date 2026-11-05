@@ -543,10 +543,14 @@ class DoclingLocalConverter(DocumentConverter):
 
         Raises:
             UnsupportedSourceError: If the extension is not supported.
-            ConversionFailedError: If the file cannot be converted, chaining the
-                cause.
+            ConversionFailedError: If docling refuses the file or its encoding
+                is not detected, chaining the cause.
+            ValueError: If the conversion fails for any other reason, chaining
+                the cause.
             TimeoutError: If it exceeds `processing.conversion_timeout`.
         """
+        from docling.exceptions import ConversionError
+
         self.require_supported(path)
         try:
             file_extension = path.suffix.lower()
@@ -568,7 +572,9 @@ class DoclingLocalConverter(DocumentConverter):
         except (TimeoutError, ConverterWedgedError):
             raise
         except Exception as exc:
-            raise ConversionFailedError(f"Failed to parse file: {path}: {exc}") from exc
+            refused = isinstance(exc, ConversionError | ConversionFailedError)
+            error = ConversionFailedError if refused else ValueError
+            raise error(f"Failed to parse file: {path}: {exc}") from exc
 
     async def convert_text(
         self,

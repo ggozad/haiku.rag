@@ -422,7 +422,9 @@ class TestTextDecoding:
     def test_undetectable_bytes_raise(self, tmp_path):
         source = tmp_path / "doc.txt"
 
-        with pytest.raises(ValueError, match="No text encoding detected") as exc:
+        with pytest.raises(
+            ConversionFailedError, match="No text encoding detected"
+        ) as exc:
             to_utf8(UNDETECTABLE, source)
 
         assert str(source) in str(exc.value)
@@ -731,7 +733,7 @@ class TestDoclingLocalConverter:
         source = tmp_path / "broken.txt"
         source.write_bytes(UNDETECTABLE)
 
-        with pytest.raises(ValueError, match="Failed to parse file"):
+        with pytest.raises(ConversionFailedError, match="Failed to parse file"):
             await converter.convert_file(source)
 
     async def test_convert_file_raises_conversion_failed_for_unknown_xml(

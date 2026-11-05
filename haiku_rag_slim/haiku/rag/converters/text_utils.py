@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
+from haiku.rag.converters.exceptions import ConversionFailedError
+
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
@@ -19,8 +21,8 @@ DOCLING_TEXT_EXTENSIONS = frozenset(
 def to_utf8(raw: bytes, source: Path) -> bytes:
     """Return `raw` as UTF-8, detecting its encoding when it is not UTF-8 already.
 
-    UTF-8 input is returned as the same object. Raises `ValueError` when no
-    encoding is detected.
+    UTF-8 input is returned as the same object. Raises `ConversionFailedError`
+    when no encoding is detected.
     """
     try:
         raw.decode("utf-8")
@@ -32,7 +34,7 @@ def to_utf8(raw: bytes, source: Path) -> bytes:
 
     match = from_bytes(raw).best()
     if match is None:
-        raise ValueError(f"No text encoding detected for {source}")
+        raise ConversionFailedError(f"No text encoding detected for {source}")
     logger.warning("%s is not UTF-8, decoding it as %s", source, match.encoding)
     return str(match).encode("utf-8")
 

@@ -4,6 +4,7 @@ from collections import Counter
 from functools import partial
 
 import pytest
+from docling.exceptions import ConversionError, DocumentLoadError
 from pydantic import ValidationError
 
 from haiku.rag.client import HaikuRAG, RebuildMode
@@ -15,10 +16,9 @@ from haiku.rag.client.documents import (
     _reconcile_pdf_attachments,
     parent_uri_filter,
 )
-from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.converters.exceptions import ConversionFailedError
+from haiku.rag.hooks import Hook
 from haiku.rag.sources import FetchResult
-from haiku.rag.store.exceptions import TagError
 from haiku.rag.store.models.document import Document
 from tests.conftest import (
     build_pdf,
@@ -223,57 +223,133 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, fake_ingest):
         assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
 
 
-async def test_unparseable_attachment_is_skipped(temp_db_path, monkeypatch):
-    """An attachment the converter cannot parse is skipped with a warning, and
-    its siblings land."""
+_MATHML = b'<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>'
+_UNDETECTABLE = bytes(range(256)) * 4
 
-    async def ingest(session, client, result, **kwargs):
-        if kwargs["filename"] == "equation-1.xml":
-            raise ConversionFailedError("Failed to parse file: File format not allowed")
-        return await fake_ingest_fetch_result(session, client, result, **kwargs)
 
-    monkeypatch.setattr(client_documents, "_ingest_fetch_result", ingest)
+def _fail_xml_conversion(monkeypatch, error: Exception) -> None:
+    """docling-local raises `error` while converting an `.xml` file."""
+    from haiku.rag.converters.docling_local import DoclingLocalConverter
+
+    convert = DoclingLocalConverter._convert_docling_file
+
+    async def failing(self, path, source_uri, content=None):
+        if path.suffix == ".xml":
+            raise error
+        return await convert(self, path, source_uri, content)
+
+    monkeypatch.setattr(DoclingLocalConverter, "_convert_docling_file", failing)
+
+
+@converts_pdf_locally
+@pytest.mark.usefixtures("docling_local_models")
+@pytest.mark.parametrize(
+    ("name", "body", "error"),
+    [
+        pytest.param(
+            "equation-1.xml",
+            _MATHML,
+            ConversionError("File format not allowed"),
+            id="conversion-error",
+        ),
+        pytest.param(
+            "equation-1.xml",
+            _MATHML,
+            DocumentLoadError("cannot parse the input"),
+            id="document-load-error",
+        ),
+        pytest.param("notes.md", _UNDETECTABLE, None, id="encoding"),
+    ],
+)
+async def test_attachment_the_converter_refuses_is_skipped(
+    tmp_path, temp_db_path, monkeypatch, name, body, error
+):
+    if error is not None:
+        _fail_xml_conversion(monkeypatch, error)
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([(name, body)]))
+
     async with HaikuRAG(temp_db_path, create=True) as client:
-        parent_uri = "file:///fixtures/parent.pdf"
-        pdf_bytes = build_pdf([("equation-1.xml", b"<math/>"), ("ok.txt", b"keep")])
-        parent = await _make_parent(client, parent_uri, pdf_bytes)
         with capture_logs(client_documents.logger, logging.WARNING) as records:
-            await _reconcile_pdf_attachments(
-                writing(client), None, parent, pdf_bytes, depth=0
-            )
-        children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+            parent = await client.create_document_from_source(pdf_path)
+        assert isinstance(parent, Document)
+        children = await client.list_documents(filter=parent_uri_filter(parent.uri))
 
-    assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
-    assert [r.getMessage() for r in records] == [
-        f"Skipping attachment 'equation-1.xml' in {parent_uri}: "
-        "Failed to parse file: File format not allowed"
-    ]
+    assert children == []
+    assert parent.metadata["md5"] == _md5(pdf_path.read_bytes())
+    [record] = records
+    assert record.getMessage().startswith(
+        f"Skipping attachment {name!r} in {parent.uri}: Failed to parse file: "
+    )
 
 
+@converts_pdf_locally
+@pytest.mark.usefixtures("docling_local_models")
 @pytest.mark.parametrize(
     "error",
     [
-        pytest.param(lambda: ValueError("boom"), id="value-error"),
+        pytest.param(OSError("disk read failed"), id="os-error"),
         pytest.param(
-            lambda: ValidationError.from_exception_data("Document", []),
+            ValidationError.from_exception_data("DoclingDocument", []),
             id="validation-error",
         ),
-        pytest.param(lambda: UnsupportedSourceError("boom"), id="unsupported-source"),
-        pytest.param(lambda: TagError("boom"), id="tag-error"),
     ],
 )
-async def test_other_attachment_errors_fail_the_pdf(temp_db_path, monkeypatch, error):
-    async def ingest(session, client, result, **kwargs):
-        raise error()
+async def test_attachment_failure_outside_its_input_fails_the_pdf(
+    tmp_path, temp_db_path, monkeypatch, error
+):
+    _fail_xml_conversion(monkeypatch, error)
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(build_pdf([("equation-1.xml", _MATHML)]))
 
-    monkeypatch.setattr(client_documents, "_ingest_fetch_result", ingest)
     async with HaikuRAG(temp_db_path, create=True) as client:
-        pdf_bytes = build_pdf([("ok.txt", b"keep")])
-        parent = await _make_parent(client, "file:///fixtures/parent.pdf", pdf_bytes)
-        with pytest.raises(ValueError):
-            await _reconcile_pdf_attachments(
-                writing(client), None, parent, pdf_bytes, depth=0
-            )
+        with pytest.raises(ValueError, match="Failed to parse file") as exc:
+            await client.create_document_from_source(pdf_path)
+        parent = await client.get_document_by_uri(pdf_path.absolute().as_uri())
+
+    assert not isinstance(exc.value, ConversionFailedError)
+    assert exc.value.__cause__ is error
+    assert parent is not None
+    assert "md5" not in parent.metadata
+
+
+class _IngestedUris(Hook):
+    def __init__(self):
+        self.events: list[list[str | None]] = []
+
+    async def after_ingest(self, client, event):
+        self.events.append([d.uri for d in event.documents])
+
+
+@converts_pdf_locally
+@pytest.mark.vcr()
+@pytest.mark.usefixtures("docling_local_models")
+async def test_mathml_attachment_is_skipped_and_its_pdf_completes(
+    tmp_path, temp_db_path
+):
+    pdf_path = tmp_path / "parent.pdf"
+    pdf_path.write_bytes(
+        build_pdf([("equation-1.xml", _MATHML), ("notes.txt", b"sibling notes")])
+    )
+    parent_uri = pdf_path.absolute().as_uri()
+    hook = _IngestedUris()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        with capture_logs(client_documents.logger, logging.WARNING) as records:
+            parent = await client.create_document_from_source(pdf_path)
+        assert isinstance(parent, Document)
+        children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+
+    sibling_uri = f"{parent_uri}#attachment=notes.txt"
+    assert [c.uri for c in children] == [sibling_uri]
+    assert parent.metadata["md5"] == _md5(pdf_path.read_bytes())
+    [record] = records
+    assert record.getMessage().startswith(
+        f"Skipping attachment 'equation-1.xml' in {parent_uri}: Failed to parse file: "
+    )
+    assert "File format not allowed" in record.getMessage()
+    assert hook.events == [[sibling_uri], [parent_uri]]
 
 
 async def test_attachment_children_carry_no_source_id(
