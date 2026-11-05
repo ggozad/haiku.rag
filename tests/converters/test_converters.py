@@ -2355,6 +2355,20 @@ class TestDoclingServeConverterIntegration:
         assert titles == ["Chapter One", "Chapter Two"]
         assert "Tides are caused by lunar gravity." in doc.export_to_markdown()
 
+    @pytest.mark.vcr()
+    async def test_convert_mathml_real_service(self, converter, tmp_path):
+        """docling-serve reports an XML dialect it refuses as an internal error."""
+        source = tmp_path / "equation-1.xml"
+        source.write_text(
+            '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>',
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="Internal processing error") as exc:
+            await converter.convert_file(source)
+
+        assert not isinstance(exc.value, ConversionFailedError)
+
     @pytest.mark.integration
     async def test_picture_description_end_to_end(
         self, config, docling_serve_url, doclaynet_first_page_pdf
