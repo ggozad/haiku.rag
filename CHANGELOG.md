@@ -9,6 +9,7 @@
 ### Changed
 
 - `pydantic-ai-slim` requires `>=2.66.0,<2.67.0`.
+- The `docling` extra installs `onnxruntime` (#828).
 
 ## [0.107.0] - 2026-11-04
 
