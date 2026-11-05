@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Ingester: the reaper never resets the claim of a job its own process is running (#843).
 - A hook gets a span only at a hook point it overrides (#840).
 
 ## [0.107.0] - 2026-11-04

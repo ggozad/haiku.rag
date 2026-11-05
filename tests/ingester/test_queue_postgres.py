@@ -137,6 +137,23 @@ async def test_reap_stale_clamps_attempts(postgres_dburi):
         assert refreshed.attempts == 0
 
 
+async def test_reap_stale_keep_on_postgres(postgres_dburi):
+    """The `keep` exclusion renders and runs on Postgres."""
+    async with queue_engine(postgres_dburi) as engine:
+        jobs = JobRepo(engine)
+        kept = await jobs.enqueue("s", "kept", JobOp.UPSERT)
+        reaped = await jobs.enqueue("s", "reaped", JobOp.UPSERT)
+        assert kept is not None and reaped is not None
+        assert await jobs.claim_next("w1") is not None
+        assert await jobs.claim_next("w2") is not None
+
+        assert await jobs.reap_stale(lease_ttl_seconds=0, keep=[kept.id]) == 1
+        still = await jobs.get_job(kept.id)
+        gone = await jobs.get_job(reaped.id)
+        assert still is not None and still.status is JobStatus.CLAIMED
+        assert gone is not None and gone.status is JobStatus.QUEUED
+
+
 async def test_renew_claims_survives_reap_on_postgres(postgres_dburi):
     """The COALESCE lease threshold and the OR-of-(id, claimed_by) renewal
     predicate render and run on Postgres: a renewed claim outlives a reap even

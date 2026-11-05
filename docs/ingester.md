@@ -337,7 +337,7 @@ ingester:
 
 A DELETE job skipped because the resource is back at the source completes successfully and preserves its sync state and earlier dead or rejected jobs. Discovery can still detect a later removal. If the document belongs to another source or has no owner, the worker leaves it indexed and removes only the requesting source's sync state and failed jobs for that URI. A DELETE for a URL confirmed gone by a 404 keeps the source's sync state, at revision `http-404`.
 
-A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. A slow job keeps renewing and is never reaped while it runs.
+A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. The reaper never returns a job that its own process is running, so a slow job, a clock that jumps forward or a process that was suspended does not lose a claim.
 
 - `lease_ttl_s` bounds how long a crashed worker's job waits before another worker takes it. It need not exceed job duration.
 - `heartbeat_interval_s` must be at most `lease_ttl_s / 3`.
