@@ -163,7 +163,7 @@ The agent searches and cites chunks, short passages of a document. A chunk's pag
 
 ![A chunk on its original page, a scanned report from 1970](img/app-inspector-chunk.png)
 
-The Map tab places documents near others about similar things. "Compute the map" builds it, and "Compute again" refreshes it after new documents arrive. Select a document to list its nearest neighbours.
+The Map tab places documents near others about similar things. "Compute the map" builds it, and "Compute again" refreshes it after new documents arrive. Select a document, on the map or among the matches of the find box, to list its nearest neighbours.
 
 The Search tab, or Ctrl+K (Cmd+K on a Mac) from any page, searches every database, by text or, with a multimodal embedder, by image. Each inspector page has its own address, so Back returns to the previous view and a link reopens the same one. "Ask about this document" starts a conversation limited to the open document.
 

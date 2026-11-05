@@ -208,10 +208,17 @@ export default function InspectPage() {
 
 	const documentQuery = new URLSearchParams(query);
 	documentQuery.delete("view");
+	// Below md one pane shows: the list on a database's page, else the view.
+	const listOnly = view.kind === "database" && !mapOpen;
 
 	return (
 		<div className="grid h-full grid-cols-1 md:grid-cols-[22rem_minmax(0,1fr)]">
-			<aside className="flex min-h-0 flex-col border-r">
+			<aside
+				className={cn(
+					"min-h-0 flex-col border-r md:flex",
+					listOnly ? "flex" : "hidden",
+				)}
+			>
 				<div className="space-y-2 border-b p-3">
 					<div className="flex gap-1">
 						<Select
@@ -392,7 +399,12 @@ export default function InspectPage() {
 					</div>
 				)}
 			</aside>
-			<section className="flex min-h-0 min-w-0 flex-col">
+			<section
+				className={cn(
+					"min-h-0 min-w-0 flex-col md:flex",
+					listOnly ? "hidden" : "flex",
+				)}
+			>
 				{"db" in view && selected && (
 					<Breadcrumb
 						view={view}

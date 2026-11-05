@@ -185,6 +185,31 @@ export default function CorpusMap({
 							onSelect={setSelected}
 						/>
 						<aside className="min-w-0 space-y-4 text-sm">
+							{matching && (
+								<div className="space-y-1">
+									<h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										Matches ({matching.size})
+									</h3>
+									<ul>
+										{points
+											.filter((point) => matching.has(point.id))
+											.slice(0, MATCHES_SHOWN)
+											.map((point) => (
+												<li key={point.id}>
+													<button
+														type="button"
+														className="w-full truncate py-0.5 text-left hover:underline"
+														onClick={() => setSelected(point)}
+														onMouseEnter={() => setHovered(point)}
+														onMouseLeave={() => setHovered(null)}
+													>
+														{nameOf(point)}
+													</button>
+												</li>
+											))}
+									</ul>
+								</div>
+							)}
 							<div className="space-y-1">
 								<h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 									Selected
@@ -271,3 +296,4 @@ export default function CorpusMap({
 }
 
 const SLOTS_SHOWN = SLOT_TOKENS.length;
+const MATCHES_SHOWN = 8;
