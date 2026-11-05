@@ -20,11 +20,11 @@ Subclass `haiku.rag.hooks.Hook` and override any subset:
 | `lifespan(client)` | Around the whole client lifetime | Owning connections and clients |
 | `ingester_lifespan(client)` | Around the time haiku-ingester ingests into the client's database | Background tasks |
 
-Events are batch shaped. `IngestEvent` carries `documents` (a batch import arrives as one event with the whole batch) and `operation` (`"create"` or `"update"`). `DeleteEvent` carries the deleted `documents` in their last-known state, since the rows are already gone; a cascade arrives as one event. `SearchRequest` carries `query`, `filter`, `search_type`, and `limit`. `before_search` returns the request to search with, and may modify any of its fields. The query feeds both the vector and the full-text side. `after_search` returns the result list, and reads a request whose `search_type` is the one retrieval actually used: `hybrid` where a text search left it unset, `vector` for an image query. Hooks run in the order listed in config, each receiving the previous hook's output.
+Events are batch shaped. `IngestEvent` carries `documents` (a batch import arrives as one event with the whole batch) and `operation` (`"create"` or `"update"`). A creation against an already-stored URI reports `"update"`, and a creation can be a retry, so a hook replaces any state derived from the documents whatever the operation. `DeleteEvent` carries the deleted `documents` in their last-known state, since the rows are already gone. A cascade arrives as one event. `SearchRequest` carries `query`, `filter`, `search_type`, and `limit`. `before_search` returns the request to search with, and may modify any of its fields. The query feeds both the vector and the full-text side. `after_search` returns the result list. Its request's `search_type` names the retrieval that ran: `hybrid` where a text search left it unset, `vector` for an image query. Hooks run in the order listed in config, each receiving the previous hook's output.
 
 Hooks receive the `HaikuRAG` client, so they can search, read repositories, and store their own state.
 
-Each box runs inside the one around it. A lifespan enters before the first hook point inside it and exits after the last. A hook point fires only when its event happens: `after_ingest` when content is written, `after_delete` when documents are deleted, `before_search` for a text query.
+Each box runs inside the one around it. A lifespan enters before the first hook point inside it and exits after the last.
 
 ```mermaid
 flowchart LR
@@ -59,7 +59,7 @@ flowchart LR
 
 ## Transforming documents before ingestion
 
-`before_ingest` runs for every document ingested from a source (`create_document_from_source`, `add-src`, the ingester) and for every PDF attachment with a supported extension. `IngestRequest` carries `uri`, `source_id`, `body`, `content_type`, and `metadata`. A hook may replace `body` and add keys to `metadata`, which starts empty, and returns the request. `uri` is the URI the document is stored under: the `uri` given to `create_document_from_source`, else the source as given, with a local path made absolute and its symlinks kept. A hook reads the stored document, if there is one, with `client.get_document_by_uri(request.uri)`. `source_id` is the ingesting source, an attachment's parent's included. An ad-hoc ingest passes the source recorded on the stored document, and `None` when there is none. An attachment's `uri` is `<parent uri>#attachment=<name>`, with the name URL-quoted.
+`before_ingest` runs for every document ingested from a source (`create_document_from_source`, `add-src`, the ingester) and for every PDF attachment with a supported extension. `IngestRequest` carries `uri`, `source_id`, `body`, `content_type`, and `metadata`. A hook may replace `body` and add keys to `metadata`, which starts empty, and returns the request. `uri` is the document's URI in the store: the `uri` given to `create_document_from_source`, else the source as given, with a local path made absolute and its symlinks kept. A hook reads the stored document, if there is one, with `client.get_document_by_uri(request.uri)`. `source_id` is the ingesting source, an attachment's parent's included. An ad-hoc ingest passes the source recorded on the stored document, and `None` when there is none. An attachment's `uri` is `<parent uri>#attachment=<name>`, with the name URL-quoted.
 
 ```python
 class StripBoilerplateHook(Hook):
@@ -71,13 +71,13 @@ class StripBoilerplateHook(Hook):
 ```
 
 - `before_ingest` runs on every fetch, before the unchanged-bytes check, so it also runs for bytes that have not changed: a file whose modification time moved, an object uploaded again with the same bytes, an `add-src` re-run of a document stored without a `source_revision`.
-- The stored `md5` is that of the body the hook returns, and `source_revision` stays the source's. An unchanged source file that transforms to the same bytes is not re-ingested.
-- Keys a hook adds win over a metadata provider's and over the source's own metadata. The keys ingestion owns (`content_type`, `md5`, `source_revision`, `source_id`, `parent_uri`) are dropped. Any other value that is not JSON-serialisable fails the ingest as a `HookError` before conversion. A metadata provider receives the fetched bytes, never the hook's.
-- Raising `DocumentRejected(reason)` refuses the document. Nothing is written, and a stored copy stays. A hook that wants a stored standalone document gone deletes it through the client before raising. A stored attachment cannot be deleted on its own while its PDF is stored: `delete_document` raises `AttachmentDeletionError`, which fails the PDF's ingest as a `HookError`. Ingesting one document raises the exception with `uri` set, reading `<uri> rejected: <reason>`. A directory `add-src` logs that message as a warning and goes on to the next file, and a PDF's attachments skip a rejected one the same way. The ingester records the job `rejected` with that message, on the first attempt. A rejection is not a failure: it stays out of the dead-letter queue and does not make `run-batch` exit non-zero. `run-batch --retry rejected`, or the API's retry under `serve`, re-runs the job once the hook accepts the document.
+- The stored `md5` is the hash of the returned body, and `source_revision` stays the source's. An unchanged source file that transforms to the same bytes is not re-ingested.
+- Keys added by a hook win over a metadata provider's and over the source's own metadata. The ingestion-owned keys (`content_type`, `md5`, `source_revision`, `source_id`, `parent_uri`) are dropped. Any other value that is not JSON-serialisable fails the ingest as a `HookError` before conversion. A metadata provider receives the fetched bytes, never the hook's.
+- Raising `DocumentRejected(reason)` refuses the document. Nothing is written, and a stored copy stays. A hook that wants a stored standalone document gone deletes it through the client before raising. A stored attachment cannot be deleted on its own while its PDF is stored: `delete_document` raises `AttachmentDeletionError`, which fails the PDF's ingest as a `HookError`. A single-document ingest raises the exception with `uri` set, reading `<uri> rejected: <reason>`. A directory `add-src` logs that message as a warning and goes on to the next file, and a PDF's attachments skip a rejected one the same way. The ingester records the job `rejected` with that message, on the first attempt. A rejection is an outcome, not a failure: it stays out of the dead-letter queue and out of `run-batch`'s exit status. `run-batch --retry rejected`, or the API's retry under `serve`, re-runs the job once the hook accepts the document.
 - Any other exception fails the ingest as a `HookError` carrying the hook's exception as its cause, as does returning anything but an `IngestRequest` whose `body` is `bytes`. The ingester records the job dead on the first attempt. It retries instead when the hook's exception came from a connection, DNS or timeout error, an httpx transport error, an httpx HTTP 408, 429 or 5xx response, or a `TransientError`, anywhere in its chain of causes, the members of an exception group included. A hook raises `TransientError` for any other failure worth retrying.
 - The ingester skips a document whose source revision is unchanged before fetching it, so a new hook, or new options, changes stored documents only when their source changes or a FULL rebuild runs.
 - A PDF's attachments are ingested after the PDF itself, and not atomically with it: an attachment failure leaves the PDF and the attachments before it stored, and fails the ingest. A retry re-reconciles the attachments. A rejected attachment fails nothing, and the PDF is stored complete, so the hook sees that attachment again only when the PDF changes or a FULL rebuild runs.
-- With `extract_pdf_attachments` on, a PDF's `after_ingest` fires once the attachment pass has run: after every attachment's own event, nested PDFs included, with `md5` and, when the source supplies one, `source_revision` on the document. A PDF pdfium cannot open, or one at the attachment depth cap, skips the pass and fires at once. An ingest that fails partway leaves the PDF stored and searchable with no `after_ingest`. A retry that succeeds fires it. A job that stays dead never does, so a later `after_delete` can name a PDF the hook never saw ingested.
+- With `extract_pdf_attachments` on, a PDF's `after_ingest` fires once the attachment pass has run: after every attachment's own event, nested PDFs included, with `md5` and, when the source supplies one, `source_revision` on the document. A PDF that fails to open in pdfium, or one at the attachment depth cap, skips the pass and fires at once. An ingest that fails partway leaves the PDF stored and searchable with no `after_ingest`. A retry that succeeds fires it. A job that stays dead never does, so a later `after_delete` can name a PDF that never reached the hook's `after_ingest`.
 
 ## Metadata lifetime
 
@@ -112,9 +112,9 @@ class LanguageHook(Hook):
 
 ## Several databases
 
-Hooks fire once, at the client you call, whatever it covers. A search across several configured databases runs `before_search` once and hands `after_search` the fused, ranked list, with each result's `source` naming the database it came from. The per-database clients a federating client lends out through `clients_for` run no hooks of their own.
+Hooks fire once, at the client you call, whatever it covers. A search across several configured databases runs `before_search` once and hands `after_search` the fused, ranked list, with each result's `source` naming the database it came from. The per-database clients lent out by a federating client through `clients_for` run no hooks of their own.
 
-Lifespans follow the same ownership: they enter for a client that owns its session, single-database or federating, and never for a borrowed one. A federating client has no `client.store`; a lifespan running on one reaches a database through `clients_for` or keeps its own state. An ingester lifespan always runs on one database's client.
+Lifespans follow the same ownership: they enter for a client that owns its session, single-database or federating, and never for a borrowed one. A federating client has no `client.store`. A lifespan running on one reaches a database through `clients_for` or keeps its own state. An ingester lifespan always runs on one database's client.
 
 ## Registering a hook
 
@@ -161,9 +161,9 @@ hooks:
       min_length: 3
 ```
 
-This entry constructs `AbbreviationHook(min_length=3)`, which expands only abbreviations of three or more characters. A plain name calls the factory with no arguments.
+This entry constructs `AbbreviationHook(min_length=3)`. A plain name calls the factory with no arguments.
 
-An unknown name in `hooks:` raises `ValueError` when the client is constructed, so misconfiguration fails at startup. Entry points load lazily. Only the hooks the config references are imported.
+An unknown name in `hooks:` raises `ValueError` when the client is constructed. Entry points load lazily. Only the hooks referenced in the config are imported.
 
 ## Owning resources
 
@@ -188,7 +188,7 @@ Lifespans are entered in the order listed in config, once the session is open, a
 
 A lifespan enters for every client that owns its session, in every process that builds a client from the configuration: the ingester, the CLI, the MCP server, the RAG capability and the web app's backend. Readers run the configured hooks, search hooks included, so the hook packages must be installed wherever the configuration is loaded. To open a client with other hooks, or none, pass it a copy of the configuration: `HaikuRAG(config=config.model_copy(update={"hooks": []}))`.
 
-A lifespan that fails on entry fails `async with HaikuRAG(...)` and unwinds the lifespans already started: an activated hook that cannot start is a startup failure, not something to run degraded. An exception on exit is logged and swallowed, so one hook's teardown cannot strand another's. A cancellation propagates, and the client still closes. A hook is told which exception is being unwound, whether it came from the client's caller or from a later hook failing to start, but cannot suppress it.
+A lifespan that fails on entry fails `async with HaikuRAG(...)` and unwinds the lifespans already started: an activated hook that cannot start is a startup failure, not something to run degraded. An exception on exit is logged and swallowed, so the other hooks' teardowns still run. A cancellation propagates, and the client still closes. A hook is told which exception is being unwound, whether it came from the client's caller or from a later hook failing to start, but cannot suppress it.
 
 ## Background work
 
@@ -209,7 +209,7 @@ async def ingester_lifespan(self, client):
             task.cancel()
 ```
 
-The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop parked in one never returns and ingester shutdown hangs.
+The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop running in one never returns and ingester shutdown hangs.
 
 `run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it. With [maintenance](ingester.md#maintenance) enabled, the batch's maintenance pass runs after the exit and covers those writes.
 
@@ -257,15 +257,13 @@ The task's spans then belong to the trace of the ingest, under `hook.after_inges
 
 ## Result annotations
 
-`after_search` hooks can attach free-text notes on `SearchResult.annotations`. Annotations survive context expansion (merged results union the notes of their constituents, deduplicated) and render as `Note: text` lines in the agent-facing output of the RAG capability and the MCP search tools. This keeps the context cost proportional to what was retrieved instead of the size of your vocabulary.
+`after_search` hooks can attach free-text notes on `SearchResult.annotations`. Annotations survive context expansion (merged results union the notes of their constituents, deduplicated) and render as `Note: text` lines in the agent-facing output of the RAG capability and the MCP search tools.
 
 ## Semantics
 
-- **Post-commit hooks are best-effort observers.** By the time `after_ingest` or `after_delete` runs, the operation has committed. A hook failure is logged, subsequent hooks still run, and the operation still returns success (the ingester proceeds through its normal success path). Correctness-critical derived state therefore needs its own retry or reconciliation, such as the backfill loop below. `before_search` and `after_search` failures propagate: nothing has committed and failing the search is visible to the caller.
-- **Post-commit hooks are not a supported transformation point.** Mutating event models does not alter the committed record; explicit client writes are separate operations and are not atomic with the original write.
-- **Update equals ingest.** `after_ingest` fires for both creation and content updates, with `event.operation` set to `"create"` or `"update"` (creation against an already-stored URI reports `"update"`). Treat both as "replace any state you derived from these documents". The operation is informational, for notification or sync hooks. Metadata-only and title-only updates do not fire.
+- **Post-commit hooks are best-effort observers.** By the time `after_ingest` or `after_delete` runs, the operation has committed. A hook failure is logged, subsequent hooks still run, and the operation still returns success. Correctness-critical derived state therefore needs its own retry or reconciliation, such as the backfill loop below. Hooks run outside the store's write lock, so a hook may itself write to the database. `before_search` and `after_search` failures propagate: nothing has committed, and the caller sees the failed search.
+- **Post-commit hooks are not a supported transformation point.** A change to an event model leaves the committed record as it was. An explicit client write is a separate operation, not atomic with the original write.
 - **Batch your writes.** A batch import delivers all its documents in one event. A hook keeping LanceDB state should write once per event, not once per document, to avoid creating a table version per document.
-- **Hooks run after the write commits.** They execute outside the store's write lock, so a hook may itself write to the database, and a hook failure never rolls back the document write.
 - **Rebuild fires no post-commit hooks.** A FULL rebuild re-fetches source-backed documents, runs `before_ingest` on them, and can change their content, so a hook keeping content-derived state backfills after one. A `HookError` ends the rebuild. A rejection, like any other refresh failure, falls back to the stored content. The other modes leave content unchanged.
 - **Backfill is your loop.** A hook enabled on an existing database can backfill by iterating `client.list_documents()` and calling its own `after_ingest`.
 - **State lives in the database.** Hooks may create their own LanceDB tables via `client.store`. Prefix table names with `hook_` so they never collide with core tables or future migrations. State then travels with the database and its backups.

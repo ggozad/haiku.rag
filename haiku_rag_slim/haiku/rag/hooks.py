@@ -198,6 +198,11 @@ def hook_name(hook: Hook) -> str:
     return f"{cls.__module__}.{cls.__qualname__}"
 
 
+def overrides(hook: Hook, point: str) -> bool:
+    """Whether ``hook``'s class replaces Hook's ``point``."""
+    return getattr(type(hook), point, None) is not getattr(Hook, point)
+
+
 def hook_span(point: str, hook: Hook, **attributes: Any):
     # logfire names a span after an f-string argument's template.
     name = f"hook.{point}"
@@ -237,6 +242,8 @@ async def enter_lifespans(
     start propagates, leaving the earlier hooks registered on the stack for the
     caller to unwind."""
     for hook in hooks:
+        if not overrides(hook, point):
+            continue
         lifespan = getattr(hook, point)(client)
         with hook_span(f"{point}.enter", hook):
             await lifespan.__aenter__()
@@ -274,6 +281,8 @@ async def notify(
     if isinstance(event, IngestEvent):
         attributes["operation"] = event.operation
     for hook in hooks:
+        if not overrides(hook, method):
+            continue
         with hook_span(method, hook, **attributes) as span:
             try:
                 await getattr(hook, method)(client, event)
