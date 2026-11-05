@@ -112,7 +112,7 @@ class PollerManager:
         queued) so callers can treat a one-shot run as failed."""
         failed: list[str] = []
         for poller in self._pollers:
-            if not await poller._sweep_once():
+            if not await poller._sweep_once(skip_if_pending=True):
                 failed.append(poller.source_id)
         return failed
 
