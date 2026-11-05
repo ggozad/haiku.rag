@@ -17,6 +17,7 @@
 - Web app: the ingestion page shows loading until its first read, a running scan or retry on its button, empty sections as one line, and `ok` for a source with nothing to report. "Refresh" is renamed "Scan now", and "Retry failed" is disabled for a source without dead jobs.
 - Web app: the inspector's sidebar puts the database first, opens the search page from its Search tab, and folds the SQL filter. Document rows show the title on two lines, the source and the file name. A document's header links its `metadata.url` and shows its short metadata fields, and "Show on map" folds the map's state and controls when the document is not on it. Chunk labels show once each, with a count.
 - Web app: below 768 px the inspector shows the document list or the open view, not both, and the header drops the database chips below 1024 px and the search label below 640 px. The search overlay has a Close button. The corpus map lists the documents its find box matches, as buttons that select them. The app has an icon.
+- Web app: the example config enables `ingester.maintenance`.
 - Web app: URIs are shown decoded. The inspector renders table items as tables and chunk text in the sans font. Search results lead with the document title and show the passage without markdown markers.
 
 ### Fixed

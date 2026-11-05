@@ -65,6 +65,8 @@ ingester:
     path: /queue/ingester.db
   api:
     auth_token: ${INGESTER_TOKEN}
+  maintenance:
+    enabled: true
   databases:
     haiku.rag:
       sources:
