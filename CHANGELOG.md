@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.108.0] - 2026-11-05
+
 ### Added
 
 - `thinking: max` effort level.
@@ -3254,7 +3256,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.107.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.108.0...HEAD
+[0.108.0]: https://github.com/ggozad/haiku.rag/compare/0.107.0...0.108.0
 [0.107.0]: https://github.com/ggozad/haiku.rag/compare/0.106.0...0.107.0
 [0.106.0]: https://github.com/ggozad/haiku.rag/compare/0.105.0...0.106.0
 [0.105.0]: https://github.com/ggozad/haiku.rag/compare/0.104.0...0.105.0

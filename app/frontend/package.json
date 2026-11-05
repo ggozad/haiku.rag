@@ -1,6 +1,6 @@
 {
 	"name": "haiku-rag-app",
-	"version": "0.107.0",
+	"version": "0.108.0",
 	"private": true,
 	"scripts": {
 		"dev": "next dev",
