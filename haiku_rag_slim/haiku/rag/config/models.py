@@ -669,6 +669,7 @@ class APIConfig(ConfigModel):
     enabled: bool = True
     host: str = "127.0.0.1"
     port: int = Field(default=8765, ge=0, le=65535)
+    fd: int | None = Field(default=None, ge=0)
     auth_token: str | None = None
     root_path: str = Field(
         default="",

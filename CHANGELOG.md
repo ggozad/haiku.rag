@@ -5,6 +5,7 @@
 ### Added
 
 - `thinking: max` effort level.
+- Ingester: `ingester.api.fd` and `serve --fd` serve the control plane on an inherited listening socket (#830).
 
 ### Changed
 

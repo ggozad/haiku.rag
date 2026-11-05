@@ -1243,18 +1243,26 @@ class IngesterApp:
             app,
             host=ingester_cfg.api.host,
             port=ingester_cfg.api.port,
+            fd=ingester_cfg.api.fd,
             root_path=ingester_cfg.api.root_path,
             log_level="info",
             access_log=_api_access_log_enabled(),
             lifespan="off",
         )
         server = uvicorn.Server(config)
-        logger.info(
-            "API listening on %s:%d%s",
-            ingester_cfg.api.host,
-            ingester_cfg.api.port,
-            ingester_cfg.api.root_path,
-        )
+        if ingester_cfg.api.fd is not None:
+            logger.info(
+                "API listening on file descriptor %d%s",
+                ingester_cfg.api.fd,
+                ingester_cfg.api.root_path,
+            )
+        else:
+            logger.info(
+                "API listening on %s:%d%s",
+                ingester_cfg.api.host,
+                ingester_cfg.api.port,
+                ingester_cfg.api.root_path,
+            )
         return asyncio.create_task(server.serve()), server
 
 

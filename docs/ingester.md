@@ -412,9 +412,10 @@ haiku-ingester serve                          # workers, pollers and API
 haiku-ingester serve --no-api                 # workers and pollers only
 haiku-ingester serve --host 0.0.0.0           # bind the API on all interfaces
 haiku-ingester serve --port 9000              # API port
+haiku-ingester serve --fd 3                   # API on an inherited listening socket
 ```
 
-`--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--config`/`-c` names the configuration file.
+`--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--fd` overrides `ingester.api.fd`: the API serves on that already-listening socket, such as fd 3 from systemd socket activation, instead of binding a host and port. launchd passes no fixed descriptor: a launchd job needs a launcher that calls `launch_activate_socket()` and passes the descriptor to `--fd`. `--config`/`-c` names the configuration file.
 
 The service runs until `SIGINT` or `SIGTERM`, then cancels any reload, and stops the API server, the pollers and the workers, in that order. `SIGHUP` [reloads the databases](#reloading-databases).
 
@@ -428,7 +429,7 @@ The service runs until `SIGINT` or `SIGTERM`, then cancels any reload, and stops
 
 To remove a database, a reload stops claiming its jobs, stops its pollers once any sweep in progress ends, waits for its jobs in flight, deletes its queued and claimed jobs and its `sync_state` rows, and closes it. Its documents stay. The wait has no limit, so a removal lasts as long as the longest job in flight. The other databases keep ingesting throughout. A database added back is swept as new: every document is queued again, and one already stored at the same revision is not converted again.
 
-The file is the one named by `--config`, or found by the default lookup, at startup. Each reload follows a symlink at that path to its current target, as on a Kubernetes ConfigMap mount. `--host`, `--port` and `--root-path` override the file again on each reload. A reload refuses a change to any other section with 409 and names the sections, which need a restart. A file that fails to load or fails a startup check, such as two sources sharing an id, answers 422. Without a configuration file, a reload answers 409. Nothing changes in any of these cases.
+The file is the one named by `--config`, or found by the default lookup, at startup. Each reload follows a symlink at that path to its current target, as on a Kubernetes ConfigMap mount. `--host`, `--port`, `--fd` and `--root-path` override the file again on each reload. A reload refuses a change to any other section with 409 and names the sections, which need a restart. A file that fails to load or fails a startup check, such as two sources sharing an id, answers 422. Without a configuration file, a reload answers 409. Nothing changes in any of these cases.
 
 Reloads run one at a time, and the response comes once the change is applied. It answers 200 when everything applied, and 500 with the same body when a database failed:
 
@@ -496,6 +497,7 @@ ingester:
     enabled: true
     host: 127.0.0.1
     port: 8765
+    fd: null                                  # inherited listening socket, replaces host and port
     auth_token: ${INGESTER_TOKEN}             # unset: unauthenticated
     root_path: ""                             # e.g. /ingester behind a proxy
 ```
