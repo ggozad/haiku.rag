@@ -2,7 +2,7 @@
 
 The web app is a browser interface to a haiku.rag knowledge base. In it you ask questions and check each answer against its cited passages, follow the ingester as it adds the documents you copy into a folder, inspect documents and their chunks, and run health checks.
 
-![Chat: an answer with the agent's steps and its sources](img/app-chat.png)
+![Chat: an answer, its folded steps and its sources](img/app-chat.png)
 
 !!! warning "No authentication"
     The app has no authentication, and the frontend adds `INGESTER_TOKEN` to every request it forwards to the ingester. Anyone who reaches the frontend reads every configured database and can refresh the ingester's sources and retry or cancel its jobs. The Compose files publish the ports on `127.0.0.1` only. To serve the app beyond the local machine, put the frontend behind a reverse proxy that authenticates users.
