@@ -560,11 +560,7 @@ class JobRepo:
 
     async def has_pending(self, source_id: str) -> bool:
         """True iff at least one queued/claimed job exists for the source.
-
-        Cheap probe used by pollers to skip sweeps when there's already
-        outstanding work — the queue's unique index would dedupe new enqueues
-        anyway, so a sweep into a saturated queue is pure wasted listing work.
-        """
+        A one-shot sweep skips such a source."""
         query = (
             sa.select(jobs.c.id)
             .where(

@@ -451,6 +451,32 @@ async def test_source_refresh_triggers_sweep(tmp_path, jobs, sync):
     assert len(queued) == 1
 
 
+async def test_source_refresh_sweeps_a_source_with_pending_work(tmp_path, jobs, sync):
+    state, manager = _build_pollers_state(tmp_path, jobs, sync)
+    poller = manager.pollers[0]
+    await jobs.enqueue(poller.source_id, "file:///busy.md", JobOp.UPSERT)
+    poller.source = _StubSource(
+        poller.source_id,
+        [
+            [
+                SourceEvent(
+                    source_id=poller.source_id,
+                    uri="file:///new.md",
+                    kind=SourceEventKind.UPSERT,
+                    revision="v1",
+                    discovered_at=datetime.now(UTC),
+                )
+            ]
+        ],
+    )
+
+    async with _client(state) as client:
+        resp = await client.post(f"/sources/{poller.source_id}/refresh")
+    assert resp.json()["refreshed"] is True
+    queued = await jobs.list_jobs(source_id=poller.source_id)
+    assert {job.uri for job in queued} == {"file:///busy.md", "file:///new.md"}
+
+
 async def test_source_refresh_unknown_id_404(tmp_path, jobs, sync):
     state, _ = _build_pollers_state(tmp_path, jobs, sync)
     async with _client(state) as client:

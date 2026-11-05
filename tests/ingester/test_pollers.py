@@ -160,6 +160,8 @@ async def test_upsert_event_enqueues_job_and_touches_sync_state(fs_config, jobs,
 
 
 async def test_unchanged_event_touches_sync_state_no_job(fs_config, jobs, sync):
+    await sync.upsert("src", "file:///a.md", revision="r1", ingested=True)
+    seen = (await sync.get_row("src", "file:///a.md")).last_seen_at
     source = _StubSource(
         "src", [[_event("file:///a.md", kind=SourceEventKind.UNCHANGED, revision="r1")]]
     )
@@ -168,6 +170,25 @@ async def test_unchanged_event_touches_sync_state_no_job(fs_config, jobs, sync):
 
     assert await jobs.list_jobs(source_id="src") == []
     assert await sync.get_revision_snapshot("src") == {"file:///a.md": "r1"}
+    assert (await sync.get_row("src", "file:///a.md")).last_seen_at > seen
+
+
+async def test_unchanged_event_keeps_a_revision_written_during_the_sweep(
+    fs_config, jobs, sync
+):
+    """A worker that records a newer revision while the sweep lists the
+    older one keeps it."""
+    await sync.upsert("src", "file:///a.md", revision="r1", ingested=True)
+
+    class _WorkerFinishesMidSweep(_StubSource):
+        async def discover(self, since=None, *, known_uris=None):
+            await sync.upsert("src", "file:///a.md", revision="r2", ingested=True)
+            yield _event("file:///a.md", kind=SourceEventKind.UNCHANGED, revision="r1")
+
+    poller = _periodic(_WorkerFinishesMidSweep("src", []), fs_config, jobs, sync)
+    await poller._sweep_once()
+
+    assert await sync.get_revision_snapshot("src") == {"file:///a.md": "r2"}
 
 
 async def test_delete_event_enqueues_delete_job(fs_config, jobs, sync):
@@ -409,17 +430,97 @@ async def test_delete_event_skipped_when_delete_orphans_false(fs_config, jobs, s
     assert await jobs.list_jobs(source_id="src") == []
 
 
-async def test_repeated_sweep_skipped_when_queue_has_pending(fs_config, jobs, sync):
-    """Backpressure: once a job is queued/claimed, the next sweep skips
-    discover() entirely instead of churning the listing operation."""
+async def test_one_shot_sweep_skipped_when_queue_has_pending(fs_config, jobs, sync):
+    """A one-shot sweep skips discover() while the source has a queued or
+    claimed job."""
     event = _event("file:///a.md", revision="r1")
     source = _StubSource("src", [[event], [event]])
     poller = _periodic(source, fs_config, jobs, sync)
+    assert await poller._sweep_once(skip_if_pending=True) is True
+    assert source.discover_calls == 1
+    assert await poller._sweep_once(skip_if_pending=True) is False
+    assert source.discover_calls == 1
+
+
+async def test_sweep_enqueues_a_new_file_while_jobs_are_pending(fs_config, jobs, sync):
+    await jobs.enqueue("src", "file:///queued.md", JobOp.UPSERT)
+    await jobs.enqueue("src", "file:///running.md", JobOp.UPSERT)
+    assert await jobs.claim_next("worker") is not None
+    source = _StubSource("src", [[_event("file:///new.md")]])
+    poller = _periodic(source, fs_config, jobs, sync)
+
     assert await poller._sweep_once() is True
-    assert source.discover_calls == 1
-    # Second sweep: queue still has the live job → skip without calling discover.
-    assert await poller._sweep_once() is False
-    assert source.discover_calls == 1
+    uris = {job.uri for job in await jobs.list_jobs(source_id="src")}
+    assert uris == {"file:///queued.md", "file:///running.md", "file:///new.md"}
+    assert poller.last_skip_reason is None
+
+
+async def test_sweep_over_queued_files_enqueues_and_logs_nothing(
+    fs_config, jobs, sync, caplog
+):
+    await jobs.enqueue("src", "file:///a.md", JobOp.UPSERT, revision="v1")
+    source = _StubSource("src", [[_event("file:///a.md")]])
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with (
+        caplog.at_level(logging.INFO, logger=_POLLER_LOGGER.name),
+        capture_logs(_POLLER_LOGGER, logging.INFO) as records,
+    ):
+        assert await poller._sweep_once() is True
+    assert len(await jobs.list_jobs(source_id="src")) == 1
+    assert [r for r in records if r.getMessage().startswith("Swept")] == []
+
+
+async def test_sweep_logs_the_jobs_it_enqueued(fs_config, jobs, sync, caplog):
+    await jobs.enqueue("src", "file:///a.md", JobOp.UPSERT, revision="v1")
+    source = _StubSource("src", [[_event("file:///a.md"), _event("file:///b.md")]])
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    with (
+        caplog.at_level(logging.INFO, logger=_POLLER_LOGGER.name),
+        capture_logs(_POLLER_LOGGER, logging.INFO) as records,
+    ):
+        await poller._sweep_once()
+    assert [r.getMessage() for r in records] == [
+        "Swept src: 1 upsert, 0 delete, 0 unchanged"
+    ]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        _event("file:///a.md", revision="v2"),
+        _event("file:///a.md", kind=SourceEventKind.DELETE),
+    ],
+    ids=["modified", "deleted"],
+)
+async def test_a_change_to_a_running_file_is_enqueued_after_its_job(
+    fs_config, jobs, sync, change
+):
+    """A change to a file whose job is running cannot queue beside it, and the
+    sweep after the job completes enqueues it."""
+    await sync.upsert("src", "file:///b.md", revision="v1", ingested=True)
+    await jobs.enqueue("src", "file:///a.md", JobOp.UPSERT, revision="v1")
+    running = await jobs.claim_next("worker")
+    assert running is not None
+    kept = _event("file:///b.md", kind=SourceEventKind.UNCHANGED)
+    source = _StubSource("src", [[change, kept], [change, kept]])
+    poller = _periodic(source, fs_config, jobs, sync)
+
+    assert await poller._sweep_once() is True
+    assert [job.id for job in await jobs.list_jobs(source_id="src")] == [running.id]
+
+    assert await jobs.mark_succeeded(running.id, "worker")
+    await sync.upsert("src", "file:///a.md", revision="v1", ingested=True)
+    assert await poller._sweep_once() is True
+    queued = await jobs.list_jobs(source_id="src", status=JobStatus.QUEUED)
+    assert [(job.uri, job.op, job.revision) for job in queued] == [
+        (
+            "file:///a.md",
+            JobOp.UPSERT if change.revision else JobOp.DELETE,
+            change.revision,
+        )
+    ]
 
 
 async def test_skipped_sweep_records_pending_work_reason(fs_config, jobs, sync):
@@ -432,7 +533,7 @@ async def test_skipped_sweep_records_pending_work_reason(fs_config, jobs, sync):
     await poller._sweep_once()  # first sweep enqueues, succeeds
     assert poller.last_skip_reason is None
 
-    await poller._sweep_once()  # backpressure skips
+    await poller._sweep_once(skip_if_pending=True)  # backpressure skips
     assert poller.last_skip_reason == "pending_work"
 
     # Drain the queue, sweep again, reason clears.
@@ -549,7 +650,7 @@ async def test_failed_or_skipped_sweep_keeps_last_polled_at(fs_config, jobs, syn
 
     source.fail_with = None
     assert await jobs.enqueue("src", "file:///a.md", JobOp.UPSERT)
-    assert await poller._sweep_once() is False
+    assert await poller._sweep_once(skip_if_pending=True) is False
     assert poller.last_skip_reason == "pending_work"
     assert poller.last_polled_at == polled
 
@@ -753,6 +854,15 @@ async def test_manager_sources_available_at_construction(tmp_path, jobs, sync):
     http = next(s for s in sources if s.source_id == "urls")
     assert isinstance(http, HTTPSource)
     assert http.headers == {"Authorization": "Bearer abc"}
+
+
+async def test_sweep_all_fails_a_source_with_pending_work(tmp_path, jobs, sync):
+    cfg = FSSourceConfig(type="fs", id="local", root=tmp_path, poll_interval_s=60.0)
+    manager = PollerManager(configs=[cfg], job_repo=jobs, sync_repo=sync)
+    await jobs.enqueue("local", "file:///a.md", JobOp.UPSERT)
+
+    assert await manager.sweep_all() == ["local"]
+    assert manager.pollers[0].last_skip_reason == "pending_work"
 
 
 async def test_manager_double_start_raises(tmp_path, jobs, sync):

@@ -345,7 +345,7 @@ A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns
 - `poll_idle_interval_s`: lower picks up work faster and queries the queue more often.
 - `reaper_interval_s`: a crashed worker's job is reclaimed within `lease_ttl_s + reaper_interval_s`.
 
-A poller skips its periodic sweep while its source has queued or claimed jobs. Filesystem change events still flow during a skipped sweep.
+A poller sweeps its source on schedule whatever is queued. A file whose job is queued or running is not queued again, and a change to it is queued by the first sweep after the job ends. `run-batch` and `run-batch --dry-run` sweep each source once, and fail a source that has queued or claimed jobs at that sweep.
 
 On `SIGINT` or `SIGTERM`, pollers stop and workers get `shutdown_grace_s` to finish. Jobs still running after that are cancelled and returned to the queue. A job that cannot be returned is reclaimed by the reaper once its lease expires.
 
@@ -473,7 +473,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `GET` | `/` | Browser dashboard. Unauthenticated. Its script sends the token on its own requests |
 | `GET` | `/health` | Queue counts, live workers and pollers, worker breaker state, and `failed_databases`: each configured database that is not running, as `{"database", "error"}`. `status` is `degraded` when a worker or poller is down, the worker breaker is open or a configured database is not running. Unauthenticated |
 | `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason, and the error and time of the last failed discovery, cleared by the next successful sweep. `last_polled_at` is when the last successful sweep started: every file that matches the source's filters and changed before it has been listed, unless it was removed during the sweep |
-| `POST` | `/sources/{id}/refresh` | Run a sweep now, after any sweep of the source in progress. Skipped (`refreshed: false`) while the source has queued or claimed jobs, its breaker is open or a reload is removing it |
+| `POST` | `/sources/{id}/refresh` | Run a sweep now, after any sweep of the source in progress. `refreshed: false` when the source's breaker is open, its discovery failed or a reload is removing it |
 | `POST` | `/sources/{id}/retry` | Re-queue the source's failed jobs selected by the required `status` (`dead`, `rejected` or `all`), as `run-batch --retry` does, after any sweep of the source in progress and with no discovery of it running meanwhile. Returns `retried`, the count, and `worker_breaker_open`: while the source's worker breaker is open, the jobs stay queued. 404 for a source with no running poller, a source of a database that did not start included. 409 while a reload is removing the source |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |

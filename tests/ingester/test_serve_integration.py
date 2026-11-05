@@ -210,7 +210,7 @@ async def test_e2e_watchfiles_push_event_lands_as_job(tmp_path, jobs, sync):
 
 
 async def test_pre_existing_job_resolves_through_configured_source(
-    tmp_path, jobs, sync
+    tmp_path, jobs, sync, monkeypatch
 ):
     """A job already in the queue at startup is processed through the
     configured Source adapter (with its headers / auth), not an adhoc
@@ -226,6 +226,13 @@ async def test_pre_existing_job_resolves_through_configured_source(
         headers={"Authorization": "Bearer secret"},
     )
     manager = PollerManager(configs=[cfg], job_repo=jobs, sync_repo=sync)
+
+    async def _lists_nothing(since=None, *, known_uris=None):
+        return
+        yield
+
+    # The start-up sweep would HEAD the URL.
+    monkeypatch.setattr(manager.sources[0], "discover", _lists_nothing)
     pool = WorkerPool(
         clients={"auth": client},
         job_repo=jobs,
