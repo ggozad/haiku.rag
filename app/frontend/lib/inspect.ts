@@ -70,6 +70,15 @@ export function firstLine(text: string, length = 120): string {
 	return line.length > length ? `${line.slice(0, length - 1)}…` : line;
 }
 
+// Chunk text as one line of prose: markdown markers and table rules dropped.
+export function plainText(markdown: string): string {
+	return markdown
+		.replace(/^\s*(#{1,6}|[-+](?=\s)|\|?\s*:?-{3,}.*)\s*/gm, "")
+		.replace(/\*+|\|/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
 // The databases a search covers: every available one the user has not unticked,
 // so one that becomes available later is searched by default.
 export function searched(

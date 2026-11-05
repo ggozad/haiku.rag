@@ -19,7 +19,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, readableUri } from "@/lib/format";
 import { ingester } from "@/lib/ingestion";
 import JobDialog from "./JobDialog";
 import type { Job } from "./types";
@@ -153,7 +153,9 @@ export default function JobsBrowser({
 							>
 								<TableCell>{job.status}</TableCell>
 								<TableCell>{job.op}</TableCell>
-								<TableCell className="max-w-96 truncate">{job.uri}</TableCell>
+								<TableCell className="max-w-96 truncate">
+									{readableUri(job.uri)}
+								</TableCell>
 								<TableCell>{job.source_id}</TableCell>
 								<TableCell className="tabular-nums">
 									{job.attempts}/{job.max_attempts}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Markdown from "@/components/chat/Markdown";
 import { Loading } from "@/components/Status";
 import type { Block, Item } from "@/lib/inspect";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,12 @@ function ItemBlock({
 			);
 			break;
 		case "table":
+			body = (
+				<Markdown className="text-xs [&_td]:align-top [&_th]:align-top">
+					{item.text}
+				</Markdown>
+			);
+			break;
 		case "code":
 			body = (
 				<pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs">

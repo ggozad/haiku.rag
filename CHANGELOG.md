@@ -11,6 +11,8 @@
 
 - `pydantic-ai-slim` requires `>=2.66.0,<2.67.0`.
 - The `docling` extra installs `onnxruntime` (#828).
+- Web app: Inter and JetBrains Mono replace Geist and Geist Mono, and render Greek.
+- Web app: URIs are shown decoded. The inspector renders table items as tables and chunk text in the sans font. Search results lead with the document title and show the passage without markdown markers.
 
 ### Fixed
 

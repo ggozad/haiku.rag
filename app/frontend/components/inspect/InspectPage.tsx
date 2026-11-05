@@ -32,7 +32,7 @@ import {
 	withList,
 } from "@/lib/addresses";
 import { useDatabases } from "@/lib/databases";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, readableUri } from "@/lib/format";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
@@ -323,11 +323,11 @@ export default function InspectPage() {
 								)}
 							>
 								<div className="truncate font-medium">
-									{doc.title || doc.uri || doc.id}
+									{doc.title || (doc.uri && readableUri(doc.uri)) || doc.id}
 								</div>
 								{doc.title && doc.uri && doc.uri !== doc.title && (
 									<div className="truncate text-xs text-muted-foreground">
-										{doc.uri}
+										{readableUri(doc.uri)}
 									</div>
 								)}
 								<div className="flex gap-2 truncate text-xs text-muted-foreground">

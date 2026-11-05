@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { readableUri } from "@/lib/format";
 import { blocksOf, type Item, type OutlineNode } from "@/lib/inspect";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
@@ -80,11 +81,13 @@ export default function DocumentView({
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 			<div className="space-y-1 border-b px-4 py-3">
 				<h2 className="font-semibold">
-					{doc.data?.title || doc.data?.uri || documentId}
+					{doc.data?.title ||
+						(doc.data?.uri && readableUri(doc.data.uri)) ||
+						documentId}
 				</h2>
 				{doc.data?.uri && doc.data.uri !== doc.data.title && (
 					<p className="break-all text-xs text-muted-foreground">
-						{doc.data.uri}
+						{readableUri(doc.data.uri)}
 					</p>
 				)}
 				{doc.error && <p className="text-sm text-destructive">{doc.error}</p>}

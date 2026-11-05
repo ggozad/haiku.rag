@@ -4,6 +4,7 @@ import {
 	chunkCount,
 	firstLine,
 	type Item,
+	plainText,
 	searched,
 } from "./inspect";
 
@@ -77,5 +78,21 @@ describe("searched", () => {
 			"alpha",
 			"gamma",
 		]);
+	});
+});
+
+describe("plainText", () => {
+	it("drops markdown emphasis, headings and table pipes", () => {
+		expect(plainText("## Άρθρο 4\n**β)** να *μην* έχει: *** α)")).toBe(
+			"Άρθρο 4 β) να μην έχει: α)",
+		);
+		expect(plainText("| Rate | Food |\n|---|---|\n| 13% | yes |")).toBe(
+			"Rate Food 13% yes",
+		);
+	});
+
+	it("keeps list markers' text and underscores inside words", () => {
+		expect(plainText("- first_item\n- second")).toBe("first_item second");
+		expect(plainText("-5% change")).toBe("-5% change");
 	});
 });

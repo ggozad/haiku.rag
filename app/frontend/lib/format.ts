@@ -1,3 +1,11 @@
+export function readableUri(uri: string): string {
+	try {
+		return decodeURI(uri);
+	} catch {
+		return uri;
+	}
+}
+
 export function formatRelativeTime(dateStr: string, compact = false): string {
 	const now = Date.now();
 	const then = new Date(dateStr).getTime();

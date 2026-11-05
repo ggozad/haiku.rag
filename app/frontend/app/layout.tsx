@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import SearchOverlay from "@/components/SearchOverlay";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
-const geistMono = Geist_Mono({
-	subsets: ["latin"],
+// Both carry Greek and Cyrillic glyphs.
+const sans = Inter({ subsets: ["latin", "greek"], variable: "--font-sans" });
+const mono = JetBrains_Mono({
+	subsets: ["latin", "greek"],
 	variable: "--font-mono",
 	preload: false,
 });
@@ -24,10 +25,7 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<html
-			lang="en"
-			className={cn("font-sans", geist.variable, geistMono.variable)}
-		>
+		<html lang="en" className={cn("font-sans", sans.variable, mono.variable)}>
 			<body className="flex h-dvh flex-col bg-background text-foreground antialiased">
 				<TooltipProvider>
 					<AppHeader />
