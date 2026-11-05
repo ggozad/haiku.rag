@@ -18,6 +18,7 @@ from pydantic_ai import (
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
+    SystemPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -1013,16 +1014,19 @@ async def test_native_agent_composition_initializes_host_state(temp_db_path):
 
 
 async def test_deferred_capability_loads_native_tools(temp_db_path):
-    seen_instructions = []
-    loaded_payloads = []
+    seen_prompts = []
 
     def model_function(messages, info):
-        seen_instructions.append(info.instructions or "")
-        loaded_payloads.extend(
-            str(part.content)
-            for message in messages
-            for part in message.parts
-            if isinstance(part, ToolReturnPart) and part.tool_name == "load_capability"
+        seen_prompts.append(
+            "\n".join(
+                [info.instructions or ""]
+                + [
+                    str(part.content)
+                    for message in messages
+                    for part in message.parts
+                    if isinstance(part, SystemPromptPart | UserPromptPart)
+                ]
+            )
         )
         loaded = any(
             isinstance(part, ToolReturnPart) and part.tool_name == "load_capability"
@@ -1046,9 +1050,9 @@ async def test_deferred_capability_loads_native_tools(temp_db_path):
     result = await agent.run("Use RAG", deps=Deps())
 
     assert result.output == "loaded"
-    assert "# RAG" not in seen_instructions[0]
-    assert "# RAG" in loaded_payloads[0]
-    assert "search" in loaded_payloads[0]
+    assert "# RAG" not in seen_prompts[0]
+    assert "# RAG" in seen_prompts[1]
+    assert "search" in seen_prompts[1]
 
 
 def _record(deps: Deps, namespace: str) -> CapabilityEvidenceRecord:
@@ -1576,3 +1580,70 @@ class TestMultipleCollectionsInstructions:
 
         assert "Collection:" in capability.get_instructions()
         assert "Collections in this run: beta, alpha." in capability.get_instructions()
+
+
+async def test_resuming_after_an_unanswered_retry_without_identity_fails(
+    temp_db_path,
+):
+    """A rejected cite awaits the model, so it is a resumption like a pending call."""
+    from haiku.rag.client import HaikuRAG
+
+    async with HaikuRAG(temp_db_path, create=True):
+        pass
+
+    async def cites_nothing(messages, _info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": ["x"]})])
+        return ModelResponse(parts=[TextPart("answer")])
+
+    first = Agent(
+        FunctionModel(cites_nothing),
+        deps_type=Deps,
+        capabilities=[create_rag(db_path=temp_db_path, config=AppConfig())],
+    )
+    unanswered = (await first.run("q", deps=Deps())).all_messages()[:-1]
+
+    async def model(_messages, _info):  # pragma: no cover - never reached
+        return ModelResponse(parts=[TextPart("answer")])
+
+    resumed = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[create_rag(db_path=temp_db_path, config=AppConfig())],
+    )
+    with pytest.raises(RuntimeError, match="no stored question identity"):
+        await resumed.run(message_history=unanswered, deps=Deps())
+
+
+async def test_resuming_after_an_unanswered_output_retry_without_identity_fails(
+    temp_db_path,
+):
+    """A rejected answer awaits the model as much as a rejected tool call."""
+
+    async def answers(_messages, _info):
+        return ModelResponse(parts=[TextPart("answer")])
+
+    first = Agent(
+        FunctionModel(answers),
+        deps_type=Deps,
+        capabilities=[create_rag(db_path=temp_db_path, config=AppConfig())],
+    )
+
+    @first.output_validator
+    def reject_once(ctx: RunContext[Deps], output: str) -> str:
+        if ctx.retry == 0:
+            raise ModelRetry("try again")
+        return output
+
+    unanswered = (await first.run("q", deps=Deps())).all_messages()[:-1]
+
+    async def model(_messages, _info):  # pragma: no cover - never reached
+        return ModelResponse(parts=[TextPart("answer")])
+
+    resumed = Agent(
+        FunctionModel(model),
+        deps_type=Deps,
+        capabilities=[create_rag(db_path=temp_db_path, config=AppConfig())],
+    )
+    with pytest.raises(RuntimeError, match="no stored question identity"):
+        await resumed.run(message_history=unanswered, deps=Deps())
