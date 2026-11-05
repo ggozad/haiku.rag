@@ -2,7 +2,7 @@
 
 The web app is a browser interface to a haiku.rag knowledge base. In it you ask questions and check each answer against its cited passages, follow the ingester as it adds the documents you copy into a folder, inspect documents and their chunks, and run health checks.
 
-![Chat: an answer with the agent's steps and its sources](img/app-chat.png)
+![Chat: an answer, its folded steps and its sources](img/app-chat.png)
 
 !!! warning "No authentication"
     The app has no authentication, and the frontend adds `INGESTER_TOKEN` to every request it forwards to the ingester. Anyone who reaches the frontend reads every configured database and can refresh the ingester's sources and retry or cancel its jobs. The Compose files publish the ports on `127.0.0.1` only. To serve the app beyond the local machine, put the frontend behind a reverse proxy that authenticates users.
@@ -139,9 +139,9 @@ docker compose run --rm --user root backend chown -R 1001:1001 /sessions
 
 ## Ask questions
 
-Type a question in Chat and press Enter. Shift+Enter starts a new line, and the stop button ends an answer early. The answer streams in with the agent's steps: its searches, and any program it wrote to count or compare across documents. Below the answer, a badge says whether the answer is grounded in its sources, and the sources follow.
+Type a question in Chat and press Enter. Shift+Enter starts a new line, and the stop button ends an answer early. The agent's steps show while it works: its searches, and any program it wrote to count or compare across documents. Once the answer starts, they fold into one line that counts them. Click the line to open them, or its source count to reach the sources. Below the answer, a badge says whether the answer is grounded in its sources, and the sources follow.
 
-Open a source to read the cited passage. For a document with page images, such as a PDF, "View in document" shows the passage highlighted on its pages, scanned pages included. "Open in the inspector" opens the passage's chunk in a new tab.
+Open a source to read the cited passage. For a document with page images, such as a PDF, "View in document" shows the passage highlighted on its pages, scanned pages included. "Open in the inspector" opens the passage's chunk in a new tab. A document whose metadata carries an http(s) `url` gets a link to it, named by its host.
 
 To ask about particular documents, choose them with the "All documents" filter above the conversation. With a vision model (`qa.model.vision: true`), a question can carry images: pick, paste or drop them into the box.
 
@@ -157,19 +157,19 @@ The chip at the top right shows the ingester's state: idle, ingesting, holding f
 
 ## Inspect documents and chunks
 
-The Inspector lists the documents of a database. Open one to read its converted text, and to see its outline, chunks, pages and pictures.
+The Inspector lists the documents of a database, filtered by title or URI, or by a SQL filter on the documents. Open one to read its converted text, and to see its outline, chunks, pages and pictures. Its header shows the short fields of its metadata and links its `url` when that is an http(s) address. All metadata is one click away.
 
 The agent searches and cites chunks, short passages of a document. A chunk's page shows its text, what the agent receives when a search returns it, its place on the original page, and the most similar chunks. It is the place to look when an answer cites the wrong passage or misses one.
 
 ![A chunk on its original page, a scanned report from 1970](img/app-inspector-chunk.png)
 
-The Map tab places documents near others about similar things. "Compute the map" builds it, and "Compute again" refreshes it after new documents arrive. Select a document to list its nearest neighbours.
+The Map tab places documents near others about similar things. "Compute the map" builds it, and "Compute again" refreshes it after new documents arrive. Select a document, on the map or among the matches of the find box, to list its nearest neighbours.
 
-Ctrl+K, or Cmd+K on a Mac, searches from any page, by text or, with a multimodal embedder, by image. Each inspector page has its own address, so Back returns to the previous view and a link reopens the same one. "Ask about this document" starts a conversation limited to the open document.
+The Search tab, or Ctrl+K (Cmd+K on a Mac) from any page, searches every database, by text or, with a multimodal embedder, by image. Each inspector page has its own address, so Back returns to the previous view and a link reopens the same one. "Ask about this document" starts a conversation limited to the open document.
 
 ## Check its health
 
-The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". Each warning names its fix. The checks and the map run in the background. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
+The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". The report opens with its verdict, then the failures and warnings, each naming its fix. The passing checks fold into one line. The checks and the map run in the background. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
 
 ![The doctor: a near-duplicate pair and the checks](img/app-doctor.png)
 

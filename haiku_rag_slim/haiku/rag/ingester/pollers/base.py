@@ -152,14 +152,15 @@ class BasePoller:
         except TimeoutError:
             return False
 
-    async def _sweep_once(self) -> bool:
+    async def _sweep_once(self, *, skip_if_pending: bool = False) -> bool:
         """One discover() sweep. Returns True on success, False if the poller
-        is stopped, the breaker is open, the source has pending work already
-        queued, or the sweep failed (and was recorded)."""
+        is stopped, the breaker is open, the sweep failed (and was recorded),
+        or `skip_if_pending` is set and the source has a queued or claimed
+        job."""
         async with self._sweep_lock:
             if self._stop.is_set():
                 return False
-            return await self._sweep()
+            return await self._sweep(skip_if_pending=skip_if_pending)
 
     async def retry_failed(self, statuses: set[JobStatus]) -> int | None:
         """Re-queue this source's latest failures in `statuses` with no
@@ -169,7 +170,7 @@ class BasePoller:
                 return None
             return await self._jobs.retry_failed(statuses, source_ids=[self.source_id])
 
-    async def _sweep(self) -> bool:
+    async def _sweep(self, *, skip_if_pending: bool = False) -> bool:
         if self._breaker.is_open:
             self._last_skip_reason = "circuit_open"
             logger.debug(
@@ -177,10 +178,9 @@ class BasePoller:
             )
             return False
         with logfire.span("ingester.poller.sweep", source_id=self.source_id) as span:
-            if await self._jobs.has_pending(self.source_id):
-                # The unique index would dedupe a re-sweep into a saturated
-                # queue anyway; skipping saves the listing round-trip
-                # (PROPFIND / S3 LIST / FS walk) and keeps Logfire readable.
+            if skip_if_pending and await self._jobs.has_pending(self.source_id):
+                # A one-shot sweep runs once: an event deduplicated against a
+                # live job would never be discovered again.
                 self._last_skip_reason = "pending_work"
                 span.set_attribute("skipped", True)
                 span.set_attribute("skip_reason", "pending_work")
@@ -198,6 +198,7 @@ class BasePoller:
                     SourceEventKind.DELETE: 0,
                     SourceEventKind.UNCHANGED: 0,
                 }
+                enqueued = {SourceEventKind.UPSERT: 0, SourceEventKind.DELETE: 0}
                 sync_batch: list[SyncRow] = []
                 deletes: list[SourceEvent] = []
                 async for event in self.source.discover(
@@ -206,15 +207,16 @@ class BasePoller:
                     counts[event.kind] += 1
                     if event.kind is SourceEventKind.DELETE:
                         deletes.append(event)
-                    else:
-                        await self._handle_event(event, sync_batch)
+                    elif await self._handle_event(event, sync_batch):
+                        enqueued[event.kind] += 1
                 await self._check_listing(
                     listed=counts[SourceEventKind.UPSERT]
                     + counts[SourceEventKind.UNCHANGED],
                     deletes=[event.uri for event in deletes],
                 )
                 for event in deletes:
-                    await self._handle_event(event, sync_batch)
+                    if await self._handle_event(event, sync_batch):
+                        enqueued[SourceEventKind.DELETE] += 1
                 await self._sync.batch_upsert(sync_batch)
                 self._record_unsupported_files()
                 self._breaker.record_success()
@@ -224,12 +226,13 @@ class BasePoller:
                 span.set_attribute("upsert", counts[SourceEventKind.UPSERT])
                 span.set_attribute("delete", counts[SourceEventKind.DELETE])
                 span.set_attribute("unchanged", counts[SourceEventKind.UNCHANGED])
-                if counts[SourceEventKind.UPSERT] or counts[SourceEventKind.DELETE]:
+                span.set_attribute("enqueued", sum(enqueued.values()))
+                if any(enqueued.values()):
                     logger.info(
                         "Swept %s: %d upsert, %d delete, %d unchanged",
                         self.source_id,
-                        counts[SourceEventKind.UPSERT],
-                        counts[SourceEventKind.DELETE],
+                        enqueued[SourceEventKind.UPSERT],
+                        enqueued[SourceEventKind.DELETE],
                         counts[SourceEventKind.UNCHANGED],
                     )
                 return True
@@ -354,9 +357,11 @@ class BasePoller:
         self,
         event: SourceEvent,
         sync_batch: list[SyncRow],
-    ) -> None:
+    ) -> bool:
+        """Enqueue the event's job and note its `sync_state` touch. Returns
+        whether a job was enqueued."""
         if event.kind is SourceEventKind.UPSERT:
-            await self._jobs.enqueue(
+            job = await self._jobs.enqueue(
                 event.source_id,
                 event.uri,
                 op=JobOp.UPSERT,
@@ -368,19 +373,20 @@ class BasePoller:
             # after a successful ingestion. last_seen_at gets bumped to keep
             # orphan detection accurate.
             sync_batch.append(SyncRow(event.source_id, event.uri, None, None, False))
-        elif event.kind is SourceEventKind.UNCHANGED:
-            # Touch last_seen_at without changing the stored revision.
-            sync_batch.append(
-                SyncRow(event.source_id, event.uri, event.revision, None, False)
-            )
-        elif event.kind is SourceEventKind.DELETE:  # pragma: no branch - DELETE is last
-            if not self.config.delete_orphans:
-                return
-            await self._jobs.enqueue(
-                event.source_id,
-                event.uri,
-                op=JobOp.DELETE,
-                revision=event.revision,
-                max_attempts=max_attempts(self.config, self._default_max_attempts),
-                extra=_enqueue_extra(),
-            )
+            return job is not None
+        if event.kind is SourceEventKind.UNCHANGED:
+            # Touch last_seen_at without changing the stored revision, which a
+            # worker may have written since the sweep took its snapshot.
+            sync_batch.append(SyncRow(event.source_id, event.uri, None, None, False))
+            return False
+        if not self.config.delete_orphans:
+            return False
+        job = await self._jobs.enqueue(
+            event.source_id,
+            event.uri,
+            op=JobOp.DELETE,
+            revision=event.revision,
+            max_attempts=max_attempts(self.config, self._default_max_attempts),
+            extra=_enqueue_extra(),
+        )
+        return job is not None

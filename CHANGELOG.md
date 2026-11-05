@@ -6,6 +6,34 @@
 
 - `add-src DIR` logs a file that fails to ingest and continues with the rest of the directory. A wedged docling converter still stops the run (#827).
 
+## [0.108.0] - 2026-11-05
+
+### Added
+
+- `thinking: max` effort level.
+- Ingester: `ingester.api.fd` and `serve --fd` serve the control plane on an inherited listening socket (#830).
+
+### Changed
+
+- `pydantic-ai-slim` requires `>=2.66.0,<2.67.0`.
+- The `docling` extra installs `onnxruntime` (#828).
+- Web app: Inter and JetBrains Mono replace Geist and Geist Mono, and render Greek.
+- Web app: a chat answer's reasoning and tool calls fold into one summary line once the answer starts, with a link to its sources. A citation links the document's `metadata.url` when it is an http(s) address. An empty chat names the databases and document count a question covers.
+- Web app: the doctor's report opens with a verdict, lists failures and warnings, and folds the passing checks. The memory estimate follows the jobs.
+- Web app: the ingestion page shows loading until its first read, a running scan or retry on its button, empty sections as one line, and `ok` for a source with nothing to report. "Refresh" is renamed "Scan now", and "Retry failed" is disabled for a source without dead jobs.
+- Web app: the inspector's sidebar puts the database first, opens the search page from its Search tab, and folds the SQL filter. Document rows show the title on two lines, the source and the file name. A document's header links its `metadata.url` and shows its short metadata fields, and "Show on map" folds the map's state and controls when the document is not on it. Chunk labels show once each, with a count.
+- Web app: below 768 px the inspector shows the document list or the open view, not both, and the header drops the database chips below 1024 px and the search label below 640 px. The search overlay has a Close button. The corpus map lists the documents its find box matches, as buttons that select them. The app has an icon.
+- Web app: the example config enables `ingester.maintenance`.
+- Web app: URIs are shown decoded. The inspector renders table items as tables and chunk text in the sans font. Search results lead with the document title and show the passage without markdown markers.
+
+### Fixed
+
+- Ingester: `serve` sweeps a source while it has queued or claimed jobs. `POST /sources/{id}/refresh` no longer answers `refreshed: false` for pending work (#848).
+- Ingester: a maintenance pass runs without waiting for the database's jobs in flight, and a `quiet_s` pass starts once none is running (#845).
+- Ingester: the reaper never resets the claim of a job its own process is running (#843).
+- A hook gets a span only at a hook point it overrides (#840).
+- Web app: a chat that follows a streaming answer scrolls on to the sources shown when the run finishes.
+
 ## [0.107.0] - 2026-11-04
 
 ### Added
@@ -3232,7 +3260,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.107.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.108.0...HEAD
+[0.108.0]: https://github.com/ggozad/haiku.rag/compare/0.107.0...0.108.0
 [0.107.0]: https://github.com/ggozad/haiku.rag/compare/0.106.0...0.107.0
 [0.106.0]: https://github.com/ggozad/haiku.rag/compare/0.105.0...0.106.0
 [0.105.0]: https://github.com/ggozad/haiku.rag/compare/0.104.0...0.105.0

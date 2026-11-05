@@ -16,8 +16,15 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { type Check, counts, ordered, type Severity } from "@/lib/doctor";
+import {
+	type Check,
+	counts,
+	ordered,
+	type Severity,
+	verdict,
+} from "@/lib/doctor";
 import { withBasePath } from "@/lib/paths";
+import { cn } from "@/lib/utils";
 import { useJob } from "./useJob";
 
 const SEVERITY: Record<
@@ -90,6 +97,10 @@ export default function ChecksPanel({
 	const busy = job?.status === "queued" || job?.status === "running";
 	const checks = job?.result?.results ?? [];
 	const tally = counts(checks);
+	const summary = verdict(tally);
+	const SummaryIcon = SEVERITY[summary.tone].icon;
+	const problems = ordered(checks).filter((check) => check.severity !== "ok");
+	const passing = checks.filter((check) => check.severity === "ok");
 
 	return (
 		<section className="space-y-3">
@@ -138,16 +149,33 @@ export default function ChecksPanel({
 			)}
 			{job?.status === "done" && (
 				<>
-					<div className="flex gap-2 text-sm">
-						<Badge variant="destructive">{tally.fail} failed</Badge>
-						<Badge variant="outline">{tally.warn} warnings</Badge>
-						<Badge variant="secondary">{tally.ok} ok</Badge>
-					</div>
+					<p
+						className={cn(
+							"flex items-center gap-2 text-sm font-medium",
+							summary.tone === "fail" && "text-destructive",
+						)}
+					>
+						<SummaryIcon className="size-4" />
+						{summary.label}
+					</p>
 					<div className="space-y-2">
-						{ordered(checks).map((check) => (
+						{problems.map((check) => (
 							<CheckRow key={check.name} check={check} />
 						))}
 					</div>
+					{passing.length > 0 && (
+						<Collapsible>
+							<CollapsibleTrigger className="group flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+								<ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
+								Passing checks ({passing.length})
+							</CollapsibleTrigger>
+							<CollapsibleContent className="mt-2 space-y-2">
+								{passing.map((check) => (
+									<CheckRow key={check.name} check={check} />
+								))}
+							</CollapsibleContent>
+						</Collapsible>
+					)}
 				</>
 			)}
 		</section>

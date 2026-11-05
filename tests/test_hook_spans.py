@@ -7,6 +7,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.hooks import DocumentRejected, Hook, HookError
 from haiku.rag.store.models.chunk import Chunk, SearchResult
+from haiku.rag.store.models.document import Document
 from haiku.rag.telemetry import logfire
 from tests.conftest import capture_logs, fake_ingest_fetch_result
 from tests.documents import docling_doc
@@ -21,6 +22,27 @@ class ObservingHook(Hook):
 
     async def after_delete(self, client, event):
         pass
+
+
+class InheritedObserverHook(ObservingHook):
+    pass
+
+
+class LifespanOnlyHook(Hook):
+    @asynccontextmanager
+    async def lifespan(self, client):
+        yield
+
+
+class IngesterLifespanOnlyHook(Hook):
+    @asynccontextmanager
+    async def ingester_lifespan(self, client):
+        yield
+
+
+class BeforeIngestOnlyHook(Hook):
+    async def before_ingest(self, client, request):
+        return request
 
 
 class FailingObserverHook(Hook):
@@ -109,9 +131,48 @@ async def test_no_hooks_emit_no_hook_spans(temp_db_path, exporter):
     assert _hook_names(Tree(exporter)) == []
 
 
+async def test_a_hook_gets_spans_only_at_the_points_it_overrides(
+    temp_db_path, tmp_path, exporter, monkeypatch
+):
+    monkeypatch.setattr(
+        "haiku.rag.client.documents._ingest_fetch_result", fake_ingest_fetch_result
+    )
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    client = HaikuRAG(temp_db_path, create=True)
+    client._hooks = [Hook(), BeforeIngestOnlyHook()]
+    async with client:
+        async with client._ingester_lifespans():
+            doc = await client.create_document_from_source(path)
+        assert isinstance(doc, Document) and doc.id is not None
+        await client.delete_document(doc.id)
+        await _import(client, uri="mem://notified")
+        monkeypatch.setattr(client.chunk_repository, "search", _empty_repo_search)
+        await client.search("alpha")
+
+    tree = Tree(exporter)
+    assert _hook_names(tree) == ["hook.before_ingest"]
+    assert (
+        tree.attrs("hook.before_ingest")["hook"]
+        == "tests.test_hook_spans.BeforeIngestOnlyHook"
+    )
+
+
+async def test_an_inherited_override_gets_its_span(temp_db_path, exporter):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [InheritedObserverHook()]
+        await _import(client)
+
+    assert (
+        Tree(exporter).attrs("hook.after_ingest")["hook"]
+        == "tests.test_hook_spans.InheritedObserverHook"
+    )
+
+
 async def test_lifespan_entry_and_exit_each_get_a_span(temp_db_path, exporter):
     client = HaikuRAG(temp_db_path, create=True)
-    client._hooks = [Hook()]
+    client._hooks = [LifespanOnlyHook()]
     with logfire.span("caller"):
         async with client:
             pass
@@ -120,8 +181,9 @@ async def test_lifespan_entry_and_exit_each_get_a_span(temp_db_path, exporter):
     assert _hook_names(tree) == ["hook.lifespan.enter", "hook.lifespan.exit"]
     assert tree.parent_of("hook.lifespan.enter") == "caller"
     assert tree.parent_of("hook.lifespan.exit") == "caller"
-    assert tree.attrs("hook.lifespan.enter")["hook"] == "haiku.rag.hooks.Hook"
-    assert tree.attrs("hook.lifespan.exit")["hook"] == "haiku.rag.hooks.Hook"
+    name = "tests.test_hook_spans.LifespanOnlyHook"
+    assert tree.attrs("hook.lifespan.enter")["hook"] == name
+    assert tree.attrs("hook.lifespan.exit")["hook"] == name
 
 
 async def test_a_lifespan_exit_failure_is_recorded_and_swallowed(
@@ -143,7 +205,7 @@ async def test_a_lifespan_exit_failure_is_recorded_and_swallowed(
 
 async def test_ingester_lifespan_entry_and_exit_each_get_a_span(temp_db_path, exporter):
     client = HaikuRAG(temp_db_path, create=True)
-    client._hooks = [Hook()]
+    client._hooks = [IngesterLifespanOnlyHook()]
     async with client:
         with logfire.span("caller"):
             async with client._ingester_lifespans():
@@ -151,15 +213,14 @@ async def test_ingester_lifespan_entry_and_exit_each_get_a_span(temp_db_path, ex
 
     tree = Tree(exporter)
     assert _hook_names(tree) == [
-        "hook.lifespan.enter",
         "hook.ingester_lifespan.enter",
         "hook.ingester_lifespan.exit",
-        "hook.lifespan.exit",
     ]
     assert tree.parent_of("hook.ingester_lifespan.enter") == "caller"
     assert tree.parent_of("hook.ingester_lifespan.exit") == "caller"
-    assert tree.attrs("hook.ingester_lifespan.enter")["hook"] == "haiku.rag.hooks.Hook"
-    assert tree.attrs("hook.ingester_lifespan.exit")["hook"] == "haiku.rag.hooks.Hook"
+    name = "tests.test_hook_spans.IngesterLifespanOnlyHook"
+    assert tree.attrs("hook.ingester_lifespan.enter")["hook"] == name
+    assert tree.attrs("hook.ingester_lifespan.exit")["hook"] == name
 
 
 async def test_a_lifespan_entry_failure_is_recorded_and_raised(temp_db_path, exporter):
@@ -220,12 +281,12 @@ async def test_before_ingest_span_names_the_document(
     path.write_bytes(b"# Notes\n\nBody.\n")
 
     async with HaikuRAG(temp_db_path, create=True) as client:
-        client._hooks = [Hook()]
+        client._hooks = [BeforeIngestOnlyHook()]
         await client.create_document_from_source(path)
 
     tree = Tree(exporter)
     attrs = tree.attrs("hook.before_ingest")
-    assert attrs["hook"] == "haiku.rag.hooks.Hook"
+    assert attrs["hook"] == "tests.test_hook_spans.BeforeIngestOnlyHook"
     assert attrs["uri"] == path.as_uri()
     assert attrs["content_type"] == "text/markdown"
     assert "rejected" not in attrs
@@ -276,7 +337,7 @@ async def test_search_hook_spans_count_results(temp_db_path, exporter):
     caller = tree.one("caller").context
     assert caller is not None
     hook_spans = [s for s in tree.spans if s.name.startswith("hook.")]
-    assert len(hook_spans) == 4
+    assert len(hook_spans) == 3
     assert all(
         s.parent is not None and s.parent.span_id == caller.span_id for s in hook_spans
     )
@@ -288,7 +349,6 @@ async def test_search_hook_spans_count_results(temp_db_path, exporter):
         ("tests.test_hook_spans.PassThroughSearchHook", 3, 2),
     ]
     assert [a["hook"] for a in tree.every("hook.before_search")] == [
-        "tests.test_hook_spans.SeedResultsHook",
         "tests.test_hook_spans.PassThroughSearchHook",
     ]
 

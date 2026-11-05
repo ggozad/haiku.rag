@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw, RotateCcw } from "lucide-react";
+import { Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,18 +15,20 @@ import { formatRelativeTime } from "@/lib/format";
 import { ingestedDatabases, unsupportedFiles } from "@/lib/ingestion";
 import type { Source, Stats } from "./types";
 
-// The configured sources, their queued, dead and rejected counts, Refresh and
+// The configured sources, their queued, dead and rejected counts, Scan now and
 // Retry failed.
 // The database column shows when the ingester writes more than one.
 export default function SourcesPanel({
 	sources,
 	stats,
-	onRefresh,
+	busy,
+	onScan,
 	onRetry,
 }: {
 	sources: Source[];
 	stats: Stats | undefined;
-	onRefresh: (sourceId: string) => void;
+	busy: string | null;
+	onScan: (sourceId: string) => void;
 	onRetry: (sourceId: string) => void;
 }) {
 	const showDatabase = ingestedDatabases(sources).length > 1;
@@ -47,73 +49,91 @@ export default function SourcesPanel({
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{sources.map((source) => (
-						<TableRow key={source.source_id}>
-							<TableCell className="font-medium">{source.source_id}</TableCell>
-							{showDatabase && <TableCell>{source.database ?? "—"}</TableCell>}
-							<TableCell>{source.type}</TableCell>
-							<TableCell>
-								{source.last_polled_at
-									? formatRelativeTime(source.last_polled_at, true)
-									: "never"}
-							</TableCell>
-							<TableCell className="tabular-nums">
-								{stats?.queue_depth_by_source[source.source_id] ?? 0}
-							</TableCell>
-							<TableCell className="tabular-nums">
-								{stats?.dlq_by_source[source.source_id] ?? 0}
-							</TableCell>
-							<TableCell className="tabular-nums">
-								{stats?.rejected_by_source[source.source_id] ?? 0}
-							</TableCell>
-							<TableCell className="space-x-1">
-								{source.circuit_breaker_open && (
-									<Badge variant="destructive">breaker open</Badge>
+					{sources.map((source) => {
+						const dead = stats?.dlq_by_source[source.source_id] ?? 0;
+						const working = busy === source.source_id;
+						const healthy =
+							!source.circuit_breaker_open &&
+							!source.last_skip_reason &&
+							!source.last_error;
+						return (
+							<TableRow key={source.source_id}>
+								<TableCell className="font-medium">
+									{source.source_id}
+								</TableCell>
+								{showDatabase && (
+									<TableCell>{source.database ?? "—"}</TableCell>
 								)}
-								{source.last_skip_reason && (
-									<Badge variant="outline">
-										skipped: {source.last_skip_reason}
-									</Badge>
-								)}
-								{source.last_error && (
-									<>
-										<Badge
-											variant="destructive"
-											title={
-												source.last_error_at
-													? formatRelativeTime(source.last_error_at, true)
-													: undefined
-											}
-										>
-											discovery failed
+								<TableCell>{source.type}</TableCell>
+								<TableCell>
+									{source.last_polled_at
+										? formatRelativeTime(source.last_polled_at, true)
+										: "never"}
+								</TableCell>
+								<TableCell className="tabular-nums">
+									{stats?.queue_depth_by_source[source.source_id] ?? 0}
+								</TableCell>
+								<TableCell className="tabular-nums">{dead}</TableCell>
+								<TableCell className="tabular-nums">
+									{stats?.rejected_by_source[source.source_id] ?? 0}
+								</TableCell>
+								<TableCell className="space-x-1">
+									{healthy && <span className="text-muted-foreground">ok</span>}
+									{source.circuit_breaker_open && (
+										<Badge variant="destructive">breaker open</Badge>
+									)}
+									{source.last_skip_reason && (
+										<Badge variant="outline">
+											skipped: {source.last_skip_reason}
 										</Badge>
-										<span className="text-xs text-destructive">
-											{source.last_error}
-										</span>
-									</>
-								)}
-								<SkippedFiles counts={source.unsupported_files} />
-							</TableCell>
-							<TableCell className="space-x-1 text-right whitespace-nowrap">
-								<Button
-									size="sm"
-									variant="outline"
-									onClick={() => onRefresh(source.source_id)}
-								>
-									<RefreshCw />
-									Refresh
-								</Button>
-								<Button
-									size="sm"
-									variant="outline"
-									onClick={() => onRetry(source.source_id)}
-								>
-									<RotateCcw />
-									Retry failed
-								</Button>
-							</TableCell>
-						</TableRow>
-					))}
+									)}
+									{source.last_error && (
+										<>
+											<Badge
+												variant="destructive"
+												title={
+													source.last_error_at
+														? formatRelativeTime(source.last_error_at, true)
+														: undefined
+												}
+											>
+												discovery failed
+											</Badge>
+											<span className="text-xs text-destructive">
+												{source.last_error}
+											</span>
+										</>
+									)}
+									<SkippedFiles counts={source.unsupported_files} />
+								</TableCell>
+								<TableCell className="space-x-1 text-right whitespace-nowrap">
+									<Button
+										size="sm"
+										variant="outline"
+										disabled={busy !== null}
+										title="Run a discovery sweep of this source"
+										onClick={() => onScan(source.source_id)}
+									>
+										{working ? (
+											<Loader2 className="animate-spin" />
+										) : (
+											<RefreshCw />
+										)}
+										{working ? "Scanning…" : "Scan now"}
+									</Button>
+									<Button
+										size="sm"
+										variant="outline"
+										disabled={busy !== null || dead === 0}
+										onClick={() => onRetry(source.source_id)}
+									>
+										<RotateCcw />
+										Retry failed
+									</Button>
+								</TableCell>
+							</TableRow>
+						);
+					})}
 					{sources.length === 0 && (
 						<TableRow>
 							<TableCell

@@ -5,7 +5,6 @@ import pytest
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
-    RetryPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
@@ -24,16 +23,17 @@ from haiku.rag.config.models import AppConfig
 
 
 def test_count_tool_traffic_sees_a_rejected_cite_call():
-    """`_cite` rejects with ModelRetry, which is not a failed ToolReturnPart."""
+    """`_cite` rejects with ModelRetry, recorded as a retried ToolReturnPart."""
     messages = [
         ModelRequest(parts=[UserPromptPart(content="q")]),
         ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": []})]),
         ModelRequest(
             parts=[
-                RetryPromptPart(
+                ToolReturnPart(
                     tool_name="cite",
                     content="No citations registered: chunk_ids was empty.",
                     tool_call_id="1",
+                    outcome="retried",
                 )
             ]
         ),
@@ -397,3 +397,25 @@ def test_in_code_search_calls_are_summed_across_executions():
 
     assert result.n_executions == 3
     assert result.n_sandbox_search_calls == 3
+
+
+async def test_counts_a_cite_the_capability_rejected(tmp_path):
+    """`_cite` rejects an unresolvable id with ModelRetry."""
+    from pydantic_ai.models.function import FunctionModel
+
+    from haiku.rag.client import HaikuRAG
+
+    db = tmp_path / "rag.lancedb"
+    async with HaikuRAG(db, create=True):
+        pass
+
+    async def cites_unknown(messages, _info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": ["x"]})])
+        return ModelResponse(parts=[TextPart("done")])
+
+    result = await run_capability_question(
+        create_rag, db, AppConfig(), "q", FunctionModel(cites_unknown)
+    )
+
+    assert result.n_failed_tools == 1

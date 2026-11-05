@@ -1,3 +1,11 @@
+export function readableUri(uri: string): string {
+	try {
+		return decodeURI(uri);
+	} catch {
+		return uri;
+	}
+}
+
 export function formatRelativeTime(dateStr: string, compact = false): string {
 	const now = Date.now();
 	const then = new Date(dateStr).getTime();
@@ -15,4 +23,10 @@ export function formatRelativeTime(dateStr: string, compact = false): string {
 			: `${hours} hour${hours === 1 ? "" : "s"} ago`;
 	const days = Math.floor(hours / 24);
 	return compact ? `${days}d ago` : new Date(dateStr).toLocaleDateString();
+}
+
+// The document's web address, when its metadata names an http(s) one.
+export function publicUrl(meta?: Record<string, unknown>): string | null {
+	const url = meta?.url;
+	return typeof url === "string" && /^https?:\/\//i.test(url) ? url : null;
 }

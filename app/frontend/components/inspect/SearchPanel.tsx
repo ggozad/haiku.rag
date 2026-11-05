@@ -15,9 +15,10 @@ import {
 } from "@/components/ui/select";
 import { type SearchInputs, searchHref } from "@/lib/addresses";
 import type { DatabaseEntry } from "@/lib/databases";
+import { readableUri } from "@/lib/format";
 import { decoded } from "@/lib/http";
 import { type Attachment, readImage } from "@/lib/images";
-import { firstLine, searched } from "@/lib/inspect";
+import { plainText, searched } from "@/lib/inspect";
 import { withBasePath } from "@/lib/paths";
 import type { ChunkRef } from "./ChunkView";
 
@@ -316,27 +317,35 @@ export default function SearchPanel({
 										})
 									}
 								>
-									<div className="flex gap-2 text-xs text-muted-foreground">
-										<span className="tabular-nums">#{rank + 1}</span>
-										<span className="tabular-nums">
+									<div className="flex items-baseline gap-2">
+										<span className="text-xs text-muted-foreground tabular-nums">
+											{rank + 1}
+										</span>
+										<span className="min-w-0 flex-1 truncate text-sm font-medium">
+											{result.document_title ||
+												(result.document_uri &&
+													readableUri(result.document_uri))}
+										</span>
+										<span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+											{result.source}
+											{result.page_numbers.length > 0 &&
+												` · p. ${result.page_numbers.join(", ")}`}
+										</span>
+										<span
+											className="shrink-0 text-xs text-muted-foreground/70 tabular-nums"
+											title="Score"
+										>
 											{result.score.toFixed(3)}
 										</span>
-										<span>{result.source}</span>
-										<span className="truncate">
-											{result.document_title || result.document_uri}
-										</span>
-										{result.page_numbers.length > 0 && (
-											<span>p. {result.page_numbers.join(", ")}</span>
-										)}
 									</div>
 									{result.headings && (
 										<div className="truncate text-xs text-muted-foreground">
 											{result.headings.join(" › ")}
 										</div>
 									)}
-									<div className="text-sm">
-										{firstLine(result.content, 300)}
-									</div>
+									<p className="mt-1 line-clamp-3 text-sm text-foreground/90">
+										{plainText(result.content)}
+									</p>
 								</button>
 							</li>
 						))}

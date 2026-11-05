@@ -50,8 +50,8 @@ class WorkerPool:
     `resume` hold a served source's claims. While a worker
     processes a job it renews the job's lease on a `heartbeat_interval_s`
     cadence; a reaper task resets claims whose lease has gone stale
-    (`lease_ttl_s`) so a crashed worker doesn't strand its job, without
-    reaping jobs that are merely slow. Lifecycle: build it, await
+    (`lease_ttl_s`) so a crashed worker doesn't strand its job. The reaper
+    never resets a job this pool is running. Lifecycle: build it, await
     start(), let it run, await stop().
     """
 
@@ -152,7 +152,8 @@ class WorkerPool:
     def heartbeat_alive(self) -> bool:
         """Whether the lease-renewal task is running. Once the pool is started
         this stays True until stop(); a False here while workers are live means
-        in-flight leases are no longer being renewed and may be reaped."""
+        in-flight leases are no longer being renewed, and a successor process
+        reaps them at startup."""
         return self._heartbeat is not None and not self._heartbeat.done()
 
     @property
@@ -222,11 +223,15 @@ class WorkerPool:
         """Claim jobs of `source_ids` again, those still served."""
         self._paused.difference_update(source_ids)
 
+    def busy(self, source_ids: "Collection[str]") -> bool:
+        """Whether a job of `source_ids` is in flight."""
+        return any(s in source_ids for s in self._executions.values())
+
     async def wait_idle(self, source_ids: "Collection[str]") -> None:
         """Return once no job of `source_ids` is in flight."""
         while True:
             self._finished.clear()
-            if not any(s in source_ids for s in self._executions.values()):
+            if not self.busy(source_ids):
                 return
             await self._finished.wait()
 
@@ -366,7 +371,11 @@ class WorkerPool:
             await self._sleep_or_stop(self._reaper_interval_s)
             if self._stop.is_set():
                 return
-            reset = await self._jobs.reap_stale(self._lease_ttl_s)
+            # Under the claim lock every claim this pool holds is in `_inflight`.
+            async with self.claim_lock:
+                reset = await self._jobs.reap_stale(
+                    self._lease_ttl_s, keep=self._inflight
+                )
             if reset:
                 logger.info("Reaper reset %d stale claim(s)", reset)
             if self._retention_s is not None:
@@ -375,12 +384,11 @@ class WorkerPool:
                     logger.info("Reaper pruned %d terminal job(s)", pruned)
 
     async def _heartbeat_loop(self) -> None:
-        """Renew the lease on this pool's in-flight jobs so the reaper leaves
-        them alone while they are still being processed. Continues renewing
-        through graceful shutdown until the last job drains, so a peer process
-        doesn't reap a job we're still finishing. A forced shutdown cancels
-        this task along with the workers, which is correct — they are no longer
-        draining gracefully."""
+        """Renew the lease on this pool's in-flight jobs, so the leases of a
+        process that is gone expire and the ones of a live process do not.
+        Continues renewing through graceful shutdown until the last job drains,
+        so a successor process started meanwhile leaves the draining jobs
+        alone. A forced shutdown cancels this task along with the workers."""
         while True:
             if self._inflight:
                 try:

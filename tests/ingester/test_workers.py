@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -707,11 +707,9 @@ async def test_shutdown_grace_timeout_releases_claim(client, jobs, sync):
 # --- heartbeat / lease renewal ---
 
 
-async def test_heartbeat_keeps_long_job_from_being_reaped(client, jobs, sync):
-    """A job that takes longer than lease_ttl_s is kept alive by the heartbeat,
-    so the reaper never resets it and it completes exactly once. Without
-    renewal the reaper would reset the claim mid-flight and the final
-    mark_succeeded would be a no-op, leaving the job back in 'queued'."""
+async def test_heartbeat_renews_a_job_longer_than_its_lease(client, jobs, sync):
+    """The heartbeat renews the lease of a job that outlasts `lease_ttl_s`, and
+    the job completes once."""
     calls = 0
 
     async def _slow(*args, **kwargs):
@@ -736,9 +734,12 @@ async def test_heartbeat_keeps_long_job_from_being_reaped(client, jobs, sync):
         reaper_interval_s=0.05,
     )
     await pool.start()
+    heartbeats = set()
     try:
         for _ in range(100):
             refreshed = await jobs.get_job(job.id)
+            if refreshed is not None and refreshed.status is JobStatus.CLAIMED:
+                heartbeats.add(refreshed.last_heartbeat_at)
             if refreshed is not None and refreshed.status is JobStatus.SUCCEEDED:
                 break
             await asyncio.sleep(0.05)
@@ -749,6 +750,7 @@ async def test_heartbeat_keeps_long_job_from_being_reaped(client, jobs, sync):
     assert refreshed is not None
     assert refreshed.status is JobStatus.SUCCEEDED
     assert calls == 1
+    assert len(heartbeats) > 1, "the heartbeat did not renew the running job"
 
 
 async def test_heartbeat_continues_during_graceful_stop(client, jobs, sync):
@@ -1502,6 +1504,136 @@ async def test_reaper_resets_stale_claims(client, jobs, sync, conn):
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.QUEUED
+
+
+async def _backdate_lease(conn, job_id: str) -> None:
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ? WHERE id = ?",
+        (long_ago, long_ago, job_id),
+    )
+    await conn.commit()
+
+
+async def _wait_for_status(jobs, job_id: str, status: JobStatus) -> None:
+    for _ in range(100):
+        job = await jobs.get_job(job_id)
+        if job is not None and job.status is status:
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"job {job_id} never reached {status}")
+
+
+async def test_reaper_leaves_a_running_job_with_a_stale_lease(jobs, sync, conn):
+    """A lease that reads stale because the wall clock jumped or the process
+    was frozen does not cost a running job its claim."""
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    gate = asyncio.Event()
+    client = _gated_client(gate)
+    pool = _pool(
+        client,
+        jobs,
+        sync,
+        worker_count=1,
+        lease_ttl_s=1,
+        heartbeat_interval_s=60,
+        reaper_interval_s=0.05,
+    )
+    await pool.start()
+    try:
+        await _wait_for_status(jobs, job.id, JobStatus.CLAIMED)
+        claimed_by = (await jobs.get_job(job.id)).claimed_by
+        await _backdate_lease(conn, job.id)
+        await asyncio.sleep(0.3)
+        held = await jobs.get_job(job.id)
+        assert held is not None and held.status is JobStatus.CLAIMED
+        assert held.claimed_by == claimed_by
+        gate.set()
+        await _wait_for_status(jobs, job.id, JobStatus.SUCCEEDED)
+    finally:
+        gate.set()
+        await pool.stop()
+    assert client._ingest_observed.await_count == 1
+
+
+async def test_reaper_resets_the_claim_of_a_worker_that_died(
+    jobs, sync, conn, monkeypatch
+):
+    """A worker task that dies mid-job stops tracking it, so the periodic
+    reaper returns the job to the queue once its lease expires."""
+
+    async def _broken(*args, **kwargs):
+        raise RuntimeError("queue write failed")
+
+    monkeypatch.setattr(jobs, "mark_succeeded", _broken)
+    pool = _pool(
+        _ingesting_client(),
+        jobs,
+        sync,
+        worker_count=1,
+        lease_ttl_s=1,
+        heartbeat_interval_s=60,
+        reaper_interval_s=0.05,
+    )
+    await pool.start()
+    try:
+        job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+        assert job is not None
+        for _ in range(100):
+            if pool.live_workers == 0:
+                break
+            await asyncio.sleep(0.02)
+        assert pool.live_workers == 0
+        orphan = await jobs.get_job(job.id)
+        assert orphan is not None and orphan.status is JobStatus.CLAIMED
+        await _backdate_lease(conn, job.id)
+        await _wait_for_status(jobs, job.id, JobStatus.QUEUED)
+    finally:
+        await pool.stop()
+
+
+async def test_reaper_waits_for_a_claim_in_progress(jobs, sync, conn, monkeypatch):
+    """A claim written to the queue but not yet tracked by the pool is not
+    reaped: the reaper waits for the claim to be tracked."""
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    claimed, release = asyncio.Event(), asyncio.Event()
+    claim_next = jobs.claim_next
+
+    async def _paused(worker_id, *, source_ids=None):
+        result = await claim_next(worker_id, source_ids=source_ids)
+        if result is not None:
+            claimed.set()
+            await release.wait()
+        return result
+
+    monkeypatch.setattr(jobs, "claim_next", _paused)
+    gate = asyncio.Event()
+    pool = _pool(
+        _gated_client(gate),
+        jobs,
+        sync,
+        worker_count=1,
+        lease_ttl_s=1,
+        heartbeat_interval_s=60,
+        reaper_interval_s=0.05,
+    )
+    await pool.start()
+    try:
+        await claimed.wait()
+        await _backdate_lease(conn, job.id)
+        await asyncio.sleep(0.3)
+        release.set()
+        await asyncio.sleep(0.3)
+        held = await jobs.get_job(job.id)
+        assert held is not None and held.status is JobStatus.CLAIMED
+        gate.set()
+        await _wait_for_status(jobs, job.id, JobStatus.SUCCEEDED)
+    finally:
+        gate.set()
+        release.set()
+        await pool.stop()
 
 
 async def test_reaper_prunes_old_terminal_jobs(client, jobs, sync, conn):

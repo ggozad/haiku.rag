@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Local-first agentic RAG with citations - hybrid search, reranking and multimodal retrieval over your own documents, no database server required - Minimal dependencies"
-version = "0.107.0"
+version = "0.108.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -48,7 +48,7 @@ dependencies = [
     "pathspec>=1.0.4",
     "pillow>=13.0.0,<14.0.0",
     "pydantic>=2.12.5",
-    "pydantic-ai-slim[openai,logfire,ag-ui]>=2.54.0,<2.60.0",
+    "pydantic-ai-slim[openai,logfire,ag-ui]>=2.66.0,<2.67.0",
     "pydantic-monty>=1.4.0,<1.5.0",
     "pyarrow>=16,<25",
     "pypdfium2>=5.0",
@@ -79,6 +79,7 @@ docling = [
     "docling-ibm-models==4.0.4",
     "docling-parse==7.23.0",
     "opencv-python-headless>=4.6.0.66,<5.0.0.0",
+    "onnxruntime>=1.24.1,<2.0.0",
 ]
 # S3 / object-storage monitoring
 s3 = ["obstore>=0.9,<0.10"]

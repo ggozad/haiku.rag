@@ -33,15 +33,17 @@ export default function AppHeader() {
 		if (/Mac|iPhone|iPad/.test(navigator.userAgent)) setShortcut("⌘K");
 	}, []);
 	return (
-		<header className="flex h-12 shrink-0 items-center gap-6 border-b px-4">
-			<span className="font-semibold tracking-tight">haiku.rag</span>
+		<header className="flex h-12 shrink-0 items-center gap-3 border-b px-4 sm:gap-6">
+			<span className="hidden font-semibold tracking-tight sm:inline">
+				haiku.rag
+			</span>
 			<nav className="flex items-center gap-1">
 				{PAGES.map((page) => (
 					<Link
 						key={page.href}
 						href={page.href}
 						className={cn(
-							"rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground",
+							"rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:px-3",
 							current(pathname, page) && "bg-muted text-foreground",
 						)}
 					>
@@ -54,13 +56,18 @@ export default function AppHeader() {
 					variant="outline"
 					size="sm"
 					className="text-muted-foreground"
+					aria-label="Search"
 					onClick={openSearch}
 				>
 					<Search />
-					Search
-					<kbd className="ml-2 font-mono text-xs">{shortcut}</kbd>
+					<span className="hidden sm:inline">Search</span>
+					<kbd className="ml-2 hidden font-mono text-xs sm:inline">
+						{shortcut}
+					</kbd>
 				</Button>
-				<DatabaseStatus />
+				<div className="hidden lg:block">
+					<DatabaseStatus />
+				</div>
 				<IngestionChip />
 			</div>
 		</header>

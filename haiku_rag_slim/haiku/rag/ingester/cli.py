@@ -296,6 +296,12 @@ def serve(
         "--port",
         help="Bind the HTTP control plane to PORT (overrides ingester.api.port).",
     ),
+    fd: int | None = typer.Option(
+        None,
+        "--fd",
+        help="Serve the HTTP control plane on the inherited listening socket FD, "
+        "such as 3 under systemd socket activation (overrides ingester.api.fd).",
+    ),
     root_path: str | None = typer.Option(
         None,
         "--root-path",
@@ -320,6 +326,7 @@ def serve(
         for field, value in {
             "host": host,
             "port": port,
+            "fd": fd,
             "root_path": root_path,
         }.items()
         if value is not None

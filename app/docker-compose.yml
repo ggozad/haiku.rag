@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/ggozad/haiku.rag-app-backend:${HAIKU_RAG_VERSION:-0.107.0}
+    image: ghcr.io/ggozad/haiku.rag-app-backend:${HAIKU_RAG_VERSION:-0.108.0}
     # No authentication; bound to loopback. The frontend reaches it over the compose network.
     ports:
       - "127.0.0.1:8001:8000"
@@ -24,7 +24,7 @@ services:
   # DOCS_VOLUME at /docs, and writes each database listed under
   # ingester.databases.
   ingester:
-    image: ghcr.io/ggozad/haiku.rag-slim:${HAIKU_RAG_VERSION:-0.107.0}
+    image: ghcr.io/ggozad/haiku.rag-slim:${HAIKU_RAG_VERSION:-0.108.0}
     command: ["haiku-ingester", "--config", "/app/config/haiku.rag.yaml", "serve", "--host", "0.0.0.0"]
     # No authentication beyond the token; bound to loopback like the backend.
     ports:
@@ -60,7 +60,7 @@ services:
       start_interval: 5s
 
   frontend:
-    image: ghcr.io/ggozad/haiku.rag-app-frontend:${HAIKU_RAG_VERSION:-0.107.0}
+    image: ghcr.io/ggozad/haiku.rag-app-frontend:${HAIKU_RAG_VERSION:-0.108.0}
     # No authentication; it proxies every backend route, so it stays on loopback too.
     ports:
       - "127.0.0.1:3000:3000"

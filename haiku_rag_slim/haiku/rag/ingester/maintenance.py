@@ -84,14 +84,14 @@ class DatabaseMaintenance:
         return self._session.unmaintained_since is not None
 
     async def run_once(self) -> MaintenanceResult:
-        """Pause the database's claims, wait for its jobs in flight, maintain
-        it, resume. A failed pass leaves the database due."""
+        """Pause the database's claims, maintain it, resume. Jobs in flight run
+        on, and their writes wait for the pass. A failed pass leaves the
+        database due."""
         session = self._session
         since: float | None = None
         await self._pool.pause(self._source_ids)
         try:
             with logfire.span("ingester.maintenance", database=self.name) as span:
-                await self._pool.wait_idle(self._source_ids)
                 since, session.unmaintained_since = session.unmaintained_since, None
                 result = await maintain(self._client)
                 span.set_attribute("vacuumed", result.vacuumed)
@@ -108,9 +108,10 @@ class DatabaseMaintenance:
         return result
 
     async def run(self) -> None:
-        """Pass whenever the database is due: `quiet_s` after its last write,
-        or `max_wait_s` after the first since the last pass. A start makes it
-        due. A failed pass is logged and retried after `quiet_s`."""
+        """Pass whenever the database is due: `quiet_s` after its last write
+        once none of its jobs is in flight, or `max_wait_s` after the first
+        write since the last pass. A start makes it due. A failed pass is
+        logged and retried after `quiet_s`."""
         session = self._session
         if session.unmaintained_since is None:
             session.unmaintained_since = monotonic()
@@ -118,6 +119,15 @@ class DatabaseMaintenance:
             delay = self._due_in()
             if delay > 0:
                 await asyncio.sleep(delay)
+                continue
+            max_wait = self._max_wait_in()
+            if max_wait > 0 and self._pool.busy(self._source_ids):
+                try:
+                    await asyncio.wait_for(
+                        self._pool.wait_idle(self._source_ids), timeout=max_wait
+                    )
+                except TimeoutError:
+                    pass
                 continue
             try:
                 await self.run_once()
@@ -134,5 +144,10 @@ class DatabaseMaintenance:
         if since is None:
             return min(self._config.quiet_s, self._config.max_wait_s)
         last = max(session.last_write_at or since, since)
-        due = min(last + self._config.quiet_s, since + self._config.max_wait_s)
-        return due - monotonic()
+        return min(last + self._config.quiet_s - monotonic(), self._max_wait_in())
+
+    def _max_wait_in(self) -> float:
+        """Seconds until a due database passes whatever is in flight."""
+        since = self._session.unmaintained_since
+        assert since is not None, "only a due database has a max_wait deadline"
+        return since + self._config.max_wait_s - monotonic()

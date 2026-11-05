@@ -1,4 +1,5 @@
-import type { InputContent, Message } from "@ag-ui/client";
+import type { InputContent, Message, ToolCall } from "@ag-ui/client";
+import type { DatabaseEntry } from "./databases";
 import { newId } from "./id";
 import { type Attachment, MAX_IMAGES } from "./images";
 
@@ -15,6 +16,7 @@ export interface Citation {
 	content: string;
 	doc_item_refs?: string[];
 	picture_refs?: string[];
+	document_meta?: Record<string, unknown>;
 }
 
 // A selected document: ids repeat only between copies of a database, so the
@@ -45,6 +47,71 @@ export function toolResults(messages: Message[]): Map<string, string> {
 		}
 	}
 	return results;
+}
+
+export type Step =
+	| { kind: "reasoning"; id: string; content: string }
+	| { kind: "call"; call: ToolCall };
+
+export type Segment =
+	| { kind: "message"; message: Message; index: number }
+	| { kind: "activity"; key: string; steps: Step[]; messageIds: string[] };
+
+// The conversation as it reads: each unbroken stretch of reasoning and tool
+// calls becomes one activity, placed where its first step was.
+export function segments(messages: Message[]): Segment[] {
+	const out: Segment[] = [];
+	let activity: Extract<Segment, { kind: "activity" }> | null = null;
+	const step = (id: string, next: Step) => {
+		if (!activity) {
+			activity = { kind: "activity", key: id, steps: [], messageIds: [] };
+			out.push(activity);
+		}
+		activity.steps.push(next);
+		return activity;
+	};
+	messages.forEach((message, index) => {
+		if (message.role === "reasoning") {
+			step(message.id, {
+				kind: "reasoning",
+				id: message.id,
+				content: message.content,
+			});
+		} else if (message.role === "assistant") {
+			for (const call of message.toolCalls ?? []) {
+				step(call.id, { kind: "call", call }).messageIds.push(message.id);
+			}
+			if (message.content) {
+				activity = null;
+				out.push({ kind: "message", message, index });
+			}
+		} else if (message.role !== "tool") {
+			activity = null;
+			out.push({ kind: "message", message, index });
+		}
+	});
+	return out;
+}
+
+const plural = (count: number, one: string, many: string) =>
+	`${count} ${count === 1 ? one : many}`;
+
+// One line for an activity: the searches and programs it ran.
+export function activitySummary(steps: Step[]): string {
+	const counts = new Map<string, number>();
+	for (const step of steps) {
+		if (step.kind !== "call" || step.call.function.name === "cite") continue;
+		const name = step.call.function.name;
+		counts.set(name, (counts.get(name) ?? 0) + 1);
+	}
+	const parts = [...counts].map(([name, count]) =>
+		name === "search"
+			? plural(count, "search", "searches")
+			: name === "execute_code"
+				? plural(count, "program", "programs")
+				: `${count} ${name}`,
+	);
+	return parts.length ? parts.join(", ") : "Reasoning";
 }
 
 export interface Checkpoint {
@@ -281,4 +348,20 @@ export function statusOf(summary: RunSummary): Status | null {
 		};
 	}
 	return null;
+}
+
+// What a question covers: the selected documents, else every available database.
+export function scopeLine(
+	databases: DatabaseEntry[],
+	selected: number,
+): string {
+	if (selected === 1) return "Ask about the selected document.";
+	if (selected > 1) return `Ask about the ${selected} selected documents.`;
+	const available = databases.filter((db) => db.available);
+	const documents = available.reduce((sum, db) => sum + (db.documents ?? 0), 0);
+	const names = new Intl.ListFormat("en").format(
+		available.map((db) => db.name),
+	);
+	const count = `${documents.toLocaleString("en")} ${documents === 1 ? "document" : "documents"}`;
+	return `Ask about ${count} in ${names}.`;
 }

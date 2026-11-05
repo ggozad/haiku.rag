@@ -337,7 +337,7 @@ ingester:
 
 A DELETE job skipped because the resource is back at the source completes successfully and preserves its sync state and earlier dead or rejected jobs. Discovery can still detect a later removal. If the document belongs to another source or has no owner, the worker leaves it indexed and removes only the requesting source's sync state and failed jobs for that URI. A DELETE for a URL confirmed gone by a 404 keeps the source's sync state, at revision `http-404`.
 
-A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. A slow job keeps renewing and is never reaped while it runs.
+A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. The reaper never returns a job that its own process is running, so a slow job, a clock that jumps forward or a process that was suspended does not lose a claim.
 
 - `lease_ttl_s` bounds how long a crashed worker's job waits before another worker takes it. It need not exceed job duration.
 - `heartbeat_interval_s` must be at most `lease_ttl_s / 3`.
@@ -345,7 +345,7 @@ A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns
 - `poll_idle_interval_s`: lower picks up work faster and queries the queue more often.
 - `reaper_interval_s`: a crashed worker's job is reclaimed within `lease_ttl_s + reaper_interval_s`.
 
-A poller skips its periodic sweep while its source has queued or claimed jobs. Filesystem change events still flow during a skipped sweep.
+A poller sweeps its source on schedule whatever is queued. A file whose job is queued or running is not queued again, and a change to it is queued by the first sweep after the job ends. `run-batch` and `run-batch --dry-run` sweep each source once, and fail a source that has queued or claimed jobs at that sweep.
 
 On `SIGINT` or `SIGTERM`, pollers stop and workers get `shutdown_grace_s` to finish. Jobs still running after that are cancelled and returned to the queue. A job that cannot be returned is reclaimed by the reaper once its lease expires.
 
@@ -387,7 +387,7 @@ Workers keep a second breaker per source over job failures. After 5 consecutive 
 
 ## Maintenance
 
-With `ingester.maintenance.enabled`, the ingester maintains each database it writes. A pass stops claiming the database's jobs, waits for its jobs in flight, vacuums it, builds the vector index when there is none, and claims its jobs again. Other databases keep ingesting during the pass.
+With `ingester.maintenance.enabled`, the ingester maintains each database it writes. A pass stops claiming the database's jobs, vacuums it, builds the vector index when there is none, and claims its jobs again. Jobs already running carry on, and their writes wait for the pass. Other databases keep ingesting during the pass.
 
 ```yaml
 ingester:
@@ -399,7 +399,7 @@ ingester:
 
 Vacuum keeps every existing index current: it adds rows written since the last vacuum to the full-text, scalar and vector indexes, and splits the vector index's partitions as the table grows, so a pass never retrains an index. See [Vector indexing](configuration/storage.md#vector-indexing). The ingester's clients do not auto-vacuum while maintenance is enabled, whatever `storage.auto_vacuum` says. Other writers, `haiku-rag add-src` included, still do.
 
-`serve` makes every database due at start, and runs a pass `quiet_s` after its last write or `max_wait_s` after its first write since the last pass, whichever is sooner. A database under constant ingestion is still vacuumed every `max_wait_s`. A failed pass is logged and retried after `quiet_s`. `run-batch` and manifest replay run one pass over each database written during the run, after the queue drains and the hooks' ingester lifespans exit, and exit non-zero naming a database whose pass failed. Nothing runs on LanceDB Cloud.
+`serve` makes every database due at start, and runs a pass `quiet_s` after its last write once none of its jobs is running, or `max_wait_s` after its first write since the last pass, whichever is sooner. A database under constant ingestion is still vacuumed every `max_wait_s`. A failed pass is logged and retried after `quiet_s`. `run-batch` and manifest replay run one pass over each database written during the run, after the queue drains and the hooks' ingester lifespans exit, and exit non-zero naming a database whose pass failed. Nothing runs on LanceDB Cloud.
 
 A pass holds the database's write lock while it vacuums and while it builds an index (see the build times under [Vector indexing](configuration/storage.md#vector-indexing)). Shutdown, and a reload that removes the database, wait for a running vacuum step and cancel an index build. `/stats` reports each database's last pass under `maintenance_by_database`.
 
@@ -412,9 +412,10 @@ haiku-ingester serve                          # workers, pollers and API
 haiku-ingester serve --no-api                 # workers and pollers only
 haiku-ingester serve --host 0.0.0.0           # bind the API on all interfaces
 haiku-ingester serve --port 9000              # API port
+haiku-ingester serve --fd 3                   # API on an inherited listening socket
 ```
 
-`--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--config`/`-c` names the configuration file.
+`--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--fd` overrides `ingester.api.fd`: the API serves on that already-listening socket, such as fd 3 from systemd socket activation, instead of binding a host and port. launchd passes no fixed descriptor: a launchd job needs a launcher that calls `launch_activate_socket()` and passes the descriptor to `--fd`. `--config`/`-c` names the configuration file.
 
 The service runs until `SIGINT` or `SIGTERM`, then cancels any reload, and stops the API server, the pollers and the workers, in that order. `SIGHUP` [reloads the databases](#reloading-databases).
 
@@ -428,7 +429,7 @@ The service runs until `SIGINT` or `SIGTERM`, then cancels any reload, and stops
 
 To remove a database, a reload stops claiming its jobs, stops its pollers once any sweep in progress ends, waits for its jobs in flight, deletes its queued and claimed jobs and its `sync_state` rows, and closes it. Its documents stay. The wait has no limit, so a removal lasts as long as the longest job in flight. The other databases keep ingesting throughout. A database added back is swept as new: every document is queued again, and one already stored at the same revision is not converted again.
 
-The file is the one named by `--config`, or found by the default lookup, at startup. Each reload follows a symlink at that path to its current target, as on a Kubernetes ConfigMap mount. `--host`, `--port` and `--root-path` override the file again on each reload. A reload refuses a change to any other section with 409 and names the sections, which need a restart. A file that fails to load or fails a startup check, such as two sources sharing an id, answers 422. Without a configuration file, a reload answers 409. Nothing changes in any of these cases.
+The file is the one named by `--config`, or found by the default lookup, at startup. Each reload follows a symlink at that path to its current target, as on a Kubernetes ConfigMap mount. `--host`, `--port`, `--fd` and `--root-path` override the file again on each reload. A reload refuses a change to any other section with 409 and names the sections, which need a restart. A file that fails to load or fails a startup check, such as two sources sharing an id, answers 422. Without a configuration file, a reload answers 409. Nothing changes in any of these cases.
 
 Reloads run one at a time, and the response comes once the change is applied. It answers 200 when everything applied, and 500 with the same body when a database failed:
 
@@ -472,7 +473,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `GET` | `/` | Browser dashboard. Unauthenticated. Its script sends the token on its own requests |
 | `GET` | `/health` | Queue counts, live workers and pollers, worker breaker state, and `failed_databases`: each configured database that is not running, as `{"database", "error"}`. `status` is `degraded` when a worker or poller is down, the worker breaker is open or a configured database is not running. Unauthenticated |
 | `GET` | `/sources` | Configured sources, the database each feeds, last poll time, breaker state, last skip reason, and the error and time of the last failed discovery, cleared by the next successful sweep. `last_polled_at` is when the last successful sweep started: every file that matches the source's filters and changed before it has been listed, unless it was removed during the sweep |
-| `POST` | `/sources/{id}/refresh` | Run a sweep now, after any sweep of the source in progress. Skipped (`refreshed: false`) while the source has queued or claimed jobs, its breaker is open or a reload is removing it |
+| `POST` | `/sources/{id}/refresh` | Run a sweep now, after any sweep of the source in progress. `refreshed: false` when the source's breaker is open, its discovery failed or a reload is removing it |
 | `POST` | `/sources/{id}/retry` | Re-queue the source's failed jobs selected by the required `status` (`dead`, `rejected` or `all`), as `run-batch --retry` does, after any sweep of the source in progress and with no discovery of it running meanwhile. Returns `retried`, the count, and `worker_breaker_open`: while the source's worker breaker is open, the jobs stay queued. 404 for a source with no running poller, a source of a database that did not start included. 409 while a reload is removing the source |
 | `GET` | `/jobs` | Jobs filtered by `status`, `source_id`, `uri`, `limit`, `offset` |
 | `GET` | `/jobs/{id}` | One job |
@@ -496,6 +497,7 @@ ingester:
     enabled: true
     host: 127.0.0.1
     port: 8765
+    fd: null                                  # inherited listening socket, replaces host and port
     auth_token: ${INGESTER_TOKEN}             # unset: unauthenticated
     root_path: ""                             # e.g. /ingester behind a proxy
 ```

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { firstLine } from "@/lib/inspect";
+import { firstLine, labelCounts } from "@/lib/inspect";
 
 export const PAGE = 50;
 
@@ -50,7 +50,7 @@ export default function ChunksTab({
 									chunk.metadata.page_numbers?.length
 										? `p. ${chunk.metadata.page_numbers.join(", ")}`
 										: "",
-									chunk.metadata.labels?.join(", ") ?? "",
+									labelCounts(chunk.metadata.labels ?? []),
 								]
 									.filter(Boolean)
 									.join(" · ")}

@@ -560,11 +560,7 @@ class JobRepo:
 
     async def has_pending(self, source_id: str) -> bool:
         """True iff at least one queued/claimed job exists for the source.
-
-        Cheap probe used by pollers to skip sweeps when there's already
-        outstanding work — the queue's unique index would dedupe new enqueues
-        anyway, so a sweep into a saturated queue is pure wasted listing work.
-        """
+        A one-shot sweep skips such a source."""
         query = (
             sa.select(jobs.c.id)
             .where(
@@ -739,10 +735,13 @@ class JobRepo:
             result = await conn.execute(stmt)
         return result.rowcount or 0
 
-    async def reap_stale(self, lease_ttl_seconds: int) -> int:
-        """Reset claimed jobs whose lease has gone stale back to `queued`. A
-        live worker renews its lease via `renew_claims`, so a claim is stale
-        only when its owner stopped renewing (crash, wedged loop, lost DB).
+    async def reap_stale(
+        self, lease_ttl_seconds: int, *, keep: Collection[str] = ()
+    ) -> int:
+        """Reset claimed jobs whose lease has gone stale back to `queued`,
+        except the job ids in `keep`. A live worker renews its lease via
+        `renew_claims`, so a claim is stale only when its owner stopped
+        renewing (crash, wedged loop, lost DB).
         Staleness is measured against the last heartbeat, falling back to
         claimed_at for a claim made by a process that doesn't write the lease
         (an older version sharing the queue). Decrements `attempts` to undo the
@@ -753,7 +752,12 @@ class JobRepo:
         lease = sa.func.coalesce(jobs.c.last_heartbeat_at, jobs.c.claimed_at)
         stmt = (
             sa.update(jobs)
-            .where(self._owned, jobs.c.status == "claimed", lease < threshold)
+            .where(
+                self._owned,
+                jobs.c.status == "claimed",
+                lease < threshold,
+                jobs.c.id.not_in(sorted(keep)),
+            )
             .values(
                 status="queued",
                 claimed_at=None,

@@ -167,6 +167,21 @@ describe("CorpusMap", () => {
 		expect(screen.getAllByText("Document b").length).toBeGreaterThan(0);
 	});
 
+	it("lists the documents the find box matches, and selects one from the list", async () => {
+		const user = userEvent.setup();
+		render(<Mapped />);
+		await user.type(
+			await screen.findByPlaceholderText("Find a document by title or URI"),
+			"document b",
+		);
+		await user.click(screen.getByRole("button", { name: "Document b" }));
+		expect(
+			screen
+				.getByRole("link", { name: "Open in the inspector" })
+				.getAttribute("href"),
+		).toBe("/inspect/alpha/b");
+	});
+
 	it("marks a nearest document on the map while its row is hovered", async () => {
 		const user = userEvent.setup();
 		render(<Mapped start="a" />);

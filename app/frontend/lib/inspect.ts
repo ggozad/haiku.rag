@@ -70,6 +70,52 @@ export function firstLine(text: string, length = 120): string {
 	return line.length > length ? `${line.slice(0, length - 1)}…` : line;
 }
 
+// Chunk text as one line of prose: markdown markers and table rules dropped.
+export function plainText(markdown: string): string {
+	return markdown
+		.replace(/^\s*(#{1,6}|[-+](?=\s)|\|?\s*:?-{3,}.*)\s*/gm, "")
+		.replace(/\*+|\|/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+// A chunk's item labels, each once with its count.
+export function labelCounts(labels: string[]): string {
+	const counts = new Map<string, number>();
+	for (const label of labels) counts.set(label, (counts.get(label) ?? 0) + 1);
+	return [...counts]
+		.map(([label, n]) => (n > 1 ? `${label} ×${n}` : label))
+		.join(", ");
+}
+
+// Keys the ingester owns, and keys a document's header shows on their own.
+const UNLISTED = new Set([
+	"content_type",
+	"md5",
+	"source_revision",
+	"source_id",
+	"parent_uri",
+	"title",
+	"url",
+]);
+
+// The metadata a document's header shows inline: short scalar values, in
+// their stored order. The rest stays under "All metadata".
+export function headlineMetadata(
+	meta: Record<string, unknown>,
+): [string, string][] {
+	const out: [string, string][] = [];
+	for (const [key, value] of Object.entries(meta)) {
+		if (UNLISTED.has(key) || value === null || typeof value === "object")
+			continue;
+		const text = String(value);
+		if (text.length > 80) continue;
+		out.push([key, text]);
+		if (out.length === 8) break;
+	}
+	return out;
+}
+
 // The databases a search covers: every available one the user has not unticked,
 // so one that becomes available later is searched by default.
 export function searched(

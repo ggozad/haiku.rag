@@ -18,6 +18,7 @@ import {
 	saveDraft,
 	saveDraftImages,
 	savePending,
+	scopeLine,
 	settlePending,
 } from "@/lib/chat";
 import { useDatabases } from "@/lib/databases";
@@ -269,6 +270,11 @@ function ChatSession({
 				messageRuns={session.message_runs}
 				hidden={new Set(session.inserted)}
 				showSource={(info?.databases.length ?? 0) > 1}
+				empty={
+					info
+						? scopeLine(info.databases, session.selection.length)
+						: "Ask a question about the documents."
+				}
 			/>
 			{notice && (
 				<div className="mx-auto w-full max-w-3xl px-4 pb-2">

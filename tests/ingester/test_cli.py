@@ -479,6 +479,16 @@ def test_serve_passes_host_and_port(monkeypatch):
     assert captured["config"].ingester.api.port == 9999
 
 
+def test_serve_passes_fd(monkeypatch):
+    captured = _captured_app(monkeypatch)
+
+    result = runner.invoke(cli, ["serve", "--fd", "3"])
+
+    assert result.exit_code == 0
+    assert captured["config"].ingester.api.fd == 3
+    assert captured["api_overrides"] == {"fd": 3}
+
+
 def test_serve_passes_root_path(monkeypatch):
     fake = AsyncMock()
     captured = {}

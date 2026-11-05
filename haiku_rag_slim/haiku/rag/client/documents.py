@@ -31,6 +31,7 @@ from haiku.rag.hooks import (
     hook_name,
     hook_span,
     notify,
+    overrides,
 )
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -621,6 +622,8 @@ async def _before_ingest(
         content_type=result.content_type,
     )
     for hook in client._hooks:
+        if not overrides(hook, "before_ingest"):
+            continue
         rejected: DocumentRejected | None = None
         with hook_span(
             "before_ingest", hook, uri=uri, content_type=result.content_type

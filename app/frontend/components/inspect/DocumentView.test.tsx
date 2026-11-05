@@ -46,7 +46,7 @@ const chunk = (n: number) => ({
 let requested: string[];
 let scrolled: string[];
 
-function serve(documentId: string) {
+function serve(documentId: string, metadata: Record<string, unknown> = {}) {
 	return vi.fn(async (url: string) => {
 		requested.push(url);
 		const { pathname, searchParams } = new URL(url, "http://app");
@@ -56,7 +56,7 @@ function serve(documentId: string) {
 				id: documentId,
 				title: `Title of ${documentId}`,
 				uri: `doc://${documentId}`,
-				metadata: {},
+				metadata,
 				created_at: "t",
 				updated_at: "t",
 			},
@@ -298,5 +298,25 @@ describe("DocumentView", () => {
 		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
 		await user.click(screen.getByRole("tab", { name: "Pictures" }));
 		await screen.findByText("no such document");
+	});
+
+	it("shows a document's short metadata and its web address in the header", async () => {
+		vi.stubGlobal(
+			"fetch",
+			serve("d1", {
+				number: "Α.1/2025",
+				url: "https://example.org/d1",
+				md5: "81134a21",
+			}),
+		);
+		render(<Stateful source="orb" documentId="d1" onOpenChunk={() => {}} />);
+		const shown = await screen.findAllByText("Α.1/2025");
+		expect(shown.some((element) => element.closest("details") === null)).toBe(
+			true,
+		);
+		expect(screen.getByText("81134a21").closest("details")).not.toBeNull();
+		expect(
+			screen.getByRole("link", { name: "example.org" }).getAttribute("href"),
+		).toBe("https://example.org/d1");
 	});
 });

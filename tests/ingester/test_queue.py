@@ -894,6 +894,25 @@ async def test_reap_stale_leaves_fresh_claims_alone(jobs):
     assert refreshed.status is JobStatus.CLAIMED
 
 
+async def test_reap_stale_leaves_kept_claims_alone(conn, jobs):
+    kept = await jobs.enqueue("s", "kept", JobOp.UPSERT)
+    reaped = await jobs.enqueue("s", "reaped", JobOp.UPSERT)
+    assert kept is not None and reaped is not None
+    assert await jobs.claim_next("w1") is not None
+    assert await jobs.claim_next("w2") is not None
+    long_ago = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    await conn.execute(
+        "UPDATE jobs SET claimed_at = ?, last_heartbeat_at = ?", (long_ago, long_ago)
+    )
+    await conn.commit()
+
+    assert await jobs.reap_stale(lease_ttl_seconds=60, keep=[kept.id]) == 1
+    still = await jobs.get_job(kept.id)
+    gone = await jobs.get_job(reaped.id)
+    assert still is not None and still.status is JobStatus.CLAIMED
+    assert gone is not None and gone.status is JobStatus.QUEUED
+
+
 async def test_claim_next_sets_both_timestamps(jobs):
     await jobs.enqueue("s", "u", JobOp.UPSERT)
     claimed = await jobs.claim_next("w")

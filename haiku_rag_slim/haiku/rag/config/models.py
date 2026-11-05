@@ -9,7 +9,7 @@ from haiku.rag.utils.paths import get_default_data_dir
 DEFAULT_DATABASE_NAME = "haiku.rag"
 
 # pydantic-ai's `ThinkingEffort`; importing it loads the whole package at config import.
-ThinkingEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
+ThinkingEffort = Literal["minimal", "low", "medium", "high", "xhigh", "max"]
 
 
 class ConfigModel(BaseModel):
@@ -38,7 +38,7 @@ class ModelConfig(ConfigModel):
             picture-description VLM endpoint.
         thinking: Reasoning control, pydantic-ai's `ThinkingLevel`: true for the
             model's default level, false to disable, or one of minimal, low,
-            medium, high, xhigh. None leaves the model's default.
+            medium, high, xhigh, max. None leaves the model's default.
         temperature: Sampling temperature (0.0 to 1.0+)
         max_tokens: Maximum tokens to generate
         vision: True if the model can interpret images. Default False.
@@ -669,6 +669,7 @@ class APIConfig(ConfigModel):
     enabled: bool = True
     host: str = "127.0.0.1"
     port: int = Field(default=8765, ge=0, le=65535)
+    fd: int | None = Field(default=None, ge=0)
     auth_token: str | None = None
     root_path: str = Field(
         default="",

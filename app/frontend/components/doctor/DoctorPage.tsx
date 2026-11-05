@@ -57,13 +57,15 @@ function DoctorDatabase({ source }: { source: string }) {
 	const estimate = useEstimate(source);
 	return (
 		<>
-			<Estimate text={estimate.text} />
-			<p className="text-xs text-muted-foreground">
-				Results are kept until the next run or a restart of the backend, and one
-				job runs at a time across databases.
-			</p>
-			<CorpusMapJob source={source} ready={estimate.ready} />
 			<ChecksPanel source={source} ready={estimate.ready} />
+			<CorpusMapJob source={source} ready={estimate.ready} />
+			<div className="space-y-1 border-t pt-4">
+				<Estimate text={estimate.text} />
+				<p className="text-xs text-muted-foreground">
+					Results are kept until the next run or a restart of the backend, and
+					one job runs at a time across databases.
+				</p>
+			</div>
 		</>
 	);
 }

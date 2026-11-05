@@ -9,7 +9,15 @@ import pytest
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, HookConfig
-from haiku.rag.hooks import ENTRY_POINT_GROUP, Hook, build_hooks
+from haiku.rag.hooks import (
+    ENTRY_POINT_GROUP,
+    DeleteEvent,
+    Hook,
+    IngestEvent,
+    IngestRequest,
+    SearchRequest,
+    build_hooks,
+)
 from haiku.rag.store.models.chunk import Chunk
 from tests.conftest import capture_logs
 from tests.documents import docling_doc, document_import
@@ -757,6 +765,25 @@ async def test_default_lifespan_is_a_noop(temp_db_path):
 
     # A hook that overrides no lifespan still reaches its other hook points.
     assert spy.events == [("ingest", "create", ((doc.id, "mem://default-lifespan"),))]
+
+
+@pytest.mark.asyncio
+async def test_the_base_hook_points_change_nothing(temp_db_path):
+    hook = Hook()
+    ingest = IngestRequest(
+        uri="mem://a", source_id=None, body=b"x", content_type="text/plain"
+    )
+    search = SearchRequest(query="q", filter=None, search_type="hybrid", limit=1)
+    results = []
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        assert await hook.before_ingest(client, ingest) is ingest
+        assert await hook.before_search(client, search) is search
+        assert await hook.after_search(client, search, results) is results
+        assert await hook.after_ingest(client, IngestEvent([], "create")) is None
+        assert await hook.after_delete(client, DeleteEvent([])) is None
+        async with hook.lifespan(client), hook.ingester_lifespan(client):
+            pass
 
 
 class IngesterLifespanHook(LifespanHook):

@@ -1072,7 +1072,7 @@ def test_thinking_levels_match_pydantic_ai():
 
 
 @pytest.mark.parametrize(
-    "value", [True, False, "minimal", "low", "medium", "high", "xhigh"]
+    "value", [True, False, "minimal", "low", "medium", "high", "xhigh", "max"]
 )
 def test_thinking_accepts_bools_and_levels(value):
     from haiku.rag.config.models import ModelConfig
@@ -1081,7 +1081,7 @@ def test_thinking_accepts_bools_and_levels(value):
     assert ModelConfig().thinking is None
 
 
-@pytest.mark.parametrize("value", ["none", "max"])
+@pytest.mark.parametrize("value", ["none", "maximum"])
 def test_thinking_rejects_values_outside_the_vocabulary(value):
     from haiku.rag.config.models import ModelConfig
 
