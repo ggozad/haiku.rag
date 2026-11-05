@@ -18,7 +18,8 @@ import {
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { chunkHref } from "@/lib/addresses";
-import { type Citation, type Evidence, publicUrl, statusOf } from "@/lib/chat";
+import { type Citation, type Evidence, statusOf } from "@/lib/chat";
+import { publicUrl } from "@/lib/format";
 import { withBasePath } from "@/lib/paths";
 import VisualGroundingDialog from "./VisualGroundingDialog";
 

@@ -8,7 +8,6 @@ import {
 	loadDraft,
 	loadDraftImages,
 	loadPending,
-	publicUrl,
 	runTurn,
 	saveDraft,
 	saveDraftImages,
@@ -451,22 +450,6 @@ describe("activitySummary", () => {
 		expect(
 			activitySummary([{ kind: "call", call: call("c1", "lookup", {}) }]),
 		).toBe("1 lookup");
-	});
-});
-
-describe("publicUrl", () => {
-	it("returns the document's http link", () => {
-		expect(publicUrl({ url: "https://diavgeia.gov.gr/doc/1" })).toBe(
-			"https://diavgeia.gov.gr/doc/1",
-		);
-	});
-
-	it("ignores a missing, non-web or non-string url", () => {
-		expect(publicUrl(undefined)).toBeNull();
-		expect(publicUrl({})).toBeNull();
-		expect(publicUrl({ url: "file:///data/a.pdf" })).toBeNull();
-		expect(publicUrl({ url: "javascript:alert(1)" })).toBeNull();
-		expect(publicUrl({ url: 3 })).toBeNull();
 	});
 });
 

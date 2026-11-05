@@ -19,12 +19,6 @@ export interface Citation {
 	document_meta?: Record<string, unknown>;
 }
 
-// The document's web address, when its metadata names an http(s) one.
-export function publicUrl(meta?: Record<string, unknown>): string | null {
-	const url = meta?.url;
-	return typeof url === "string" && /^https?:\/\//i.test(url) ? url : null;
-}
-
 // A selected document: ids repeat only between copies of a database, so the
 // database name is part of its identity.
 export interface DocumentRef {

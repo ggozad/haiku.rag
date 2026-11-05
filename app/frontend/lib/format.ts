@@ -24,3 +24,9 @@ export function formatRelativeTime(dateStr: string, compact = false): string {
 	const days = Math.floor(hours / 24);
 	return compact ? `${days}d ago` : new Date(dateStr).toLocaleDateString();
 }
+
+// The document's web address, when its metadata names an http(s) one.
+export function publicUrl(meta?: Record<string, unknown>): string | null {
+	const url = meta?.url;
+	return typeof url === "string" && /^https?:\/\//i.test(url) ? url : null;
+}

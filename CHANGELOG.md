@@ -15,6 +15,7 @@
 - Web app: a chat answer's reasoning and tool calls fold into one summary line once the answer starts, with a link to its sources. A citation links the document's `metadata.url` when it is an http(s) address. An empty chat names the databases and document count a question covers.
 - Web app: the doctor's report opens with a verdict, lists failures and warnings, and folds the passing checks. The memory estimate follows the jobs.
 - Web app: the ingestion page shows loading until its first read, a running scan or retry on its button, empty sections as one line, and `ok` for a source with nothing to report. "Refresh" is renamed "Scan now", and "Retry failed" is disabled for a source without dead jobs.
+- Web app: the inspector's sidebar puts the database first, opens the search page from its Search tab, and folds the SQL filter. Document rows show the title on two lines, the source and the file name. A document's header links its `metadata.url` and shows its short metadata fields, and "Show on map" folds the map's state and controls when the document is not on it. Chunk labels show once each, with a count.
 - Web app: URIs are shown decoded. The inspector renders table items as tables and chunk text in the sans font. Search results lead with the document title and show the passage without markdown markers.
 
 ### Fixed

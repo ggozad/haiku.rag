@@ -3,7 +3,9 @@ import {
 	blocksOf,
 	chunkCount,
 	firstLine,
+	headlineMetadata,
 	type Item,
+	labelCounts,
 	plainText,
 	searched,
 } from "./inspect";
@@ -94,5 +96,47 @@ describe("plainText", () => {
 	it("keeps list markers' text and underscores inside words", () => {
 		expect(plainText("- first_item\n- second")).toBe("first_item second");
 		expect(plainText("-5% change")).toBe("-5% change");
+	});
+});
+
+describe("headlineMetadata", () => {
+	it("keeps short scalar fields in order and leaves out what the header shows elsewhere", () => {
+		expect(
+			headlineMetadata({
+				number: "Α.1077/2025",
+				issued: "2025-05-29",
+				pages: 12,
+				title: "Shown as the heading",
+				url: "https://example.org/a",
+				md5: "81134a21",
+				source_id: "diavgeia",
+				content_type: "application/pdf",
+				source_revision: "1793",
+				parent_uri: null,
+				tags: ["a", "b"],
+				subject: "x".repeat(81),
+			}),
+		).toEqual([
+			["number", "Α.1077/2025"],
+			["issued", "2025-05-29"],
+			["pages", "12"],
+		]);
+	});
+
+	it("shows at most eight", () => {
+		const meta = Object.fromEntries(
+			Array.from({ length: 10 }, (_, n) => [`k${n}`, n]),
+		);
+		expect(headlineMetadata(meta)).toHaveLength(8);
+	});
+});
+
+describe("labelCounts", () => {
+	it("names each label once, in first-seen order, with its count", () => {
+		expect(
+			labelCounts(["text", "list_item", "list_item", "text", "list_item"]),
+		).toBe("text ×2, list_item ×3");
+		expect(labelCounts(["table"])).toBe("table");
+		expect(labelCounts([])).toBe("");
 	});
 });

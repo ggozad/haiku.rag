@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ShowOnMap from "./ShowOnMap";
 
@@ -56,7 +57,7 @@ describe("ShowOnMap", () => {
 		).toBe("/map?doc=d1");
 	});
 
-	it("says what is known of why a document is not on the map, and offers to compute it", async () => {
+	it("folds why a document is not on the map, and the offer to compute it, behind one button", async () => {
 		const cases: [boolean | null, RegExp][] = [
 			[false, /it has no usable embedding/],
 			[true, /the database changed since the map was computed/],
@@ -65,6 +66,11 @@ describe("ShowOnMap", () => {
 		for (const [stale, reason] of cases) {
 			serve(map(["d0"], stale));
 			show();
+			const toggle = await screen.findByRole("button", {
+				name: "Not on the map",
+			});
+			expect(screen.queryByText(reason)).toBeNull();
+			await userEvent.setup().click(toggle);
 			await screen.findByText(reason);
 			expect(
 				screen.getByRole("button", { name: "Compute again" }),
@@ -87,6 +93,9 @@ describe("ShowOnMap", () => {
 	it("offers to compute a map the database does not have", async () => {
 		serve(null);
 		show();
+		await userEvent
+			.setup()
+			.click(await screen.findByRole("button", { name: "No map yet" }));
 		await screen.findByText("This database has no map yet.");
 		expect(
 			screen.getByRole("button", { name: "Compute the map" }),

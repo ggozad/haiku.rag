@@ -157,7 +157,7 @@ The chip at the top right shows the ingester's state: idle, ingesting, holding f
 
 ## Inspect documents and chunks
 
-The Inspector lists the documents of a database. Open one to read its converted text, and to see its outline, chunks, pages and pictures.
+The Inspector lists the documents of a database, filtered by title or URI, or by a SQL filter on the documents. Open one to read its converted text, and to see its outline, chunks, pages and pictures. Its header shows the short fields of its metadata and links its `url` when that is an http(s) address. All metadata is one click away.
 
 The agent searches and cites chunks, short passages of a document. A chunk's page shows its text, what the agent receives when a search returns it, its place on the original page, and the most similar chunks. It is the place to look when an answer cites the wrong passage or misses one.
 
@@ -165,7 +165,7 @@ The agent searches and cites chunks, short passages of a document. A chunk's pag
 
 The Map tab places documents near others about similar things. "Compute the map" builds it, and "Compute again" refreshes it after new documents arrive. Select a document to list its nearest neighbours.
 
-Ctrl+K, or Cmd+K on a Mac, searches from any page, by text or, with a multimodal embedder, by image. Each inspector page has its own address, so Back returns to the previous view and a link reopens the same one. "Ask about this document" starts a conversation limited to the open document.
+The Search tab, or Ctrl+K (Cmd+K on a Mac) from any page, searches every database, by text or, with a multimodal embedder, by image. Each inspector page has its own address, so Back returns to the previous view and a link reopens the same one. "Ask about this document" starts a conversation limited to the open document.
 
 ## Check its health
 
