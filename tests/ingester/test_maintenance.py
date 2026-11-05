@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import random
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -16,8 +17,10 @@ from haiku.rag.ingester.maintenance import (
     has_vector_index,
     maintain,
 )
+from haiku.rag.ingester.queue.models import JobOp, JobStatus
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.document import Document
 from tests.conftest import capture_logs
 from tests.documents import docling_doc
 
@@ -269,3 +272,129 @@ async def test_idle_polling_sees_a_write_within_max_wait(
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@asynccontextmanager
+async def _job_in_flight(jobs, sync):
+    """A running pool holding one job of source `a` until the gate opens."""
+    gate = asyncio.Event()
+    worker = AsyncMock(spec=HaikuRAG)
+
+    async def _ingest(uri, **_):
+        await gate.wait()
+        return Document(
+            id=uri, content="x", uri=uri, metadata={"md5": "m", "source_revision": "r"}
+        )
+
+    worker._ingest_observed.side_effect = _ingest
+    pool = WorkerPool(
+        clients={"a": worker},
+        job_repo=jobs,
+        sync_repo=sync,
+        worker_count=1,
+        poll_idle_interval_s=0.05,
+    )
+    job = await jobs.enqueue("a", "u", JobOp.UPSERT)
+    assert job is not None
+    await pool.start()
+    try:
+
+        async def _claimed() -> bool:
+            claimed = await jobs.get_job(job.id)
+            return claimed is not None and claimed.status is JobStatus.CLAIMED
+
+        async with asyncio.timeout(5):
+            while not await _claimed():
+                await asyncio.sleep(0.01)
+        yield pool, gate
+    finally:
+        gate.set()
+        await pool.stop()
+
+
+async def test_a_pass_maintains_while_a_job_is_in_flight(
+    client, jobs, sync, monkeypatch
+):
+    async with _job_in_flight(jobs, sync) as (pool, _):
+        spy = _Spy(monkeypatch, pool)
+        await asyncio.wait_for(_maintenance(client, pool).run_once(), timeout=5)
+        assert spy.paused == [{"a"}]
+        assert pool._paused == set()
+        assert pool.busy(["a"])
+
+
+async def test_a_quiet_pass_waits_for_the_jobs_in_flight_without_pausing(
+    client, jobs, sync, monkeypatch
+):
+    async with _job_in_flight(jobs, sync) as (pool, gate):
+        spy = _Spy(monkeypatch, pool)
+        task = asyncio.create_task(
+            _maintenance(client, pool, quiet_s=0.3, max_wait_s=60.0).run()
+        )
+        try:
+            await asyncio.sleep(0.6)
+            assert spy.paused == []
+            assert pool._paused == set()
+            # The job writes as it finishes, which restarts the quiet period.
+            gate.set()
+            client._single_session("test").record_write()
+            await pool.wait_idle(["a"])
+            await asyncio.sleep(0.1)
+            assert spy.paused == []
+            await _until(lambda: len(spy.paused) == 1)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_a_pass_at_max_wait_does_not_wait_for_the_jobs_in_flight(
+    client, jobs, sync, monkeypatch
+):
+    async with _job_in_flight(jobs, sync) as (pool, _):
+        spy = _Spy(monkeypatch, pool)
+        task = asyncio.create_task(
+            _maintenance(client, pool, quiet_s=0.1, max_wait_s=0.3).run()
+        )
+        try:
+            await _until(lambda: len(spy.paused) == 1, timeout=2.0)
+            assert pool.busy(["a"])
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_a_write_during_a_pass_leaves_the_database_due(
+    client, jobs, sync, monkeypatch
+):
+    pool = _pool(client, jobs, sync, "a")
+    started, proceed = asyncio.Event(), asyncio.Event()
+    real = maintenance.maintain
+
+    async def _gated(client):
+        started.set()
+        await proceed.wait()
+        return await real(client)
+
+    monkeypatch.setattr(maintenance, "maintain", _gated)
+    session = client._single_session("test")
+    session.record_write()
+    task = asyncio.create_task(_maintenance(client, pool).run_once())
+    try:
+        await started.wait()
+        assert session.unmaintained_since is None
+        await add_chunks(client, 4)
+        proceed.set()
+        await task
+    finally:
+        proceed.set()
+        await asyncio.gather(task, return_exceptions=True)
+    assert session.unmaintained_since is not None
+
+
+async def test_busy_reports_the_sources_with_a_job_in_flight(jobs, sync):
+    async with _job_in_flight(jobs, sync) as (pool, gate):
+        assert pool.busy(["a"])
+        assert not pool.busy(["b"])
+        gate.set()
+        await pool.wait_idle(["a"])
+        assert not pool.busy(["a"])

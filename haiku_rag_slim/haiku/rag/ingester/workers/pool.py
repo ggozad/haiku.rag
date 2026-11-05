@@ -223,11 +223,15 @@ class WorkerPool:
         """Claim jobs of `source_ids` again, those still served."""
         self._paused.difference_update(source_ids)
 
+    def busy(self, source_ids: "Collection[str]") -> bool:
+        """Whether a job of `source_ids` is in flight."""
+        return any(s in source_ids for s in self._executions.values())
+
     async def wait_idle(self, source_ids: "Collection[str]") -> None:
         """Return once no job of `source_ids` is in flight."""
         while True:
             self._finished.clear()
-            if not any(s in source_ids for s in self._executions.values()):
+            if not self.busy(source_ids):
                 return
             await self._finished.wait()
 

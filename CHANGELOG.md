@@ -14,6 +14,7 @@
 
 ### Fixed
 
+- Ingester: a maintenance pass runs without waiting for the database's jobs in flight, and a `quiet_s` pass starts once none is running (#845).
 - Ingester: the reaper never resets the claim of a job its own process is running (#843).
 - A hook gets a span only at a hook point it overrides (#840).
 
