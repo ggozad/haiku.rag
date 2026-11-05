@@ -415,7 +415,7 @@ haiku-ingester serve --port 9000              # API port
 haiku-ingester serve --fd 3                   # API on an inherited listening socket
 ```
 
-`--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--fd` overrides `ingester.api.fd`: the API serves on that already-listening socket, such as fd 3 from systemd socket activation, instead of binding a host and port. `--config`/`-c` names the configuration file.
+`--host` and `--port` override `ingester.api.host` and `ingester.api.port`, which default to `127.0.0.1:8765`. `--fd` overrides `ingester.api.fd`: the API serves on that already-listening socket, such as fd 3 from systemd socket activation, instead of binding a host and port. launchd passes no fixed descriptor: a launchd job needs a launcher that calls `launch_activate_socket()` and passes the descriptor to `--fd`. `--config`/`-c` names the configuration file.
 
 The service runs until `SIGINT` or `SIGTERM`, then cancels any reload, and stops the API server, the pollers and the workers, in that order. `SIGHUP` [reloads the databases](#reloading-databases).
 

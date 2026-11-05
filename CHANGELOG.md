@@ -5,7 +5,7 @@
 ### Added
 
 - `thinking: max` effort level.
-- Ingester: `ingester.api.fd` and `serve --fd` serve the control plane on an inherited listening socket, as systemd socket activation passes one, instead of binding `host` and `port` (#830).
+- Ingester: `ingester.api.fd` and `serve --fd` serve the control plane on an inherited listening socket (#830).
 
 ### Changed
 
