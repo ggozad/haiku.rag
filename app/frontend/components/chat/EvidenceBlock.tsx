@@ -7,6 +7,7 @@ import {
 	CircleDashed,
 	ExternalLink,
 	FileText,
+	Globe,
 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,7 @@ import {
 	CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { chunkHref } from "@/lib/addresses";
-import { type Citation, type Evidence, statusOf } from "@/lib/chat";
+import { type Citation, type Evidence, publicUrl, statusOf } from "@/lib/chat";
 import { withBasePath } from "@/lib/paths";
 import VisualGroundingDialog from "./VisualGroundingDialog";
 
@@ -48,6 +49,7 @@ function CitationItem({
 	const pages = citation.page_numbers.length
 		? `p. ${citation.page_numbers.join(", ")}`
 		: null;
+	const url = publicUrl(citation.document_meta);
 	return (
 		<Collapsible className="rounded-md border">
 			<CollapsibleTrigger className="group flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
@@ -107,6 +109,14 @@ function CitationItem({
 							>
 								<ExternalLink />
 								Open in the inspector
+							</a>
+						</Button>
+					)}
+					{url && (
+						<Button asChild variant="outline" size="sm">
+							<a href={url} target="_blank" rel="noreferrer">
+								<Globe />
+								{new URL(url).host}
 							</a>
 						</Button>
 					)}

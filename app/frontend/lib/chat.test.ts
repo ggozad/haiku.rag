@@ -1,16 +1,20 @@
 import type { Message } from "@ag-ui/client";
 import { describe, expect, it, vi } from "vitest";
 import {
+	activitySummary,
 	checkpoint,
 	evidenceAnchors,
 	giveBack,
 	loadDraft,
 	loadDraftImages,
 	loadPending,
+	publicUrl,
 	runTurn,
 	saveDraft,
 	saveDraftImages,
 	savePending,
+	scopeLine,
+	segments,
 	settlePending,
 	statusOf,
 	type TurnAgent,
@@ -356,5 +360,139 @@ describe("statusOf", () => {
 			statusOf({ citation_status: "missing", violation: true })?.kind,
 		).toBe("breach");
 		expect(statusOf({ citation_status: "missing" })).toBeNull();
+	});
+});
+
+const call = (id: string, name: string, args: unknown) => ({
+	id,
+	type: "function" as const,
+	function: { name, arguments: JSON.stringify(args) },
+});
+
+describe("segments", () => {
+	it("groups consecutive reasoning and tool calls into one activity", () => {
+		const messages: Message[] = [
+			{ id: "u1", role: "user", content: "Q" },
+			{ id: "r1", role: "reasoning", content: "think" },
+			{
+				id: "a1",
+				role: "assistant",
+				toolCalls: [call("c1", "search", { query: "x" })],
+			},
+			{ id: "t1", role: "tool", toolCallId: "c1", content: "found" },
+			{ id: "r2", role: "reasoning", content: "more" },
+			{
+				id: "a2",
+				role: "assistant",
+				content: "Answer",
+				toolCalls: [call("c2", "cite", { chunk_ids: ["k1"] })],
+			},
+		];
+		expect(
+			segments(messages).map((segment) =>
+				segment.kind === "message"
+					? segment.message.id
+					: segment.steps.map((step) =>
+							step.kind === "call" ? step.call.id : step.id,
+						),
+			),
+		).toEqual(["u1", ["r1", "c1", "r2", "c2"], "a2"]);
+	});
+
+	it("keeps activity separated by text in order", () => {
+		const messages: Message[] = [
+			{
+				id: "a1",
+				role: "assistant",
+				content: "Let me look.",
+				toolCalls: [call("c1", "search", { query: "x" })],
+			},
+			{
+				id: "a2",
+				role: "assistant",
+				toolCalls: [call("c2", "search", { query: "y" })],
+			},
+			{ id: "a3", role: "assistant", content: "Done." },
+		];
+		const kinds = segments(messages).map((segment) => segment.kind);
+		expect(kinds).toEqual(["activity", "message", "activity", "message"]);
+	});
+
+	it("names the assistant messages an activity came from", () => {
+		const messages: Message[] = [
+			{
+				id: "a1",
+				role: "assistant",
+				toolCalls: [call("c1", "search", { query: "x" })],
+			},
+		];
+		const [activity] = segments(messages);
+		expect(activity.kind === "activity" && activity.messageIds).toEqual(["a1"]);
+	});
+});
+
+describe("activitySummary", () => {
+	it("counts searches and programs, leaving citations to the sources", () => {
+		expect(
+			activitySummary([
+				{ kind: "reasoning", id: "r1", content: "" },
+				{ kind: "call", call: call("c1", "search", { query: "a" }) },
+				{ kind: "call", call: call("c2", "search", { query: "b" }) },
+				{ kind: "call", call: call("c3", "execute_code", { code: "" }) },
+				{ kind: "call", call: call("c4", "cite", { chunk_ids: ["1", "2"] }) },
+			]),
+		).toBe("2 searches, 1 program");
+	});
+
+	it("names a run that only reasoned, and tools it does not know", () => {
+		expect(
+			activitySummary([{ kind: "reasoning", id: "r1", content: "" }]),
+		).toBe("Reasoning");
+		expect(
+			activitySummary([{ kind: "call", call: call("c1", "lookup", {}) }]),
+		).toBe("1 lookup");
+	});
+});
+
+describe("publicUrl", () => {
+	it("returns the document's http link", () => {
+		expect(publicUrl({ url: "https://diavgeia.gov.gr/doc/1" })).toBe(
+			"https://diavgeia.gov.gr/doc/1",
+		);
+	});
+
+	it("ignores a missing, non-web or non-string url", () => {
+		expect(publicUrl(undefined)).toBeNull();
+		expect(publicUrl({})).toBeNull();
+		expect(publicUrl({ url: "file:///data/a.pdf" })).toBeNull();
+		expect(publicUrl({ url: "javascript:alert(1)" })).toBeNull();
+		expect(publicUrl({ url: 3 })).toBeNull();
+	});
+});
+
+describe("scopeLine", () => {
+	const db = (name: string, documents: number, available = true) => ({
+		name,
+		available,
+		error: null,
+		documents,
+	});
+
+	it("counts the documents of every available database", () => {
+		expect(
+			scopeLine([db("nomoi", 6), db("aade", 536), db("off", 9, false)], 0),
+		).toBe("Ask about 542 documents in nomoi and aade.");
+		expect(scopeLine([db("haiku.rag", 1)], 0)).toBe(
+			"Ask about 1 document in haiku.rag.",
+		);
+	});
+
+	it("names the selection when there is one", () => {
+		expect(scopeLine([db("nomoi", 6)], 2)).toBe(
+			"Ask about the 2 selected documents.",
+		);
+		expect(scopeLine([db("nomoi", 6)], 1)).toBe(
+			"Ask about the selected document.",
+		);
 	});
 });

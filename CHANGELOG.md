@@ -12,6 +12,7 @@
 - `pydantic-ai-slim` requires `>=2.66.0,<2.67.0`.
 - The `docling` extra installs `onnxruntime` (#828).
 - Web app: Inter and JetBrains Mono replace Geist and Geist Mono, and render Greek.
+- Web app: a chat answer's reasoning and tool calls fold into one summary line once the answer starts, with a link to its sources. A citation links the document's `metadata.url` when it is an http(s) address. An empty chat names the databases and document count a question covers.
 - Web app: URIs are shown decoded. The inspector renders table items as tables and chunk text in the sans font. Search results lead with the document title and show the passage without markdown markers.
 
 ### Fixed
@@ -19,6 +20,7 @@
 - Ingester: a maintenance pass runs without waiting for the database's jobs in flight, and a `quiet_s` pass starts once none is running (#845).
 - Ingester: the reaper never resets the claim of a job its own process is running (#843).
 - A hook gets a span only at a hook point it overrides (#840).
+- Web app: a chat that follows a streaming answer scrolls on to the sources shown when the run finishes.
 
 ## [0.107.0] - 2026-11-04
 
