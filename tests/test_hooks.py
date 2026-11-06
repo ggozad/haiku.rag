@@ -11,12 +11,14 @@ from haiku.rag.config import get_config
 from haiku.rag.config.models import AppConfig, HookConfig
 from haiku.rag.hooks import (
     ENTRY_POINT_GROUP,
+    ConvertedDocument,
     DeleteEvent,
     Hook,
     IngestEvent,
     IngestRequest,
     SearchRequest,
     build_hooks,
+    hook_name,
 )
 from haiku.rag.store.models.chunk import Chunk
 from tests.conftest import capture_logs
@@ -776,8 +778,16 @@ async def test_the_base_hook_points_change_nothing(temp_db_path):
     search = SearchRequest(query="q", filter=None, search_type="hybrid", limit=1)
     results = []
 
+    converted = ConvertedDocument(
+        uri="mem://a",
+        source_id=None,
+        content_type=None,
+        docling_document=docling_doc("a", "x"),
+    )
+
     async with HaikuRAG(temp_db_path, create=True) as client:
         assert await hook.before_ingest(client, ingest) is ingest
+        assert await hook.after_convert(client, converted) is converted
         assert await hook.before_search(client, search) is search
         assert await hook.after_search(client, search, results) is results
         assert await hook.after_ingest(client, IngestEvent([], "create")) is None
@@ -2057,3 +2067,214 @@ async def test_a_revisionless_pdf_fires_with_md5_and_no_revision(
     _, [(_, metadata)] = recording.events[-1]
     assert metadata["md5"] == _md5(body)
     assert "source_revision" not in metadata
+
+
+class FixLettersHook(Hook):
+    """Replaces a Latin "o" inside a Greek word with the Greek "ο" in every
+    converted item, and records each document it saw."""
+
+    def __init__(self):
+        self.seen: list[tuple[str | None, str | None, str | None]] = []
+
+    async def after_convert(self, client, document):
+        self.seen.append((document.uri, document.source_id, document.content_type))
+        for item in document.docling_document.texts:
+            item.text = item.text.replace("Γραφείo", "Γραφείο")
+        return document
+
+
+async def _chunk_texts(client, document_id) -> list[str]:
+    return [
+        chunk.content
+        for chunk in await client.chunk_repository.get_by_document_id(document_id)
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_after_convert_fixes_a_source_before_chunking(temp_db_path, tmp_path):
+    from haiku.rag.sources.fs import FSSource
+
+    path = tmp_path / "doc.md"
+    path.write_text("# Γραφείo\n\nΤο Γραφείo Τύπου.\n", encoding="utf-8")
+    source = FSSource(root=tmp_path, source_id="fs:docs")
+    hook = FixLettersHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        doc = await client.create_document_from_source(
+            path, sources=[source], source_id=source.source_id
+        )
+        assert not isinstance(doc, list)
+        assert doc.id is not None
+        chunks = await _chunk_texts(client, doc.id)
+
+    assert hook.seen == [(doc.uri, "fs:docs", "text/markdown")]
+    assert "Το Γραφείο Τύπου." in doc.content
+    assert "Γραφείo" not in doc.content
+    assert chunks and all("Γραφείo" not in text for text in chunks)
+    assert any("Γραφείο" in text for text in chunks)
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_after_convert_fixes_text_on_create_and_update(temp_db_path):
+    hook = FixLettersHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        doc = await client.create_document("Το Γραφείo Τύπου.", uri="mem://office")
+        assert doc.id is not None
+        assert "Γραφείο" in doc.content
+
+        updated = await client.update_document(doc.id, content="Το Γραφείo Προέδρου.")
+        chunks = await _chunk_texts(client, doc.id)
+
+    assert hook.seen == [("mem://office", None, None), ("mem://office", None, None)]
+    assert "Το Γραφείο Προέδρου." in updated.content
+    assert chunks and all("Γραφείo" not in text for text in chunks)
+
+
+@pytest.mark.asyncio
+async def test_after_convert_skips_documents_the_caller_converted(temp_db_path):
+    hook = FixLettersHook()
+    dim = get_config().embeddings.model.vector_dim
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        [doc] = await client.import_documents(
+            [document_import("doc", "Το Γραφείo.", uri="mem://doc")]
+        )
+        await client.import_document(
+            docling_doc("other", "Το Γραφείo."),
+            [Chunk(content="Το Γραφείo.", embedding=[0.1] * dim, order=0)],
+            uri="mem://other",
+        )
+        assert doc.id is not None
+        await client.update_document(
+            doc.id,
+            docling_document=docling_doc("doc2", "Το Γραφείo."),
+            chunks=[Chunk(content="Το Γραφείo.", embedding=[0.2] * dim, order=0)],
+        )
+
+    assert hook.seen == []
+
+
+class ReplaceDocumentHook(Hook):
+    async def after_convert(self, client, document):
+        from haiku.rag.hooks import ConvertedDocument
+
+        return ConvertedDocument(
+            uri=document.uri,
+            source_id=document.source_id,
+            content_type=document.content_type,
+            docling_document=docling_doc("replaced", "Replaced body."),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_after_convert_may_return_another_document(temp_db_path):
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [ReplaceDocumentHook()]
+        doc = await client.create_document("Original body.", uri="mem://doc")
+        assert doc.id is not None
+        chunks = await _chunk_texts(client, doc.id)
+
+    assert "Replaced body." in doc.content
+    assert chunks == ["Replaced body."]
+
+
+class RaisingConvertHook(Hook):
+    async def after_convert(self, client, document):
+        raise RuntimeError("hook refused")
+
+
+class NoReturnConvertHook(Hook):
+    async def after_convert(self, client, document):
+        pass
+
+
+class NotADoclingDocumentHook(Hook):
+    async def after_convert(self, client, document):
+        document.docling_document = "text"
+        return document
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "hook, error",
+    [
+        (RaisingConvertHook(), "RuntimeError: hook refused"),
+        (NoReturnConvertHook(), "TypeError: returned NoneType"),
+        (NotADoclingDocumentHook(), "TypeError: docling_document is str"),
+    ],
+)
+async def test_a_failing_after_convert_stores_nothing(
+    temp_db_path, tmp_path, hook, error
+):
+    from haiku.rag.hooks import HookError
+
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [hook]
+        with pytest.raises(HookError) as raised:
+            await client.create_document_from_source(path)
+        with pytest.raises(HookError):
+            await client.create_document("Body.", uri="mem://text")
+        assert await client.list_documents() == []
+
+    assert str(raised.value) == (
+        f"{hook_name(hook)}.after_convert failed for {path.as_uri()}: {error}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_full_rebuild_runs_after_convert(temp_db_path, tmp_path):
+    from haiku.rag.client import RebuildMode
+
+    path = tmp_path / "doc.md"
+    path.write_text("# Notes\n\nΤο Γραφείo Τύπου.\n", encoding="utf-8")
+    hook = FixLettersHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document_from_source(path)
+        assert not isinstance(doc, list)
+        assert "Γραφείo" in doc.content
+
+        client._hooks = [hook]
+        async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+            pass
+        assert doc.id is not None
+        refreshed = await client.get_document_by_id(doc.id)
+
+    assert refreshed is not None
+    assert "Το Γραφείο Τύπου." in refreshed.content
+    assert hook.seen == [(doc.uri, None, "text/markdown")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr()
+async def test_full_rebuild_runs_after_convert_on_stored_content(temp_db_path):
+    from haiku.rag.client import RebuildMode
+
+    hook = FixLettersHook()
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.create_document("Το Γραφείo Τύπου.", uri="mem://office")
+        assert doc.id is not None
+        assert "Γραφείo" in doc.content
+
+        client._hooks = [hook]
+        async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+            pass
+        refreshed = await client.get_document_by_id(doc.id)
+        chunks = await _chunk_texts(client, doc.id)
+
+    assert refreshed is not None
+    assert "Το Γραφείο Τύπου." in refreshed.content
+    assert chunks and all("Γραφείo" not in text for text in chunks)
+    assert hook.seen == [("mem://office", None, None)]

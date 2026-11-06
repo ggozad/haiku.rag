@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `after_convert` hook point: transforms a `DoclingDocument` haiku.rag converted, before chunking and embedding.
+
 ### Fixed
 
 - `add-src DIR` logs a file that fails to ingest and continues with the rest of the directory, then names the failure count and exits 1. A wedged docling converter still stops the run (#827).

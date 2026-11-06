@@ -27,6 +27,7 @@ from haiku.rag.converters.exceptions import (
     ConverterWedgedError,
 )
 from haiku.rag.hooks import (
+    ConvertedDocument,
     DeleteEvent,
     DocumentRejected,
     HookError,
@@ -376,7 +377,15 @@ async def create_document(
     Converts the content, chunks it, and generates embeddings.
     """
     converter = get_converter(session.config)
-    docling_document = await converter.convert_text(content, format=format)
+    docling_document = await _after_convert(
+        client,
+        ConvertedDocument(
+            uri=uri,
+            source_id=None,
+            content_type=None,
+            docling_document=await converter.convert_text(content, format=format),
+        ),
+    )
     chunks = await chunk_document(session, docling_document)
 
     document = Document(
@@ -674,6 +683,42 @@ async def _before_ingest(
     return result, added
 
 
+async def _after_convert(
+    client: "HaikuRAG | None",
+    document: ConvertedDocument,
+) -> "DoclingDocument":
+    """Run the ``after_convert`` hooks and return the document to chunk."""
+    from docling_core.types.doc.document import DoclingDocument
+
+    if client is None:
+        return document.docling_document
+    uri = document.uri
+    for hook in client._hooks:
+        if not overrides(hook, "after_convert"):
+            continue
+        with hook_span(
+            "after_convert",
+            hook,
+            uri=uri,
+            content_type=document.content_type,
+        ):
+            try:
+                document = await hook.after_convert(client, document)
+                if not isinstance(document, ConvertedDocument):
+                    raise TypeError(f"returned {type(document).__name__}")
+                if not isinstance(document.docling_document, DoclingDocument):
+                    raise TypeError(
+                        "docling_document is "
+                        f"{type(document.docling_document).__name__}"
+                    )
+            except Exception as e:
+                raise HookError(
+                    f"{hook_name(hook)}.after_convert failed for "
+                    f"{uri}: {type(e).__name__}: {e}"
+                ) from e
+    return document.docling_document
+
+
 async def _ingest_fetch_result(
     session: SingleDatabaseSession,
     client: "HaikuRAG | None",
@@ -742,6 +787,15 @@ async def _ingest_fetch_result(
             docling_document = await convert(
                 session.config, target_path, source_uri=result.uri
             )
+        docling_document = await _after_convert(
+            client,
+            ConvertedDocument(
+                uri=stored_uri,
+                source_id=source_id,
+                content_type=result.content_type,
+                docling_document=docling_document,
+            ),
+        )
         with logfire.span("document.chunk", uri=result.uri) as chunk_span:
             chunks = await chunk_document(session, docling_document)
             chunk_span.set_attribute("chunks_created", len(chunks))
@@ -1377,7 +1431,17 @@ async def update_document(
     assert content is not None
     existing_doc.content = content
     converter = get_converter(session.config)
-    converted_docling = await converter.convert_text(existing_doc.content, format="md")
+    converted_docling = await _after_convert(
+        client,
+        ConvertedDocument(
+            uri=existing_doc.uri,
+            source_id=existing_doc.metadata.get("source_id"),
+            content_type=None,
+            docling_document=await converter.convert_text(
+                existing_doc.content, format="md"
+            ),
+        ),
+    )
     await _prepare_document_from_docling(existing_doc, converted_docling)
 
     new_chunks = await chunk_document(session, converted_docling)

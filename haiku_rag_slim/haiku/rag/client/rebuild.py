@@ -10,6 +10,8 @@ from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
 from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import (
+    _after_convert,
+    _prepare_document_from_docling,
     check_source_accessible,
     chunk_document,
     create_document_from_source,
@@ -17,7 +19,7 @@ from haiku.rag.client.documents import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
-from haiku.rag.hooks import HookError
+from haiku.rag.hooks import ConvertedDocument, HookError, overrides
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import REBUILD_COMMANDS
 from haiku.rag.store.models.chunk import Chunk
@@ -990,14 +992,22 @@ async def _rebuild_full(
     session: SingleDatabaseSession, client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Full rebuild: re-convert from source, re-chunk, re-embed. A refresh
-    from source runs ``before_ingest`` hooks, whose failure ends the rebuild,
-    and no post-commit hooks."""
+    from source runs ``before_ingest`` and ``after_convert`` hooks, the
+    fallback from stored content ``after_convert`` only. A hook failure ends
+    the rebuild. No post-commit hooks run."""
     from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
     converter = get_converter(session.config)
     embedder = session.store.embedder
+    # Without an after_convert hook the stored content stays as written.
+    rewrites_content = any(overrides(hook, "after_convert") for hook in client._hooks)
+    fallback_columns = (
+        (*_FULL_FALLBACK_COLUMNS, "content")
+        if rewrites_content
+        else _FULL_FALLBACK_COLUMNS
+    )
 
     written_ids: set[str] = set()
 
@@ -1022,7 +1032,7 @@ async def _rebuild_full(
                     session,
                     pending_docs,
                     pending_chunks,
-                    document_columns=_FULL_FALLBACK_COLUMNS,
+                    document_columns=fallback_columns,
                 )
                 for written in pending_docs:
                     assert written.id is not None
@@ -1071,17 +1081,28 @@ async def _rebuild_full(
                 "Source missing for %s, re-embedding from content", light_doc.uri
             )
 
-        # Fallback: rebuild from stored content; set_docling replaces both blobs.
+        # Fallback: rebuild from stored content, replacing both blobs.
         doc = await session.document_repository.get_by_id(light_doc.id)
         if doc is None:
             continue
         assert doc.id is not None
 
-        docling_document = await converter.convert_text(doc.content, format="md")
+        docling_document = await _after_convert(
+            client,
+            ConvertedDocument(
+                uri=doc.uri,
+                source_id=doc.metadata.get("source_id"),
+                content_type=None,
+                docling_document=await converter.convert_text(doc.content, format="md"),
+            ),
+        )
         chunks = await chunk_document(session, docling_document)
         embedded_chunks = await embed_chunks(chunks, embedder, session.config)
 
-        doc.set_docling(docling_document)
+        if rewrites_content:
+            await _prepare_document_from_docling(doc, docling_document)
+        else:
+            doc.set_docling(docling_document)
 
         for order, chunk in enumerate(embedded_chunks):
             chunk.document_id = doc.id
@@ -1095,7 +1116,7 @@ async def _rebuild_full(
                 session,
                 pending_docs,
                 pending_chunks,
-                document_columns=_FULL_FALLBACK_COLUMNS,
+                document_columns=fallback_columns,
             )
             for written in pending_docs:
                 assert written.id is not None
@@ -1108,7 +1129,7 @@ async def _rebuild_full(
             session,
             pending_docs,
             pending_chunks,
-            document_columns=_FULL_FALLBACK_COLUMNS,
+            document_columns=fallback_columns,
         )
         for written in pending_docs:
             assert written.id is not None

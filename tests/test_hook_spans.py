@@ -84,6 +84,11 @@ class RaisingIngestHook(Hook):
         raise RuntimeError("hook refused")
 
 
+class RaisingConvertHook(Hook):
+    async def after_convert(self, client, document):
+        raise RuntimeError("hook refused")
+
+
 class PassThroughSearchHook(Hook):
     async def before_search(self, client, request):
         return request
@@ -323,6 +328,25 @@ async def test_a_before_ingest_failure_is_recorded_as_a_hook_error(
     assert Tree(exporter).exceptions("hook.before_ingest") == [
         "haiku.rag.hooks.HookError"
     ]
+
+
+async def test_an_after_convert_failure_is_recorded_on_its_span(
+    temp_db_path, tmp_path, exporter
+):
+    path = tmp_path / "doc.md"
+    path.write_bytes(b"# Notes\n\nBody.\n")
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        client._hooks = [RaisingConvertHook()]
+        with pytest.raises(HookError):
+            await client.create_document_from_source(path)
+
+    tree = Tree(exporter)
+    attrs = tree.attrs("hook.after_convert")
+    assert attrs["hook"] == "tests.test_hook_spans.RaisingConvertHook"
+    assert attrs["uri"] == path.as_uri()
+    assert attrs["content_type"] == "text/markdown"
+    assert tree.exceptions("hook.after_convert") == ["haiku.rag.hooks.HookError"]
 
 
 async def test_search_hook_spans_count_results(temp_db_path, exporter):
