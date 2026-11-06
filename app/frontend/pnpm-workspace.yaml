@@ -8,3 +8,4 @@ overrides:
   systeminformation: '>=5.33.16'
   ip-address: '^10.7.1'
   fast-uri: '^3.1.9'
+  zod: '>=4.6.6'

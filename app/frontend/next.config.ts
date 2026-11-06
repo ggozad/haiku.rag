@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
 	allowedDevOrigins: ["127.0.0.1"],
 	// The dev server's route indicator covers the inspector's pagination.
 	devIndicators: false,
+	// The dev server writes an AGENTS.md beside this file unless this is off.
+	agentRules: false,
 };
 
 export default nextConfig;

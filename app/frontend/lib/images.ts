@@ -1,4 +1,4 @@
-import type { InputContent } from "@ag-ui/client";
+import type { ContentPart } from "@ag-ui/client";
 
 export const MAX_IMAGES = 8;
 export const MAX_EDGE = 2048;
@@ -28,7 +28,7 @@ export function fitWithin(
 export function userContent(
 	text: string,
 	images: Attachment[],
-): string | InputContent[] {
+): string | ContentPart[] {
 	if (!images.length) return text;
 	return [
 		...(text ? [{ type: "text" as const, text }] : []),

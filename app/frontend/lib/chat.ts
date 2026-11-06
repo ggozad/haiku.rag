@@ -1,4 +1,4 @@
-import type { InputContent, Message, ToolCall } from "@ag-ui/client";
+import type { ContentPart, Message, ToolCall } from "@ag-ui/client";
 import type { DatabaseEntry } from "./databases";
 import { newId } from "./id";
 import { type Attachment, MAX_IMAGES } from "./images";
@@ -43,7 +43,7 @@ export function toolResults(messages: Message[]): Map<string, string> {
 	const results = new Map<string, string>();
 	for (const message of messages) {
 		if (message.role === "tool") {
-			results.set(message.toolCallId, message.content);
+			results.set(message.toolCallId, contentText(message.content));
 		}
 	}
 	return results;
@@ -130,9 +130,12 @@ export function checkpoint(messages: Message[], state: unknown): Checkpoint {
 }
 
 export function textOf(message: Message): string {
-	if (message.role !== "user") return "";
-	if (typeof message.content === "string") return message.content;
-	return message.content
+	return message.role === "user" ? contentText(message.content) : "";
+}
+
+function contentText(content: string | ContentPart[]): string {
+	if (typeof content === "string") return content;
+	return content
 		.map((part) => (part.type === "text" ? part.text : ""))
 		.join("");
 }
@@ -179,7 +182,7 @@ export type TurnOutcome =
 // are kept or dropped together.
 export async function runTurn(
 	agent: TurnAgent,
-	content: string | InputContent[],
+	content: string | ContentPart[],
 	runId: string,
 	forwardedProps: Record<string, unknown>,
 ): Promise<TurnOutcome> {

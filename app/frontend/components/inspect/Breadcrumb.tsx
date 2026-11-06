@@ -60,6 +60,7 @@ export default function Breadcrumb({
 			<ol className="flex min-w-0 items-center gap-1">
 				{crumbs.map((crumb, n) => (
 					<li
+						// biome-ignore lint/suspicious/noArrayIndexKey: a crumb's position is its identity, labels can repeat
 						key={`${n}:${crumb.label}`}
 						className={cn(
 							"flex items-center gap-1",

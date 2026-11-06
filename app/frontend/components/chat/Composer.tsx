@@ -75,6 +75,7 @@ export default function Composer({
 			{images.length > 0 && (
 				<div className="flex flex-wrap gap-2">
 					{images.map((image, index) => (
+						// biome-ignore lint/suspicious/noArrayIndexKey: the same image can be attached twice
 						<div key={`${image.name}-${index}`} className="relative">
 							{/* biome-ignore lint/performance/noImgElement: local data URL preview */}
 							<img
