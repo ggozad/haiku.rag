@@ -18,4 +18,4 @@ class ConverterWedgedError(RuntimeError):
 
 
 class ConversionFailedError(ValueError):
-    """The converter could not parse the file."""
+    """The converter refused the file or could not decode its text."""

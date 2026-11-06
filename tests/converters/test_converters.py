@@ -739,7 +739,7 @@ class TestDoclingLocalConverter:
     async def test_convert_file_raises_conversion_failed_for_unknown_xml(
         self, converter, tmp_path
     ):
-        """An XML dialect docling does not recognise fails as unparseable."""
+        """docling-local refuses a MathML file with `ConversionFailedError`."""
         source = tmp_path / "equation-1.xml"
         source.write_text(
             '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>',
