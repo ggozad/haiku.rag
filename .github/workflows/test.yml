@@ -31,11 +31,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
         with:
-          version: 10
+          package_json_file: app/frontend/package.json
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "26"
           cache: "pnpm"
           cache-dependency-path: app/frontend/pnpm-lock.yaml
       - name: Install dependencies
