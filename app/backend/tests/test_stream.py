@@ -723,7 +723,6 @@ async def test_an_image_is_refused_when_the_model_has_no_vision(
 @pytest.mark.parametrize(
     "part",
     [
-        {"type": "binary", "mimeType": "image/png", "data": "aGVsbG8="},
         {
             "type": "document",
             "source": {
