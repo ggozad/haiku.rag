@@ -46,6 +46,7 @@ from haiku.rag.converters.base import (
 from haiku.rag.converters.docling_local import DoclingLocalConverter
 from haiku.rag.converters.docling_serve import DoclingServeConverter
 from haiku.rag.converters.exceptions import (
+    ConversionFailedError,
     ConversionTimeoutError,
     ConverterWedgedError,
 )
@@ -421,7 +422,9 @@ class TestTextDecoding:
     def test_undetectable_bytes_raise(self, tmp_path):
         source = tmp_path / "doc.txt"
 
-        with pytest.raises(ValueError, match="No text encoding detected") as exc:
+        with pytest.raises(
+            ConversionFailedError, match="No text encoding detected"
+        ) as exc:
             to_utf8(UNDETECTABLE, source)
 
         assert str(source) in str(exc.value)
@@ -730,7 +733,20 @@ class TestDoclingLocalConverter:
         source = tmp_path / "broken.txt"
         source.write_bytes(UNDETECTABLE)
 
-        with pytest.raises(ValueError, match="Failed to parse file"):
+        with pytest.raises(ConversionFailedError, match="Failed to parse file"):
+            await converter.convert_file(source)
+
+    async def test_convert_file_raises_conversion_failed_for_unknown_xml(
+        self, converter, tmp_path
+    ):
+        """docling-local refuses a MathML file with `ConversionFailedError`."""
+        source = tmp_path / "equation-1.xml"
+        source.write_text(
+            '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>',
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ConversionFailedError, match="File format not allowed"):
             await converter.convert_file(source)
 
     @pytest.mark.parametrize(
@@ -2338,6 +2354,20 @@ class TestDoclingServeConverterIntegration:
         titles = [t.text for t in doc.texts if t.label == DocItemLabel.TITLE]
         assert titles == ["Chapter One", "Chapter Two"]
         assert "Tides are caused by lunar gravity." in doc.export_to_markdown()
+
+    @pytest.mark.vcr()
+    async def test_convert_mathml_real_service(self, converter, tmp_path):
+        """docling-serve reports an XML dialect it refuses as an internal error."""
+        source = tmp_path / "equation-1.xml"
+        source.write_text(
+            '<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>',
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="Internal processing error") as exc:
+            await converter.convert_file(source)
+
+        assert not isinstance(exc.value, ConversionFailedError)
 
     @pytest.mark.integration
     async def test_picture_description_end_to_end(

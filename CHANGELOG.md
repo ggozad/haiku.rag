@@ -5,6 +5,7 @@
 ### Fixed
 
 - `add-src DIR` logs a file that fails to ingest and continues with the rest of the directory, then names the failure count and exits 1. A wedged docling converter still stops the run (#827).
+- A PDF attachment refused by docling-local, such as a MathML `equation-1.xml`, or with an undetectable text encoding, is skipped with a warning and no longer fails its PDF (#829).
 
 ## [0.108.0] - 2026-11-05
 
