@@ -128,6 +128,26 @@
       .badge.upsert { background: rgba(79, 134, 198, 0.15); color: var(--queued); }
       .badge.delete { background: rgba(204, 84, 84, 0.15); color: var(--dead); }
 
+      td.files { min-width: 200px; }
+      .completion { display: flex; align-items: center; gap: 8px; }
+      .bar {
+        display: flex; flex: 1; height: 8px; border-radius: 4px;
+        overflow: hidden; background: var(--bg);
+      }
+      .ingested { --file: var(--succeeded); }
+      .pending { --file: var(--queued); }
+      .failed { --file: var(--dead); }
+      .waiting { --file: var(--muted); }
+      .bar > span { background: var(--file); }
+      .files-legend {
+        margin-top: 4px; font-size: 11px; color: var(--muted);
+        display: flex; flex-wrap: wrap; gap: 0 10px;
+      }
+      .files-legend span::before {
+        content: ""; display: inline-block; width: 8px; height: 8px;
+        border-radius: 50%; margin-right: 4px; background: var(--file);
+      }
+
       .stats-grid {
         display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
       }
@@ -481,6 +501,25 @@
         circuit_open: "breaker open",
       };
 
+      const FILE_STATES = ["ingested", "pending", "failed", "waiting"];
+
+      // Floored, so 100% means every known file is ingested.
+      function filesCell(s) {
+        if (!s.known) return '<td class="files">—</td>';
+        const percent = Math.floor((100 * s.ingested) / s.known);
+        const segments = FILE_STATES.map(
+          (state) =>
+            `<span class="${state}" style="width: ${(100 * s[state]) / s.known}%" data-tip="${s[state]} ${state}"></span>`,
+        ).join("");
+        const legend = FILE_STATES.map(
+          (state) => `<span class="${state}">${s[state]} ${state}</span>`,
+        ).join("");
+        return `<td class="files">
+          <div class="completion"><div class="bar">${segments}</div>${percent}%</div>
+          <div class="files-legend">${legend}</div>
+        </td>`;
+      }
+
       function renderSources(sources) {
         $("sources-count").textContent = `(${sources.length})`;
         if (!sources.length) {
@@ -537,6 +576,7 @@
               <td>${escapeHtml(s.source_id)}</td>${databaseCell}
               <td>${escapeHtml(s.type)}</td>
               <td>${polledCell}</td>
+              ${filesCell(s)}
               <td>${circuitBadge}</td>
               <td class="actions">
                 <button data-source="${escapeHtml(s.source_id)}" onclick="refreshSource(this.dataset.source)">Refresh</button>
@@ -547,7 +587,7 @@
           .join("");
         $("sources-body").innerHTML = `<table>
           <thead><tr>
-            <th>ID</th>${showDatabase ? "<th>Database</th>" : ""}<th>Type</th><th>Last polled</th><th>Circuit</th><th></th>
+            <th>ID</th>${showDatabase ? "<th>Database</th>" : ""}<th>Type</th><th>Last polled</th><th>Files</th><th>Circuit</th><th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>`;

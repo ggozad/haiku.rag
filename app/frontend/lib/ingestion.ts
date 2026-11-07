@@ -175,6 +175,20 @@ export function fileName(uri: string): string {
 	}
 }
 
+export const FILE_STATES = [
+	"ingested",
+	"pending",
+	"failed",
+	"waiting",
+] as const;
+
+export type FileCounts = Record<(typeof FILE_STATES)[number] | "known", number>;
+
+// Floored, so 100 means every known file is ingested.
+export function completion(files: FileCounts): number | null {
+	return files.known ? Math.floor((100 * files.ingested) / files.known) : null;
+}
+
 // The databases written by the ingester, named by the sources that feed them.
 export function ingestedDatabases(sources: { database: string | null }[]) {
 	return [

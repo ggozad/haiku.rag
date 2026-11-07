@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	CYCLE,
+	completion,
 	describeFailure,
 	fileName,
 	formatAge,
@@ -335,5 +336,20 @@ describe("fileName", () => {
 
 	it("is the whole URI when no segment is left", () => {
 		expect(fileName("/")).toBe("/");
+	});
+});
+
+describe("completion", () => {
+	const files = { known: 3, ingested: 2, pending: 1, failed: 0, waiting: 0 };
+
+	it("is the floored percentage of known files ingested", () => {
+		expect(completion(files)).toBe(66);
+		expect(completion({ ...files, ingested: 3, pending: 0 })).toBe(100);
+	});
+
+	it("is null for a source with no known files", () => {
+		expect(
+			completion({ known: 0, ingested: 0, pending: 0, failed: 0, waiting: 0 }),
+		).toBeNull();
 	});
 });

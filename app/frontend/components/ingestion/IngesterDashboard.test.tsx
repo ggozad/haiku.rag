@@ -28,6 +28,24 @@ const job = (id: string, uri: string, extra = {}) => ({
 	...extra,
 });
 
+const source = (source_id: string, files = {}) => ({
+	source_id,
+	database: "docs",
+	type: "fs",
+	last_polled_at: null,
+	circuit_breaker_open: false,
+	last_skip_reason: null,
+	last_error: null,
+	last_error_at: null,
+	unsupported_files: {},
+	known: 0,
+	ingested: 0,
+	pending: 0,
+	failed: 0,
+	waiting: 0,
+	...files,
+});
+
 function answers(): Record<string, unknown> {
 	return {
 		health: {
@@ -39,7 +57,16 @@ function answers(): Record<string, unknown> {
 			worker_breaker_consecutive_failures: 0,
 			failed_databases: [],
 		},
-		sources: [],
+		sources: [
+			source("docs", {
+				known: 8,
+				ingested: 5,
+				pending: 1,
+				failed: 1,
+				waiting: 1,
+			}),
+			source("empty"),
+		],
 		providers: { docling_serve: [] },
 		stats: {
 			throughput: { succeeded_5m: 0, succeeded_30m: 0, succeeded_1h: 0 },
@@ -167,6 +194,23 @@ describe("ingester dashboard job tables", () => {
 		expect(headings("active-body")).toContain("Running");
 		const row = table("active-body").getByText("Q3 summary.pdf").closest("tr");
 		expect(row?.textContent).toMatch(/2m [56]s(?! ago)/);
+	});
+
+	it("shows how much of each source is ingested", async () => {
+		await open();
+		const sources = table("sources-body");
+		const docs = sources.getByText("docs").closest("tr") as HTMLElement;
+		const widths = Array.from(
+			docs.querySelectorAll<HTMLElement>(".bar > span"),
+			(segment) => segment.style.width,
+		);
+		expect(widths).toEqual(["62.5%", "12.5%", "12.5%", "12.5%"]);
+		expect(docs.textContent).toContain("62%");
+		expect(docs.textContent).toMatch(
+			/5 ingested.*1 pending.*1 failed.*1 waiting/,
+		);
+		const empty = sources.getByText("empty").closest("tr") as HTMLElement;
+		expect(empty.querySelector(".bar")).toBeNull();
 	});
 
 	it("copies the full URI when the file cell is clicked", async () => {

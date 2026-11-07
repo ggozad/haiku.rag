@@ -12,11 +12,16 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/format";
-import { ingestedDatabases, unsupportedFiles } from "@/lib/ingestion";
+import {
+	completion,
+	FILE_STATES,
+	ingestedDatabases,
+	unsupportedFiles,
+} from "@/lib/ingestion";
 import type { Source, Stats } from "./types";
 
-// The configured sources, their queued, dead and rejected counts, Scan now and
-// Retry failed.
+// The configured sources, how much of each is ingested, their queued, dead and
+// rejected counts, Scan now and Retry failed.
 // The database column shows when the ingester writes more than one.
 export default function SourcesPanel({
 	sources,
@@ -41,6 +46,7 @@ export default function SourcesPanel({
 						{showDatabase && <TableHead>Database</TableHead>}
 						<TableHead>Type</TableHead>
 						<TableHead>Last polled</TableHead>
+						<TableHead>Files</TableHead>
 						<TableHead>Queued</TableHead>
 						<TableHead>Dead</TableHead>
 						<TableHead>Rejected</TableHead>
@@ -69,6 +75,9 @@ export default function SourcesPanel({
 									{source.last_polled_at
 										? formatRelativeTime(source.last_polled_at, true)
 										: "never"}
+								</TableCell>
+								<TableCell>
+									<Completion source={source} />
 								</TableCell>
 								<TableCell className="tabular-nums">
 									{stats?.queue_depth_by_source[source.source_id] ?? 0}
@@ -137,7 +146,7 @@ export default function SourcesPanel({
 					{sources.length === 0 && (
 						<TableRow>
 							<TableCell
-								colSpan={showDatabase ? 9 : 8}
+								colSpan={showDatabase ? 10 : 9}
 								className="text-muted-foreground"
 							>
 								No sources are configured.
@@ -146,6 +155,47 @@ export default function SourcesPanel({
 					)}
 				</TableBody>
 			</Table>
+		</div>
+	);
+}
+
+const FILE_COLORS = {
+	ingested: "bg-emerald-500",
+	pending: "bg-sky-500",
+	failed: "bg-destructive",
+	waiting: "bg-muted-foreground/30",
+};
+
+function Completion({ source }: { source: Source }) {
+	const percent = completion(source);
+	if (percent === null) return <span className="text-muted-foreground">—</span>;
+	return (
+		<div className="min-w-48 space-y-1">
+			<div className="flex items-center gap-2">
+				<div
+					role="img"
+					aria-label={`${percent}% of ${source.known} files ingested`}
+					className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted"
+				>
+					{FILE_STATES.map((state) => (
+						<span
+							key={state}
+							title={`${source[state]} ${state}`}
+							className={FILE_COLORS[state]}
+							style={{ width: `${(100 * source[state]) / source.known}%` }}
+						/>
+					))}
+				</div>
+				<span className="text-xs tabular-nums">{percent}%</span>
+			</div>
+			<div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground tabular-nums">
+				{FILE_STATES.map((state) => (
+					<span key={state} className="inline-flex items-center gap-1">
+						<span className={`size-2 rounded-full ${FILE_COLORS[state]}`} />
+						{source[state]} {state}
+					</span>
+				))}
+			</div>
 		</div>
 	);
 }
