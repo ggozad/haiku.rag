@@ -12,6 +12,10 @@
 - Web app: the backend runs on `ag-ui-protocol` 1.0.
 - The `voyageai` extra requires `voyageai>=0.5.0,<0.6` and installs it on Python 3.14.
 
+### Fixed
+
+- Local PDF conversion failed without X11 libraries, `docker/Dockerfile` images included, when `rapidocr`'s `opencv-python` overwrote `opencv-python-headless`. `uv.lock` excludes `opencv-python`.
+
 ## [0.109.0] - 2026-11-06
 
 ### Added
