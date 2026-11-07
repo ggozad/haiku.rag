@@ -37,8 +37,9 @@ from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.exceptions import QueueError
 from haiku.rag.ingester.queue.db import SCHEMA_VERSION, metadata
 from haiku.rag.ingester.queue.migrations import apply_migrations, open_queue
-from haiku.rag.ingester.queue.models import JobOp, JobStatus, SyncRow
+from haiku.rag.ingester.queue.models import FileCounts, JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
+from tests.ingester.conftest import seed_file_states
 
 pytestmark = pytest.mark.integration
 
@@ -214,6 +215,21 @@ async def test_sync_state_retire(postgres_dburi):
             None,
             None,
         )
+
+
+async def test_file_counts_put_each_file_in_one_bucket(postgres_dburi):
+    async with queue_engine(postgres_dburi) as engine:
+        jobs, sync = JobRepo(engine), SyncStateRepo(engine)
+        await seed_file_states(jobs, sync, "s")
+        await seed_file_states(
+            JobRepo(engine, namespace="elsewhere"),
+            SyncStateRepo(engine, namespace="elsewhere"),
+            "s",
+        )
+        assert await sync.file_counts(["s", "none"]) == {
+            "s": FileCounts(pending=2, failed=3, ingested=2, waiting=1),
+            "none": FileCounts(pending=0, failed=0, ingested=0, waiting=0),
+        }
 
 
 async def test_prune_terminal_removes_old_rows(postgres_dburi):

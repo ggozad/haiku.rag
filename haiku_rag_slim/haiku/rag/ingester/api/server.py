@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from haiku.rag.ingester.app import ReloadReport
     from haiku.rag.ingester.maintenance import DatabaseMaintenance
     from haiku.rag.ingester.pollers.manager import PollerManager
+    from haiku.rag.ingester.queue.models import FileCounts
     from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
     from haiku.rag.ingester.workers.pool import WorkerPool
 
@@ -28,7 +29,8 @@ class APIState:
     served source id to the name of its database, and `maintenance` each
     maintained database's pass state. A retry holds `claim_lock`, the
     pool's, so it cannot land between a removal's unserve and its delete.
-    `reload` is the running app's."""
+    `reload` is the running app's. `file_counts` is the last count of
+    each source's files, with its `time.monotonic()` stamp."""
 
     config: "AppConfig"
     job_repo: "JobRepo"
@@ -41,6 +43,7 @@ class APIState:
     maintenance: "Mapping[str, DatabaseMaintenance]" = field(default_factory=dict)
     claim_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     reload: "Callable[[], Awaitable[ReloadReport]] | None" = None
+    file_counts: "tuple[float, dict[str, FileCounts]]" = (float("-inf"), {})
 
 
 def get_state(request: Request) -> APIState:

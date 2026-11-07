@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from haiku.rag.ingester.exceptions import BlockingTombstoneError
 from haiku.rag.ingester.queue.db import jobs, sync_state
 from haiku.rag.ingester.queue.models import (
+    FileCounts,
     Job,
     JobOp,
     JobStatus,
@@ -912,6 +913,79 @@ class SyncStateRepo:
                     now if ingested else None,
                 )
                 await conn.execute(stmt)
+
+    async def file_counts(self, source_ids: Collection[str]) -> dict[str, FileCounts]:
+        """Each source's files by state: a live job, a failure not ingested
+        since, an ingested document, or none of these yet."""
+        ids = sorted(source_ids)
+        live = jobs.c.status.in_(["queued", "claimed"])
+        owned_jobs = sa.and_(
+            jobs.c.namespace == self._namespace, jobs.c.source_id.in_(ids)
+        )
+        # `jobs` has no index over terminal rows, so failures are reduced per
+        # file and joined once.
+        failures = (
+            sa.select(
+                jobs.c.source_id,
+                jobs.c.uri,
+                sa.func.max(jobs.c.completed_at).label("failed_at"),
+            )
+            .where(owned_jobs, jobs.c.status.in_(["dead", "rejected"]))
+            .group_by(jobs.c.source_id, jobs.c.uri)
+            .subquery()
+        )
+        running = (
+            sa.select(jobs.c.source_id, jobs.c.uri).where(owned_jobs, live).subquery()
+        )
+        bucket = sa.case(
+            (
+                sa.and_(
+                    failures.c.failed_at.is_not(None),
+                    sa.or_(
+                        sync_state.c.last_ingested_at.is_(None),
+                        failures.c.failed_at > sync_state.c.last_ingested_at,
+                    ),
+                ),
+                "failed",
+            ),
+            (sync_state.c.last_ingested_at.is_not(None), "ingested"),
+            (sync_state.c.revision.is_not(None), "retired"),
+            else_="waiting",
+        ).label("bucket")
+
+        def joined(sub: sa.Subquery) -> sa.ColumnElement[bool]:
+            return sa.and_(
+                sub.c.source_id == sync_state.c.source_id,
+                sub.c.uri == sync_state.c.uri,
+            )
+
+        settled = (
+            sa.select(sync_state.c.source_id, bucket, sa.func.count())
+            .select_from(
+                sync_state.outerjoin(failures, joined(failures)).outerjoin(
+                    running, joined(running)
+                )
+            )
+            .where(
+                self._owned,
+                sync_state.c.source_id.in_(ids),
+                running.c.uri.is_(None),
+            )
+            .group_by(sync_state.c.source_id, bucket)
+        )
+        pending = (
+            sa.select(jobs.c.source_id, sa.literal("pending"), sa.func.count())
+            .where(owned_jobs, live)
+            .group_by(jobs.c.source_id)
+        )
+        counts = {source_id: FileCounts() for source_id in ids}
+        # One statement, so a job queued or finished meanwhile is counted once.
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(sa.union_all(settled, pending))).all()
+        for source_id, name, n in rows:
+            if name != "retired":
+                setattr(counts[source_id], name, n)
+        return counts
 
     async def list_ingested_uris(self, source_id: str) -> set[str]:
         """Every URI this source has successfully written a document for.

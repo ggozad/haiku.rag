@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import NamedTuple
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class JobStatus(StrEnum):
@@ -71,3 +71,22 @@ class SyncRow(NamedTuple):
     revision: str | None
     content_hash: str | None
     ingested: bool
+
+
+class FileCounts(BaseModel):
+    """A source's discovered files, each in one bucket. A file accounted for
+    at a revision without a document (a retired URI) is in none.
+
+    A pruned failure that never ingested reads as retired, and a document the
+    index lost counts as ingested until the next sweep queues it again.
+    """
+
+    pending: int = 0
+    failed: int = 0
+    ingested: int = 0
+    waiting: int = 0
+
+    @computed_field
+    @property
+    def known(self) -> int:
+        return self.pending + self.failed + self.ingested + self.waiting

@@ -5,6 +5,7 @@
 ### Added
 
 - Python 3.14 support.
+- `GET /sources` reports each source's files by state: `known`, `ingested`, `pending`, `failed` and `waiting` (#853).
 
 ### Changed
 
