@@ -75,6 +75,11 @@ exclude = [
 [tool.hatch.build.targets.wheel]
 only-include = ["/README.md"]
 
+[tool.uv]
+# rapidocr requires the GUI build, which writes the same cv2/ files as the
+# headless one and needs X11 libraries.
+exclude-dependencies = ["opencv-python"]
+
 [tool.uv.workspace]
 members = ["haiku_rag_slim", "evaluations", "app/backend"]
 
