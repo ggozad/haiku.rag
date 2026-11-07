@@ -131,20 +131,15 @@ async def test_fs_source_discover_skips_file_deleted_during_stat(
     """A file deleted between is_file() and stat() should be silently
     skipped instead of crashing the entire discover() sweep."""
     victim = fs_root / "b.txt"
-    original_stat = Path.stat
-    victim_calls = 0
+    original_is_file = Path.is_file
 
-    def _stat_that_fails_on_second_call(self, *args, **kwargs):
-        nonlocal victim_calls
+    def _is_file_then_delete(self, *args, **kwargs):
+        result = original_is_file(self, *args, **kwargs)
         if self == victim:
-            victim_calls += 1
-            # First calls are from is_symlink/is_file; the later call
-            # is the explicit stat().st_mtime_ns we want to fail.
-            if victim_calls > 2:
-                raise FileNotFoundError(f"[Errno 2] No such file: '{self}'")
-        return original_stat(self, *args, **kwargs)
+            self.unlink()
+        return result
 
-    monkeypatch.setattr(Path, "stat", _stat_that_fails_on_second_call)
+    monkeypatch.setattr(Path, "is_file", _is_file_then_delete)
 
     src = FSSource(root=fs_root, supported_extensions=[".md", ".txt"])
     events = [e async for e in src.discover(since=None)]

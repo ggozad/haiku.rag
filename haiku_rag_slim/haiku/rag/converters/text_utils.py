@@ -64,7 +64,7 @@ def docling_safe_name(name: str) -> str:
     derived from a dotfile (".customrc" -> ".customrc.md") is classified as
     an unknown format and parsed as one unstructured text block. A name that
     is only dots before its extension keeps the extension ("..md" ->
-    "document.md").
+    "document.md"). Python 3.14 reads no extension in such a name.
     """
     path = Path(name)
     stem = path.stem.lstrip(".")
