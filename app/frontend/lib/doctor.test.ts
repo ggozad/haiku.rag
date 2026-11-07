@@ -3,6 +3,7 @@ import {
 	type Check,
 	counts,
 	formatBytes,
+	nearestDocuments,
 	ordered,
 	scanBytes,
 	settled,
@@ -71,5 +72,32 @@ describe("verdict", () => {
 			tone: "fail",
 			label: "1 check failed",
 		});
+	});
+});
+
+describe("nearestDocuments", () => {
+	const documents = ["a", "b", "c", "d", "e"].map((id) => ({
+		id,
+		title: null,
+		uri: `test://${id}`,
+	}));
+	const scores = { generation: "g2", similarity: [0.2, 1, 0.9, 0.5, 0.95] };
+
+	it("ranks the others by the score at their index, most similar first", () => {
+		expect(nearestDocuments(scores, "g2", documents, "b", 3)).toEqual([
+			{ id: "e", title: null, uri: "test://e", similarity: 0.95 },
+			{ id: "c", title: null, uri: "test://c", similarity: 0.9 },
+			{ id: "d", title: null, uri: "test://d", similarity: 0.5 },
+		]);
+		expect(nearestDocuments(scores, "g2", documents, "b", 10)).toHaveLength(4);
+	});
+
+	it("ignores scores computed by another job", () => {
+		expect(nearestDocuments(scores, "g3", documents, "b", 3)).toBeNull();
+	});
+
+	it("needs scores and a compared document", () => {
+		expect(nearestDocuments(null, "g2", documents, "b", 3)).toBeNull();
+		expect(nearestDocuments(scores, "g2", documents, "gone", 3)).toBeNull();
 	});
 });

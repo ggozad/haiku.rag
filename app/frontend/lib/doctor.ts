@@ -78,3 +78,27 @@ export function formatBytes(n: number): string {
 export function settled(job: Job<unknown> | null): boolean {
 	return job === null || job.status === "done" || job.status === "failed";
 }
+
+export interface Compared {
+	id: string;
+	title: string | null;
+	uri: string | null;
+}
+
+// The `k` documents most similar to `selected`, most similar first. Score `i`
+// belongs to `documents[i]`, and scores from another job are ignored.
+export function nearestDocuments(
+	scores: { generation: string; similarity: number[] } | null,
+	generation: string,
+	documents: Compared[],
+	selected: string,
+	k: number,
+): (Compared & { similarity: number })[] | null {
+	if (!scores || scores.generation !== generation) return null;
+	if (!documents.some((doc) => doc.id === selected)) return null;
+	return documents
+		.map((doc, index) => ({ ...doc, similarity: scores.similarity[index] }))
+		.filter((doc) => doc.id !== selected)
+		.sort((a, b) => b.similarity - a.similarity)
+		.slice(0, k);
+}

@@ -8,7 +8,7 @@ import { decoded } from "@/lib/http";
 // queued or running. `start` posts and polls until the job settles.
 export function useJob<T>(
 	statusUrl: string | null,
-	key: "run" | "projection",
+	key: "run" | "similarity",
 	// After the job settles, read it again at this interval.
 	revalidateMs?: number,
 ): {

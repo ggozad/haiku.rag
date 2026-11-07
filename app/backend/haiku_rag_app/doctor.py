@@ -11,7 +11,7 @@ from haiku.rag.client.scope import DatabaseRef
 from haiku.rag.doctor import duplicates_yaml, run_doctor, scan_vectors
 from haiku.rag.store.engine import Store
 from haiku_rag_app.jobs import Progress
-from haiku_rag_app.projection import Projection, Retained, project, similarity
+from haiku_rag_app.similarity import Comparison, Retained, compare, similarity
 
 
 def configured_ref(request: Request) -> DatabaseRef:
@@ -54,16 +54,12 @@ async def get_run(request: Request) -> JSONResponse:
     return JSONResponse({"run": job.summary() if job else None})
 
 
-def _label(point: dict[str, Any]) -> str:
-    return point.get("uri") or point.get("title") or point["id"]
-
-
-async def start_projection(request: Request) -> JSONResponse:
+async def start_similarity(request: Request) -> JSONResponse:
     ref = configured_ref(request)
     config = request.app.state.config
     retained: Retained = request.app.state.retained
 
-    async def work(progress: Progress) -> Projection:
+    async def work(progress: Progress) -> Comparison:
         progress("Reading chunk vectors")
         async with Store(
             ref.location,
@@ -76,62 +72,64 @@ async def start_projection(request: Request) -> JSONResponse:
             scan = await scan_vectors(store)
             rows = (
                 await store.document_meta_table.query()
-                .select(["id", "title", "uri", "metadata"])
+                .select(["id", "title", "uri"])
                 .to_list()
             )
-        progress("Projecting documents")
-        projection = project(
+        progress("Comparing documents")
+        comparison = compare(
             scan, {row["id"]: row for row in rows}, config.doctor.duplicates
         )
-        projection.versions = {
+        comparison.versions = {
             table: versions.get(table) for table in ("chunks", "document_meta")
         }
-        return projection
+        return comparison
 
-    def done(projection: Projection) -> dict[str, Any]:
+    def done(comparison: Comparison) -> dict[str, Any]:
         generation = uuid.uuid4().hex
-        neighbours = retained.keep(ref, generation, projection.ids, projection.unit)
-        labels = {point["id"]: _label(point) for point in projection.points}
+        neighbours = retained.keep(ref, generation, comparison.ids, comparison.unit)
+        labels = {
+            d["id"]: d["uri"] or d["title"] or d["id"] for d in comparison.documents
+        }
         return {
-            "points": projection.points,
+            "documents": comparison.documents,
             "families": [
                 {
                     **family.model_dump(),
                     "label": {m: labels.get(m, m) for m in family.members},
                 }
-                for family in projection.families
+                for family in comparison.families
             ],
-            "left_off": projection.left_off,
+            "left_off": comparison.left_off,
             "generation": generation,
-            "versions": projection.versions,
+            "versions": comparison.versions,
             "neighbours": neighbours,
             "yaml": duplicates_yaml(
-                projection.families, lambda doc_id: labels.get(doc_id, doc_id)
+                comparison.families, lambda doc_id: labels.get(doc_id, doc_id)
             ),
         }
 
-    job = request.app.state.jobs.submit(ref, "projection", work, on_done=done)
+    job = request.app.state.jobs.submit(ref, "similarity", work, on_done=done)
     return JSONResponse(job.summary(), status_code=202)
 
 
-async def get_projection(request: Request) -> JSONResponse:
-    """The latest projection, marked stale when the chunks or the documents'
-    attributes changed since its scan started."""
+async def get_similarity(request: Request) -> JSONResponse:
+    """The latest similarity job, marked stale when the chunks or the
+    documents' attributes changed since its scan started."""
     ref = configured_ref(request)
-    job = request.app.state.jobs.get(ref, "projection")
+    job = request.app.state.jobs.get(ref, "similarity")
     if job is None:
-        return JSONResponse({"projection": None})
+        return JSONResponse({"similarity": None})
     summary = job.summary()
     if job.status == "done":
         summary["stale"] = await _stale(request, ref.name, job.result["versions"])
-        # A later map of another database may have evicted these centroids.
+        # A later job on another database may have evicted these centroids.
         kept = request.app.state.retained.get(ref)
         summary["result"] = {
             **job.result,
             "neighbours": kept is not None
             and kept.generation == job.result["generation"],
         }
-    return JSONResponse({"projection": summary})
+    return JSONResponse({"similarity": summary})
 
 
 async def _stale(request: Request, name: str, versions: dict) -> bool | None:
@@ -147,22 +145,22 @@ async def _stale(request: Request, name: str, versions: dict) -> bool | None:
     return any(current.get(table) != version for table, version in versions.items())
 
 
-async def similarities(request: Request) -> JSONResponse:
+async def document_similarity(request: Request) -> JSONResponse:
     ref = configured_ref(request)
     kept = request.app.state.retained.get(ref)
     if kept is None:
         raise HTTPException(
             404,
-            "similarity is unavailable: compute the map again, within the memory budget",
+            "similarity is unavailable: compute it again, within the memory budget",
         )
     generation = request.query_params.get("generation")
     if not generation:
-        raise HTTPException(400, "generation names the map the scores are for")
+        raise HTTPException(400, "generation names the job the scores are for")
     if generation != kept.generation:
-        raise HTTPException(409, "the map was computed again: reload it")
+        raise HTTPException(409, "similarity was computed again: reload it")
     doc_id = request.query_params.get("id", "")
     if doc_id not in kept.ids:
-        raise HTTPException(404, f"no document {doc_id!r} on the map")
+        raise HTTPException(404, f"document {doc_id!r} was not compared")
     return JSONResponse(
         {
             "generation": kept.generation,
@@ -173,9 +171,9 @@ async def similarities(request: Request) -> JSONResponse:
 
 async def duplicates_export(request: Request) -> PlainTextResponse:
     ref = configured_ref(request)
-    job = request.app.state.jobs.get(ref, "projection")
+    job = request.app.state.jobs.get(ref, "similarity")
     if job is None or job.status != "done":
-        raise HTTPException(404, "compute the map first")
+        raise HTTPException(404, "compute similarity first")
     return PlainTextResponse(
         job.result["yaml"],
         media_type="application/yaml",
@@ -187,9 +185,13 @@ async def duplicates_export(request: Request) -> PlainTextResponse:
 
 routes = [
     Route("/api/doctor/{source}/run", start_run, methods=["POST"]),
-    Route("/api/doctor/{source}/projection", start_projection, methods=["POST"]),
-    Route("/api/doctor/{source}/projection", get_projection, methods=["GET"]),
-    Route("/api/doctor/{source}/projection/similarity", similarities, methods=["GET"]),
+    Route("/api/doctor/{source}/similarity", start_similarity, methods=["POST"]),
+    Route("/api/doctor/{source}/similarity", get_similarity, methods=["GET"]),
+    Route(
+        "/api/doctor/{source}/similarity/documents",
+        document_similarity,
+        methods=["GET"],
+    ),
     Route("/api/doctor/{source}/duplicates.yaml", duplicates_export, methods=["GET"]),
     Route("/api/doctor/{source}", get_run, methods=["GET"]),
 ]

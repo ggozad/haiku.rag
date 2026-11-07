@@ -48,11 +48,11 @@ class Job:
 
 
 class Jobs:
-    """Doctor runs and projections, one at a time, on one worker thread.
+    """Doctor runs and similarity jobs, one at a time, on one worker thread.
 
-    Both read every chunk vector and cluster or project them in numpy, which
-    would stall the request loop: they run on the thread's own event loop, each
-    over the connection it opens. A job is not cancellable once started, and the
+    Both read every chunk vector and compare the documents in numpy. They run
+    on the thread's own event loop, off the request loop, each over the
+    connection it opens. A job is not cancellable once started, and the
     thread is a daemon, so a job in flight at shutdown is lost. Results live in
     memory until the next job of the same kind on the same database, or a
     restart.

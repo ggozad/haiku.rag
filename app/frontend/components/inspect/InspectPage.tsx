@@ -8,7 +8,6 @@ import {
 	useSearchParams,
 } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Estimate, useEstimate } from "@/components/doctor/MapJob";
 import { Empty } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,11 +38,10 @@ import { cn } from "@/lib/utils";
 import AskAbout from "./AskAbout";
 import Breadcrumb from "./Breadcrumb";
 import ChunkView, { type ChunkRef } from "./ChunkView";
-import CorpusMap from "./CorpusMap";
 import DocumentView, { type DocumentState, OPENING } from "./DocumentView";
 import InfoDialog from "./InfoDialog";
 import SearchPanel from "./SearchPanel";
-import ShowOnMap from "./ShowOnMap";
+import SimilarDocuments from "./SimilarDocuments";
 
 interface Listing {
 	total: number;
@@ -61,41 +59,6 @@ interface Listing {
 const PAGE = 50;
 
 const fileName = (uri: string) => uri.split("/").filter(Boolean).at(-1) ?? uri;
-
-// A database's map, with `doc` selected, keeping the document list's query.
-function mapHref(db: string, list: URLSearchParams, doc?: string) {
-	const query = new URLSearchParams(list);
-	query.set("view", "map");
-	if (doc) query.set("doc", doc);
-	return databaseHref(db, query);
-}
-
-function MapView({
-	source,
-	selectedId,
-	onSelect,
-	documentHref,
-}: {
-	source: string;
-	selectedId: string | null;
-	onSelect: (id: string | null) => void;
-	documentHref: (id: string) => string;
-}) {
-	const estimate = useEstimate(source);
-	return (
-		<div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-			<Estimate text={estimate.text} />
-			<CorpusMap
-				key={source}
-				source={source}
-				ready={estimate.ready}
-				selectedId={selectedId}
-				onSelect={onSelect}
-				documentHref={documentHref}
-			/>
-		</div>
-	);
-}
 
 function documentState(query: URLSearchParams): DocumentState {
 	const number = (key: string) =>
@@ -204,12 +167,10 @@ export default function InspectPage() {
 		router.push(chunkHref(ref.source, ref.documentId, ref.chunkId, keep));
 	};
 
-	const mapOpen = view.kind === "database" && query.get("view") === "map";
-
 	const documentQuery = new URLSearchParams(query);
 	documentQuery.delete("view");
 	// Below md one pane shows: the list on a database's page, else the view.
-	const listOnly = view.kind === "database" && !mapOpen;
+	const listOnly = view.kind === "database";
 
 	return (
 		<div className="grid h-full grid-cols-1 md:grid-cols-[22rem_minmax(0,1fr)]">
@@ -259,25 +220,13 @@ export default function InspectPage() {
 					<div className="flex gap-1">
 						<Button
 							size="sm"
-							variant={
-								view.kind === "search" || mapOpen ? "ghost" : "secondary"
-							}
+							variant={view.kind === "search" ? "ghost" : "secondary"}
 							disabled={!source}
 							onClick={() =>
 								source && router.push(databaseHref(source, listOf(listQuery)))
 							}
 						>
 							Documents
-						</Button>
-						<Button
-							size="sm"
-							variant={mapOpen ? "secondary" : "ghost"}
-							disabled={!selected}
-							onClick={() =>
-								source && router.push(mapHref(source, listOf(listQuery)))
-							}
-						>
-							Map
 						</Button>
 						<Button
 							size="sm"
@@ -422,18 +371,6 @@ export default function InspectPage() {
 					/>
 				) : "db" in view && info && !selected ? (
 					<Empty>No database is named {view.db}.</Empty>
-				) : mapOpen && selected ? (
-					<MapView
-						source={view.db}
-						selectedId={query.get("doc")}
-						onSelect={(id) => {
-							const next = new URLSearchParams(query);
-							if (id) next.set("doc", id);
-							else next.delete("doc");
-							router.replace(databaseHref(view.db, next));
-						}}
-						documentHref={(id) => documentHref(view.db, id, listOf(listQuery))}
-					/>
 				) : view.kind === "chunk" ? (
 					<ChunkView
 						key={`${view.db}:${view.chunk}`}
@@ -478,10 +415,10 @@ export default function InspectPage() {
 						actions={
 							<div className="flex flex-wrap items-start gap-2 pt-1">
 								<AskAbout source={view.db} documentId={view.doc} />
-								<ShowOnMap
+								<SimilarDocuments
 									source={view.db}
 									documentId={view.doc}
-									href={mapHref(view.db, listOf(listQuery), view.doc)}
+									hrefOf={(id) => documentHref(view.db, id, listOf(listQuery))}
 								/>
 							</div>
 						}
@@ -496,10 +433,7 @@ export default function InspectPage() {
 				) : view.kind === "unknown" ? (
 					<Empty>The inspector has no page at this address.</Empty>
 				) : (
-					<Empty>
-						Pick a document to see its content, outline and chunks, or open the
-						map.
-					</Empty>
+					<Empty>Pick a document to see its content, outline and chunks.</Empty>
 				)}
 			</section>
 			{source && (

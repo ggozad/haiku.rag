@@ -16,6 +16,10 @@
 - Ingester dashboard job tables: each job shows its file name over its full URI, and a click on it copies the URI. The ID, Op and Worker columns are gone, a delete job carries a `DEL` badge, and active jobs show how long they have been running (#853).
 - Web app: the ingestion page's job tables show each job's file name over its full URI with a button copying the URI. The Op and Worker columns are gone, a delete job carries a `delete` badge, and active jobs show how long they have been running (#853).
 
+### Removed
+
+- Web app: the corpus map, the inspector's Map tab and the `scikit-learn` dependency. The doctor's similarity job (`/api/doctor/{source}/similarity`, was `/projection`) keeps the near-duplicate families, and a document's Similar documents lists its ten nearest documents.
+
 ### Fixed
 
 - Local PDF conversion failed without X11 libraries, `docker/Dockerfile` images included, when `rapidocr`'s `opencv-python` overwrote `opencv-python-headless`. `uv.lock` excludes `opencv-python`.

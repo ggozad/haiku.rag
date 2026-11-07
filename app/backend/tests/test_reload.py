@@ -271,11 +271,11 @@ async def test_a_repointed_database_shows_none_of_the_old_doctor_results(
     client = stack.client
     await client.post("/api/doctor/alpha/run", params={"providers": "false"})
     assert (await settled(client, "alpha"))["status"] == "done"
-    await client.post("/api/doctor/alpha/projection")
-    first = await settled(client, "alpha", "/projection")
+    await client.post("/api/doctor/alpha/similarity")
+    first = await settled(client, "alpha", "/similarity")
     assert first["status"] == "done"
 
-    # The next map of the old alpha finishes after the reload.
+    # The next similarity job of the old alpha finishes after the reload.
     entered, release = threading.Event(), threading.Event()
     scan_vectors = doctor.scan_vectors
 
@@ -285,7 +285,7 @@ async def test_a_repointed_database_shows_none_of_the_old_doctor_results(
         return await scan_vectors(store)
 
     monkeypatch.setattr(doctor, "scan_vectors", held)
-    await client.post("/api/doctor/alpha/projection")
+    await client.post("/api/doctor/alpha/similarity")
     await asyncio.to_thread(entered.wait, 10)
     old = stack.app.state.configuration.current.scope.databases[0]
     _configure(
@@ -295,18 +295,18 @@ async def test_a_repointed_database_shows_none_of_the_old_doctor_results(
     assert (await client.post("/reload")).status_code == 200
     release.set()
     for _ in range(500):
-        job = stack.app.state.jobs.get(old, "projection")
+        job = stack.app.state.jobs.get(old, "similarity")
         if job.status == "done":
             break
         await asyncio.sleep(0.01)
     assert job.status == "done"
 
     assert (await client.get("/api/doctor/alpha")).json() == {"run": None}
-    assert (await client.get("/api/doctor/alpha/projection")).json() == {
-        "projection": None
+    assert (await client.get("/api/doctor/alpha/similarity")).json() == {
+        "similarity": None
     }
     similarity = await client.get(
-        "/api/doctor/alpha/projection/similarity",
+        "/api/doctor/alpha/similarity/documents",
         params={
             "id": stack.ids["alpha"]["document_id"],
             "generation": job.result["generation"],

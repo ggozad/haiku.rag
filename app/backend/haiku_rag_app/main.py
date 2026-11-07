@@ -22,7 +22,7 @@ from haiku.rag.config import (
     get_config,
     load_yaml_config,
 )
-from haiku_rag_app import chat, doctor, images, inspect, jobs, projection, sessions
+from haiku_rag_app import chat, doctor, images, inspect, jobs, sessions, similarity
 from haiku_rag_app.sessions import Sessions
 
 if TYPE_CHECKING:
@@ -268,7 +268,7 @@ def create_app(
     app.state.configuration = configuration
     app.state.sessions = session_store
     app.state.jobs = jobs.Jobs()
-    app.state.retained = projection.Retained()
+    app.state.retained = similarity.Retained()
     logger.info(
         "Databases: %s; QA model: %s/%s",
         ", ".join(configuration.current.names),

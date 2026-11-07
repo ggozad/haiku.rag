@@ -73,7 +73,7 @@ The backend's reload applies `lancedb.databases` only. It answers 409 and names 
 
 ### Telemetry
 
-With `LOGFIRE_TOKEN` set, the backend sends spans to Logfire with `service.name` `haiku-rag-app`, or the value of `OTEL_SERVICE_NAME`. Every HTTP request is a span, and a chat run's agent and model spans nest under its request. Each doctor run and corpus map is an `app.job` span with `kind` (`doctor` or `projection`) and `database`, nested under the request that started it. A job that fails records its exception on that span. A corpus map whose result cannot be built records an `app.job result failed` exception under the request instead.
+With `LOGFIRE_TOKEN` set, the backend sends spans to Logfire with `service.name` `haiku-rag-app`, or the value of `OTEL_SERVICE_NAME`. Every HTTP request is a span, and a chat run's agent and model spans nest under its request. Each doctor run and similarity job is an `app.job` span with `kind` (`doctor` or `similarity`) and `database`, nested under the request that started it. A job that fails records its exception on that span. A similarity job whose result cannot be built records an `app.job result failed` exception under the request instead.
 
 ### Serve under a URL prefix
 
@@ -163,15 +163,15 @@ The agent searches and cites chunks, short passages of a document. A chunk's pag
 
 ![A chunk on its original page, a scanned report from 1970](img/app-inspector-chunk.png)
 
-The Map tab places documents near others about similar things. "Compute the map" builds it, and "Compute again" refreshes it after new documents arrive. Select a document, on the map or among the matches of the find box, to list its nearest neighbours.
+"Similar documents" on a document lists the ten documents nearest it by the average of their chunk embeddings, each a link to its page. "Compute similarity" there or on the doctor page compares every document, and "Compute again" refreshes the comparison after new documents arrive.
 
 The Search tab, or Ctrl+K (Cmd+K on a Mac) from any page, searches every database, by text or, with a multimodal embedder, by image. Each inspector page has its own address, so Back returns to the previous view and a link reopens the same one. "Ask about this document" starts a conversation limited to the open document.
 
 ## Check its health
 
-The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". The report opens with its verdict, then the failures and warnings, each naming its fix. The passing checks fold into one line. The checks and the map run in the background. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
+The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". The report opens with its verdict, then the failures and warnings, each naming its fix. The passing checks fold into one line. The checks and the similarity job run in the background. The similarity job lists the near-duplicate families, each with the document to keep, and exports them as YAML. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
 
-![The doctor: a near-duplicate pair and the checks](img/app-doctor.png)
+![The doctor: the checks and two near-duplicate families](img/app-doctor.png)
 
 ## For developers
 

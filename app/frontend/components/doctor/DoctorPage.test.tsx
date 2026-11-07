@@ -8,8 +8,8 @@ vi.mock("next/navigation", () => ({
 	useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 
-const projection = {
-	kind: "projection",
+const similarity = {
+	kind: "similarity",
 	status: "done",
 	progress: [],
 	queued_at: "t",
@@ -18,7 +18,7 @@ const projection = {
 	error: null,
 	stale: false,
 	result: {
-		points: [],
+		documents: [],
 		families: [
 			{
 				members: ["a", "b"],
@@ -50,7 +50,7 @@ beforeEach(() => {
 						tables: [{ name: "chunks", num_rows: 10 }],
 					},
 				});
-			if (path.endsWith("/projection")) return Response.json({ projection });
+			if (path.endsWith("/similarity")) return Response.json({ similarity });
 			return Response.json({ run: null });
 		}),
 	);
@@ -62,20 +62,17 @@ afterEach(() => {
 });
 
 describe("DoctorPage", () => {
-	it("lists the map's families, links each to the map, and exports them", async () => {
+	it("lists the near-duplicate families, links each to its kept document, and exports them", async () => {
 		render(<DoctorPage />);
 		const family = await screen.findByRole("link", {
 			name: /2 documents, keep doc:\/\/a/,
 		});
-		expect(family.getAttribute("href")).toBe("/inspect/alpha?view=map&doc=a");
+		expect(family.getAttribute("href")).toBe("/inspect/alpha/a");
 		expect(
 			screen
 				.getByRole("link", { name: "Download as YAML" })
 				.getAttribute("href"),
 		).toBe("/api/backend/api/doctor/alpha/duplicates.yaml");
-		expect(
-			screen.getByRole("link", { name: "Open the map" }).getAttribute("href"),
-		).toBe("/inspect/alpha?view=map");
-		expect(screen.queryByRole("img")).toBeNull();
+		expect(screen.getByRole("button", { name: "Compute again" })).toBeTruthy();
 	});
 });
