@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	CYCLE,
 	describeFailure,
+	fileName,
 	formatAge,
 	ingestedDatabases,
 	ingester,
@@ -311,5 +312,28 @@ describe("ingestionState", () => {
 		expect(ingestionState(health({ queue_counts: { dead: 1 } })).label).toBe(
 			"1 dead letter",
 		);
+	});
+});
+
+describe("fileName", () => {
+	it("is the URI's last path segment, decoded", () => {
+		expect(fileName("s3://bucket/reports/Q3%20summary.pdf")).toBe(
+			"Q3 summary.pdf",
+		);
+		expect(fileName("file:///docs/%CE%91-58.pdf")).toBe("Α-58.pdf");
+	});
+
+	it("drops the query, the fragment and trailing slashes", () => {
+		expect(fileName("https://example.com/a/b.pdf?v=2#page=3")).toBe("b.pdf");
+		expect(fileName("https://example.com/handbook/")).toBe("handbook");
+		expect(fileName("https://example.com/")).toBe("example.com");
+	});
+
+	it("keeps a segment that does not decode", () => {
+		expect(fileName("file:///docs/100%.md")).toBe("100%.md");
+	});
+
+	it("is the whole URI when no segment is left", () => {
+		expect(fileName("/")).toBe("/");
 	});
 });

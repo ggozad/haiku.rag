@@ -164,6 +164,17 @@ export function formatAge(seconds: number | null | undefined): string {
 	return `${(seconds / 3600).toFixed(1)}h`;
 }
 
+// The last path segment of a URI, decoded, or the whole URI when it has none.
+export function fileName(uri: string): string {
+	const path = uri.split(/[?#]/)[0].replace(/\/+$/, "");
+	const name = path.slice(path.lastIndexOf("/") + 1);
+	try {
+		return decodeURIComponent(name) || uri;
+	} catch {
+		return name || uri;
+	}
+}
+
 // The databases written by the ingester, named by the sources that feed them.
 export function ingestedDatabases(sources: { database: string | null }[]) {
 	return [

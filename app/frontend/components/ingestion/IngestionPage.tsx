@@ -301,7 +301,7 @@ export default function IngestionPage() {
 					<Section title="Active jobs" error={snapshot?.active.error}>
 						<JobTable
 							jobs={active}
-							columns={["op", "uri", "source", "attempts", "worker", "claimed"]}
+							columns={["file", "source", "attempts", "running"]}
 							onOpen={setViewing}
 							action={(job) => (
 								<Button
@@ -320,7 +320,7 @@ export default function IngestionPage() {
 					<Section title="Dead letter" error={snapshot?.dead.error}>
 						<JobTable
 							jobs={dead}
-							columns={["op", "uri", "source", "attempts", "error"]}
+							columns={["file", "source", "attempts", "error"]}
 							onOpen={setViewing}
 							action={(job) => (
 								<Button
@@ -352,7 +352,7 @@ export default function IngestionPage() {
 					>
 						<JobTable
 							jobs={succeeded}
-							columns={["op", "uri", "source", "duration", "finished"]}
+							columns={["file", "source", "duration", "finished"]}
 							onOpen={setViewing}
 							empty="No job has succeeded yet."
 						/>

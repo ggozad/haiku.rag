@@ -1,5 +1,9 @@
 "use client";
 
+import { Check, Copy, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
 	Table,
 	TableBody,
@@ -9,7 +13,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { formatRelativeTime, readableUri } from "@/lib/format";
-import { formatAge } from "@/lib/ingestion";
+import { fileName, formatAge } from "@/lib/ingestion";
 import type { Job } from "./types";
 
 function duration(job: Job): string {
@@ -19,24 +23,69 @@ function duration(job: Job): string {
 	return formatAge(seconds);
 }
 
+// A job's file name over its full URI, with a button copying the URI. A click
+// on the row opens the job, and the button stops its own click from reaching
+// the row.
+export function FileCell({ job }: { job: Job }) {
+	// "Copied", or why the copy failed, until it resets.
+	const [copy, setCopy] = useState<string | null>(null);
+	useEffect(() => {
+		if (copy === null) return;
+		const reset = setTimeout(() => setCopy(null), 1500);
+		return () => clearTimeout(reset);
+	}, [copy]);
+	const uri = readableUri(job.uri);
+	return (
+		<div className="flex min-w-0 items-center gap-1">
+			<div className="min-w-0 flex-1">
+				<div className="flex min-w-0 items-center gap-1.5 font-medium">
+					{job.op === "delete" && <Badge variant="destructive">delete</Badge>}
+					<span className="truncate">{fileName(job.uri)}</span>
+				</div>
+				<div
+					className="truncate font-mono text-xs text-muted-foreground select-all"
+					title={uri}
+				>
+					{uri}
+				</div>
+			</div>
+			<Button
+				variant="ghost"
+				size="icon-xs"
+				aria-label="Copy URI"
+				title={copy ?? "Copy URI"}
+				onClick={(event) => {
+					event.stopPropagation();
+					if (!navigator.clipboard) {
+						setCopy("Copying needs HTTPS or localhost");
+						return;
+					}
+					navigator.clipboard.writeText(job.uri).then(
+						() => setCopy("Copied"),
+						(error: Error) => setCopy(`Copy failed: ${error.message}`),
+					);
+				}}
+			>
+				{copy === "Copied" ? <Check /> : copy ? <X /> : <Copy />}
+			</Button>
+		</div>
+	);
+}
+
 export type Column =
-	| "op"
-	| "uri"
+	| "file"
 	| "source"
 	| "attempts"
-	| "worker"
-	| "claimed"
+	| "running"
 	| "error"
 	| "duration"
 	| "finished";
 
 const HEADINGS: Record<Column, string> = {
-	op: "Op",
-	uri: "URI",
+	file: "File",
 	source: "Source",
 	attempts: "Attempts",
-	worker: "Worker",
-	claimed: "Claimed",
+	running: "Running",
 	error: "Error",
 	duration: "Took",
 	finished: "Finished",
@@ -44,18 +93,16 @@ const HEADINGS: Record<Column, string> = {
 
 function cell(job: Job, column: Column): React.ReactNode {
 	switch (column) {
-		case "op":
-			return job.op;
-		case "uri":
-			return readableUri(job.uri);
+		case "file":
+			return <FileCell job={job} />;
 		case "source":
 			return job.source_id;
 		case "attempts":
 			return `${job.attempts}/${job.max_attempts}`;
-		case "worker":
-			return job.claimed_by ?? "—";
-		case "claimed":
-			return job.claimed_at ? formatRelativeTime(job.claimed_at, true) : "—";
+		case "running":
+			return job.claimed_at
+				? formatAge((Date.now() - Date.parse(job.claimed_at)) / 1000)
+				: "—";
 		case "error":
 			return job.last_error ?? "—";
 		case "duration":
@@ -100,9 +147,11 @@ export default function JobTable({
 								<TableCell
 									key={column}
 									className={
-										column === "uri" || column === "error"
-											? "max-w-80 cursor-pointer truncate"
-											: "cursor-pointer"
+										column === "file"
+											? "max-w-80 cursor-pointer"
+											: column === "error"
+												? "max-w-80 cursor-pointer truncate"
+												: "cursor-pointer"
 									}
 									title={
 										column === "error" ? (job.last_error ?? "") : undefined

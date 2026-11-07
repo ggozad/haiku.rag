@@ -12,6 +12,7 @@
 - Web app: the backend runs on `ag-ui-protocol` 1.0.
 - The `voyageai` extra requires `voyageai>=0.5.0,<0.6` and installs it on Python 3.14.
 - Ingester dashboard job tables: each job shows its file name over its full URI, and a click on it copies the URI. The ID, Op and Worker columns are gone, a delete job carries a `DEL` badge, and active jobs show how long they have been running (#853).
+- Web app: the ingestion page's job tables show each job's file name over its full URI with a button copying the URI. The Op and Worker columns are gone, a delete job carries a `delete` badge, and active jobs show how long they have been running (#853).
 
 ### Fixed
 

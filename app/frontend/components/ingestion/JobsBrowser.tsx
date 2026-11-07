@@ -19,9 +19,10 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { formatRelativeTime, readableUri } from "@/lib/format";
+import { formatRelativeTime } from "@/lib/format";
 import { ingester } from "@/lib/ingestion";
 import JobDialog from "./JobDialog";
+import { FileCell } from "./JobTable";
 import type { Job } from "./types";
 
 const PAGE = 50;
@@ -137,8 +138,7 @@ export default function JobsBrowser({
 					<TableHeader>
 						<TableRow>
 							<TableHead>Status</TableHead>
-							<TableHead>Op</TableHead>
-							<TableHead>URI</TableHead>
+							<TableHead>File</TableHead>
 							<TableHead>Source</TableHead>
 							<TableHead>Attempts</TableHead>
 							<TableHead>Enqueued</TableHead>
@@ -152,9 +152,8 @@ export default function JobsBrowser({
 								onClick={() => setOpen(job)}
 							>
 								<TableCell>{job.status}</TableCell>
-								<TableCell>{job.op}</TableCell>
-								<TableCell className="max-w-96 truncate">
-									{readableUri(job.uri)}
+								<TableCell className="max-w-96">
+									<FileCell job={job} />
 								</TableCell>
 								<TableCell>{job.source_id}</TableCell>
 								<TableCell className="tabular-nums">
@@ -167,7 +166,7 @@ export default function JobsBrowser({
 						))}
 						{jobs.length === 0 && (
 							<TableRow>
-								<TableCell colSpan={6} className="text-muted-foreground">
+								<TableCell colSpan={5} className="text-muted-foreground">
 									No jobs match.
 								</TableCell>
 							</TableRow>
