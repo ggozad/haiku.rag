@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Python 3.14 support.
+
 ### Changed
 
 - Web app: the frontend image runs on Node 26 and pnpm 12. Frontend dependencies are at their latest releases, among them `@ag-ui/client` 1.0, React 19.3 and Next 16.4.5.
