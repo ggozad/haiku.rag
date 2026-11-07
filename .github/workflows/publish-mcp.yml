@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: '3.12'
+          python-version-file: ".python-version"
       - name: Generate server.json from template
         run: |
           VERSION=$(python -c "import tomllib; print(tomllib.load(open('haiku_rag_slim/pyproject.toml', 'rb'))['project']['version'])")
