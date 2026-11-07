@@ -6,6 +6,7 @@
 
 - Web app: the frontend image runs on Node 26 and pnpm 12. Frontend dependencies are at their latest releases, among them `@ag-ui/client` 1.0, React 19.3 and Next 16.4.5.
 - Web app: the backend runs on `ag-ui-protocol` 1.0.
+- The `voyageai` extra requires `voyageai>=0.5.0,<0.6` and installs it on Python 3.14.
 
 ## [0.109.0] - 2026-11-06
 
