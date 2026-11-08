@@ -33,6 +33,11 @@ export interface Source {
 	last_error: string | null;
 	last_error_at: string | null;
 	unsupported_files: Record<string, number>;
+	known: number;
+	ingested: number;
+	pending: number;
+	failed: number;
+	waiting: number;
 }
 
 export interface Providers {

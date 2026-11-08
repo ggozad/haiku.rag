@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { Page, PageHeader, SectionHeading } from "@/components/Page";
@@ -12,40 +11,28 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { databaseHref, doctorHref } from "@/lib/addresses";
+import { doctorHref, documentHref } from "@/lib/addresses";
 import { useDatabases } from "@/lib/databases";
 import ChecksPanel from "./ChecksPanel";
+import { Estimate, useEstimate } from "./Estimate";
 import {
-	Estimate,
 	FamilyList,
-	MapControls,
-	useEstimate,
-	useMapJob,
-} from "./MapJob";
+	SimilarityControls,
+	useSimilarityJob,
+} from "./SimilarityJob";
 
-const mapHref = (source: string, doc?: string) =>
-	databaseHref(
-		source,
-		new URLSearchParams(doc ? { view: "map", doc } : { view: "map" }),
-	);
-
-function CorpusMapJob({ source, ready }: { source: string; ready: boolean }) {
-	const map = useMapJob(source);
+function Similarity({ source, ready }: { source: string; ready: boolean }) {
+	const similarity = useSimilarityJob(source);
 	return (
 		<section className="space-y-3">
-			<div className="flex flex-wrap items-center gap-3">
-				<SectionHeading>Corpus map</SectionHeading>
-				<Link href={mapHref(source)} className="text-sm underline">
-					Open the map
-				</Link>
-			</div>
-			<MapControls map={map} ready={ready} />
-			{map.result && (
+			<SectionHeading>Document similarity</SectionHeading>
+			<SimilarityControls similarity={similarity} ready={ready} />
+			{similarity.result && (
 				<div className="max-w-xl text-sm">
 					<FamilyList
 						source={source}
-						families={map.result.families}
-						hrefOf={(family) => mapHref(source, family.keep)}
+						families={similarity.result.families}
+						hrefOf={(family) => documentHref(source, family.keep)}
 					/>
 				</div>
 			)}
@@ -58,7 +45,7 @@ function DoctorDatabase({ source }: { source: string }) {
 	return (
 		<>
 			<ChecksPanel source={source} ready={estimate.ready} />
-			<CorpusMapJob source={source} ready={estimate.ready} />
+			<Similarity source={source} ready={estimate.ready} />
 			<div className="space-y-1 border-t pt-4">
 				<Estimate text={estimate.text} />
 				<p className="text-xs text-muted-foreground">

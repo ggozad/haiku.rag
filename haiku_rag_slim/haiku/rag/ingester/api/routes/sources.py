@@ -1,3 +1,5 @@
+from time import monotonic
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from haiku.rag.ingester.api.schemas import (
@@ -11,6 +13,9 @@ from haiku.rag.ingester.queue.models import RetrySelection
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
+# A count scans the sources' queue rows, and the dashboard polls every few seconds.
+FILE_COUNTS_TTL_S = 10.0
+
 
 @router.get("", response_model=list[SourceSummary])
 async def list_sources(
@@ -18,8 +23,14 @@ async def list_sources(
 ) -> list[SourceSummary]:
     if state.pollers is None:
         return []
+    pollers = state.pollers.pollers
+    ids = [p.source_id for p in pollers]
+    counted_at, files = state.file_counts
+    if monotonic() - counted_at >= FILE_COUNTS_TTL_S or not files.keys() >= set(ids):
+        files = await state.sync_repo.file_counts(ids)
+        state.file_counts = (monotonic(), files)
     summaries: list[SourceSummary] = []
-    for poller in state.pollers.pollers:
+    for poller in pollers:
         summaries.append(
             SourceSummary(
                 source_id=poller.source_id,
@@ -31,6 +42,7 @@ async def list_sources(
                 last_error=poller.last_error,
                 last_error_at=poller.last_error_at,
                 unsupported_files=poller.unsupported_files,
+                **files[poller.source_id].model_dump(),
             )
         )
     return summaries

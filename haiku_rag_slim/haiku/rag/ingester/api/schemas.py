@@ -57,6 +57,13 @@ class SourceSummary(BaseModel):
     last_error_at: datetime | None = None
     # Files the last successful sweep skipped for their extension, by extension.
     unsupported_files: dict[str, int] = {}
+    # The source's discovered files by state (`FileCounts`): `known` is the
+    # sum of the other four.
+    known: int
+    ingested: int
+    pending: int
+    failed: int
+    waiting: int
 
 
 class RefreshResponse(BaseModel):

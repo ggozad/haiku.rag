@@ -41,10 +41,10 @@ async def served(
 
 
 async def settled(client: httpx.AsyncClient, source: str, path: str = "") -> dict:
-    """The doctor run, or with `path="/projection"` the projection, once it ends."""
+    """The doctor run, or with `path="/similarity"` the similarity job, once it ends."""
     for _ in range(600):
         body = (await client.get(f"/api/doctor/{source}{path}")).json()
-        run = body.get("run") or body.get("projection")
+        run = body.get("run") or body.get("similarity")
         if run and run["status"] in ("done", "failed"):
             return run
         await asyncio.sleep(0.02)

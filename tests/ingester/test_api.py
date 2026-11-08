@@ -15,7 +15,7 @@ from haiku.rag.sources.base import (
     SourceEvent,
     SourceEventKind,
 )
-from tests.ingester.conftest import finished_job, status_of
+from tests.ingester.conftest import finished_job, seed_file_states, status_of
 
 
 @pytest.fixture
@@ -407,6 +407,55 @@ async def test_sources_lists_configured(tmp_path, jobs, sync):
     assert payload[0]["last_error_at"] is None
     assert payload[0]["circuit_breaker_open"] is False
     assert payload[0]["unsupported_files"] == {}
+    assert {
+        key: payload[0][key]
+        for key in ("known", "ingested", "pending", "failed", "waiting")
+    } == {"known": 0, "ingested": 0, "pending": 0, "failed": 0, "waiting": 0}
+
+
+async def test_sources_count_the_files_of_each_source(tmp_path, jobs, sync):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    await seed_file_states(jobs, sync, "local")
+    async with _client(state) as client:
+        payload = (await client.get("/sources")).json()
+    assert {
+        key: payload[0][key]
+        for key in ("known", "ingested", "pending", "failed", "waiting")
+    } == {"known": 8, "ingested": 2, "pending": 2, "failed": 3, "waiting": 1}
+
+
+async def test_sources_recount_files_at_most_every_ten_seconds(
+    tmp_path, jobs, sync, monkeypatch
+):
+    from haiku.rag.ingester.api.routes import sources
+
+    now = 1000.0
+    monkeypatch.setattr(sources, "monotonic", lambda: now)
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+
+    async def pending() -> int:
+        async with _client(state) as client:
+            return (await client.get("/sources")).json()[0]["pending"]
+
+    assert await pending() == 0
+    assert await jobs.enqueue("local", "a.md", JobOp.UPSERT) is not None
+    now += 9.9
+    assert await pending() == 0
+    now += 0.2
+    assert await pending() == 1
+
+
+async def test_sources_count_a_source_missing_from_the_last_count(tmp_path, jobs, sync):
+    state, _ = _build_pollers_state(tmp_path, jobs, sync)
+    async with _client(state) as client:
+        await client.get("/sources")
+    other, _ = _build_pollers_state(tmp_path, jobs, sync, source_id="other")
+    state.pollers = other.pollers
+    assert await jobs.enqueue("other", "a.md", JobOp.UPSERT) is not None
+    async with _client(state) as client:
+        payload = (await client.get("/sources")).json()
+    assert payload[0]["source_id"] == "other"
+    assert payload[0]["pending"] == 1
 
 
 async def test_sources_report_files_skipped_for_their_extension(tmp_path, jobs, sync):

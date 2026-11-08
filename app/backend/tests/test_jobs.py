@@ -130,9 +130,9 @@ async def test_each_job_span_nests_under_the_span_that_submitted_it(exporter):
     with logfire.span("first request") as first:
         doctor = runner.submit(ALPHA, "doctor", work)
     with logfire.span("second request") as second:
-        projection = runner.submit(ALPHA, "projection", work)
+        similarity = runner.submit(ALPHA, "similarity", work)
     await settled(doctor)
-    await settled(projection)
+    await settled(similarity)
 
     parents = {
         (span.attributes or {})["kind"]: span.parent.span_id
@@ -141,7 +141,7 @@ async def test_each_job_span_nests_under_the_span_that_submitted_it(exporter):
     }
     assert parents == {
         "doctor": span_id(first),
-        "projection": span_id(second),
+        "similarity": span_id(second),
     }
 
 
@@ -149,14 +149,14 @@ async def test_a_failing_on_done_fails_the_job_and_frees_its_slot(exporter):
     import logfire
 
     async def work(progress):
-        return "projection"
+        return "similarity"
 
     def done(result):
         raise KeyError("lost generation")
 
     runner = jobs.Jobs()
     with logfire.span("request") as request:
-        job = runner.submit(ALPHA, "projection", work, on_done=done)
+        job = runner.submit(ALPHA, "similarity", work, on_done=done)
     await settled(job)
 
     assert job.status == "failed"
@@ -170,6 +170,6 @@ async def test_a_failing_on_done_fails_the_job_and_frees_its_slot(exporter):
     assert record.parent is not None
     assert record.parent.span_id == span_id(request)
 
-    again = runner.submit(ALPHA, "projection", work)
+    again = runner.submit(ALPHA, "similarity", work)
     await settled(again)
     assert again.status == "done"

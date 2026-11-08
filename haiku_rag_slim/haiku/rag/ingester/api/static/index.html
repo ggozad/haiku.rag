@@ -86,7 +86,16 @@
       th { font-weight: 600; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
       tr:last-child td { border-bottom: none; }
       tr:hover td { background: rgba(255, 255, 255, 0.02); }
-      td.id, td.worker { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+      td.file { width: 50%; max-width: 0; }
+      td.file[data-copy] { cursor: copy; }
+      td.file .name, td.file .path {
+        display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      td.file .name { font-weight: 600; }
+      td.file .path {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; color: var(--muted); user-select: all;
+      }
       td.retried { color: var(--warn); font-weight: 600; cursor: help; }
       td.uri {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -118,6 +127,26 @@
       .badge.bad { background: rgba(204, 84, 84, 0.15); color: var(--dead); }
       .badge.upsert { background: rgba(79, 134, 198, 0.15); color: var(--queued); }
       .badge.delete { background: rgba(204, 84, 84, 0.15); color: var(--dead); }
+
+      td.files { min-width: 200px; }
+      .completion { display: flex; align-items: center; gap: 8px; }
+      .bar {
+        display: flex; flex: 1; height: 8px; border-radius: 4px;
+        overflow: hidden; background: var(--bg);
+      }
+      .ingested { --file: var(--succeeded); }
+      .pending { --file: var(--queued); }
+      .failed { --file: var(--dead); }
+      .waiting { --file: var(--muted); }
+      .bar > span { background: var(--file); }
+      .files-legend {
+        margin-top: 4px; font-size: 11px; color: var(--muted);
+        display: flex; flex-wrap: wrap; gap: 0 10px;
+      }
+      .files-legend span::before {
+        content: ""; display: inline-block; width: 8px; height: 8px;
+        border-radius: 50%; margin-right: 4px; background: var(--file);
+      }
 
       .stats-grid {
         display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
@@ -383,8 +412,15 @@
         return ms >= 0 ? formatDuration(ms / 1000) : "—";
       }
 
-      function shortId(id) {
-        return id ? id.slice(0, 8) : "—";
+      // The last path segment of a URI, decoded, or the whole URI when it has none.
+      function fileName(uri) {
+        const path = uri.split(/[?#]/)[0].replace(/\/+$/, "");
+        const name = path.slice(path.lastIndexOf("/") + 1);
+        try {
+          return decodeURIComponent(name) || uri;
+        } catch {
+          return name || uri;
+        }
       }
 
       function formatBytes(n) {
@@ -465,6 +501,25 @@
         circuit_open: "breaker open",
       };
 
+      const FILE_STATES = ["ingested", "pending", "failed", "waiting"];
+
+      // Floored, so 100% means every known file is ingested.
+      function filesCell(s) {
+        if (!s.known) return '<td class="files">—</td>';
+        const percent = Math.floor((100 * s.ingested) / s.known);
+        const segments = FILE_STATES.map(
+          (state) =>
+            `<span class="${state}" style="width: ${(100 * s[state]) / s.known}%" data-tip="${s[state]} ${state}"></span>`,
+        ).join("");
+        const legend = FILE_STATES.map(
+          (state) => `<span class="${state}">${s[state]} ${state}</span>`,
+        ).join("");
+        return `<td class="files">
+          <div class="completion"><div class="bar">${segments}</div>${percent}%</div>
+          <div class="files-legend">${legend}</div>
+        </td>`;
+      }
+
       function renderSources(sources) {
         $("sources-count").textContent = `(${sources.length})`;
         if (!sources.length) {
@@ -521,6 +576,7 @@
               <td>${escapeHtml(s.source_id)}</td>${databaseCell}
               <td>${escapeHtml(s.type)}</td>
               <td>${polledCell}</td>
+              ${filesCell(s)}
               <td>${circuitBadge}</td>
               <td class="actions">
                 <button data-source="${escapeHtml(s.source_id)}" onclick="refreshSource(this.dataset.source)">Refresh</button>
@@ -531,7 +587,7 @@
           .join("");
         $("sources-body").innerHTML = `<table>
           <thead><tr>
-            <th>ID</th>${showDatabase ? "<th>Database</th>" : ""}<th>Type</th><th>Last polled</th><th>Circuit</th><th></th>
+            <th>ID</th>${showDatabase ? "<th>Database</th>" : ""}<th>Type</th><th>Last polled</th><th>Files</th><th>Circuit</th><th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
@@ -545,9 +601,16 @@
       }
 
       function opBadge(op) {
-        const cls = op === "delete" ? "delete" : "upsert";
-        const label = op === "delete" ? "DEL" : "UP";
-        return `<span class="badge ${cls}">${label}</span>`;
+        return op === "delete" ? '<span class="badge delete">DEL</span> ' : "";
+      }
+
+      // A job's file name over its full URI. A click copies the URI.
+      function fileCell(j) {
+        const uri = escapeHtml(j.uri);
+        return `<td class="file" data-copy="${uri}" data-tip="${uri}\njob ${escapeHtml(j.id)} · click to copy">
+          <span class="name">${opBadge(j.op)}${escapeHtml(fileName(j.uri))}</span>
+          <span class="path">${uri}</span>
+        </td>`;
       }
 
       function renderProviders(providers) {
@@ -601,12 +664,9 @@
                 ? `<td class="retried"${tryTip}>${j.attempts}/${j.max_attempts}</td>`
                 : `<td>${j.attempts}/${j.max_attempts}</td>`;
             return `<tr>
-              <td class="id" data-tip="${escapeHtml(j.id)}">${shortId(j.id)}</td>
-              <td>${opBadge(j.op)}</td>
-              <td class="uri" data-tip="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
-              <td class="worker">${escapeHtml(j.claimed_by ?? "—")}</td>
+              ${fileCell(j)}
               ${tryCell}
-              <td>${relTime(j.claimed_at)}</td>
+              <td>${elapsed(j.claimed_at, new Date().toISOString())}</td>
               <td class="actions">
                 <button type="button" onclick="cancelJob('${escapeHtml(j.id)}')">Cancel</button>
               </td>
@@ -615,7 +675,7 @@
           .join("");
         $("active-body").innerHTML = `<table>
           <thead><tr>
-            <th>ID</th><th>Op</th><th>URI</th><th>Worker</th><th>Try</th><th>Started</th><th></th>
+            <th>File</th><th>Try</th><th>Running</th><th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
@@ -631,8 +691,7 @@
         const rows = jobs
           .map(
             (j) => `<tr>
-              <td class="id" data-tip="${escapeHtml(j.id)}">${shortId(j.id)}</td>
-              <td class="uri" data-tip="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              ${fileCell(j)}
               <td class="err" data-tip="${escapeHtml(j.last_error ?? "")}">${escapeHtml(j.last_error ?? "")}</td>
               <td>${relTime(j.completed_at)}</td>
               <td class="actions">
@@ -643,7 +702,7 @@
           .join("");
         $("dead-body").innerHTML = `<table>
           <thead><tr>
-            <th>ID</th><th>URI</th><th>Error</th><th>Failed</th><th></th>
+            <th>File</th><th>Error</th><th>Failed</th><th></th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
@@ -658,8 +717,7 @@
         const rows = jobs
           .map(
             (j) => `<tr>
-              <td>${opBadge(j.op)}</td>
-              <td class="uri" data-tip="${escapeHtml(j.uri)}">${escapeHtml(j.uri)}</td>
+              ${fileCell(j)}
               <td>${escapeHtml(j.source_id)}</td>
               <td>${elapsed(j.enqueued_at, j.completed_at)}</td>
               <td>${elapsed(j.claimed_at, j.completed_at)}</td>
@@ -669,7 +727,7 @@
           .join("");
         $("recent-body").innerHTML = `<table>
           <thead><tr>
-            <th>Op</th><th>URI</th><th>Source</th>
+            <th>File</th><th>Source</th>
             <th data-tip="From enqueue to finish, queue wait included">Duration</th>
             <th data-tip="From the last attempt's claim to finish. A retried job shows its final attempt only">Processed in</th>
             <th>Finished</th>
@@ -796,6 +854,21 @@
           current = null;
         });
       })();
+
+      // `navigator.clipboard` exists only in a secure context. Elsewhere a
+      // click selects the URI line.
+      document.addEventListener("click", (e) => {
+        const cell = e.target.closest("[data-copy]");
+        if (!cell || !navigator.clipboard) return;
+        const say = (text) => {
+          $("tooltip").textContent = text;
+          $("tooltip").classList.add("visible");
+        };
+        navigator.clipboard.writeText(cell.dataset.copy).then(
+          () => say("Copied"),
+          (err) => say(`Copy failed: ${err.message}`),
+        );
+      });
 
       // Database and Configuration panels are on-demand, not part of the
       // POLL_MS loop: their data is database state, not live queue telemetry,

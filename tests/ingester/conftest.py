@@ -13,7 +13,7 @@ from haiku.rag.config import AppConfig, QueueConfig
 from haiku.rag.ingester.app import IngesterApp
 from haiku.rag.ingester.pollers.manager import PollerManager
 from haiku.rag.ingester.queue.migrations import open_queue
-from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
+from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.store.models.document import Document
@@ -96,6 +96,31 @@ async def finished_job(
             claimed.id, error, "w", conversion_stalled=conversion_stalled
         )
     return claimed
+
+
+async def seed_file_states(jobs: JobRepo, sync: SyncStateRepo, source: str) -> None:
+    """One file of `source` in each file-count state:
+    2 pending, 3 failed, 2 ingested, 1 waiting, 1 retired."""
+    await sync.upsert(source, "ingested", revision="r", content_hash="h", ingested=True)
+    await finished_job(jobs, JobStatus.DEAD, "recovered", source_id=source)
+    await sync.upsert(
+        source, "recovered", revision="r", content_hash="h", ingested=True
+    )
+    await sync.upsert(
+        source, "regressed", revision="r", content_hash="h", ingested=True
+    )
+    await finished_job(jobs, JobStatus.DEAD, "regressed", source_id=source)
+    await finished_job(jobs, JobStatus.DEAD, "dead", source_id=source)
+    await sync.upsert(source, "dead", revision="r", content_hash="h")
+    await finished_job(jobs, JobStatus.REJECTED, "rejected", source_id=source)
+    await sync.upsert(source, "rejected", revision="r", content_hash="h")
+    await sync.retire(source, "retired", "http-404")
+    await sync.batch_upsert([SyncRow(source, "waiting", None, None, False)])
+    # A live job beside terminal history, and one with no sync_state row yet.
+    await finished_job(jobs, JobStatus.SUCCEEDED, "updating", source_id=source)
+    await sync.upsert(source, "updating", revision="r", content_hash="h", ingested=True)
+    assert await jobs.enqueue(source, "updating", JobOp.UPSERT) is not None
+    assert await jobs.enqueue(source, "discovered", JobOp.UPSERT) is not None
 
 
 async def status_of(repo: JobRepo, job_id: str) -> JobStatus:

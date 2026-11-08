@@ -1,9 +1,11 @@
 import asyncio
+import sqlite3
 import sys
 from datetime import UTC, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
+from sqlalchemy import event
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import QueuePool
@@ -19,9 +21,9 @@ from haiku.rag.ingester.queue.migrations import (
     open_queue,
     verify_schema,
 )
-from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus, SyncRow
+from haiku.rag.ingester.queue.models import FileCounts, Job, JobOp, JobStatus, SyncRow
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo, _insert
-from tests.ingester.conftest import finished_job, status_of
+from tests.ingester.conftest import finished_job, seed_file_states, status_of
 
 # --- migrations / schema ---
 
@@ -1244,6 +1246,59 @@ async def test_counts_by_source_no_statuses_returns_empty(jobs):
 
 
 # --- sync state ---
+
+
+async def test_file_counts_put_each_file_in_one_bucket(jobs, sync):
+    await seed_file_states(jobs, sync, "s")
+
+    counts = await sync.file_counts(["s"])
+
+    assert counts == {"s": FileCounts(pending=2, failed=3, ingested=2, waiting=1)}
+    assert counts["s"].known == 8
+
+
+async def test_file_counts_read_one_state_of_the_queue(tmp_path, engine, sync):
+    """A file queued again while the counts are read lands in one bucket."""
+    await sync.upsert("s", "u", revision="r", content_hash="h", ingested=True)
+    writer = sqlite3.connect(tmp_path / "queue.db")
+    now = datetime.now(UTC).isoformat()
+
+    reads = []
+
+    def queue_after_the_first_read(*_):
+        reads.append(None)
+        if len(reads) == 1:
+            writer.execute(
+                "INSERT INTO jobs (id, source_id, uri, op, status, enqueued_at,"
+                " scheduled_at) VALUES ('j', 's', 'u', 'upsert', 'queued', ?, ?)",
+                (now, now),
+            )
+            writer.commit()
+
+    event.listen(engine.sync_engine, "after_cursor_execute", queue_after_the_first_read)
+    try:
+        counts = await sync.file_counts(["s"])
+    finally:
+        event.remove(
+            engine.sync_engine, "after_cursor_execute", queue_after_the_first_read
+        )
+        writer.close()
+
+    assert counts["s"].known == 1
+
+
+async def test_file_counts_scope_by_source_and_namespace(engine, jobs, sync):
+    await seed_file_states(jobs, sync, "other")
+    await seed_file_states(
+        JobRepo(engine, namespace="elsewhere"),
+        SyncStateRepo(engine, namespace="elsewhere"),
+        "s",
+    )
+
+    counts = await sync.file_counts(["s"])
+
+    assert counts == {"s": FileCounts(pending=0, failed=0, ingested=0, waiting=0)}
+    assert counts["s"].known == 0
 
 
 async def test_sync_state_get_revision_snapshot_empty(sync):

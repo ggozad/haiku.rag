@@ -785,14 +785,14 @@ app/
 │   │   ├── inspect.py      # inspector routes and /api/search
 │   │   ├── images.py       # checks on images the page sends, pictures, visualize
 │   │   ├── jobs.py         # Jobs: one worker thread with its own event loop
-│   │   ├── doctor.py       # doctor and projection routes
-│   │   └── projection.py   # t-SNE of document centroids, similarity, Retained
+│   │   ├── doctor.py       # doctor and similarity routes
+│   │   └── similarity.py   # document centroids compared, near-duplicate families, Retained
 │   └── tests/
 ├── config/                 # haiku.rag.yaml.example, databases/ (fragments), mounted at /app/config
 ├── frontend/               # Next.js, Tailwind, shadcn/ui, @ag-ui/client
 │   ├── app/                # pages: / (chat), /ingestion, (inspector)/ for /inspect/[[...path]] and /search, /doctor/[[...db]]; api/backend, api/ingester proxies
 │   ├── components/         # chat/, ingestion/, inspect/, doctor/, ui/ (shadcn)
-│   └── lib/                # tested logic: addresses, chat, sessions, ingestion, inspect, map, doctor, proxy
+│   └── lib/                # tested logic: addresses, chat, sessions, ingestion, inspect, doctor, proxy
 └── docker-compose*.yml     # backend, ingester, docling-serve, frontend: published images, or (.dev) built from the checkout
 ```
 
@@ -804,10 +804,10 @@ app/
 - **The backend owns the run input.** `stream_chat` takes only the new user message from the client and builds the run from the stored messages and state, clearing tools, context and forwarded props.
 - **The commit is the durable boundary.** On run completion `chat_events` commits the turn through `Sessions.start_commit`, shielded. The session stays held until the write lands, even when the response is collected (`tie`). A run cancelled earlier stores nothing. The frontend reconciles a lost stream by run-id membership in `runs`, and keeps the pending run in `sessionStorage` across a reload.
 - **Question identities are message counts**, so a run's messages and the state it advanced are kept or dropped together.
-- **Doctor and projection jobs** run on one daemon thread with its own event loop, one at a time across databases, each over the `Store` it opens. Progress reaches the request loop through `call_soon_threadsafe`. A projection's unit centroids are kept within one 256 MB budget (`Retained`).
+- **Doctor and similarity jobs** run on one daemon thread with its own event loop, one at a time across databases, each over the `Store` it opens. Progress reaches the request loop through `call_soon_threadsafe`. A similarity job's unit centroids are kept within one 256 MB budget (`Retained`), and answer the nearest-documents lookup.
 - **The frontend proxies.** `/api/backend/*` and `/api/ingester/*` stream bodies and forward the browser's abort. The backend proxy refuses `reload`, and the ingester proxy adds `INGESTER_TOKEN` and forwards only the operator actions as writes (refresh a source, retry a job or a dead letter, cancel a job). The dev server allows the `127.0.0.1` origin.
 - **`BASE_PATH` is build-time.** `next.config.ts` validates it (`basePathFrom`, `lib/paths.ts`) and sets Next's `basePath`, which prefixes router navigation and `<Link>`. Every other root-absolute URL (`fetch`, `<img>`, a plain `<a>`, the chat's `HttpAgent`) goes through `withBasePath`. The published frontend image serves at the root, and the Dockerfile takes `BASE_PATH` as a build argument. The dev compose passes it as the dev server's environment.
-- **The address is the inspector's state.** `app/(inspector)/layout.tsx` renders `InspectPage` for `/inspect/…` and `/search`, which reads its view from the path and the query (`lib/addresses.ts`), so it stays mounted while the address changes. `DocumentView`, `ChunkView`, `CorpusMap` and `SearchPanel` take that state as props. The corpus map job's controls, families and memory estimate live in `components/doctor/MapJob.tsx`, shared by the doctor and the inspector's map. An image search's image and answer live in a module variable in `SearchPanel`. `components/SearchOverlay.tsx` hosts the same panel in a dialog mounted in the root layout: Ctrl+K or Cmd+K, or `openSearch()`, opens it.
+- **The address is the inspector's state.** `app/(inspector)/layout.tsx` renders `InspectPage` for `/inspect/…` and `/search`, which reads its view from the path and the query (`lib/addresses.ts`), so it stays mounted while the address changes. `DocumentView`, `ChunkView` and `SearchPanel` take that state as props. The similarity job's controls and families live in `components/doctor/SimilarityJob.tsx`, and the memory estimate in `components/doctor/Estimate.tsx`, shared by the doctor and the inspector's similar documents. An image search's image and answer live in a module variable in `SearchPanel`. `components/SearchOverlay.tsx` hosts the same panel in a dialog mounted in the root layout: Ctrl+K or Cmd+K, or `openSearch()`, opens it.
 - **Shared page pieces.** `components/Page.tsx` (`Page`, `PageHeader`, `SectionHeading`) frames the doctor and ingestion pages, and `components/Status.tsx` (`Loading`, `Empty`) is every loading and empty state. The theme follows `prefers-color-scheme` in `globals.css`.
 - **Frontend tests.** `lib/*.test.ts` run in node. `components/**/*.test.tsx` run in jsdom (`@vitest-environment jsdom` per file) with React Testing Library against mocked `fetch`. jsdom has no `ResizeObserver` or `PointerEvent`, which `vitest.setup.ts` supplies, and no 2D canvas context.
 - Run `biome check` in `app/frontend/` after frontend changes (`pnpm run format` to fix).
