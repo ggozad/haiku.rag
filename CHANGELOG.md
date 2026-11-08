@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.110.0] - 2026-11-08
+
 ### Added
 
 - Python 3.14 support.
@@ -3289,7 +3291,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.109.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.110.0...HEAD
+[0.110.0]: https://github.com/ggozad/haiku.rag/compare/0.109.0...0.110.0
 [0.109.0]: https://github.com/ggozad/haiku.rag/compare/0.108.0...0.109.0
 [0.108.0]: https://github.com/ggozad/haiku.rag/compare/0.107.0...0.108.0
 [0.107.0]: https://github.com/ggozad/haiku.rag/compare/0.106.0...0.107.0
