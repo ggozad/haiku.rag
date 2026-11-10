@@ -75,7 +75,29 @@ const answers: Record<string, unknown> = {
 	"jobs?status=claimed&limit=20": [job("running", "claimed")],
 	"jobs?status=dead&limit=10": [job("broken", "dead")],
 	"jobs?status=succeeded&limit=10": [job("done", "succeeded")],
-	"databases/docs": { path: "/data/docs.lancedb" },
+	"databases/docs": {
+		path: "/data/docs.lancedb",
+		exists: true,
+		stored_version: "0.107.0",
+		embeddings: {
+			provider: "openai",
+			name: "qwen3-embedding-4b",
+			vector_dim: 2560,
+		},
+		tables: [
+			{
+				name: "documents",
+				exists: true,
+				num_rows: 70,
+				total_bytes: 3724508080,
+				num_versions: 21,
+				latest_version_at: "2026-11-09T22:06:24.484415+00:00",
+			},
+		],
+		vector_index: { exists: false, indexed_rows: 0, unindexed_rows: 0 },
+		pending_migrations: [],
+		packages: { haiku_rag: "0.107.0" },
+	},
 	"databases/papers": { path: "/data/papers.lancedb" },
 };
 
@@ -239,6 +261,19 @@ describe("IngestionPage", () => {
 		await user.click(screen.getByRole("button", { name: "Database docs" }));
 		await screen.findByText(/\/data\/docs\.lancedb/);
 		expect(calls.some((call) => call.path === "databases/docs")).toBe(true);
+	});
+
+	it("shows a database's tables with readable sizes and times", async () => {
+		const user = userEvent.setup();
+		render(<IngestionPage />);
+		await screen.findByText("Writes docs");
+		await user.click(screen.getByRole("button", { name: "Database docs" }));
+		const row = (await screen.findByText("documents")).closest("tr");
+		expect(row?.textContent).toContain("3.5 GB");
+		expect(row?.textContent).toContain(
+			new Date("2026-11-09T22:06:24.484415+00:00").toLocaleString(),
+		);
+		expect(screen.queryByText(/"num_rows"/)).toBeNull();
 	});
 
 	it("keeps an open database panel through a failed sources poll", async () => {

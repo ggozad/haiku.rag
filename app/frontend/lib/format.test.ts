@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { publicUrl, readableUri } from "./format";
+import { formatBytes, publicUrl, readableUri } from "./format";
 
 describe("readableUri", () => {
 	it("decodes percent-encoded characters", () => {
@@ -26,5 +26,13 @@ describe("publicUrl", () => {
 		expect(publicUrl({ url: "file:///data/a.pdf" })).toBeNull();
 		expect(publicUrl({ url: "javascript:alert(1)" })).toBeNull();
 		expect(publicUrl({ url: 3 })).toBeNull();
+	});
+});
+
+describe("formatBytes", () => {
+	it("formats bytes in binary units", () => {
+		expect(formatBytes(512)).toBe("512 B");
+		expect(formatBytes(4096000)).toBe("3.9 MB");
+		expect(formatBytes(5 * 1024 ** 5)).toBe("5120.0 TB");
 	});
 });

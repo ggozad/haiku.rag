@@ -1,3 +1,6 @@
+import sys
+import time
+from datetime import UTC, datetime, timedelta
 from importlib import metadata
 
 import pytest
@@ -9,6 +12,28 @@ from haiku.rag.store.info import gather_database_info
 from haiku.rag.store.models import Document
 from haiku.rag.store.repositories.document import DocumentRepository
 from tests.store.minimal_database import openai_settings, seed_database
+
+
+@pytest.fixture
+def tokyo_time(monkeypatch):
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    time.tzset()
+    yield
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="time.tzset is POSIX-only")
+async def test_latest_version_time_is_the_instant_in_any_time_zone(
+    temp_db_path, tokyo_time
+):
+    await seed_database(temp_db_path, openai_settings("1.2.3"))
+
+    info = await gather_database_info(temp_db_path, AppConfig())
+
+    written = datetime.fromisoformat(info.tables[0].latest_version_at or "")
+    assert written.utcoffset() == timedelta(hours=9)
+    assert abs(datetime.now(UTC) - written) < timedelta(minutes=1)
 
 
 async def test_gather_database_info_reports_tables_and_settings(temp_db_path):
@@ -30,6 +55,8 @@ async def test_gather_database_info_reports_tables_and_settings(temp_db_path):
     assert tables["documents"].num_versions >= 1
     assert tables["chunks"].num_versions >= 1
     assert tables["documents"].latest_version_at is not None
+    written = datetime.fromisoformat(tables["documents"].latest_version_at)
+    assert abs(datetime.now(UTC) - written) < timedelta(minutes=1)
 
     # Only one chunk: no vector index.
     assert info.vector_index.exists is False

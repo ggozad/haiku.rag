@@ -449,7 +449,7 @@ async def database_info(request: Request) -> JSONResponse:
             history[table] = [
                 {
                     "version": v["version"],
-                    "timestamp": str(v["timestamp"]),
+                    "timestamp": v["timestamp"].astimezone().isoformat(),
                     "tags": sorted(
                         tag
                         for tag, t in tags.items()

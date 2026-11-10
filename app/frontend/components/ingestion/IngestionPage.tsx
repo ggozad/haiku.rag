@@ -2,6 +2,11 @@
 
 import { ChevronRight, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import DatabaseTables, {
+	type DatabaseInfo,
+	describeDatabase,
+} from "@/components/DatabaseInfo";
+import Highlighted from "@/components/Highlighted";
 import { Page, PageHeader, SectionHeading } from "@/components/Page";
 import { Loading } from "@/components/Status";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -369,20 +374,29 @@ export default function IngestionPage() {
 								key={name}
 								title={`Database ${name}`}
 								path={`databases/${encodeURIComponent(name)}`}
-								render={(data) => (
-									<pre className="overflow-x-auto font-mono text-xs">
-										{JSON.stringify(data, null, 2)}
-									</pre>
-								)}
+								render={(data) => {
+									const info = data as DatabaseInfo;
+									return (
+										<div className="space-y-3">
+											<p className="font-mono text-xs text-muted-foreground">
+												{info.path}
+												{info.exists && ` · ${describeDatabase(info)}`}
+											</p>
+											<DatabaseTables info={info} />
+										</div>
+									);
+								}}
 							/>
 						))}
 						<Lazy
 							title="Configuration"
 							path="config"
 							render={(data) => (
-								<pre className="overflow-x-auto font-mono text-xs">
-									{(data as { yaml: string }).yaml}
-								</pre>
+								<Highlighted
+									code={(data as { yaml: string }).yaml}
+									language="yaml"
+									className="overflow-x-auto font-mono text-xs"
+								/>
 							)}
 						/>
 					</div>

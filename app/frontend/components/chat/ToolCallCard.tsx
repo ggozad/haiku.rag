@@ -1,5 +1,6 @@
 import type { ToolCall } from "@ag-ui/client";
 import { Check, Code, Loader2, Quote, Search, X } from "lucide-react";
+import Highlighted from "@/components/Highlighted";
 import {
 	Collapsible,
 	CollapsibleContent,
@@ -80,9 +81,11 @@ export default function ToolCallCard({
 				{header}
 			</CollapsibleTrigger>
 			<CollapsibleContent>
-				<pre className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-xs">
-					{String(args.code ?? "")}
-				</pre>
+				<Highlighted
+					code={String(args.code ?? "")}
+					language="python"
+					className="mt-2 overflow-x-auto rounded bg-background p-2 font-mono text-xs"
+				/>
 				{result !== undefined && (
 					<pre className="mt-2 max-h-64 overflow-auto rounded bg-background p-2 font-mono text-xs text-muted-foreground">
 						{result}

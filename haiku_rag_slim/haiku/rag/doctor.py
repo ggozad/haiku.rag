@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from urllib.parse import unquote
 
 import httpx
 import numpy as np
@@ -458,6 +459,11 @@ def _common_path_prefix(labels: list[str]) -> str:
     return lo[: cut + 1] if cut > 16 else ""
 
 
+def display_label(uri: str | None, title: str | None, doc_id: str) -> str:
+    """A document's name for people: its decoded URI, else its title, else its id."""
+    return unquote(uri) if uri else title or doc_id
+
+
 def duplicates_yaml(
     families: list[DuplicateFamily], label: Callable[[str], str]
 ) -> str:
@@ -513,10 +519,14 @@ def _check_duplicate_documents(
     # point at the YAML export for the rest. One block per shown group — a
     # header, each member on its own numbered line, then a compact similarity line.
     shown = families[:_SAMPLE_LIMIT]
-    prefix = _common_path_prefix([label(m) for f in shown for m in f.members])
+
+    def readable(doc_id: str) -> str:
+        return display_label(uri_by_doc.get(doc_id), title_by_doc.get(doc_id), doc_id)
+
+    prefix = _common_path_prefix([readable(m) for f in shown for m in f.members])
 
     def short(doc_id: str) -> str:
-        text = label(doc_id)
+        text = readable(doc_id)
         return text[len(prefix) :] if prefix and text.startswith(prefix) else text
 
     details: list[str] = []
@@ -850,6 +860,7 @@ async def run_db_checks(
     stats: dict,
     duplicates_out: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
+    duplicates: bool = True,
 ) -> list[CheckResult]:
     """Referential and content-integrity checks against an open read-only Store.
 
@@ -923,18 +934,19 @@ async def run_db_checks(
         _check_unembedded_chunks(scan.unembedded_count, scan.unembedded_sample)
     )
 
-    notify("Detecting near-duplicate documents")
-    results.append(
-        _check_duplicate_documents(
-            scan.document_ids,
-            scan.centroids,
-            scan.counts,
-            uri_by_doc,
-            title_by_doc,
-            config.doctor.duplicates,
-            yaml_path=duplicates_out,
+    if duplicates:
+        notify("Detecting near-duplicate documents")
+        results.append(
+            _check_duplicate_documents(
+                scan.document_ids,
+                scan.centroids,
+                scan.counts,
+                uri_by_doc,
+                title_by_doc,
+                config.doctor.duplicates,
+                yaml_path=duplicates_out,
+            )
         )
-    )
 
     notify("Checking picture data")
     missing_picture_docs = [
@@ -1206,6 +1218,7 @@ async def run_doctor(
     duplicates_out: Path | None = None,
     on_progress: Callable[[str], None] | None = None,
     providers: bool = True,
+    duplicates: bool = True,
 ) -> DoctorReport:
     """Open the database read-only and run every diagnostic check.
 
@@ -1244,6 +1257,7 @@ async def run_doctor(
                     stats,
                     duplicates_out=duplicates_out,
                     on_progress=on_progress,
+                    duplicates=duplicates,
                 )
 
     if providers:

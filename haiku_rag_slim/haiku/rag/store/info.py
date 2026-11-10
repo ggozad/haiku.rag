@@ -58,7 +58,10 @@ async def get_database_stats(
             "num_rows": tbl_stats.get("num_rows", 0),
             "total_bytes": tbl_stats.get("total_bytes", 0),
             "num_versions": len(versions),
-            "latest_version_at": None if latest is None else latest.isoformat(),
+            # lancedb reports a version's time as naive local time.
+            "latest_version_at": (
+                None if latest is None else latest.astimezone().isoformat()
+            ),
         }
 
     if stats["chunks"]["exists"]:
