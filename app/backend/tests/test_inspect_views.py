@@ -1,4 +1,5 @@
 import base64
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from PIL import Image
@@ -288,6 +289,8 @@ async def test_info_reports_tables_tags_and_history(client, seeded):
     assert body["tags"]["before-review"]["complete"] is True
     newest = body["history"]["chunks"][0]
     assert "before-review" in newest["tags"]
+    written = datetime.fromisoformat(newest["timestamp"])
+    assert abs(datetime.now(UTC) - written) < timedelta(minutes=1)
 
 
 async def test_info_reports_a_database_the_client_refuses(client):

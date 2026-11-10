@@ -24,7 +24,8 @@ async def test_a_doctor_run_reports_its_checks_and_progress(client):
     run = await settled(client, "alpha")
     assert run["status"] == "done"
     names = {check["name"] for check in run["result"]["results"]}
-    assert {"tables_present", "duplicate_documents", "unembedded_chunks"} <= names
+    assert {"tables_present", "unembedded_chunks"} <= names
+    assert "duplicate_documents" not in names
     assert "api_keys" not in names
     assert "Scanning chunk vectors" in run["progress"]
     assert run["started_at"] and run["finished_at"]

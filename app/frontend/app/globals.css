@@ -135,3 +135,31 @@
 		@apply font-sans;
 	}
 }
+
+@layer components {
+	.token.comment {
+		@apply text-muted-foreground italic;
+	}
+	.token.atrule,
+	.token.property {
+		@apply text-sky-700 dark:text-sky-300;
+	}
+	.token.string,
+	.token.char {
+		@apply text-emerald-700 dark:text-emerald-300;
+	}
+	.token.number {
+		@apply text-amber-700 dark:text-amber-300;
+	}
+	.token.keyword,
+	.token.boolean,
+	.token.important {
+		@apply text-violet-700 dark:text-violet-300;
+	}
+	.token.function,
+	.token.builtin,
+	.token.class-name,
+	.token.decorator {
+		@apply text-blue-700 dark:text-blue-300;
+	}
+}

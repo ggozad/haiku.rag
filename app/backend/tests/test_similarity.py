@@ -117,7 +117,7 @@ async def compared(seeded):
                     Chunk(content=f"{name} {n}", embedding=eye[d].tolist(), order=n)
                     for n, d in enumerate(directions)
                 ],
-                uri=f"test://alpha/{name}",
+                uri=f"test://alpha/%CE%91-{name}",
                 title=name,
             )
             ids[name] = document.id
@@ -137,12 +137,12 @@ async def test_the_job_finds_families_and_scores_documents(client, compared):
     assert documents[compared["copy-a"]] == {
         "id": compared["copy-a"],
         "title": "copy-a",
-        "uri": "test://alpha/copy-a",
+        "uri": "test://alpha/%CE%91-copy-a",
     }
     assert {compared["copy-a"], compared["copy-b"]} in [
         set(family["members"]) for family in result["families"]
     ]
-    assert result["families"][0]["label"][compared["copy-a"]] == "test://alpha/copy-a"
+    assert result["families"][0]["label"][compared["copy-a"]] == "test://alpha/Α-copy-a"
     assert result["neighbours"] is True
     assert job["stale"] is False
     assert "Comparing documents" in job["progress"]
@@ -160,7 +160,7 @@ async def test_the_job_finds_families_and_scores_documents(client, compared):
 
     exported = await client.get("/api/doctor/alpha/duplicates.yaml")
     assert exported.headers["content-type"].startswith("application/yaml")
-    assert "test://alpha/copy-b" in exported.text
+    assert "test://alpha/%CE%91-copy-b" in exported.text
 
 
 async def test_a_changed_document_marks_the_job_stale(app, client, compared, seeded):

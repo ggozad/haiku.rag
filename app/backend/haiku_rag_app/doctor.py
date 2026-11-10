@@ -8,7 +8,12 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 from haiku.rag.client.scope import DatabaseRef
-from haiku.rag.doctor import duplicates_yaml, run_doctor, scan_vectors
+from haiku.rag.doctor import (
+    display_label,
+    duplicates_yaml,
+    run_doctor,
+    scan_vectors,
+)
 from haiku.rag.store.engine import Store
 from haiku_rag_app.jobs import Progress
 from haiku_rag_app.similarity import Comparison, Retained, compare, similarity
@@ -41,6 +46,8 @@ async def start_run(request: Request) -> JSONResponse:
             dict(os.environ),
             on_progress=progress,
             providers=providers,
+            # The similarity job reports the near-duplicate families.
+            duplicates=False,
         )
         return report.model_dump(mode="json")
 
@@ -90,12 +97,16 @@ async def start_similarity(request: Request) -> JSONResponse:
         labels = {
             d["id"]: d["uri"] or d["title"] or d["id"] for d in comparison.documents
         }
+        shown = {
+            d["id"]: display_label(d["uri"], d["title"], d["id"])
+            for d in comparison.documents
+        }
         return {
             "documents": comparison.documents,
             "families": [
                 {
                     **family.model_dump(),
-                    "label": {m: labels.get(m, m) for m in family.members},
+                    "label": {m: shown.get(m, m) for m in family.members},
                 }
                 for family in comparison.families
             ],

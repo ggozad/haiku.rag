@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
 	type Check,
 	counts,
-	formatBytes,
 	nearestDocuments,
 	ordered,
 	scanBytes,
@@ -30,11 +29,8 @@ describe("doctor report", () => {
 		expect(ordered(checks).map((c) => c.name)).toEqual(["b", "d", "c", "a"]);
 	});
 
-	it("sizes the vector scan and formats bytes", () => {
+	it("sizes the vector scan", () => {
 		expect(scanBytes(1000, 1024)).toBe(4096000);
-		expect(formatBytes(512)).toBe("512 B");
-		expect(formatBytes(4096000)).toBe("3.9 MB");
-		expect(formatBytes(5 * 1024 ** 5)).toBe("5120.0 TB");
 	});
 
 	it("knows when a job is settled", () => {

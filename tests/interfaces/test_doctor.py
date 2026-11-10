@@ -37,6 +37,7 @@ from haiku.rag.doctor import (
     _provider_targets,
     _resolve_endpoint,
     _sample,
+    display_label,
     duplicate_families,
     run_doctor,
     run_provider_checks,
@@ -197,6 +198,23 @@ async def test_doctor_reports_progress(temp_db_path):
     assert "Scanning chunk vectors" in labels
     assert "Detecting near-duplicate documents" in labels
     assert "Probing provider endpoints" in labels
+
+
+async def test_doctor_without_duplicate_detection(temp_db_path):
+    await _build_db(temp_db_path)
+    labels: list[str] = []
+    report = await run_doctor(
+        _config(),
+        temp_db_path,
+        {},
+        on_progress=labels.append,
+        providers=False,
+        duplicates=False,
+    )
+    names = {r.name for r in report.results}
+    assert "duplicate_documents" not in names
+    assert "unembedded_chunks" in names
+    assert "Detecting near-duplicate documents" not in labels
 
 
 async def test_empty_db_fails(temp_db_path):
@@ -1326,6 +1344,30 @@ def test_duplicate_documents_report_truncates_summary():
     assert sum(1 for d in result.details if d.startswith("group ")) == 5
     assert any("more groups" in d and "--duplicates-out" in d for d in result.details)
     assert any("keep #" in d for d in result.details)
+
+
+def test_duplicate_documents_report_decodes_uris():
+    uris = {
+        "a": "file:///data/sources/fek/%CE%91-187-2025.pdf",
+        "b": "file:///data/sources/fek/%CE%91-78-2026.pdf",
+    }
+    result = _check_duplicate_documents(
+        *_centroids({"a": [0, 1, 2], "b": [0, 1, 2]}, dim=3),
+        uris,
+        {},
+        DuplicateDetectionConfig(),
+    )
+    assert "common path: file:///data/sources/fek/" in result.details
+    member_lines = {d.strip() for d in result.details if d.lstrip().startswith("#")}
+    assert member_lines == {"#1 Α-187-2025.pdf", "#2 Α-78-2026.pdf"}
+
+
+def test_display_label_decodes_only_a_uri():
+    assert display_label("file:///fek/%CE%91-1.pdf", "t", "id") == "file:///fek/Α-1.pdf"
+    assert (
+        display_label(None, "Growth of 20%20 a year", "id") == "Growth of 20%20 a year"
+    )
+    assert display_label(None, None, "id") == "id"
 
 
 def test_duplicate_documents_report_factors_common_path():

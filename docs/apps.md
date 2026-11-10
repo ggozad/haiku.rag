@@ -169,7 +169,7 @@ The Search tab, or Ctrl+K (Cmd+K on a Mac) from any page, searches every databas
 
 ## Check its health
 
-The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, the providers it calls, and documents that are near-duplicates of each other. Choose the database and press "Run the doctor". The report opens with its verdict, then the failures and warnings, each naming its fix. The passing checks fold into one line. The checks and the similarity job run in the background. The similarity job lists the near-duplicate families, each with the document to keep, and exports them as YAML. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
+The Doctor checks one database: its tables and indexes, its embeddings against the configured embedder, and the providers it calls. Its similarity job finds documents that are near-duplicates of each other. Choose the database and press "Run the doctor". The report opens with its verdict, then the failures and warnings, each naming its fix. The passing checks fold into one line. The checks and the similarity job run in the background. The similarity job lists the near-duplicate families, each with the document to keep, and exports them as YAML. Before either starts, the page shows a lower bound on the memory for the chunk vectors, when the database's size is available.
 
 ![The doctor: the checks and two near-duplicate families](img/app-doctor.png)
 

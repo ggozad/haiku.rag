@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Web app: the ingestion page's database panel shows the tables, sizes, versions and last write times as a table, the same view as the inspector's info dialog, which gains a Last written column.
+- Web app: the doctor run leaves out the `duplicate_documents` check. The similarity job reports the near-duplicate families. `run_doctor` takes `duplicates=False` to skip the check.
+- Web app: the configuration on the ingestion page and the code of an `execute_code` call in chat are syntax-highlighted.
+
+### Fixed
+
+- `doctor`'s near-duplicate report and the web app's near-duplicate families show percent-encoded URIs decoded.
+- `DatabaseInfo` table `latest_version_at` and the web app inspector's version history carry the UTC offset. Web app pages show them in the browser's time zone.
+
 ## [0.110.0] - 2026-11-08
 
 ### Added

@@ -1,6 +1,7 @@
 "use client";
 
-import { formatBytes, scanBytes } from "@/lib/doctor";
+import { scanBytes } from "@/lib/doctor";
+import { formatBytes } from "@/lib/format";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 
