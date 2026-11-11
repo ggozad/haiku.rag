@@ -10,7 +10,9 @@ Build the full image with all features:
 docker build -f docker/Dockerfile -t haiku-rag .
 ```
 
-Its default command runs the read-only MCP server on port 8001, bound to `0.0.0.0`.
+Its default command runs the read-only MCP server on port 8001, bound to `0.0.0.0` inside the container.
+
+The MCP server has no authentication: anyone who can reach port 8001 can search and read every document and run `execute_code`. `-p 127.0.0.1:8001:8001` publishes it to the host only. Put an authenticating proxy in front of it before publishing it beyond the host.
 
 ## Configuration
 
@@ -44,7 +46,7 @@ See [Configuration docs](https://ggozad.github.io/haiku.rag/configuration/) for 
 Mount your config file and data directory:
 
 ```bash
-docker run -p 8001:8001 \
+docker run -p 127.0.0.1:8001:8001 \
   -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v /path/to/data:/data \
   haiku-rag
@@ -90,7 +92,7 @@ containers, since both load the same configuration. See
 For API keys (OpenAI, Anthropic, etc.), pass them as environment variables:
 
 ```bash
-docker run -p 8001:8001 \
+docker run -p 127.0.0.1:8001:8001 \
   -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v /path/to/data:/data \
   -e OPENAI_API_KEY=your-key-here \
