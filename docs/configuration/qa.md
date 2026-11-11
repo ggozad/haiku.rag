@@ -36,15 +36,31 @@ qa:
     vision: true              # Set false for text-only models
   max_searches: 5       # Maximum search units per question
   max_executions: 15    # Maximum execute_code calls per question
+  max_images: null      # Maximum images in one model request (null: no limit)
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
 - **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The capability's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search units a capability can spend per question (default: 5). Up to three searches emitted in the same model response share one unit, so a model that rephrases its query in one response spends one unit. A search in a later response starts a new unit, as does each further group of three within one response. Searches in one response also deduplicate their returns: evidence a sibling search already showed collapses to a reference line, and each picture attaches once per response.
 - **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
+- **max_images**: Maximum number of images in one model request (default: unset, no limit). Set it at or below the limit of the model server, for example vLLM's `--limit-mm-per-prompt`. See [Image limit](#image-limit).
 
 !!! note "Thinking on self-hosted models"
     `thinking` is sent as `reasoning_effort` to every self-hosted endpoint, and the accepted levels are the model's own. A chat template with a switch of its own takes it through `extra_body`. See [Thinking](providers.md#thinking).
+
+## Image limit
+
+A model server refuses a request holding more images than it allows. The pictures of every search stay in the conversation, and [evidence compaction](../capabilities/compaction.md) re-attaches the pictures cited in earlier questions, so a long question or a long conversation can exceed the server's limit.
+
+With `qa.max_images` set, the capability drops retrieved pictures from a request that holds more images than the limit:
+
+- Every image in the request counts: retrieved pictures, images attached by the user, and images returned by other tools.
+- Only retrieved pictures are dropped, each with its label. The text of the search result or of the cited evidence stays.
+- Pictures from earlier rounds of searches are dropped first, starting with the oldest round. Pictures cited in earlier questions are dropped next. The pictures of the newest round of searches are dropped last.
+- Within one search, the picture of the lowest-ranked result is dropped first. Among cited pictures, the picture of the oldest citation is dropped first.
+- The stored conversation keeps every picture. The limit applies to the request only.
+
+Images attached by the user and images from other tools are never dropped. A request with more of those images than the limit still exceeds it. Images added by the `prepare_model_request` hook of a capability registered after the RAG capability are not counted.
 
 ## Sandbox configuration
 

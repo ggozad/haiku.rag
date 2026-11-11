@@ -1,14 +1,28 @@
 from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import replace
+from typing import Any
 
 from pydantic import BaseModel
 from pydantic_ai import ToolFailed
+from pydantic_ai.messages import (
+    BinaryContent,
+    ImageUrl,
+    ModelMessage,
+    ModelRequest,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.tools import ToolDefinition
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models.chunk import SearchResult, qualified_id
-from haiku.rag.utils.images import picture_keys
+from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, picture_keys
+
+IMAGES_OMITTED = (
+    "[Page images retrieved from the knowledge base are omitted here: the request "
+    "reached its image limit.]"
+)
 
 
 class CodeExecutionEntry(BaseModel):
@@ -124,6 +138,68 @@ def merge_results(
             seen.add(key)
 
 
+def retrieved_pictures(content: Sequence[Any]) -> list[int]:
+    """Index of each retrieved picture's label: the tag, then an image right after."""
+    return [
+        index
+        for index, item in enumerate(content[:-1])
+        if isinstance(item, str)
+        and RETRIEVED_IMAGE_TAG in item
+        and isinstance(content[index + 1], BinaryContent)
+    ]
+
+
+def _is_image(item: Any) -> bool:
+    return isinstance(item, ImageUrl) or (
+        isinstance(item, BinaryContent) and item.is_image
+    )
+
+
+def limit_retrieved_images(
+    messages: list[ModelMessage], max_images: int
+) -> list[ModelMessage]:
+    """Drop retrieved pictures until the request holds `max_images` images.
+
+    Every image counts, and only retrieved pictures are dropped, each with its
+    label. Pictures of earlier rounds are dropped first, oldest message first,
+    then pictures cited in earlier questions, then the last message's. Within a
+    part the last picture is dropped first. Returns `messages` itself when
+    nothing is dropped, else a copy.
+    """
+    total = 0
+    parts: dict[tuple[int, int], UserPromptPart] = {}
+    candidates: list[tuple[int, int, int, int]] = []
+    newest = len(messages) - 1
+    for at, message in enumerate(messages):
+        if not isinstance(message, ModelRequest):
+            continue
+        for position, part in enumerate(message.parts):
+            if isinstance(part, ToolReturnPart):
+                total += sum(_is_image(item) for item in part.files)
+            elif isinstance(part, UserPromptPart) and not isinstance(part.content, str):
+                total += sum(_is_image(item) for item in part.content)
+                parts[at, position] = part
+                for index in retrieved_pictures(part.content):
+                    cited = CITED_EVIDENCE in str(part.content[index])
+                    group = 2 if at == newest else 1 if cited else 0
+                    candidates.append((group, at, position, -index))
+    excess = total - max_images
+    if excess <= 0:
+        return messages
+    dropped: dict[tuple[int, int], set[int]] = {}
+    for _, at, position, index in sorted(candidates)[:excess]:
+        dropped.setdefault((at, position), set()).update((-index, 1 - index))
+    limited = list(messages)
+    for (at, position), gone in dropped.items():
+        part = parts[at, position]
+        kept = [item for index, item in enumerate(part.content) if index not in gone]
+        message = limited[at]
+        rewritten = list(message.parts)
+        rewritten[position] = replace(part, content=kept or [IMAGES_OMITTED])
+        limited[at] = replace(message, parts=rewritten)
+    return limited
+
+
 __all__ = [
     "CodeExecutionEntry",
     "EvidenceKey",
@@ -131,6 +207,7 @@ __all__ = [
     "evidence_signature",
     "merge_results",
     "require_collections",
+    "retrieved_pictures",
     "search_corpus",
     "without_sources",
 ]
