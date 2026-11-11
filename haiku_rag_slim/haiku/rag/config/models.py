@@ -211,6 +211,7 @@ class QAConfig(ConfigModel):
     )
     max_searches: int = Field(default=5, ge=0)
     max_executions: int = Field(default=15, ge=0)
+    max_images: int | None = Field(default=None, ge=0)
 
 
 class SandboxConfig(ConfigModel):

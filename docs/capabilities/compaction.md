@@ -22,7 +22,8 @@ holds everything the run gathered.
 
 This reduces what a request carries. It does not bound it: retained evidence still
 grows with the conversation. A host that needs more aggressive pruning can compact its
-own requests further, on the wire only.
+own requests further, on the wire only. `qa.max_images` bounds the
+number of images in a request. See [Image limit](../configuration/qa.md#image-limit).
 
 ## Resuming a question
 

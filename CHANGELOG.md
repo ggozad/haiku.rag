@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `qa.max_images` (default unset): the RAG capability drops retrieved pictures from a model request holding more images than the limit.
+
 ### Changed
 
 - Web app: the ingestion page's database panel shows the tables, sizes, versions and last write times as a table, the same view as the inspector's info dialog, which gains a Last written column.

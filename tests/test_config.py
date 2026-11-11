@@ -304,6 +304,7 @@ def test_config_defaults():
     assert ConversionOptions().fetch_remote_images is True
     assert ConversionOptions().infer_furniture is False
     assert QAConfig().max_executions == 15
+    assert QAConfig().max_images is None
     assert SandboxConfig().code_timeout == 60.0
     assert SandboxConfig().max_output_chars == 50_000
     assert EvaluationsConfig().system_one is None
@@ -313,6 +314,7 @@ def test_config_defaults():
     assert config.processing.conversion_options.fetch_remote_images is True
     assert config.processing.conversion_options.infer_furniture is False
     assert config.qa.max_executions == 15
+    assert config.qa.max_images is None
     assert config.sandbox.code_timeout == 60.0
     assert config.sandbox.max_output_chars == 50_000
     assert config.evaluations.system_one is None
@@ -323,6 +325,7 @@ def test_config_defaults():
     assert processing["conversion_options"]["fetch_remote_images"] is True
     assert processing["conversion_options"]["infer_furniture"] is False
     assert generated["qa"]["max_executions"] == 15
+    assert generated["qa"]["max_images"] is None
     assert generated["sandbox"]["code_timeout"] == 60.0
     assert generated["sandbox"]["max_output_chars"] == 50_000
     assert generated["evaluations"]["system_one"] is None
@@ -911,6 +914,7 @@ def test_finite_switches_reject_unknown_values(data):
         {"sandbox": {"code_timeout": 0}},
         {"sandbox": {"max_output_chars": 0}},
         {"qa": {"max_executions": -1}},
+        {"qa": {"max_images": -1}},
         {"doctor": {"duplicates": {"similarity_threshold": 1.5}}},
         {"ingester": {"workers": {"worker_count": -1}}},
         {"ingester": {"api": {"port": 70000}}},

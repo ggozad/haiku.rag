@@ -33,6 +33,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from haiku.rag.capabilities._tools import (
     CodeExecutionEntry,
     EvidenceKey,
+    limit_retrieved_images,
     merge_results,
     require_collections,
     search_corpus,
@@ -375,6 +376,17 @@ class RAGCapability(AbstractCapability[Any]):
         ):
             self.grace_requests_used += 1
         self.request_count += 1
+        return request_context
+
+    async def prepare_model_request(
+        self, ctx: RunContext[Any], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        """Limit the request to `qa.max_images` images."""
+        limit = self.config.qa.max_images
+        if limit is not None:
+            request_context.messages = limit_retrieved_images(
+                request_context.messages, limit
+            )
         return request_context
 
     def _budget_notice(self) -> str | None:

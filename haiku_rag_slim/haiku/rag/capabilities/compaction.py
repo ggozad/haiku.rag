@@ -14,6 +14,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 
+from haiku.rag.capabilities._tools import retrieved_pictures
 from haiku.rag.capabilities.evidence import (
     DiscoveredEvidence,
     discover_evidence,
@@ -22,7 +23,7 @@ from haiku.rag.capabilities.evidence import (
 )
 from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.store.models.citation import Citation
-from haiku.rag.utils.images import RETRIEVED_IMAGE_TAG, decode_picture
+from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, decode_picture
 
 CAPABILITY_ID = "haiku-rag-evidence-compaction"
 
@@ -53,7 +54,7 @@ def group_label(position: int) -> str:
 def picture_label(chunk_id: str, self_ref: str, collection: str | None = None) -> str:
     named = f"Collection: {collection}. " if collection else ""
     return (
-        f"Page image retrieved from the knowledge base for cited evidence "
+        f"Page image retrieved from the knowledge base {CITED_EVIDENCE} "
         f"[{chunk_id}] ({self_ref}). {named}"
         f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
     )
@@ -217,22 +218,12 @@ def _strip_our_pictures(part: UserPromptPart) -> UserPromptPart | None:
     """
     if isinstance(part.content, str):
         return part
-    items = list(part.content)
-    kept: list[Any] = []
-    index = 0
-    while index < len(items):
-        item = items[index]
-        following = items[index + 1] if index + 1 < len(items) else None
-        is_ours = (
-            isinstance(item, str)
-            and RETRIEVED_IMAGE_TAG in item
-            and isinstance(following, BinaryContent)
-        )
-        if is_ours:
-            index += 2
-            continue
-        kept.append(item)
-        index += 1
+    ours = {
+        index
+        for label in retrieved_pictures(part.content)
+        for index in (label, label + 1)
+    }
+    kept = [item for index, item in enumerate(part.content) if index not in ours]
     return replace(part, content=kept) if kept else None
 
 

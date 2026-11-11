@@ -41,6 +41,8 @@ def image_binary_content(data: bytes) -> "BinaryContent":
 
 
 RETRIEVED_IMAGE_TAG = "[haiku.rag/retrieved-image]"
+CITED_EVIDENCE = "for cited evidence"
+"""Marks the label of a picture cited in an earlier question."""
 PictureKey = tuple[str | None, str | None, str]
 
 
