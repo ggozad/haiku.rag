@@ -25,6 +25,11 @@ haiku-rag mcp --stdio
 when the MCP server must be reachable from outside the machine, such as
 inside a Docker container with port mapping, or on a trusted LAN.
 
+The server has no authentication: anyone who can reach its port can search
+and read every document and run `execute_code`. Publish a container's port
+to the host only (`-p 127.0.0.1:8001:8001`), and put an authenticating proxy
+in front of the server before exposing it further.
+
 The server opens the database read-only. Ingestion goes through the CLI
 (`haiku-rag add`, `add-src`, `delete`) or [`haiku-ingester`](ingester.md).
 

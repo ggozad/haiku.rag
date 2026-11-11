@@ -77,10 +77,12 @@ The full image, which converts in-process, is built locally:
 
 ```bash
 docker build -f docker/Dockerfile -t haiku-rag .
-docker run -p 8001:8001 \
+docker run -p 127.0.0.1:8001:8001 \
   -v /path/to/haiku.rag.yaml:/app/haiku.rag.yaml \
   -v /path/to/data:/data \
   haiku-rag
 ```
 
-Both images run the read-only MCP server on port 8001 by default. The mounted `haiku.rag.yaml` must set `storage.data_dir: /data`, or the database is written inside the container rather than to the volume. `docker/README.md` covers running the [ingester](ingester.md) from the same image.
+Both images run the read-only MCP server on port 8001 by default. The MCP server has no authentication: anyone who can reach port 8001 can search and read every document and run `execute_code`. `-p 127.0.0.1:8001:8001` publishes it to the host only. Put an authenticating proxy in front of it before publishing it beyond the host.
+
+The mounted `haiku.rag.yaml` must set `storage.data_dir: /data`, or the database is written inside the container rather than to the volume. `docker/README.md` covers running the [ingester](ingester.md) from the same image.

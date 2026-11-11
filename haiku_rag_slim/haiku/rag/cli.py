@@ -947,7 +947,7 @@ def mcp(
     host: str = typer.Option(
         "127.0.0.1",
         "--host",
-        help="Host to bind MCP server to (use 0.0.0.0 in containers; ignored with --stdio)",
+        help="Host to bind MCP server to (the server has no authentication; ignored with --stdio)",
     ),
     port: int = typer.Option(
         8001,
