@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `haiku-ingester`: a worker or the reaper logs a queue error, such as `database is locked`, and retries instead of stopping (#860).
+
 ## [0.111.0] - 2026-11-11
 
 ### Added
