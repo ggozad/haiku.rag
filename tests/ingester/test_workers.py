@@ -1,15 +1,18 @@
 import asyncio
 import logging
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import FSSourceConfig, get_config
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.pollers.periodic import PeriodicPoller
 from haiku.rag.ingester.queue.models import JobOp, JobStatus
+from haiku.rag.ingester.workers import pool as pool_module
 from haiku.rag.ingester.workers.pool import WorkerPool
 from haiku.rag.ingester.workers.retry import RetryPolicy
 from haiku.rag.sources.base import SourceEventKind
@@ -1557,16 +1560,106 @@ async def test_reaper_leaves_a_running_job_with_a_stale_lease(jobs, sync, conn):
     assert client._ingest_observed.await_count == 1
 
 
-async def test_reaper_resets_the_claim_of_a_worker_that_died(
+def _database_locked() -> OperationalError:
+    return OperationalError(
+        "UPDATE jobs", {}, sqlite3.OperationalError("database is locked")
+    )
+
+
+def _loop_retry_after(
+    monkeypatch, delay_s: float, *, max_delay_s: float | None = None
+) -> None:
+    monkeypatch.setattr(
+        pool_module,
+        "_LOOP_RETRY",
+        RetryPolicy(
+            base_delay_s=delay_s, max_delay_s=max_delay_s or delay_s, jitter=0.0
+        ),
+    )
+
+
+async def test_a_worker_survives_a_failed_claim(client, jobs, sync, monkeypatch):
+    _loop_retry_after(monkeypatch, 0.01)
+    client._ingest_observed.return_value = Document(
+        id="d", content="x", uri="u", metadata={"md5": "m", "source_revision": "r"}
+    )
+    claim_next = jobs.claim_next
+    claims = 0
+
+    async def _locked_once(worker_id, *, source_ids=None):
+        nonlocal claims
+        claims += 1
+        if claims == 1:
+            raise _database_locked()
+        return await claim_next(worker_id, source_ids=source_ids)
+
+    monkeypatch.setattr(jobs, "claim_next", _locked_once)
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+    assert job is not None
+    pool = _pool(client, jobs, sync, worker_count=1)
+    with capture_logs(_POOL_LOGGER, logging.ERROR) as records:
+        await pool.start()
+        try:
+            await _wait_for_status(jobs, job.id, JobStatus.SUCCEEDED)
+            assert pool.live_workers == 1
+        finally:
+            await pool.stop()
+
+    assert len(records) == 1
+    assert records[0].exc_info is not None
+    assert isinstance(records[0].exc_info[1], OperationalError)
+
+
+async def test_a_workers_backoff_resets_after_a_good_iteration(
+    client, jobs, sync, monkeypatch
+):
+    _loop_retry_after(monkeypatch, 0.1, max_delay_s=1.0)
+    claims = 0
+
+    async def _locked_except_third(worker_id, *, source_ids=None):
+        nonlocal claims
+        claims += 1
+        if claims != 3:
+            raise _database_locked()
+        return None
+
+    monkeypatch.setattr(jobs, "claim_next", _locked_except_third)
+    pool = _pool(client, jobs, sync, worker_count=1)
+    with capture_logs(_POOL_LOGGER, logging.ERROR) as records:
+        await pool.start()
+        try:
+            for _ in range(100):
+                if claims >= 5:
+                    break
+                await asyncio.sleep(0.05)
+        finally:
+            await pool.stop()
+
+    assert [record.getMessage().split()[-1] for record in records[:4]] == [
+        "0.1s",
+        "0.2s",
+        "0.1s",
+        "0.2s",
+    ]
+
+
+async def test_a_job_whose_processing_raised_is_reaped_and_completed(
     jobs, sync, conn, monkeypatch
 ):
-    """A worker task that dies mid-job stops tracking it, so the periodic
-    reaper returns the job to the queue once its lease expires."""
+    """A job whose processing raised past the pool stays claimed and
+    untracked until the reaper returns it to the queue, and the surviving
+    worker completes it."""
+    _loop_retry_after(monkeypatch, 0.01)
+    raised = asyncio.Event()
+    mark_succeeded = jobs.mark_succeeded
 
-    async def _broken(*args, **kwargs):
-        raise RuntimeError("queue write failed")
+    async def _fails_once(*args, **kwargs):
+        if not raised.is_set():
+            raised.set()
+            raise RuntimeError("queue write failed")
+        return await mark_succeeded(*args, **kwargs)
 
-    monkeypatch.setattr(jobs, "mark_succeeded", _broken)
+    monkeypatch.setattr(jobs, "mark_succeeded", _fails_once)
     pool = _pool(
         _ingesting_client(),
         jobs,
@@ -1576,21 +1669,55 @@ async def test_reaper_resets_the_claim_of_a_worker_that_died(
         heartbeat_interval_s=60,
         reaper_interval_s=0.05,
     )
-    await pool.start()
-    try:
-        job = await jobs.enqueue("src", "u", JobOp.UPSERT)
-        assert job is not None
-        for _ in range(100):
-            if pool.live_workers == 0:
-                break
-            await asyncio.sleep(0.02)
-        assert pool.live_workers == 0
-        orphan = await jobs.get_job(job.id)
-        assert orphan is not None and orphan.status is JobStatus.CLAIMED
-        await _backdate_lease(conn, job.id)
-        await _wait_for_status(jobs, job.id, JobStatus.QUEUED)
-    finally:
-        await pool.stop()
+    with capture_logs(_POOL_LOGGER, logging.ERROR) as records:
+        await pool.start()
+        try:
+            job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+            assert job is not None
+            await asyncio.wait_for(raised.wait(), timeout=5)
+            assert pool.live_workers == 1
+            orphan = await jobs.get_job(job.id)
+            assert orphan is not None and orphan.status is JobStatus.CLAIMED
+            await _backdate_lease(conn, job.id)
+            await _wait_for_status(jobs, job.id, JobStatus.SUCCEEDED)
+        finally:
+            await pool.stop()
+
+    assert len(records) == 1
+    assert records[0].exc_info is not None
+    assert isinstance(records[0].exc_info[1], RuntimeError)
+
+
+async def test_the_reaper_survives_a_failed_pass(client, jobs, sync, conn, monkeypatch):
+    reap_stale = jobs.reap_stale
+    passes = 0
+
+    async def _locked_on_first_pass(*args, **kwargs):
+        nonlocal passes
+        passes += 1
+        if passes == 2:
+            raise _database_locked()
+        return await reap_stale(*args, **kwargs)
+
+    monkeypatch.setattr(jobs, "reap_stale", _locked_on_first_pass)
+    pool = _pool(
+        client, jobs, sync, worker_count=0, reaper_interval_s=0.05, lease_ttl_s=1
+    )
+    with capture_logs(_POOL_LOGGER, logging.ERROR) as records:
+        await pool.start()
+        try:
+            job = await jobs.enqueue("src", "u", JobOp.UPSERT)
+            assert job is not None
+            assert await jobs.claim_next("external-worker") is not None
+            await _backdate_lease(conn, job.id)
+            await _wait_for_status(jobs, job.id, JobStatus.QUEUED)
+        finally:
+            await pool.stop()
+
+    assert passes >= 3
+    assert len(records) == 1
+    assert records[0].exc_info is not None
+    assert isinstance(records[0].exc_info[1], OperationalError)
 
 
 async def test_reaper_waits_for_a_claim_in_progress(jobs, sync, conn, monkeypatch):

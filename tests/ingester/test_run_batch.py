@@ -839,8 +839,8 @@ async def test_run_batch_from_manifest_rejects_duplicate_changes(tmp_path, use_c
 async def test_run_batch_aborts_when_all_workers_die(
     tmp_path, use_client, monkeypatch, caplog
 ):
-    """If all workers crash with outstanding jobs, run_batch should break
-    out of the drain loop instead of spinning forever."""
+    """If every worker task has ended with jobs outstanding, run_batch
+    breaks out of the drain loop instead of spinning forever."""
     (tmp_path / "a.md").write_text("hello")
 
     client = _mock_client()
@@ -849,14 +849,10 @@ async def test_run_batch_aborts_when_all_workers_die(
 
     config.ingester.workers.worker_count = 1
 
-    # Patch _process to raise an unhandled exception, simulating a hard
-    # worker crash.  _process only catches CancelledError, PermanentError,
-    # and TransientError — anything else propagates and kills the task.
-    monkeypatch.setattr(
-        WorkerPool,
-        "_process",
-        AsyncMock(side_effect=Exception("worker crash")),
-    )
+    async def _ended(self, worker_id):
+        return None
+
+    monkeypatch.setattr(WorkerPool, "_worker_loop", _ended)
 
     with caplog.at_level("ERROR", logger="haiku.rag.ingester.app"):
         report = await asyncio.wait_for(

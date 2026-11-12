@@ -40,6 +40,8 @@ def _terminate_wedged_process() -> None:  # pragma: no cover - ends the process
 
 _WORKER_BREAKER_THRESHOLD = 5
 _WORKER_BREAKER_COOLDOWN_S = 60.0
+# Backoff of a worker whose loop raised, by consecutive failures.
+_LOOP_RETRY = RetryPolicy(base_delay_s=1.0, max_delay_s=30.0)
 
 
 class WorkerPool:
@@ -347,8 +349,28 @@ class WorkerPool:
             processed += 1
 
     async def _worker_loop(self, worker_id: str) -> None:
+        failures = 0
         while not self._stop.is_set():
-            job = await self._claim(worker_id)
+            try:
+                job = await self._claim(worker_id)
+                if job is not None:
+                    try:
+                        await self._process(job)
+                    finally:
+                        # The claim tracked the job. `_process` untracks it as
+                        # well, unless it fails before its own cleanup.
+                        self._untrack_inflight(job.id, worker_id)
+            except Exception:
+                # A job claimed here stays claimed and untracked: the reaper
+                # returns it to the queue once its lease expires.
+                failures += 1
+                delay = compute_backoff(failures, _LOOP_RETRY)
+                logger.exception(
+                    "Worker %s failed; retrying in %.1fs", worker_id, delay
+                )
+                await self._sleep_or_stop(delay)
+                continue
+            failures = 0
             if job is None:
                 try:
                     async with self._jobs.job_available:
@@ -358,30 +380,27 @@ class WorkerPool:
                         )
                 except TimeoutError:
                     pass
-                continue
-            try:
-                await self._process(job)
-            finally:
-                # The claim tracked the job. `_process` untracks it as well,
-                # unless it fails before its own cleanup.
-                self._untrack_inflight(job.id, worker_id)
 
     async def _reaper_loop(self) -> None:
         while not self._stop.is_set():
             await self._sleep_or_stop(self._reaper_interval_s)
             if self._stop.is_set():
                 return
-            # Under the claim lock every claim this pool holds is in `_inflight`.
-            async with self.claim_lock:
-                reset = await self._jobs.reap_stale(
-                    self._lease_ttl_s, keep=self._inflight
-                )
-            if reset:
-                logger.info("Reaper reset %d stale claim(s)", reset)
-            if self._retention_s is not None:
-                pruned = await self._jobs.prune_terminal(self._retention_s)
-                if pruned:
-                    logger.info("Reaper pruned %d terminal job(s)", pruned)
+            try:
+                await self._reap()
+            except Exception:
+                logger.exception("Reaper pass failed; retrying on the next pass")
+
+    async def _reap(self) -> None:
+        # Under the claim lock every claim this pool holds is in `_inflight`.
+        async with self.claim_lock:
+            reset = await self._jobs.reap_stale(self._lease_ttl_s, keep=self._inflight)
+        if reset:
+            logger.info("Reaper reset %d stale claim(s)", reset)
+        if self._retention_s is not None:
+            pruned = await self._jobs.prune_terminal(self._retention_s)
+            if pruned:
+                logger.info("Reaper pruned %d terminal job(s)", pruned)
 
     async def _heartbeat_loop(self) -> None:
         """Renew the lease on this pool's in-flight jobs, so the leases of a

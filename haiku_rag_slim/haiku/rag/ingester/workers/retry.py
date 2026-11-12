@@ -1,3 +1,4 @@
+import math
 import random
 from dataclasses import dataclass
 
@@ -24,7 +25,10 @@ def compute_backoff(
 
     `rng` is injectable for deterministic tests.
     """
-    raw = min(policy.base_delay_s * (2 ** (attempt - 1)), policy.max_delay_s)
+    try:
+        raw = min(math.ldexp(policy.base_delay_s, attempt - 1), policy.max_delay_s)
+    except OverflowError:
+        raw = policy.max_delay_s
     r = rng if rng is not None else random
     j = 1.0 + (r.random() * 2 - 1) * policy.jitter
     return max(0.0, raw * j)
