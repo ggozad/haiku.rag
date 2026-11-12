@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.111.1] - 2026-11-12
+
 ### Fixed
 
 - `haiku-ingester`: a worker or the reaper logs a queue error, such as `database is locked`, and retries instead of stopping (#860).
@@ -3312,7 +3314,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.111.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.111.1...HEAD
+[0.111.1]: https://github.com/ggozad/haiku.rag/compare/0.111.0...0.111.1
 [0.111.0]: https://github.com/ggozad/haiku.rag/compare/0.110.0...0.111.0
 [0.110.0]: https://github.com/ggozad/haiku.rag/compare/0.109.0...0.110.0
 [0.109.0]: https://github.com/ggozad/haiku.rag/compare/0.108.0...0.109.0
