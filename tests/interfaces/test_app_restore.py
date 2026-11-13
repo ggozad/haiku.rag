@@ -13,7 +13,7 @@ from haiku.rag.store.models import Document
 from haiku.rag.store.repositories.document import DocumentRepository
 from tests.conftest import for_path
 
-OLD_VERSION = "0.63.0"
+OLD_VERSION = "0.64.0"
 
 
 def _app(path, read_only: bool = False) -> HaikuRAGApp:
@@ -82,11 +82,12 @@ async def test_restore_moves_a_current_database_to_an_older_tag(temp_db_path):
     assert "The previous state is preserved as 'before-restore-" in printed
 
 
+@pytest.mark.parametrize("live_version", [OLD_VERSION, "0.63.0"])
 async def test_restore_returns_to_a_current_tag_over_a_state_needing_migration(
-    temp_db_path,
+    temp_db_path, live_version
 ):
     current_version = await _db_tagged_at_head(temp_db_path)
-    await _set_live_settings(temp_db_path, version=OLD_VERSION)
+    await _set_live_settings(temp_db_path, version=live_version)
     replaced = await _versions(temp_db_path)
 
     await _app(temp_db_path).restore_tag("head")
@@ -145,3 +146,60 @@ async def test_restore_names_the_tables_a_database_is_missing(temp_db_path):
         await _app(temp_db_path).restore_tag("head")
 
     assert "document_meta" not in (await db.list_tables()).tables
+
+
+async def test_restore_of_a_tag_below_the_floor_is_refused(temp_db_path):
+    async with Store(temp_db_path, config=AppConfig(), create=True) as store:
+        current_version = await store.get_haiku_version()
+        await store.set_haiku_version("0.63.0")
+        await store.create_tag("ancient")
+        await store.set_haiku_version(current_version)
+    before = await _versions(temp_db_path)
+
+    with pytest.raises(MigrationRequiredError, match="haiku.rag==0.111.1"):
+        await _app(temp_db_path).restore_tag("ancient")
+
+    assert await _versions(temp_db_path) == before
+
+
+async def test_migrate_below_the_floor_writes_nothing(temp_db_path):
+    async with Store(temp_db_path, config=AppConfig(), create=True) as store:
+        await store.set_haiku_version("0.57.0")
+        await store.db.drop_table("document_meta")
+    db = await lancedb.connect_async(str(temp_db_path))
+    tables = set((await db.list_tables()).tables)
+    before = {name: await (await db.open_table(name)).version() for name in tables}
+
+    with pytest.raises(MigrationRequiredError, match="haiku.rag==0.111.1"):
+        await _app(temp_db_path).migrate()
+
+    assert set((await db.list_tables()).tables) == tables
+    assert {
+        name: await (await db.open_table(name)).version() for name in tables
+    } == before
+
+
+async def test_migrate_at_the_floor_applies_the_kept_steps(temp_db_path):
+    async with Store(temp_db_path, config=AppConfig(), create=True) as store:
+        current_version = await store.get_haiku_version()
+        await store.set_haiku_version("0.64.0")
+
+    assert await _app(temp_db_path).migrate()
+
+    assert (await _state(temp_db_path))[0] == current_version
+
+
+async def test_migrate_of_a_database_without_settings_initializes_it(temp_db_path):
+    temp_db_path.mkdir()
+
+    assert await _app(temp_db_path).migrate() == []
+
+    async with _open(temp_db_path) as store:
+        assert "settings" in (await store.db.list_tables()).tables
+
+
+async def test_migrate_of_a_missing_path_creates_nothing(temp_db_path):
+    with pytest.raises(FileNotFoundError):
+        await _app(temp_db_path).migrate()
+
+    assert not temp_db_path.exists()

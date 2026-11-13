@@ -148,9 +148,35 @@ async def test_app_info_with_missing_document_items_table(temp_db_path, capsys):
     # Missing table should be flagged, not cause a crash
     assert "document_items: absent" in out
 
-    # Migration status should be surfaced
-    assert "migration(s) pending" in out
+    # 0.39.0 needs a step this release no longer carries
+    assert "uvx --from haiku.rag==0.111.1 haiku-rag migrate" in out
+    assert "Database is up to date." not in out
+
+
+async def test_app_info_lists_pending_migrations(temp_db_path, capsys):
+    await seed_database(temp_db_path, openai_settings("0.70.0"))
+
+    app = HaikuRAGApp(scope=for_path(temp_db_path))
+    await app.info()
+
+    out = capsys.readouterr().out
+    assert "migration(s) pending." in out
     assert "haiku-rag migrate" in out
+    assert "0.75.0:" in out
+
+
+async def test_app_info_without_a_recorded_version(temp_db_path, capsys):
+    settings = openai_settings("1.2.3")
+    del settings["version"]
+    await seed_database(temp_db_path, settings)
+
+    app = HaikuRAGApp(scope=for_path(temp_db_path))
+    await app.info()
+
+    out = capsys.readouterr().out
+    assert "haiku.rag version (db): 0.0.0" in out
+    assert "uvx --from haiku.rag==0.111.1 haiku-rag migrate" in out
+    assert "Database is up to date." not in out
 
 
 async def test_app_info_reports_up_to_date(temp_db_path, capsys):

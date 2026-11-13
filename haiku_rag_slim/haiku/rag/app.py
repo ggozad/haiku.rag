@@ -115,7 +115,9 @@ class HaikuRAGApp:
     async def info(self):
         """Display read-only information about the database without modifying it."""
 
+        from haiku.rag.store.engine import too_old_message
         from haiku.rag.store.info import gather_database_info
+        from haiku.rag.store.upgrades import migratable
 
         # Basic: show path/URI
         self.console.print("[bold]haiku.rag database info[/bold]")
@@ -222,7 +224,11 @@ class HaikuRAGApp:
             )
 
         self.console.rule()
-        if info.pending_migrations:
+        if info.stored_version != "unknown" and not migratable(info.stored_version):
+            self.console.print(
+                f"[bold yellow]{escape(too_old_message(info.stored_version))}[/bold yellow]"
+            )
+        elif info.pending_migrations:
             self.console.print(
                 f"[bold yellow]{len(info.pending_migrations)} migration(s) pending.[/bold yellow] "
                 "Run [cyan]haiku-rag migrate[/cyan] to upgrade."
@@ -785,8 +791,27 @@ class HaikuRAGApp:
 
         Returns:
             List of descriptions of applied migrations.
+
+        Raises:
+            MigrationRequiredError: If the database is older than this release
+                can migrate. Checked before the `Store` opens, since the open
+                creates missing tables.
         """
-        from haiku.rag.store.engine import Store
+        from haiku.rag.store.engine import (
+            Store,
+            connect_lancedb,
+            read_settings,
+            require_migratable,
+        )
+
+        if not self.database_missing:
+            db = await connect_lancedb(self._location, self.config)
+            try:
+                if "settings" in (await db.list_tables()).tables:
+                    settings = await read_settings(await db.open_table("settings"))
+                    require_migratable(settings.get("version", "0.0.0"))
+            finally:
+                db.close()
 
         async with Store(
             self._location,

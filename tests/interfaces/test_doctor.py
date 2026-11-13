@@ -687,10 +687,32 @@ async def test_vector_dimension_mismatch_fails(temp_db_path):
 
 
 async def test_pending_migration_fails(temp_db_path):
-    await _build_db(temp_db_path, version="0.40.0")
+    await _build_db(temp_db_path, version="0.64.0")
     report = await run_doctor(_config(), temp_db_path, {})
     assert _result(report, "pending_migrations").severity is Severity.FAIL
     assert report.failed
+
+
+@pytest.mark.parametrize("missing", [None, "document_meta"])
+async def test_a_database_below_the_floor_fails_alone(temp_db_path, missing):
+    """Doctor runs no content check against a schema older than the kept steps."""
+    await _build_db(temp_db_path, version="0.63.0")
+    if missing:
+        db = await lancedb.connect_async(temp_db_path)
+        await db.drop_table(missing)
+    report = await run_doctor(_config(), temp_db_path, {})
+    result = _result(report, "pending_migrations")
+    assert result.severity is Severity.FAIL
+    assert "0.63.0" in result.message
+    assert result.remediation is not None
+    assert "uvx --from haiku.rag==0.111.1 haiku-rag migrate" in result.remediation
+    names = {r.name for r in report.results}
+    assert not names & {
+        "tables_present",
+        "settings_row",
+        "embedding_drift",
+        "vector_index",
+    }
 
 
 @pytest.mark.parametrize("schema_version", [None, latest_schema_version()])
@@ -850,7 +872,7 @@ def test_cli_doctor_json_prints_only_the_report(temp_db_path, tmp_path, monkeypa
 def test_cli_doctor_json_reports_a_pending_migration(
     temp_db_path, tmp_path, monkeypatch
 ):
-    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch, version="0.40.0")
+    args = _doctor_cli_args(temp_db_path, tmp_path, monkeypatch, version="0.64.0")
 
     result = runner.invoke(cli, [*args, "--json", "--skip-providers"])
 

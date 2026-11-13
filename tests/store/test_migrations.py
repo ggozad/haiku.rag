@@ -37,7 +37,7 @@ class TestMigrationCheck:
     async def test_pending_migrations_raises_error(self, temp_db_path, open_kwargs):
         """Pending migrations refuse the open, with create=True and read-only too."""
         async with Store(temp_db_path, create=True) as store:
-            await store.set_haiku_version("0.19.0")
+            await store.set_haiku_version("0.64.0")
 
         with pytest.raises(MigrationRequiredError) as exc_info:
             async with Store(temp_db_path, **open_kwargs):
@@ -47,24 +47,24 @@ class TestMigrationCheck:
     async def test_skip_migration_check_bypasses_error(self, temp_db_path):
         """skip_migration_check=True should bypass migration error."""
         async with Store(temp_db_path, create=True) as store:
-            await store.set_haiku_version("0.19.0")
+            await store.set_haiku_version("0.64.0")
 
         # Open with skip_migration_check should work
         async with Store(temp_db_path, skip_migration_check=True) as store:
             # Version should remain old (no auto-migration)
-            assert await store.get_haiku_version() == "0.19.0"
+            assert await store.get_haiku_version() == "0.64.0"
 
 
 class TestMigrateMethod:
     async def test_migrate_applies_pending_upgrades(self, temp_db_path):
         """Store.migrate() should apply pending upgrades and update version."""
         async with Store(temp_db_path, create=True) as store:
-            await store.set_haiku_version("0.19.0")
+            await store.set_haiku_version("0.64.0")
 
         # Open with skip_migration_check to avoid error
         async with Store(temp_db_path, skip_migration_check=True) as store:
             old_version = await store.get_haiku_version()
-            assert old_version == "0.19.0"
+            assert old_version == "0.64.0"
 
             # Run migration
             applied = await store.migrate()
@@ -74,7 +74,7 @@ class TestMigrateMethod:
             assert len(applied) > 0
             for item in applied:
                 assert isinstance(item, str)
-            pending = get_pending_upgrades("0.19.0")
+            pending = get_pending_upgrades("0.64.0")
             assert isinstance(pending, list)
             assert len(pending) > 0
 
@@ -112,13 +112,74 @@ class TestMigrateMethod:
         from haiku.rag.store.exceptions import ReadOnlyError
 
         async with Store(temp_db_path, create=True) as store:
-            await store.set_haiku_version("0.19.0")
+            await store.set_haiku_version("0.64.0")
 
         async with Store(
             temp_db_path, skip_migration_check=True, read_only=True
         ) as store:
             with pytest.raises(ReadOnlyError):
                 await store.migrate()
+
+
+class TestMigrationFloor:
+    @pytest.mark.parametrize("open_kwargs", [{}, {"create": True}, {"read_only": True}])
+    async def test_open_below_the_floor_is_refused(self, temp_db_path, open_kwargs):
+        async with Store(temp_db_path, create=True) as store:
+            await store.set_haiku_version("0.63.0")
+
+        with pytest.raises(MigrationRequiredError) as raised:
+            async with Store(temp_db_path, **open_kwargs):
+                pass
+        assert "0.63.0" in str(raised.value)
+        assert "uvx --from haiku.rag==0.111.1 haiku-rag migrate" in str(raised.value)
+
+    async def test_open_below_the_floor_creates_no_table(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await store.set_haiku_version("0.57.0")
+            await store.db.drop_table("document_meta")
+
+        with pytest.raises(MigrationRequiredError, match="haiku.rag==0.111.1"):
+            async with Store(temp_db_path):
+                pass
+
+        db = await connect_lancedb(temp_db_path, AppConfig())
+        try:
+            assert "document_meta" not in (await db.list_tables()).tables
+        finally:
+            db.close()
+
+    async def test_settings_without_a_version_are_below_the_floor(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await store.settings_table.update({"settings": "{}"})
+
+        with pytest.raises(
+            MigrationRequiredError, match=r"0\.0\.0.*haiku\.rag==0\.111\.1"
+        ):
+            async with Store(temp_db_path):
+                pass
+
+    async def test_store_migrate_below_the_floor_is_refused(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await store.set_haiku_version("0.63.0")
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            with pytest.raises(MigrationRequiredError, match="haiku.rag==0.111.1"):
+                await store.migrate()
+            assert await store.get_haiku_version() == "0.63.0"
+
+    async def test_the_floor_migrates_with_the_kept_steps(self, temp_db_path):
+        async with Store(temp_db_path, create=True) as store:
+            await store.set_haiku_version("0.64.0")
+
+        with pytest.raises(MigrationRequiredError, match="migration\\(s\\) pending"):
+            async with Store(temp_db_path):
+                pass
+
+        async with Store(temp_db_path, skip_migration_check=True) as store:
+            assert await store.migrate()
+
+        async with Store(temp_db_path) as store:
+            assert await store.get_haiku_version() == metadata.version("haiku.rag-slim")
 
 
 async def _stamp_schema(store: Store, schema_version: str | None) -> None:

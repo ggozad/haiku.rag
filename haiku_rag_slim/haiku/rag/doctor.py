@@ -21,13 +21,20 @@ from haiku.rag.store.engine import (
     Store,
     connect_lancedb,
     embedder_drift,
+    migrate_with_full_chain_command,
     newer_schema,
+    read_settings,
+    too_old_message,
     upgrade_required_message,
 )
 from haiku.rag.store.info import get_database_stats
 from haiku.rag.store.repositories.settings import EMBEDDER_DRIFT_ADVICE
 from haiku.rag.store.schema import REQUIRED_TABLES, index_specs
-from haiku.rag.store.upgrades import get_pending_upgrades, latest_schema_version
+from haiku.rag.store.upgrades import (
+    get_pending_upgrades,
+    latest_schema_version,
+    migratable,
+)
 
 # Cap how many offending ids we collect per check; doctor is a summary, not a dump.
 _SAMPLE_LIMIT = 5
@@ -838,6 +845,27 @@ def _check_pending_migrations(stored_version: str) -> CheckResult:
     )
 
 
+async def _check_migratable(db, stats: dict) -> CheckResult | None:
+    """A failure when the recorded version needs a step this release lacks.
+
+    Replaces every database check: an old schema lacks the tables and columns
+    they read. A missing settings row is left to `settings_row`.
+    """
+    if not stats["settings"]["exists"] or not stats["settings"]["num_rows"]:
+        return None
+    version = (await read_settings(await db.open_table("settings"))).get(
+        "version", "0.0.0"
+    )
+    if migratable(version):
+        return None
+    return CheckResult(
+        name="pending_migrations",
+        severity=Severity.FAIL,
+        message=too_old_message(version),
+        remediation=migrate_with_full_chain_command(),
+    )
+
+
 def _check_schema_version(stored: dict) -> CheckResult:
     newer = newer_schema(stored)
     if newer is not None:
@@ -1240,6 +1268,8 @@ async def run_doctor(
                 remediation="haiku-rag init",
             )
         )
+    elif (too_old := await _check_migratable(db, stats)) is not None:
+        results.append(too_old)
     else:
         results.append(_check_tables_present(stats))
         missing = [name for name in REQUIRED_TABLES if not stats[name]["exists"]]

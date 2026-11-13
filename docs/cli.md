@@ -162,18 +162,24 @@ haiku-rag migrate [--db /path/to/your.lancedb]
 A database written by an older haiku.rag may need a schema migration. Opening it then fails:
 
 ```
-Error: Database requires migration from 0.19.0 to 0.38.0. 4 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
+Error: Database requires migration from 0.70.0 to 0.111.1. 3 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
 ```
 
 `migrate` applies the pending migrations and lists them:
 
 ```
-Applied 4 migration(s):
-  - 0.20.0: Add 'docling_document_json' and 'docling_version' columns to documents table
-  - 0.23.1: Add content_fts column for contextualized FTS search
-  - 0.25.0: Compress docling_document and use large_binary type
-  - 0.38.0: Split docling_document pages into separate column and re-compress with zstd
+Applied 3 migration(s):
+  - 0.75.0: Index documents.id, chunks.id, chunks.document_id and document_items.label
+  - 0.89.0: Store only the version and embedder identity in settings
+  - 0.91.0: Rebuild v1-format full-text indexes as v2
 Migration completed successfully.
+```
+
+A database recorded before 0.64.0 needs migration steps this release no longer carries. Opening, migrating and `doctor` refuse it, and `info` says so. Migrate it with haiku.rag 0.111.1 first, then with this release:
+
+```bash
+uvx --from haiku.rag==0.111.1 haiku-rag migrate --db /path/to/your.lancedb
+haiku-rag migrate --db /path/to/your.lancedb
 ```
 
 Back up the database first. `migrate` exits 1 on failure.
@@ -277,7 +283,7 @@ haiku-rag tag restore release-1 --db /path/to/db.lancedb --yes
 haiku-rag tag restore before-restore-YYYYMMDDTHHMMSSZ --db /path/to/db.lancedb --yes
 ```
 
-Restore is coordinated but not atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether that succeeded. `--yes` only skips the confirmation prompt. Restore never migrates: restoring a tag from an older version succeeds, and the next open reports the migration to run. A tag that needs no migration, such as a safety tag, restores even while the live state needs a migration or records another embedder. Tag commands exit 1 on failure.
+Restore is coordinated but not atomic across tables. On failure it attempts to roll back to the pre-restore state and reports whether that succeeded. `--yes` only skips the confirmation prompt. Restore never migrates: restoring a tag from an older version succeeds, and the next open reports the migration to run. A tag taken before 0.64.0 is refused: restore it in a copy of the database and migrate the copy with haiku.rag 0.111.1. A tag that needs no migration, such as a safety tag, restores even while the live state needs a migration or records another embedder. Tag commands exit 1 on failure.
 
 ```bash
 haiku-rag history                       # every table

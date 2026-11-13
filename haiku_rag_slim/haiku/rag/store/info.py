@@ -149,7 +149,7 @@ async def gather_database_info(
         if rows:
             raw = rows[0].get("settings") or "{}"
             data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-            stored_version = str(data.get("version", "unknown"))
+            stored_version = str(data.get("version", "0.0.0"))
             model = data.get("embeddings", {}).get("model", {})
             embeddings = EmbeddingsInfo(
                 provider=model.get("provider", "unknown"),
