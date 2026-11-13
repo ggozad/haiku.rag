@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
+from sqlalchemy.engine import make_url
 from typer.testing import CliRunner
 
 from haiku.rag.config import AppConfig, QueueConfig
@@ -594,7 +595,8 @@ def test_queue_init_dburi_migrates_the_named_queue(tmp_path):
     )
 
     assert result.exit_code == 0
-    assert f"sqlite+aiosqlite:///{db_path}" in result.output
+    echoed = result.output.removeprefix("Queue initialized at ").strip()
+    assert make_url(echoed).database == str(db_path)
     assert _schema_version(db_path) == SCHEMA_VERSION
 
 
