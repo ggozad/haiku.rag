@@ -223,6 +223,31 @@ async def test_unsupported_attachment_continues_loop(temp_db_path, fake_ingest):
         assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
 
 
+async def test_audio_and_video_attachments_are_skipped(temp_db_path, fake_ingest):
+    """A PDF's audio and video attachments are not ingested, even with
+    ``processing.media`` set."""
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig.model_validate(
+        {
+            "processing": {
+                "media": {"asr": {"base_url": "http://localhost:1/v1", "model": "m"}}
+            }
+        }
+    )
+    async with HaikuRAG(temp_db_path, config=config, create=True) as client:
+        parent_uri = "file:///fixtures/parent.pdf"
+        pdf_bytes = build_pdf(
+            [("ok.txt", b"keep me"), ("talk.mp3", b"ID3"), ("clip.mp4", b"mp4")]
+        )
+        parent = await _make_parent(client, parent_uri, pdf_bytes)
+        await _reconcile_pdf_attachments(
+            writing(client), None, parent, pdf_bytes, depth=0
+        )
+        children = await client.list_documents(filter=parent_uri_filter(parent_uri))
+        assert {c.uri for c in children} == {f"{parent_uri}#attachment=ok.txt"}
+
+
 _MATHML = b'<math xmlns="http://www.w3.org/1998/Math/MathML"><mi>x</mi></math>'
 _UNDETECTABLE = bytes(range(256)) * 4
 

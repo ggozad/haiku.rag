@@ -45,6 +45,8 @@ haiku-rag add-src s3://my-bucket/path/to/document.pdf
 
 `--meta KEY=VALUE` is repeatable. Values are parsed as JSON where possible (numbers, booleans, null, arrays, objects) and kept as strings otherwise.
 
+A source whose bytes are unchanged since it was ingested is skipped. `--force` converts it again, for example to transcribe a recording with new `processing.media` settings.
+
 A directory is walked recursively. Files are kept when docling-local or the text handler supports their extension, and `--title` is ignored. A file that fails to ingest is logged with its error and the walk continues. The last line counts the failures, and the command then exits 1. For include and ignore patterns, use the [ingester](ingester.md) with a filesystem source.
 
 `s3://` needs the `s3` extra. Credentials come from the default AWS chain. For an S3-compatible store, set `AWS_ENDPOINT_URL`:
@@ -218,7 +220,7 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
 | Reindex | `--reindex` | `doctor` reports rows outside the full-text index, an index is missing, or `search.fts_language` changed |
 
-A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment its PDF did not rebuild, are re-chunked and re-embedded from their stored content. An audio or video document is never re-converted: a full rebuild re-chunks and re-embeds it from its stored transcript, as `--rechunk` does. To transcribe a recording again, ingest its file again.
+A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment its PDF did not rebuild, are re-chunked and re-embedded from their stored content. An audio or video document is never re-converted: a full rebuild re-chunks and re-embeds it from its stored transcript, as `--rechunk` does. To transcribe a recording again, run `add-src --force` on its file.
 
 Every mode except `--title-only` and `--set-embedder` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
