@@ -323,14 +323,28 @@ processing:
 Without `media`, audio and video files are not supported, and a source skips
 them. With it, `docling-local` transcribes `.wav`, `.mp3`, `.m4a`, `.aac`,
 `.ogg` and `.flac` files, and `.mp4`, `.avi`, `.mov`, `.mkv` and `.webm` videos.
-It sends the audio to `asr`, a server that answers `/audio/transcriptions` with
-`response_format=verbose_json`, such as vLLM serving a Whisper model. A
-transcript is one text item per sentence, each with its start and end time.
+A transcript is one text item per sentence, each with its start and end time.
 Search results and citations carry the time range of their items.
+
+`asr` is a transcription server or a docling preset. A server answers
+`/audio/transcriptions` with `response_format=verbose_json`, such as vLLM
+serving a Whisper model, and receives the audio. A preset transcribes
+in-process with Whisper and needs the `asr` extra:
+
+```yaml
+processing:
+  media:
+    asr: whisper_turbo    # whisper_tiny, whisper_small, whisper_medium, whisper_large, ...
+```
+
+The plain names pick MLX Whisper on Apple Silicon and openai-whisper elsewhere.
+Names ending in `_mlx`, `_native` or `_s2t` choose a backend explicitly. An
+unknown name fails when the converter starts and lists the known ones.
 
 A video also yields frames as pictures, sampled every `interval_seconds` or at
 scene changes, at most `max_frames`, and each with its time. `pictures: none`
-turns sampling off. Reading a video needs `ffmpeg` on `PATH`. Audio does not.
+turns sampling off. A video needs `ffmpeg` on `PATH`, and so does audio
+transcribed with a preset. Audio sent to a server does not.
 
 Audio and video convert on a docling converter of their own, one file at a
 time, so a long transcription never holds up other documents. A recording

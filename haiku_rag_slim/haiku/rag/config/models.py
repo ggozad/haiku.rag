@@ -354,9 +354,13 @@ class FrameSamplingConfig(ConfigModel):
 
 class MediaConfig(ConfigModel):
     """Audio and video ingestion. `asr` and `frames` apply to `docling-local`:
-    docling-serve configures transcription on the server."""
+    docling-serve configures transcription on the server.
 
-    asr: TranscriptionServerConfig | None = None
+    `asr` is a transcription server, or the name of a docling in-process
+    preset such as `whisper_turbo`, which needs the `asr` extra.
+    """
+
+    asr: TranscriptionServerConfig | str | None = None
     frames: FrameSamplingConfig = Field(default_factory=FrameSamplingConfig)
 
 
