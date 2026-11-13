@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/collapsible";
 import { chunkHref } from "@/lib/addresses";
 import { type Citation, type Evidence, statusOf } from "@/lib/chat";
-import { publicUrl } from "@/lib/format";
+import { formatTimeRange, publicUrl } from "@/lib/format";
 import { withBasePath } from "@/lib/paths";
 import VisualGroundingDialog from "./VisualGroundingDialog";
 
@@ -49,7 +49,7 @@ function CitationItem({
 }) {
 	const pages = citation.page_numbers.length
 		? `p. ${citation.page_numbers.join(", ")}`
-		: null;
+		: formatTimeRange(citation.time_range);
 	const url = publicUrl(citation.document_meta);
 	return (
 		<Collapsible className="rounded-md border">

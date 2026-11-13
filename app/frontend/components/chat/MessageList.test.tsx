@@ -40,6 +40,7 @@ const stored: {
 					document_uri: "doc://water",
 					document_title: "Field water purification",
 					page_numbers: [],
+					time_range: [4.48, 10.001],
 					headings: null,
 					content: "Boil water for at least one minute.",
 				},
@@ -72,6 +73,7 @@ describe("MessageList", () => {
 		expect(follows(answer, citation)).toBe(true);
 		expect(follows(citation, next)).toBe(true);
 		expect(screen.getAllByText("Field water purification")).toHaveLength(1);
+		expect(screen.getByText("00:00:04-00:00:10")).toBeTruthy();
 	});
 
 	it("links a citation to its chunk's page in a new tab", async () => {

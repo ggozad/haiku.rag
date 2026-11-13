@@ -9,7 +9,8 @@ const row = (order: number) => ({
 	document_id: "d1",
 	order,
 	content: `Chunk ${order} text`,
-	metadata: { page_numbers: [2] },
+	metadata:
+		order === 2 ? { time_range: [4.48, 10.001] } : { page_numbers: [2] },
 });
 
 let requested: string[];
@@ -91,6 +92,13 @@ describe("ChunkView", () => {
 		).toBe("/chunk/c2");
 		expect(screen.getByText("2 of 3")).toBeTruthy();
 		expect(screen.getByRole("heading", { name: "Chunk 2" })).toBeTruthy();
+	});
+
+	it("shows a transcript chunk's time", async () => {
+		show("c2");
+		expect(await screen.findByText("00:00:04-00:00:10")).toBeTruthy();
+		expect(screen.getByText("time_range")).toBeTruthy();
+		expect(screen.queryByText("page_numbers")).toBeNull();
 	});
 
 	it("has no neighbour past either end", async () => {

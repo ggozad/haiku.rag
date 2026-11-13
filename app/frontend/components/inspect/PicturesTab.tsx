@@ -1,12 +1,14 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { formatTimeRange } from "@/lib/format";
 
 export interface Picture {
 	self_ref: string;
 	caption: string | null;
 	description: string | null;
 	page_numbers: number[];
+	time_range: [number, number] | null;
 	chunk_id: string | null;
 }
 
@@ -48,6 +50,9 @@ export default function PicturesTab({
 							)}
 							{picture.page_numbers.length > 0 && (
 								<p>p. {picture.page_numbers.join(", ")}</p>
+							)}
+							{picture.time_range && (
+								<p>{formatTimeRange(picture.time_range)}</p>
 							)}
 						</figcaption>
 						{picture.chunk_id && (

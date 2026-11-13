@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { formatTimeRange } from "@/lib/format";
 import { firstLine, labelCounts } from "@/lib/inspect";
 
 export const PAGE = 50;
@@ -11,7 +12,11 @@ export interface ChunkPage {
 		id: string;
 		order: number;
 		content: string;
-		metadata: { page_numbers?: number[]; labels?: string[] };
+		metadata: {
+			page_numbers?: number[];
+			time_range?: [number, number];
+			labels?: string[];
+		};
 	}[];
 }
 
@@ -50,6 +55,7 @@ export default function ChunksTab({
 									chunk.metadata.page_numbers?.length
 										? `p. ${chunk.metadata.page_numbers.join(", ")}`
 										: "",
+									formatTimeRange(chunk.metadata.time_range) ?? "",
 									labelCounts(chunk.metadata.labels ?? []),
 								]
 									.filter(Boolean)

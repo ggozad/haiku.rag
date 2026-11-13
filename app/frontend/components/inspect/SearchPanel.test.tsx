@@ -37,7 +37,11 @@ const db = (name: string, supports_image_search = false): DatabaseEntry => ({
 	supports_image_search,
 });
 
-const found = (source: string, content: string) => ({
+const found = (
+	source: string,
+	content: string,
+	time_range: [number, number] | null = null,
+) => ({
 	results: [
 		{
 			source,
@@ -47,6 +51,7 @@ const found = (source: string, content: string) => ({
 			document_uri: "doc://a",
 			score: 0.5,
 			page_numbers: [],
+			time_range,
 			headings: null,
 			content,
 		},
@@ -113,6 +118,19 @@ describe("SearchPanel", () => {
 		await screen.findByText("about tea");
 		expect(bodies[0].sources).toEqual(["alpha"]);
 		expect(address).toBe("/search?q=tea&db=alpha&type=hybrid&limit=10");
+	});
+
+	it("shows a transcript result's time", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				Response.json(found("alpha", "about the crew", [4.48, 10.001])),
+			),
+		);
+		render(<Routed databases={[db("alpha")]} />);
+		await search("crew");
+		await screen.findByText("about the crew");
+		expect(screen.getByText("alpha · 00:00:04-00:00:10")).toBeTruthy();
 	});
 
 	it("searches a database that became available, and keeps what the user unticked", async () => {

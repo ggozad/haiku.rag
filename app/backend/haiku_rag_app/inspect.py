@@ -10,6 +10,7 @@ from starlette.routing import Route
 from haiku.rag.client import HaikuRAG
 from haiku.rag.context import build_toc
 from haiku.rag.store.models.chunk import Chunk
+from haiku.rag.store.models.document_item import time_range
 from haiku.rag.store.schema import REQUIRED_TABLES
 from haiku.rag.utils.sql import escape_sql_string, title_or_uri_filter
 from haiku_rag_app.images import MAX_IMAGE_BYTES, checked_image
@@ -250,6 +251,7 @@ def _result_row(result) -> dict[str, Any]:
         "document_uri": result.document_uri,
         "score": result.score,
         "page_numbers": result.page_numbers,
+        "time_range": result.time_range,
         "headings": result.headings,
         "content": result.content,
     }
@@ -355,6 +357,7 @@ async def document_pictures(request: Request) -> JSONResponse:
                 if item.meta and item.meta.description
                 else None,
                 "page_numbers": sorted({p.page_no for p in item.prov}),
+                "time_range": time_range([item]),
                 "chunk_id": next(iter(chunk_index.get(item.self_ref, [])), None),
             }
             for item in doc.pictures

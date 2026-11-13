@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Loading } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatTimeRange } from "@/lib/format";
 import { firstLine, type Item } from "@/lib/inspect";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
@@ -20,7 +21,7 @@ interface ChunkRow {
 	document_id: string;
 	order: number;
 	content: string;
-	metadata: Record<string, unknown>;
+	metadata: Record<string, unknown> & { time_range?: [number, number] };
 }
 
 interface Context {
@@ -41,7 +42,13 @@ interface Similar {
 	}[];
 }
 
-const PROVENANCE = ["page_numbers", "headings", "labels", "doc_item_refs"];
+const PROVENANCE = [
+	"page_numbers",
+	"time_range",
+	"headings",
+	"labels",
+	"doc_item_refs",
+];
 
 function Field({ label, value }: { label: string; value: unknown }) {
 	if (value === undefined || value === null) return null;
@@ -220,7 +227,11 @@ export default function ChunkView({
 									<Field
 										key={key}
 										label={key}
-										value={chunk.data?.metadata[key]}
+										value={
+											key === "time_range"
+												? formatTimeRange(chunk.data?.metadata.time_range)
+												: chunk.data?.metadata[key]
+										}
 									/>
 								))}
 								{extra.map(([key, value]) => (
