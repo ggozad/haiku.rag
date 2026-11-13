@@ -303,6 +303,44 @@ Only `docling-local` reads this. A docling-serve conversion is bounded by
   to be restarted. HTML and Markdown get a converter per call, so later
   conversions still run.
 
+### Audio and video
+
+```yaml
+processing:
+  media:
+    asr:
+      base_url: http://localhost:8000/v1     # OpenAI-compatible server
+      model: openai/whisper-large-v3-turbo
+      api_key: null
+      language: null                          # detected when unset
+      timeout: 600
+    frames:
+      mode: fixed_interval                    # fixed_interval | scene_change
+      interval_seconds: 10
+      max_frames: 200
+```
+
+Without `media`, audio and video files are not supported, and a source skips
+them. With it, `docling-local` transcribes `.wav`, `.mp3`, `.m4a`, `.aac`,
+`.ogg` and `.flac` files, and `.mp4`, `.avi`, `.mov`, `.mkv` and `.webm` videos.
+It sends the audio to `asr`, a server that answers `/audio/transcriptions` with
+`response_format=verbose_json`, such as vLLM serving a Whisper model. A
+transcript is one text item per sentence, each with its start and end time.
+Search results and citations carry the time range of their items.
+
+A video also yields frames as pictures, sampled every `interval_seconds` or at
+scene changes, at most `max_frames`, and each with its time. `pictures: none`
+turns sampling off. Reading a video needs `ffmpeg` on `PATH`. Audio does not.
+
+Audio and video convert on a docling converter of their own, one file at a
+time, so a long transcription never holds up other documents. A recording
+longer than a few minutes may need a larger `conversion_timeout`. A
+transcription that times out leaves the process unable to convert audio or
+video again, as a timed-out PDF does for documents.
+
+With `converter: docling-serve`, set `media: {}`: transcription is configured
+on the docling-serve server, and `asr` and `frames` are refused.
+
 ### Chunking strategies
 
 `chunker_type` picks the docling chunker:

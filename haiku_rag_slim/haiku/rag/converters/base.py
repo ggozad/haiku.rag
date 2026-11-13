@@ -58,6 +58,22 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
     return params
 
 
+MEDIA_EXTENSIONS = (
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".flac",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".webm",
+)
+VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".webm")
+
+
 def label_speakers(doc: "DoclingDocument") -> None:
     """Prefix each text item with the `voice` of its `TrackSource`, so a chunk
     that starts mid-turn still names who is talking."""
