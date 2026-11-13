@@ -82,6 +82,8 @@ doc = await client.create_document_from_source(
 )
 ```
 
+A source with unchanged bytes returns its stored document. `force=True` converts it again into the same document.
+
 Each file in a PDF's `/EmbeddedFiles` table is ingested as its own Document, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
 
 ### Retrieving documents
