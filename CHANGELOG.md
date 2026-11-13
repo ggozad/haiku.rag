@@ -8,6 +8,10 @@
 - `SearchResult.time_range` and `Citation.time_range`, shown as `Time:` in the model's search results and the evidence capsule, in CLI citations and `search` output, and in the chat and inspector TUIs. In `execute_code`, timed items carry `start_time` and `end_time`, and timed `search()` rows carry `time_range`.
 - A converted text item starts with its speaker (`speaker-1: ...`) when docling records one.
 
+### Changed
+
+- A full `rebuild` re-chunks and re-embeds an audio or video document from its stored transcript and does not convert its file.
+
 ## [0.114.0] - 2026-11-27
 
 ### Added

@@ -221,7 +221,7 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Reindex | `--reindex` | `doctor` reports rows outside the full-text index, an index is missing, or `search.fts_language` changed |
 | Originals | `--originals` | Documents without a stored original need visual grounding |
 
-A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment that its PDF's rebuild did not write, are re-chunked and re-embedded from their stored content.
+A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment that its PDF's rebuild did not write, are re-chunked and re-embedded from their stored content. An audio or video document is never re-converted: a full rebuild re-chunks and re-embeds it from its stored transcript, as `--rechunk` does. To transcribe a recording again, ingest its file again.
 
 Every mode except `--title-only`, `--set-embedder` and `--originals` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
