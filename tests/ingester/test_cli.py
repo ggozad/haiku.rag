@@ -293,16 +293,16 @@ def test_run_batch_dry_run_writes_default_manifest(monkeypatch, tmp_path):
         monkeypatch,
     )
 
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(cli, ["run-batch", "--dry-run"])
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(cli, ["run-batch", "--dry-run"])
 
-        assert result.exit_code == 0
-        assert "Dry run complete: 1 upsert, 1 delete, 2 unchanged -> manifest-" in (
-            result.output
-        )
-        written = list(tmp_path.glob("*/manifest-*.yaml"))
-        assert len(written) == 1
-        data = yaml.safe_load(written[0].read_text())
+    assert result.exit_code == 0
+    assert "Dry run complete: 1 upsert, 1 delete, 2 unchanged -> manifest-" in (
+        result.output
+    )
+    written = list(tmp_path.glob("manifest-*.yaml"))
+    assert len(written) == 1
+    data = yaml.safe_load(written[0].read_text())
 
     assert data["version"] == 1
     assert data["sources"][0]["source_id"] == "docs"

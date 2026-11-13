@@ -135,7 +135,7 @@ def strip_navigation(html: str) -> str:
     polluting retrieval. Infoboxes carry no navigation role and are kept.
     """
     soup = BeautifulSoup(html, "html.parser")
-    for element in soup.find_all(attrs={"role": "navigation"}):
+    for element in soup.select('[role="navigation"]'):
         element.decompose()
     return str(soup)
 
