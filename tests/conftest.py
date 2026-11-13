@@ -355,6 +355,18 @@ def docling_serve_url() -> str:
     return "http://localhost:5001"
 
 
+@pytest.fixture
+def docling_serve_media_url() -> str:
+    """The docker-compose `docling-serve-media` service, which converts audio and
+    video. Skips when it is not up."""
+    if not reachable("localhost", 5011):
+        pytest.skip(
+            "docling-serve-media not reachable on localhost:5011 — start it with "
+            "docker compose -f tests/docker/docker-compose.yml --profile media up -d"
+        )
+    return "http://localhost:5011"
+
+
 def run_with_lance_memory_pool(
     script: str, pool_bytes: int, *args: str
 ) -> "subprocess.CompletedProcess[str]":
