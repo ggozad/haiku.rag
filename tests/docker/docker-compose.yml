@@ -31,6 +31,46 @@ services:
       # Let the container reach the host's Ollama for VLM picture descriptions.
       - "host.docker.internal:host-gateway"
 
+  # Audio and video conversion: --profile media. docling-serve-media transcribes
+  # with the whisper service unless ASR_URL and ASR_MODEL name another
+  # OpenAI-compatible transcription server. Start it alone for that:
+  #   ASR_URL=... ASR_MODEL=... docker compose -f tests/docker/docker-compose.yml \
+  #     --profile media up -d --no-deps docling-serve-media
+  whisper:
+    profiles: [media]
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cpu
+    ports:
+      - "11470:8000"
+    volumes:
+      - whisper-models:/home/ubuntu/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      retries: 20
+
+  # speaches serves only models downloaded through its API.
+  whisper-model:
+    profiles: [media]
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cpu
+    depends_on:
+      whisper:
+        condition: service_healthy
+    entrypoint: ["curl", "-fsS", "-X", "POST", "http://whisper:8000/v1/models/Systran/faster-whisper-small"]
+
+  docling-serve-media:
+    profiles: [media]
+    build: ./docling-serve-media
+    ports:
+      - "5011:5001"
+    environment:
+      - DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
+      - 'DOCLING_SERVE_ASR_OPTIONS={"url": "${ASR_URL:-http://whisper:8000/v1/audio/transcriptions}", "model": "${ASR_MODEL:-Systran/faster-whisper-small}"}'
+    depends_on:
+      whisper-model:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   seaweedfs:
     image: chrislusf/seaweedfs
     ports:
@@ -48,3 +88,6 @@ services:
       sleep 3 &&
       echo 's3.bucket.create -name test-bucket' | weed shell -master seaweedfs:9333
       "
+
+volumes:
+  whisper-models:
