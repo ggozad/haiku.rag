@@ -15,6 +15,7 @@
 ### Changed
 
 - **Breaking:** `metadata["user"]` is written only by `edit_document`. Every other write, metadata providers, sources and `before_ingest` hooks included, drops a `user` key and keeps the stored one. Callers setting it move to `edit_document`.
+- A full `rebuild` re-chunks and re-embeds an audio or video document from its stored transcript and does not convert its file.
 
 ### Removed
 

@@ -1002,14 +1002,37 @@ async def _rebuild_descriptions(
     )
 
 
+async def _is_recording(session: SingleDatabaseSession, document: Document) -> bool:
+    """Whether the stored docling document was converted from audio or video."""
+    assert document.id is not None
+    stored = await session.document_repository.get_docling_data(document.id)
+    docling_document = stored.get_docling_document() if stored else None
+    mimetype = (
+        docling_document.origin.mimetype
+        if docling_document and docling_document.origin
+        else ""
+    )
+    return mimetype.startswith(("audio/", "video/"))
+
+
 async def _rebuild_full(
     session: SingleDatabaseSession, client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Full rebuild: re-convert from source, re-chunk, re-embed. A refresh
     from source runs ``before_ingest`` and ``after_convert`` hooks, the
     fallback from stored content ``after_convert`` only. A hook failure ends
-    the rebuild. No post-commit hooks run."""
+    the rebuild. No post-commit hooks run.
+
+    A recording is never re-converted: it is re-chunked from its stored
+    docling document, as RECHUNK does, so its transcript and frames stay.
+    """
     from haiku.rag.embeddings import embed_chunks
+
+    recordings = [d for d in documents if await _is_recording(session, d)]
+    async for doc_id in _rebuild_rechunk(session, recordings):
+        yield doc_id
+    rechunked = {d.id for d in recordings}
+    documents = [d for d in documents if d.id not in rechunked]
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
