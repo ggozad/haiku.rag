@@ -56,6 +56,8 @@ With `processing.pictures: description`, docling-serve calls the vision model it
 - it must run with `DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true`, since it blocks outbound calls by default
 - the model's `base_url` in `processing.conversion_options.picture_description.model` must be reachable from the container: `http://host.docker.internal:11434` for Ollama on the host, not `localhost`
 
+Video frames are the exception: haiku.rag describes them after conversion, so the same `base_url` must also be reachable from the haiku.rag process.
+
 See [Picture handling](configuration/processing.md#picture-handling).
 
 ## Audio and video

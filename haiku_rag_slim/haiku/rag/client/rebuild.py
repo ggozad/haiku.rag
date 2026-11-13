@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
 from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import (
@@ -859,14 +858,9 @@ def _apply_descriptions_sync(
     That would silently destroy page rasters for every doc with at
     least one undescribed picture.
     """
-    for pic in docling_doc.pictures:
-        text = descriptions.get(pic.self_ref)
-        if not text:
-            continue
-        if pic.meta is None:
-            pic.meta = PictureMeta()
-        pic.meta.description = DescriptionMetaField(text=text)
+    from haiku.rag.providers.picture_description import set_picture_descriptions
 
+    set_picture_descriptions(docling_doc, descriptions)
     structure_bytes, _ = compress_docling_split(docling_doc.model_dump(mode="json"))
     doc.docling_document = structure_bytes
     doc.docling_version = docling_doc.version
@@ -881,20 +875,17 @@ async def _patch_picture_descriptions(
     Pictures that already carry ``meta.description.text`` are skipped, so the
     operation is safe to re-run after a partial failure.
     """
-    from haiku.rag.providers.picture_description import describe_pictures
+    from haiku.rag.providers.picture_description import (
+        describe_pictures,
+        undescribed_pictures,
+    )
 
     assert doc.id is not None
     docling_doc = doc.get_docling_document()
     if docling_doc is None or not docling_doc.pictures:
         return 0
 
-    needs_description: list[str] = []
-    for pic in docling_doc.pictures:
-        existing = (
-            pic.meta.description.text if pic.meta and pic.meta.description else None
-        )
-        if not (existing and existing.strip()):
-            needs_description.append(pic.self_ref)
+    needs_description = [p.self_ref for p in undescribed_pictures(docling_doc)]
 
     if not needs_description:
         return 0
