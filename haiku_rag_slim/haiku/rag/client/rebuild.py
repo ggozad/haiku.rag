@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
 import pyarrow as pa
-from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
 from lancedb.index import BTree
 from lancedb.pydantic import LanceModel
 
@@ -1025,14 +1024,9 @@ def _apply_descriptions_sync(
 
     Keeps the stored original, which ``set_docling`` would clear.
     """
-    for pic in docling_doc.pictures:
-        text = descriptions.get(pic.self_ref)
-        if not text:
-            continue
-        if pic.meta is None:
-            pic.meta = PictureMeta()
-        pic.meta.description = DescriptionMetaField(text=text)
+    from haiku.rag.providers.picture_description import set_picture_descriptions
 
+    set_picture_descriptions(docling_doc, descriptions)
     doc.docling_document = compress_docling(docling_doc.model_dump(mode="json"))
     doc.docling_version = docling_doc.version
     return len(descriptions)
@@ -1046,20 +1040,17 @@ async def _patch_picture_descriptions(
     Pictures that already carry ``meta.description.text`` are skipped, so the
     operation is safe to re-run after a partial failure.
     """
-    from haiku.rag.providers.picture_description import describe_pictures
+    from haiku.rag.providers.picture_description import (
+        describe_pictures,
+        undescribed_pictures,
+    )
 
     assert doc.id is not None
     docling_doc = doc.get_docling_document()
     if docling_doc is None or not docling_doc.pictures:
         return 0
 
-    needs_description: list[str] = []
-    for pic in docling_doc.pictures:
-        existing = (
-            pic.meta.description.text if pic.meta and pic.meta.description else None
-        )
-        if not (existing and existing.strip()):
-            needs_description.append(pic.self_ref)
+    needs_description = [p.self_ref for p in undescribed_pictures(docling_doc)]
 
     if not needs_description:
         return 0
