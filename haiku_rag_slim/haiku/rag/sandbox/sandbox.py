@@ -40,6 +40,46 @@ _READ_DEADLINE = "time limit exceeded: no further document reads or calls after 
 _DEADLINE_GRACE_SECONDS = 5.0
 
 
+def _search_row(r: SearchResult) -> dict[str, Any]:
+    """One `search()` result as the program sees it. A recording adds `time_range`."""
+    row: dict[str, Any] = {
+        "chunk_id": r.chunk_id,
+        "content": r.content,
+        "source": r.source,
+        "document_id": r.document_id,
+        "document_title": r.document_title,
+        "document_uri": r.document_uri,
+        "score": r.score,
+        "page_numbers": r.page_numbers,
+        "headings": r.headings,
+        "doc_item_refs": r.doc_item_refs,
+        "labels": r.labels,
+        "picture_refs": [
+            ref for ref in r.doc_item_refs if ref.startswith(PICTURE_REF_PREFIX)
+        ],
+        "chunk_meta": r.chunk_meta,
+    }
+    if r.time_range:
+        row["time_range"] = r.time_range
+    return row
+
+
+def _item_row(item: DocumentItem, chunk_ids: list[str]) -> dict[str, Any]:
+    """One `items.jsonl` line. A recording adds `start_time` and `end_time`."""
+    row: dict[str, Any] = {
+        "self_ref": item.self_ref,
+        "label": item.label,
+        "text": item.text,
+        "page_numbers": item.page_numbers,
+    }
+    if item.start_time is not None and item.end_time is not None:
+        row["start_time"] = item.start_time
+        row["end_time"] = item.end_time
+    row["heading_level"] = item.heading_level
+    row["chunk_ids"] = chunk_ids
+    return row
+
+
 @dataclass
 class SandboxResult:
     """Result of executing code in the sandbox."""
@@ -408,29 +448,7 @@ class Sandbox:
                     )
                     expanded = await rag.expand_context(results)
             self._search_results.extend(expanded)
-            out: list[dict[str, Any]] = []
-            for r in expanded:
-                picture_refs = [
-                    ref for ref in r.doc_item_refs if ref.startswith(PICTURE_REF_PREFIX)
-                ]
-                out.append(
-                    {
-                        "chunk_id": r.chunk_id,
-                        "content": r.content,
-                        "source": r.source,
-                        "document_id": r.document_id,
-                        "document_title": r.document_title,
-                        "document_uri": r.document_uri,
-                        "score": r.score,
-                        "page_numbers": r.page_numbers,
-                        "headings": r.headings,
-                        "doc_item_refs": r.doc_item_refs,
-                        "labels": r.labels,
-                        "picture_refs": picture_refs,
-                        "chunk_meta": r.chunk_meta,
-                    }
-                )
-            return out
+            return [_search_row(r) for r in expanded]
 
         async def list_documents() -> list[dict[str, Any]]:
             self._check_deadline()
@@ -517,14 +535,7 @@ class Sandbox:
                 chunk_index = _get_chunk_index(did)
                 jsonl = "\n".join(
                     json.dumps(
-                        {
-                            "self_ref": item.self_ref,
-                            "label": item.label,
-                            "text": item.text,
-                            "page_numbers": item.page_numbers,
-                            "heading_level": item.heading_level,
-                            "chunk_ids": chunk_index.get(item.self_ref, []),
-                        },
+                        _item_row(item, chunk_index.get(item.self_ref, [])),
                         ensure_ascii=False,
                     )
                     for item in items

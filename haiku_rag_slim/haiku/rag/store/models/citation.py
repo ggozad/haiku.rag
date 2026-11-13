@@ -51,6 +51,7 @@ class Citation(BaseModel):
     document_title: str | None = None
     document_meta: dict = Field(default_factory=dict)
     page_numbers: list[int] = Field(default_factory=list)
+    time_range: tuple[float, float] | None = None
     headings: list[str] | None = None
     content: str
     doc_item_refs: list[str] = Field(default_factory=list)
@@ -113,6 +114,7 @@ def resolve_citations(
                 document_title=r.document_title,
                 document_meta=r.document_meta,
                 page_numbers=r.page_numbers,
+                time_range=r.time_range,
                 headings=r.headings,
                 content=r.content,
                 doc_item_refs=list(r.doc_item_refs),

@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, PrivateAttr
 
+from haiku.rag.utils.formatting import format_time_range
+
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
 
@@ -173,6 +175,7 @@ class SearchResult(BaseModel):
     order: int = 0
     doc_item_refs: list[str] = []
     page_numbers: list[int] = []
+    time_range: tuple[float, float] | None = None
     headings: list[str] | None = None
     labels: list[str] = []
     image_data: dict[str, str] | None = None
@@ -199,6 +202,7 @@ class SearchResult(BaseModel):
             order=chunk.order,
             doc_item_refs=meta.doc_item_refs,
             page_numbers=meta.page_numbers,
+            time_range=meta.time_range,
             headings=meta.headings,
             labels=meta.labels,
             chunk_meta=chunk.metadata,
@@ -253,6 +257,9 @@ class SearchResult(BaseModel):
             source_parts.append(" > ".join(self.headings))
         if source_parts:
             parts.append(f"Source: {' > '.join(source_parts)}")
+
+        if self.time_range:
+            parts.append(f"Time: {format_time_range(self.time_range)}")
 
         # Content type (use primary label if available)
         if self.labels:

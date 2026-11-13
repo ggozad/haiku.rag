@@ -5,12 +5,14 @@ from textual.containers import VerticalScroll
 from textual.widgets import Markdown, Static
 
 from haiku.rag.store.models import Chunk, ChunkMetadata, Document, SearchResult
+from haiku.rag.utils.formatting import format_time_range
 
 
 class ProvenanceData(Protocol):
     """Protocol for objects that have provenance metadata."""
 
     page_numbers: list[int]
+    time_range: tuple[float, float] | None
     headings: list[str] | None
     labels: list[str]
     doc_item_refs: list[str]
@@ -37,6 +39,8 @@ class DetailView(VerticalScroll):
         if prov.page_numbers:
             pages_str = ", ".join(str(p) for p in prov.page_numbers)
             parts.append(f"**Page(s):** {pages_str}")
+        if prov.time_range:
+            parts.append(f"**Time:** {format_time_range(prov.time_range)}")
         if prov.headings:
             headings_str = " > ".join(prov.headings)
             parts.append(f"**Section:** {headings_str}")
