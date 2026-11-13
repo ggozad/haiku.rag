@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { type SearchInputs, searchHref } from "@/lib/addresses";
 import type { DatabaseEntry } from "@/lib/databases";
-import { readableUri } from "@/lib/format";
+import { formatTimeRange, readableUri } from "@/lib/format";
 import { decoded } from "@/lib/http";
 import { type Attachment, readImage } from "@/lib/images";
 import { plainText, searched } from "@/lib/inspect";
@@ -30,6 +30,7 @@ interface Result {
 	document_uri: string | null;
 	score: number;
 	page_numbers: number[];
+	time_range: [number, number] | null;
 	headings: string[] | null;
 	content: string;
 }
@@ -330,6 +331,8 @@ export default function SearchPanel({
 											{result.source}
 											{result.page_numbers.length > 0 &&
 												` · p. ${result.page_numbers.join(", ")}`}
+											{result.time_range &&
+												` · ${formatTimeRange(result.time_range)}`}
 										</span>
 										<span
 											className="shrink-0 text-xs text-muted-foreground/70 tabular-nums"
