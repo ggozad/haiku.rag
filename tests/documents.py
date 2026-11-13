@@ -32,6 +32,36 @@ def docling_doc_with_picture() -> DoclingDocument:
     return doc
 
 
+def timed_docling_doc() -> DoclingDocument:
+    """A transcript shaped like docling's video output: frames and sentences
+    interleaved by time, each carrying a `TrackSource` and no provenance."""
+    from docling_core.types.doc import ContentLayer, TrackSource
+
+    doc = DoclingDocument(name="talk")
+    doc.add_picture(
+        image=ImageRef.from_pil(Image.new("RGB", (96, 96), "blue"), dpi=72),
+        content_layer=ContentLayer.BODY,
+        source=TrackSource(start_time=0.0, end_time=0.001),
+    )
+    for start, end, text in (
+        (0.0, 4.16, "The oxygen tank failed fifty five hours into the flight."),
+        (4.48, 7.6, "The crew moved into the lunar module."),
+        (7.92, 12.12, "Engineers improvised a carbon dioxide filter."),
+    ):
+        doc.add_text(
+            label=DocItemLabel.TEXT,
+            text=text,
+            content_layer=ContentLayer.BODY,
+            source=TrackSource(start_time=start, end_time=end),
+        )
+    doc.add_picture(
+        image=ImageRef.from_pil(Image.new("RGB", (96, 96), "green"), dpi=72),
+        content_layer=ContentLayer.BODY,
+        source=TrackSource(start_time=10.0, end_time=10.001),
+    )
+    return doc
+
+
 def add_picture_text(doc, parent, *texts: str) -> None:
     """Add text items under ``parent``, as docling does for text it OCRs inside a picture."""
     for text in texts:

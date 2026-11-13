@@ -446,6 +446,8 @@ doc = await client.import_document(
 
 The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
 
+Chunks are stored with the metadata you give them. `client.chunk(docling_doc)` fills `page_numbers` and, for a recording, `time_range` (start and end in seconds), and caller-built chunks carry them only if you set them. The document's items always get their pages and times from the `docling_document`.
+
 ### Batch import
 
 Each `create_document*` / `import_document` call writes new versions of the `documents`, `document_meta`, `chunks`, and `document_items` tables. Ingesting many documents in a loop therefore creates a table version per document. Use `import_documents()` to write the whole batch in a single version per table:
