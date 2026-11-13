@@ -17,7 +17,7 @@ haiku-rag mcp --stdio                      # MCP server for Claude Desktop
 ## Project Structure
 
 **Two PyPI packages:**
-- `haiku.rag` - `haiku.rag-slim` with the docling, voyageai, cohere, zeroentropy, tui, cross-encoder and jina extras
+- `haiku.rag` - `haiku.rag-slim` with the docling, asr, voyageai, cohere, zeroentropy, tui, cross-encoder and jina extras
 - `haiku.rag-slim` - Core with optional extras
 
 **Layout:**
@@ -305,7 +305,7 @@ leaves the configuration: it travels in `SearchResult.source`, `Citation.source`
 - `QAConfig` - model, max_searches (default 5), max_executions (default 15), max_images (default None). The budgets are per question. `max_searches` counts search *units*: searches emitted in one model response (same `RunContext.run_step`) share a unit, up to `FREE_SIBLINGS_PER_ROUND` (3) per unit, so a run searches at most `max_searches × 3` times and a sequential searcher pays one unit per search. A budget-rejected round fails its remaining siblings
 - `SandboxConfig` - code_timeout, max_output_chars: limits of one `execute_code` call, read by the capability and the MCP tool. In-code `search()` does not count against `qa.max_searches`, so code execution outlives a spent search budget
 - `PictureDescriptionConfig` - picture description model settings
-- `ProcessingConfig` - chunk_size, converter, chunker, chunker_type, conversion_options, pictures, split_pages, conversion_timeout, media (MediaConfig: asr, frames. docling-local requires asr, docling-serve refuses asr and frames), auto_title, title_model
+- `ProcessingConfig` - chunk_size, converter, chunker, chunker_type, conversion_options, pictures, split_pages, conversion_timeout, media (MediaConfig: asr, a server or a docling preset name, and frames. docling-local requires asr, docling-serve refuses asr and frames), auto_title, title_model
 - `SearchConfig` - limit, max_context_chars, rerank_pool_factor, vector_index_metric, vector_refine_factor, vector_nprobes
 - `DoctorConfig` - duplicates (DuplicateDetectionConfig: similarity_threshold 0.97, min_chunks 3)
 - `ProvidersConfig` - ollama, docling_serve (OllamaConfig, DoclingServeConfig)

@@ -82,6 +82,8 @@ docling = [
     "opencv-python-headless>=4.6.0.66,<5.0.0.0",
     "onnxruntime>=1.24.1,<2.0.0",
 ]
+# In-process transcription for audio and video
+asr = ["docling-slim[format-audio]==2.142.1"]
 # S3 / object-storage monitoring
 s3 = ["obstore>=0.9,<0.10"]
 # Embedding providers

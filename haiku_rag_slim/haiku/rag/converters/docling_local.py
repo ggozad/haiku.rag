@@ -143,6 +143,22 @@ class DoclingLocalConverter(DocumentConverter):
         except ModuleNotFoundError as exc:
             raise_missing_extra("docling", "docling", exc)
         self.config = config
+        media = config.processing.media
+        if media is not None and isinstance(media.asr, str):
+            self._asr_preset(media.asr)
+
+    @staticmethod
+    def _asr_preset(name: str):
+        """The docling in-process ASR options for a preset name."""
+        from docling.datamodel import asr_model_specs
+        from docling.datamodel.asr_model_specs import AsrModelType
+
+        if name not in {m.value for m in AsrModelType}:
+            known = ", ".join(m.value for m in AsrModelType)
+            raise ValueError(
+                f"processing.media.asr: unknown preset {name!r}. Known presets: {known}"
+            )
+        return getattr(asr_model_specs, name.upper())
 
     @property
     def supported_extensions(self) -> list[str]:
@@ -306,6 +322,37 @@ class DoclingLocalConverter(DocumentConverter):
             InputFormat.EPUB: EpubFormatOption(pipeline_options=pipeline_options),
         }
 
+    def _require_media_tools(self, path: Path) -> None:
+        """Raise unless the tools converting this recording are installed.
+
+        A video needs ffmpeg, and so does audio transcribed in-process.
+        In-process transcription needs the `asr` extra.
+        """
+        media = self.config.processing.media
+        assert media is not None
+        preset = media.asr if isinstance(media.asr, str) else None
+        in_video = path.suffix.lower() in VIDEO_EXTENSIONS
+        if (in_video or preset) and shutil.which("ffmpeg") is None:
+            raise ConversionFailedError(f"Converting {path} needs ffmpeg on PATH")
+        if preset:
+            from docling.datamodel.pipeline_options_asr_model import (
+                InlineAsrMlxWhisperOptions,
+                InlineAsrWhisperS2TOptions,
+            )
+
+            spec = self._asr_preset(preset)
+            module = (
+                "mlx_whisper"
+                if isinstance(spec, InlineAsrMlxWhisperOptions)
+                else "whisper_s2t"
+                if isinstance(spec, InlineAsrWhisperS2TOptions)
+                else "whisper"
+            )
+            try:
+                importlib.import_module(module)
+            except ModuleNotFoundError as exc:
+                raise_missing_extra(module, "asr", exc)
+
     def _media_format_options(self) -> "dict[InputFormat, FormatOption]":
         """Audio and video format options from `processing.media`."""
         from docling.datamodel.base_models import InputFormat
@@ -320,26 +367,32 @@ class DoclingLocalConverter(DocumentConverter):
         media = self.config.processing.media
         assert media is not None and media.asr is not None
         server = media.asr
-        asr = ApiAsrOptions(
-            url=f"{server.base_url.rstrip('/')}/audio/transcriptions",
-            model=server.model,
-            language=server.language,
-            headers=(
-                {"Authorization": f"Bearer {server.api_key}"} if server.api_key else {}
-            ),
-            timeout=server.timeout,
-        )
+        if isinstance(server, str):
+            asr = self._asr_preset(server)
+        else:
+            asr = ApiAsrOptions(
+                url=f"{server.base_url.rstrip('/')}/audio/transcriptions",
+                model=server.model,
+                language=server.language,
+                headers=(
+                    {"Authorization": f"Bearer {server.api_key}"}
+                    if server.api_key
+                    else {}
+                ),
+                timeout=server.timeout,
+            )
+        remote = not isinstance(server, str)
         frames = media.frames
         return {
             InputFormat.AUDIO: AudioFormatOption(
                 pipeline_options=AsrPipelineOptions(
-                    asr_options=asr, enable_remote_services=True
+                    asr_options=asr, enable_remote_services=remote
                 )
             ),
             InputFormat.VIDEO: VideoFormatOption(
                 pipeline_options=VideoPipelineOptions(
                     asr_options=asr,
-                    enable_remote_services=True,
+                    enable_remote_services=remote,
                     generate_frame_images=self.config.processing.pictures != "none",
                     frame_sampling_mode=VideoFrameSamplingMode(frames.mode),
                     frame_interval_seconds=frames.interval_seconds,
@@ -639,13 +692,11 @@ class DoclingLocalConverter(DocumentConverter):
         from docling.exceptions import ConversionError
 
         self.require_supported(path)
+        if path.suffix.lower() in MEDIA_EXTENSIONS:
+            self._require_media_tools(path)
         try:
             file_extension = path.suffix.lower()
 
-            if file_extension in VIDEO_EXTENSIONS and shutil.which("ffmpeg") is None:
-                raise ConversionFailedError(
-                    f"Converting {path} needs ffmpeg on PATH to read the video"
-                )
             if file_extension in self.docling_extensions or (
                 file_extension in MEDIA_EXTENSIONS
             ):

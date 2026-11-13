@@ -12,6 +12,7 @@
 - `SearchResult.time_range` and `Citation.time_range`, shown as `Time:` in the model's search results and the evidence capsule, in CLI citations and `search` output, and in the chat and inspector TUIs. In `execute_code`, timed items carry `start_time` and `end_time`, and timed `search()` rows carry `time_range`.
 - A converted text item starts with its speaker (`speaker-1: ...`) when docling records one.
 - `processing.media`: `docling-local` converts audio (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) and video (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`) into a timed transcript through an OpenAI-compatible transcription server (`media.asr`), with video frames as pictures (`media.frames`). Audio and video `Content-Type`s map to their extensions for URL sources. A PDF's audio and video attachments are not ingested. The full Docker image (`docker/Dockerfile`) includes ffmpeg.
+- `asr` extra, included in `haiku.rag`: `processing.media.asr` set to a docling preset such as `whisper_turbo` transcribes in-process with Whisper.
 - `add-src --force` and `create_document_from_source(force=True)` convert a source again when its bytes are unchanged.
 
 ### Changed
