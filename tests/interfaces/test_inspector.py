@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from PIL import Image as PILImage
 
-from haiku.rag.store.models import Chunk, Document, SearchResult
+from haiku.rag.store.models import Chunk, ChunkMetadata, Document, SearchResult
 from tests.conftest import for_path
 
 
@@ -386,3 +386,11 @@ class TestReportingEachDatabase:
         lines = await database_lines(client)
 
         assert message in Text.from_markup(lines[0]).plain
+
+
+def test_detail_view_provenance_shows_the_time():
+    from haiku.rag.inspector.widgets.detail_view import DetailView
+
+    meta = ChunkMetadata(time_range=(4.48, 7.6))
+
+    assert "**Time:** 00:00:04-00:00:07" in DetailView()._format_provenance(meta)

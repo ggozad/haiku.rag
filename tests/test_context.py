@@ -288,7 +288,7 @@ class TestFindExpansionRange:
 class TestCollectMeta:
     def test_unlabelled_items_add_no_label(self):
         items = [_item(0, label="section_header"), _item(1, label="")]
-        pages, refs, labels = _collect_meta([(0, 1, item) for item in items])
+        pages, refs, labels, _times = _collect_meta([(0, 1, item) for item in items])
         assert pages == {1}
         assert refs == ["#/texts/0", "#/texts/1"]
         assert labels == {"section_header"}

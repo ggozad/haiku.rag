@@ -443,15 +443,16 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         Inside the program, `/documents/{document_id}/` holds `metadata.json`
         (id, title, uri, created_at, metadata), `content.txt` (the whole text),
         `items.jsonl` (one item per line: self_ref, label, text, page_numbers,
-        heading_level, chunk_ids), `chunks.jsonl` (one chunk per line: chunk_id,
+        start_time and end_time in seconds for a recording, heading_level,
+        chunk_ids), `chunks.jsonl` (one chunk per line: chunk_id,
         metadata) and `toc.json` (`doc_id`, `title`, `tree`; each node has
         self_ref, level, title, page_numbers, item_range as a slice into
         items.jsonl, chunk_ids and children; an empty tree means no headings).
         Read files with `Path.read_text()` or `open()`. `await search(query,
         limit=10)` returns dicts with chunk_id, content, document_id,
-        document_title, document_uri, source, score, page_numbers, headings,
-        doc_item_refs, labels, picture_refs (the doc_item_refs that are
-        pictures) and chunk_meta. `await list_documents()` returns dicts with
+        document_title, document_uri, source, score, page_numbers, time_range
+        for a recording, headings, doc_item_refs, labels, picture_refs (the
+        doc_item_refs that are pictures) and chunk_meta. `await list_documents()` returns dicts with
         id, title, uri, created_at, source and metadata. Both see the documents
         `filter` and `sources` select. Useful modules include json, re, math,
         pathlib, datetime, collections, itertools, functools, dataclasses and

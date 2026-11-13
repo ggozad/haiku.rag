@@ -20,6 +20,17 @@ def format_bytes(num_bytes: int) -> str:
     return f"{size:.1f} PB"
 
 
+def format_time_range(time_range: tuple[float, float]) -> str:
+    """`HH:MM:SS-HH:MM:SS`, or one time when both ends fall in the same second."""
+
+    def clock(seconds: float) -> str:
+        whole = int(seconds)
+        return f"{whole // 3600:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
+
+    start, end = (clock(t) for t in time_range)
+    return start if start == end else f"{start}-{end}"
+
+
 def _citation_pages(c: "Citation") -> str | None:
     if not c.page_numbers:
         return None
@@ -76,6 +87,8 @@ async def format_citations_rich(
         pages = _citation_pages(c)
         if pages:
             header_parts.append(pages)
+        if c.time_range:
+            header_parts.append(format_time_range(c.time_range))
         section = _citation_section(c)
         if section:
             header_parts.append(f"§{section}")

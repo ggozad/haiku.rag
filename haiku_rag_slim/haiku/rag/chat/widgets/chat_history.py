@@ -12,6 +12,7 @@ from textual_image.widget import Image as TextualImage
 
 from haiku.rag.store.models.chunk import qualified_id
 from haiku.rag.store.models.citation import Citation
+from haiku.rag.utils.formatting import format_time_range
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
@@ -130,6 +131,8 @@ class CitationWidget(Collapsible):
             if len(citation.page_numbers) > 3:
                 pages += "..."
             title += f" (p.{pages})"
+        if citation.time_range:
+            title += f" ({format_time_range(citation.time_range)})"
         # The title is data, not Textual markup.
         title = escape(title)
 

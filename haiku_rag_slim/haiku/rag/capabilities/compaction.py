@@ -23,6 +23,7 @@ from haiku.rag.capabilities.evidence import (
 )
 from haiku.rag.capabilities.rag import RAGCapability
 from haiku.rag.store.models.citation import Citation
+from haiku.rag.utils.formatting import format_time_range
 from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, decode_picture
 
 CAPABILITY_ID = "haiku-rag-evidence-compaction"
@@ -106,6 +107,8 @@ class _Entry:
             )
         else:
             header = f"[{self.chunk_id}] Source: {document}"
+        if self.citation.time_range:
+            header = f"{header}\nTime: {format_time_range(self.citation.time_range)}"
         return f"{header}\n{self.citation.content}"
 
 

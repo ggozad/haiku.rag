@@ -1023,3 +1023,20 @@ class TestKeepingSelectionsReachable:
             assert "press enter to search" not in str(footer.content)
             labels = [str(b.label) for b in modal.query(DocumentCheckbox)]
             assert labels == ["Nobel laureates"]
+
+
+def test_citation_title_shows_the_time():
+    from haiku.rag.chat.widgets.chat_history import CitationWidget
+    from haiku.rag.store.models.citation import Citation
+
+    citation = Citation(
+        index=1,
+        document_id="doc1",
+        chunk_id="chunk1",
+        document_uri="talk.mp4",
+        document_title="Talk",
+        content="Test content",
+        time_range=(4.48, 7.6),
+    )
+
+    assert CitationWidget(citation).title == "[1] Talk (00:00:04-00:00:07)"
