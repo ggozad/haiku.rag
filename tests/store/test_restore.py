@@ -309,14 +309,14 @@ async def test_restore_old_version_marker_requires_explicit_migration(temp_db_pa
         repo = DocumentRepository(store)
         await repo.create(Document(content="First document"))
         current_version = await store.get_haiku_version()
-        await store.set_haiku_version("0.63.0")
+        await store.set_haiku_version("0.64.0")
         await store.create_tag("old-marker")
         await store.set_haiku_version(current_version)
         await repo.create(Document(content="Second document"))
 
     async with Store(temp_db_path) as store:
         safety_tag = await store.restore_tag("old-marker")
-        assert await store.get_haiku_version() == "0.63.0"
+        assert await store.get_haiku_version() == "0.64.0"
         assert await _doc_contents(store) == {"First document"}
 
     with pytest.raises(MigrationRequiredError):
@@ -335,11 +335,11 @@ async def test_restore_old_version_marker_requires_explicit_migration(temp_db_pa
 async def test_tag_haiku_version_reads_the_tag_not_the_live_state(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         current_version = await store.get_haiku_version()
-        await store.set_haiku_version("0.63.0")
+        await store.set_haiku_version("0.64.0")
         await store.create_tag("old-marker")
         await store.set_haiku_version(current_version)
 
-        assert await store.tag_haiku_version("old-marker") == "0.63.0"
+        assert await store.tag_haiku_version("old-marker") == "0.64.0"
         assert await store.get_haiku_version() == current_version
 
 
@@ -489,3 +489,38 @@ async def test_restore_of_a_supported_tag_over_a_newer_schema(temp_db_path):
 
     async with Store(temp_db_path) as store:
         assert await _doc_contents(store) == {"First document"}
+
+
+async def test_restore_of_a_tag_below_the_floor_is_refused(temp_db_path):
+    from haiku.rag.store.exceptions import MigrationRequiredError
+
+    async with Store(temp_db_path, create=True) as store:
+        current_version = await store.get_haiku_version()
+        await store.set_haiku_version("0.63.0")
+        await store.create_tag("ancient")
+        await store.set_haiku_version(current_version)
+
+    async with Store(temp_db_path) as store:
+        before = await store.current_table_versions()
+        with pytest.raises(MigrationRequiredError) as raised:
+            await store.restore_tag("ancient")
+        assert await store.current_table_versions() == before
+        assert set(await store.list_tags()) == {"ancient"}
+    assert "Tag 'ancient' was taken at 0.63.0" in str(raised.value)
+    assert "haiku.rag==0.111.1" in str(raised.value)
+
+
+async def test_reading_at_a_tag_below_the_floor_is_refused(temp_db_path):
+    from haiku.rag.store.exceptions import MigrationRequiredError
+
+    async with Store(temp_db_path, create=True) as store:
+        current_version = await store.get_haiku_version()
+        await store.set_haiku_version("0.63.0")
+        await store.create_tag("ancient")
+        await store.set_haiku_version(current_version)
+
+    with pytest.raises(MigrationRequiredError) as raised:
+        async with Store(temp_db_path, read_only=True, tag="ancient"):
+            pass
+    assert "Tag 'ancient' was taken at 0.63.0" in str(raised.value)
+    assert "haiku.rag==0.111.1" in str(raised.value)

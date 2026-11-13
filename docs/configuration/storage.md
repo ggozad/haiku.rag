@@ -20,7 +20,8 @@ another process's writes after `lancedb.read_consistency_interval_seconds`
 pending migrations in place, and `haiku-rag info` lists what is pending. A
 release that needs it says so in the [changelog](../changelog.md). A release
 refuses to write to a database whose recorded `schema_version` is newer than
-its own schema.
+its own schema. A database recorded before 0.64.0 is migrated with haiku.rag
+0.111.1 first (see [`migrate`](../cli.md#migrate)).
 
 **The embedding dimension is fixed per database.** Every chunk vector has the
 dimension the database was created with. Changing `embeddings.model.vector_dim`

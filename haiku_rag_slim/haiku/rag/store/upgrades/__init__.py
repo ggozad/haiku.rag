@@ -23,6 +23,16 @@ class Upgrade:
 # Registry of upgrade steps (ordered by version)
 upgrades: list[Upgrade] = []
 
+# A database recorded below this version needs a step this release does not carry.
+OLDEST_MIGRATABLE_VERSION = "0.64.0"
+# The last release carrying every upgrade step.
+FULL_CHAIN_RELEASE = "0.111.1"
+
+
+def migratable(version: str) -> bool:
+    """Whether the upgrade steps this release carries can migrate `version`."""
+    return parse(version) >= parse(OLDEST_MIGRATABLE_VERSION)
+
 
 def get_pending_upgrades(from_version: str) -> list[Upgrade]:
     """Get pending upgrades from the given version.
@@ -74,36 +84,6 @@ async def run_pending_upgrades(store: "Store", from_version: str) -> list[str]:
 
 # Import upgrade modules AFTER Upgrade class is defined to avoid circular imports
 # ruff: noqa: E402, I001
-from haiku.rag.store.upgrades.v0_20_0 import (
-    upgrade_add_docling_document as upgrade_0_20_0_docling,
-)
-from haiku.rag.store.upgrades.v0_23_1 import (
-    upgrade_contextualize_chunks as upgrade_0_23_1_contextualize,
-)
-from haiku.rag.store.upgrades.v0_25_0 import (
-    upgrade_compress_docling_document as upgrade_0_25_0_compress,
-)
-from haiku.rag.store.upgrades.v0_38_0 import (
-    upgrade_split_pages_zstd as upgrade_0_38_0_split_pages,
-)
-from haiku.rag.store.upgrades.v0_40_0 import (
-    upgrade_populate_document_items as upgrade_0_40_0_document_items,
-)
-from haiku.rag.store.upgrades.v0_45_0 import (
-    upgrade_extract_picture_bytes as upgrade_0_45_0_extract_picture_bytes,
-)
-from haiku.rag.store.upgrades.v0_48_0 import (
-    upgrade_backfill_heading_hierarchy as upgrade_0_48_0_heading_hierarchy,
-)
-from haiku.rag.store.upgrades.v0_50_0 import (
-    upgrade_canonical_metadata_keys as upgrade_0_50_0_canonical_metadata_keys,
-)
-from haiku.rag.store.upgrades.v0_58_0 import (
-    upgrade_split_document_meta as upgrade_0_58_0_split_document_meta,
-)
-from haiku.rag.store.upgrades.v0_64_0 import (
-    upgrade_rename_document_meta_id as upgrade_0_64_0_rename_document_meta_id,
-)
 from haiku.rag.store.upgrades.v0_75_0 import (
     upgrade_index_hot_lookup_keys as upgrade_0_75_0_index_hot_lookup_keys,
 )
@@ -114,16 +94,6 @@ from haiku.rag.store.upgrades.v0_91_0 import (
     upgrade_fts_format_v2 as upgrade_0_91_0_fts_format_v2,
 )
 
-upgrades.append(upgrade_0_20_0_docling)
-upgrades.append(upgrade_0_23_1_contextualize)
-upgrades.append(upgrade_0_25_0_compress)
-upgrades.append(upgrade_0_38_0_split_pages)
-upgrades.append(upgrade_0_40_0_document_items)
-upgrades.append(upgrade_0_45_0_extract_picture_bytes)
-upgrades.append(upgrade_0_48_0_heading_hierarchy)
-upgrades.append(upgrade_0_50_0_canonical_metadata_keys)
-upgrades.append(upgrade_0_58_0_split_document_meta)
-upgrades.append(upgrade_0_64_0_rename_document_meta_id)
 upgrades.append(upgrade_0_75_0_index_hot_lookup_keys)
 upgrades.append(upgrade_0_89_0_record_embedder_only)
 upgrades.append(upgrade_0_91_0_fts_format_v2)

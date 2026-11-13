@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Store upgrade steps 0.20.0 through 0.64.0. Opening, `migrate`, `doctor`, reading at a tag and `tag restore` refuse a database or tag recorded before 0.64.0: migrate it with `uvx --from haiku.rag==0.111.1 haiku-rag migrate --db PATH` first.
+
 ## [0.111.1] - 2026-11-12
 
 ### Fixed

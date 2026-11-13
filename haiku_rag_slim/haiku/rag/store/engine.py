@@ -287,11 +287,52 @@ async def _aggregate_tags(tables: dict[str, lancedb.AsyncTable]) -> dict[str, Ta
     return tags
 
 
+def too_old_message(db_version: str) -> str:
+    from haiku.rag.store.upgrades import FULL_CHAIN_RELEASE
+
+    return (
+        f"Database version {db_version} is older than haiku.rag "
+        f"{metadata.version('haiku.rag-slim')} can migrate. Migrate it with "
+        f"haiku.rag {FULL_CHAIN_RELEASE} first: "
+        f"{migrate_with_full_chain_command()}"
+    )
+
+
+def migrate_with_full_chain_command() -> str:
+    from haiku.rag.store.upgrades import FULL_CHAIN_RELEASE
+
+    return f"uvx --from haiku.rag=={FULL_CHAIN_RELEASE} haiku-rag migrate --db PATH"
+
+
+def require_migratable(db_version: str) -> None:
+    """Raise `MigrationRequiredError` when `db_version` needs a dropped step."""
+    from haiku.rag.store.upgrades import migratable
+
+    if not migratable(db_version):
+        raise MigrationRequiredError(too_old_message(db_version))
+
+
+def require_migratable_tag(name: str, db_version: str) -> None:
+    """Raise `MigrationRequiredError` when the tag needs a dropped step."""
+    from haiku.rag.store.upgrades import FULL_CHAIN_RELEASE, migratable
+
+    if not migratable(db_version):
+        raise MigrationRequiredError(
+            f"Tag '{name}' was taken at {db_version}, older than haiku.rag "
+            f"{metadata.version('haiku.rag-slim')} can migrate. Restore it in a "
+            f"copy of the database and migrate the copy with haiku.rag "
+            f"{FULL_CHAIN_RELEASE}: uvx --from haiku.rag=={FULL_CHAIN_RELEASE} "
+            f"haiku-rag tag restore {name} --db PATH, then "
+            f"{migrate_with_full_chain_command()}"
+        )
+
+
 def require_current_tag(name: str, db_version: str) -> None:
     """Raise `MigrationRequiredError` when the tag, recorded at `db_version`,
     needs a migration to be read."""
     from haiku.rag.store.upgrades import get_pending_upgrades
 
+    require_migratable_tag(name, db_version)
     pending = get_pending_upgrades(db_version)
     if pending:
         raise MigrationRequiredError(
@@ -891,6 +932,7 @@ class Store:
 
         if self._tag is not None:
             require_current_tag(self._tag, db_version)
+        require_migratable(db_version)
 
         pending = get_pending_upgrades(db_version)
         if pending:
@@ -910,6 +952,8 @@ class Store:
         Raises:
             ReadOnlyError: If the store is in read-only mode.
             UpgradeRequiredError: If a newer release wrote the schema.
+            MigrationRequiredError: If the database is older than this release
+                can migrate.
         """
         self._assert_writable()
 
@@ -921,6 +965,7 @@ class Store:
         require_known_schema(await read_settings(self.settings_table))
 
         db_version = await self.get_haiku_version()
+        require_migratable(db_version)
         current_version = metadata.version("haiku.rag-slim")
 
         applied = await run_pending_upgrades(self, db_version)
@@ -1237,6 +1282,8 @@ class Store:
                 changed), or a table restore failed (the error states whether
                 rollback succeeded).
             UpgradeRequiredError: If a newer release wrote the tag's schema.
+            MigrationRequiredError: If the tag is older than this release can
+                migrate.
         """
         self._assert_writable()
         self._assert_not_rebuilding()
@@ -1244,7 +1291,9 @@ class Store:
         async with self._rebuild_lock, self._write_lock:
             tags = await self.list_tags()
             info = _restorable_tag(tags, name)
-            require_known_schema(await self._tag_settings(info))
+            tag_settings = await self._tag_settings(info)
+            require_known_schema(tag_settings)
+            require_migratable_tag(name, tag_settings.get("version", "0.0.0"))
 
             snapshot = await self.current_table_versions()
             safety_tag = _safety_tag_name(set(tags))
