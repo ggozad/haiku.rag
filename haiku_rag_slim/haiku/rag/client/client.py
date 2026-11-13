@@ -681,7 +681,9 @@ class HaikuRAG:
         source_id: str | None = None,
         metadata_provider: "MetadataProvider | None" = None,
         failed: list[str] | None = None,
+        force: bool = False,
     ) -> Document | list[Document]:
+        """Ingest a file, directory or URL. `force` converts unchanged sources again."""
         from haiku.rag.client.documents import create_document_from_source
 
         session = self._single_session("create_document_from_source")
@@ -698,6 +700,7 @@ class HaikuRAG:
             source_id=source_id,
             metadata_provider=metadata_provider,
             failed=failed,
+            force=force,
         )
 
     async def _ingest_observed(

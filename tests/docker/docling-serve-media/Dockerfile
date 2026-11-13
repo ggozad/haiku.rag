@@ -1,7 +1,7 @@
 # docling-serve with audio and video support, for the integration tests.
 # Adds ffmpeg and the unreleased ASR settings of docling-project/docling-jobkit#286
 # and docling-project/docling-serve#762. Not published.
-FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg
+FROM mwader/static-ffmpeg:7.1.1@sha256:11a44711684c0b9f754c047dcd64235b8b52deab251bd0e0a86f22faa160749c AS ffmpeg
 
 FROM quay.io/docling-project/docling-serve:v1.38.2
 

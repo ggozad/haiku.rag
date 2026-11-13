@@ -313,6 +313,11 @@ def add_document_src(
         help="Metadata entries as KEY=VALUE (repeatable)",
         metavar="KEY=VALUE",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Convert sources again even when their bytes are unchanged",
+    ),
     db: Path | None = typer.Option(
         None,
         "--db",
@@ -323,7 +328,7 @@ def add_document_src(
     metadata = _parse_meta_options(meta)
     if asyncio.run(
         app.add_document_from_source(
-            source=source, title=title, metadata=metadata or None
+            source=source, title=title, metadata=metadata or None, force=force
         )
     ):
         raise typer.Exit(1)

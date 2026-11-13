@@ -21,6 +21,7 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.base import MEDIA_EXTENSIONS
 from haiku.rag.converters.exceptions import (
     ConversionFailedError,
     ConversionTimeoutError,
@@ -1007,7 +1008,9 @@ async def _reconcile_pdf_attachments(
 
     from haiku.rag.sources.base import FetchResult
 
-    supported_extensions = get_converter(session.config).supported_extensions
+    supported_extensions = set(
+        get_converter(session.config).supported_extensions
+    ) - set(MEDIA_EXTENSIONS)
     for child_uri, (name, data, content_type, content_hash) in new_attachments.items():
         if Path(name).suffix.lower() not in supported_extensions:
             logger.warning(
@@ -1109,10 +1112,9 @@ async def create_document_from_source(
 
     ``force`` skips both freshness checks, for the document and its PDF
     attachments, so an unchanged source is re-converted, re-chunked and
-    re-embedded into the existing document. Internal: rebuild uses it to refresh
-    a document in place instead of deleting and recreating it, passes
-    ``written_ids`` to collect the id of every document written, and
-    ``notify_hooks=False`` to fire no post-commit hooks.
+    re-embedded into the existing document. Rebuild also passes ``written_ids``
+    to collect the id of every document written, and ``notify_hooks=False`` to
+    fire no post-commit hooks.
 
     If ``uri`` is provided, it overrides the URI auto-derived from the source
     (which is normally ``file://`` for local files or the URL for remote

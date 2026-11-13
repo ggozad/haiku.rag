@@ -142,6 +142,14 @@ async def test_add_document_from_source_reports_one_document(app, client):
     assert "doc-1 added successfully" in out(app)
 
 
+async def test_add_document_from_source_passes_force(app, client):
+    client.create_document_from_source.return_value = _doc("from file")
+
+    await app.add_document_from_source("/tmp/x.md", force=True)
+
+    assert client.create_document_from_source.await_args.kwargs["force"] is True
+
+
 async def test_add_document_from_source_reports_a_directory_count(app, client):
     client.create_document_from_source.return_value = [_doc("a"), _doc("b")]
 
@@ -151,7 +159,7 @@ async def test_add_document_from_source_reports_a_directory_count(app, client):
 
 
 async def test_add_document_from_source_reports_failed_files(app, client):
-    async def ingest(source, *, title, metadata, failed):
+    async def ingest(source, *, title, metadata, failed, force):
         failed += ["file:///tmp/dir/a.md", "file:///tmp/dir/b.md"]
         return [_doc("c")]
 

@@ -870,7 +870,18 @@ def test_add_src_exits_1_when_files_failed(app_stub, failed, exit_code):
 
     assert result.exit_code == exit_code, result.output
     app_stub.add_document_from_source.assert_called_once_with(
-        source="/tmp/doc.md", title=None, metadata=None
+        source="/tmp/doc.md", title=None, metadata=None, force=False
+    )
+
+
+def test_add_src_force_reaches_the_app(app_stub):
+    app_stub.add_document_from_source.return_value = 0
+
+    result = runner.invoke(cli, ["add-src", "/tmp/talk.mp3", "--force", *DB_ARGS])
+
+    assert result.exit_code == 0, result.output
+    app_stub.add_document_from_source.assert_called_once_with(
+        source="/tmp/talk.mp3", title=None, metadata=None, force=True
     )
 
 

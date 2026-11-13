@@ -82,6 +82,8 @@ doc = await client.create_document_from_source(
 )
 ```
 
+A source with unchanged bytes returns its stored document. `force=True` converts it again into the same document.
+
 PDFs that carry attachments via the `/EmbeddedFiles` table are split into one Document per attachment, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
 
 ### Retrieving documents
