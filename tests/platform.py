@@ -1,3 +1,4 @@
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -31,4 +32,10 @@ requires_symlinks = pytest.mark.skipif(
 converts_pdf_locally = pytest.mark.skipif(
     sys.platform == "win32",
     reason="docling-parse's PDF decoder intermittently corrupts the heap on Windows",
+)
+
+
+needs_ffmpeg = pytest.mark.skipif(
+    sys.platform == "win32" and shutil.which("ffmpeg") is None,
+    reason="reading a video needs ffmpeg, which the Windows runner lacks",
 )
