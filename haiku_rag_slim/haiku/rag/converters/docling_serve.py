@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import (
+    MEDIA_EXTENSIONS,
     DocumentConverter,
     flatten_inline_groups,
     label_speakers,
@@ -122,7 +123,8 @@ class DoclingServeConverter(DocumentConverter):
     @property
     def supported_extensions(self) -> list[str]:
         """Return list of file extensions supported by this converter."""
-        return self.docling_serve_extensions + TextFileHandler.text_extensions
+        media = list(MEDIA_EXTENSIONS) if self.config.processing.media else []
+        return self.docling_serve_extensions + media + TextFileHandler.text_extensions
 
     def _build_conversion_data(self) -> dict[str, str | list[str]]:
         """Build form data for conversion request.

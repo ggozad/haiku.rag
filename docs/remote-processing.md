@@ -58,6 +58,35 @@ With `processing.pictures: description`, docling-serve calls the vision model it
 
 See [Picture handling](configuration/processing.md#picture-handling).
 
+## Audio and video
+
+docling-serve 1.38.2 transcribes audio and video with docling's in-process
+Whisper tiny. Its image installs no Whisper and no ffmpeg, so those
+conversions fail.
+A server-wide transcription setting is open upstream as
+[docling-jobkit#286](https://github.com/docling-project/docling-jobkit/pull/286)
+and [docling-serve#762](https://github.com/docling-project/docling-serve/pull/762).
+With those changes, set on the server:
+
+```bash
+DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true
+DOCLING_SERVE_ASR_OPTIONS='{"url": "http://whisper:8000/v1/audio/transcriptions", "model": "openai/whisper-large-v3-turbo"}'
+```
+
+The URL is any OpenAI-compatible `/audio/transcriptions` server, such as vLLM
+serving a Whisper model. Video also needs ffmpeg in the docling-serve image.
+`tests/docker/docling-serve-media/Dockerfile` builds such an image from 1.38.2
+and the two pull requests, for testing.
+
+haiku.rag then needs only `media: {}`, which turns on the audio and video
+extensions:
+
+```yaml
+processing:
+  converter: docling-serve
+  media: {}
+```
+
 ## Operations
 
 Long-running docling-serve containers grow in memory ([docling-serve #366](https://github.com/docling-project/docling-serve/issues/366), [#474](https://github.com/docling-project/docling-serve/issues/474)), from leaks in docling itself. To keep ingesting through it:
