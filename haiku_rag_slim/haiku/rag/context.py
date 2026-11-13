@@ -37,7 +37,7 @@ from collections.abc import Set as AbstractSet
 from typing import Any
 
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.models.document_item import DocumentItem, merge_time_ranges
 
 _NOISE_LABELS = {"page_header", "page_footer", "document_index"}
 _SECTION_BOUNDARY_LABELS = {"section_header", "title"}
@@ -144,17 +144,20 @@ def _clip_to_budget(content: str, results: list[SearchResult], max_chars: int) -
 
 def _collect_meta(
     spans: list[tuple[int, int, DocumentItem]],
-) -> tuple[set[int], list[str], set[str]]:
-    """Union the page numbers, refs, and labels of the given item spans."""
+) -> tuple[set[int], list[str], set[str], tuple[float, float] | None]:
+    """Union the page numbers, refs, labels and time range of the given item spans."""
     pages: set[int] = set()
     refs: list[str] = []
     labels: set[str] = set()
+    times: list[tuple[float, float] | None] = []
     for _start, _end, item in spans:
         refs.append(item.self_ref)
         if item.label:
             labels.add(item.label)
         pages.update(item.page_numbers)
-    return pages, refs, labels
+        if item.start_time is not None and item.end_time is not None:
+            times.append((item.start_time, item.end_time))
+    return pages, refs, labels, merge_time_ranges(times)
 
 
 def _span_in_window(
@@ -297,6 +300,18 @@ def _add_input_pages_for_surviving_refs(
             pages.update(result.page_numbers)
 
 
+def _input_times_for_surviving_refs(
+    refs: list[str], original_results: list[SearchResult]
+) -> list[tuple[float, float] | None]:
+    """Time ranges of the inputs whose own refs all survived."""
+    surviving = set(refs)
+    return [
+        r.time_range
+        for r in original_results
+        if r.doc_item_refs and set(r.doc_item_refs) <= surviving
+    ]
+
+
 def _build_result(
     range_start: int,
     range_end: int,
@@ -365,27 +380,33 @@ def _build_result(
         )
         expanded_content = base_content[win_start:win_end]
         if base_spans is None:
-            pages, refs, labels = (
+            pages, refs, labels, times = (
                 set(first.page_numbers),
                 list(first.doc_item_refs),
                 set(first.labels),
+                first.time_range,
             )
         else:
-            pages, refs, labels = _collect_meta(
+            pages, refs, labels, times = _collect_meta(
                 [s for s in base_spans if _span_in_window(s, win_start, win_end)]
             )
     else:
         expanded_content = base_content
         if base_spans is None:
-            pages, refs, labels = (
+            pages, refs, labels, times = (
                 set(first.page_numbers),
                 list(first.doc_item_refs),
                 set(first.labels),
+                first.time_range,
             )
         else:
-            pages, refs, labels = _collect_meta(base_spans)
+            pages, refs, labels, times = _collect_meta(base_spans)
 
     _add_input_pages_for_surviving_refs(pages, refs, original_results)
+    if base_spans is not None:
+        times = merge_time_ranges(
+            [times, *_input_times_for_surviving_refs(refs, original_results)]
+        )
 
     # Carry image_data and picture_captions from the originally retrieved
     # chunks, but only for constituents whose refs survive the window — a
@@ -420,6 +441,7 @@ def _build_result(
         document_meta=first.document_meta,
         doc_item_refs=refs or first.doc_item_refs,
         page_numbers=sorted(pages) or first.page_numbers,
+        time_range=times,
         headings=all_headings or None,
         labels=sorted(labels) or first.labels,
         image_data=merged_image_data or None,

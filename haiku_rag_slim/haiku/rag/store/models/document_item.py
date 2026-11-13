@@ -27,6 +27,16 @@ class DocumentItem(BaseModel):
     end_time: float | None = None
 
 
+def merge_time_ranges(
+    ranges: Iterable[tuple[float, float] | None],
+) -> tuple[float, float] | None:
+    """Earliest start and latest end of the ranges, ignoring `None`."""
+    present = [r for r in ranges if r is not None]
+    if not present:
+        return None
+    return min(r[0] for r in present), max(r[1] for r in present)
+
+
 def time_range(items: Iterable[Any]) -> tuple[float, float] | None:
     """Earliest start and latest end of the items' `TrackSource`s, in seconds."""
     from docling_core.types.doc import TrackSource

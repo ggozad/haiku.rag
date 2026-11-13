@@ -118,7 +118,7 @@ Chunks are returned with:
 
 - `content` - The chunk text
 - `order` - Position in document (0-indexed)
-- `metadata` - Dict with `doc_item_refs`, `headings`, `labels`, `page_numbers`
+- `metadata` - Dict with `doc_item_refs`, `headings`, `labels`, `page_numbers`, and `time_range` for a recording
 - `embedding` - `None` (not yet embedded)
 - `document_id` - `None` (not yet stored)
 

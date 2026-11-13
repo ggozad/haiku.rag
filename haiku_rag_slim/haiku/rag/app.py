@@ -28,7 +28,11 @@ if TYPE_CHECKING:
     from haiku.rag.store.engine import Store
     from haiku.rag.store.models import SearchResult
 from haiku.rag.config import redact_secrets
-from haiku.rag.utils.formatting import format_bytes, format_citations_rich
+from haiku.rag.utils.formatting import (
+    format_bytes,
+    format_citations_rich,
+    format_time_range,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -988,6 +992,9 @@ class HaikuRAGApp:
         if result.page_numbers:
             self.console.print("[repr.attrib_name]pages[/repr.attrib_name]:")
             self.console.print(", ".join(str(p) for p in result.page_numbers))
+        if result.time_range:
+            self.console.print("[repr.attrib_name]time[/repr.attrib_name]:")
+            self.console.print(format_time_range(result.time_range))
         if result.headings:
             self.console.print("[repr.attrib_name]headings[/repr.attrib_name]:")
             self.console.print(escape(" > ".join(result.headings)))

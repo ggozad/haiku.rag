@@ -1031,3 +1031,13 @@ async def test_history_annotates_a_partial_tag_only_where_it_exists(temp_db_path
     assert printed.count("<- partial") == 1
     chunks_section = printed.split("\nchunks\n")[1].split("\ndocument_items\n")[0]
     assert "<- partial" in chunks_section
+
+
+def test_search_result_rendering_includes_the_time(app):
+    result = SearchResult(
+        content="hit", score=0.5, chunk_id="c1", time_range=(4.48, 7.6)
+    )
+
+    app._rich_print_search_result(result)
+
+    assert "00:00:04-00:00:07" in out(app)
