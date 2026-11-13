@@ -10,6 +10,7 @@
 - Web app: the inspector edits a document's title and `metadata.user`, and deletes a document without a `source_id`, on a database listed under `ingester.databases`.
 - `document_items.start_time` and `end_time`, and chunk metadata `time_range`: the time in seconds of a transcript item or chunk, from docling's `TrackSource`. Existing databases need `haiku-rag migrate`.
 - `SearchResult.time_range` and `Citation.time_range`, shown as `Time:` in the model's search results and the evidence capsule, in CLI citations and `search` output, and in the chat and inspector TUIs. In `execute_code`, timed items carry `start_time` and `end_time`, and timed `search()` rows carry `time_range`.
+- A converted text item starts with its speaker (`speaker-1: ...`) when docling records one.
 
 ### Changed
 

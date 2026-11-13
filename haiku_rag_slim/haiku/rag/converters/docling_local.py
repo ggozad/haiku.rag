@@ -14,6 +14,7 @@ from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import (
     DocumentConverter,
     flatten_inline_groups,
+    label_speakers,
     vlm_api_headers,
     vlm_api_params,
     vlm_api_url,
@@ -351,6 +352,7 @@ class DoclingLocalConverter(DocumentConverter):
             doc = self._cached_converter().convert(source).document
 
         flatten_inline_groups(doc)
+        label_speakers(doc)
         return doc
 
     async def _convert_docling_file(
