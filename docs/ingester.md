@@ -466,7 +466,7 @@ An HTML or Markdown stall is recorded the same way but does not end the process,
 The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.auth_token` requires a bearer token on every route except `/` and `/health`. Without a token the API is open and the service logs a warning.
 
 !!! warning "Non-loopback binds need a token"
-    Loopback is local-only. On any other interface (`0.0.0.0`, a LAN address, behind a reverse proxy) set `auth_token`: the control plane can cancel jobs, retry dead ones and trigger sweeps. The startup warning is the only sign that it is missing.
+    Loopback is local-only. On any other interface (`0.0.0.0`, a LAN address, behind a reverse proxy) set `auth_token`: the control plane can cancel jobs, retry dead ones, trigger sweeps, and edit and delete documents. The startup warning is the only sign that it is missing.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -483,6 +483,8 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `POST` | `/dlq/{id}/retry` | Re-queue a dead job, as `/jobs/{id}/retry` does |
 | `GET` | `/stats` | Throughput over 5 minutes, 30 minutes and 1 hour, worker occupancy, oldest queued age, per-source dead, rejected and backlog counts, and, with [maintenance](#maintenance) enabled, each database's last pass as `{"finished_at", "vacuumed", "index_built", "error"}`. The dead and rejected counts count jobs kept for history, not distinct URIs |
 | `GET` | `/databases/{name}` | The report `haiku-rag info` prints, for one ingested database. 404 for any other name |
+| `PATCH` | `/databases/{name}/documents/{id}` | Set the document's `title` and its editor metadata `user` (`metadata.user`, see [Editor metadata](python.md#editor-metadata)), each when given. `user` replaces the whole object, and `{}` clears it. `null` for either field answers 422. Returns `id`, `uri`, `title`, `metadata`, `created_at` and `updated_at`. 404 for a missing document or a database that is not running or is being removed |
+| `DELETE` | `/databases/{name}/documents/{id}` | Delete a document without a `source_id`, with its attachments. 409 for a source-owned document, which its next sweep would ingest again, and for an attachment of a stored PDF. 404 as for `PATCH` |
 | `GET` | `/config` | The effective configuration, defaults filled in and secrets redacted, as YAML text in a JSON `yaml` field |
 | `POST` | `/reload` | Read the configuration file again and apply its changes to the databases. 500 when a database failed (see [Reloading databases](#reloading-databases)) |
 | `GET` | `/providers` | Reachability of each `providers.docling_serve.base_url` entry (`/health`, 2 s timeout) |

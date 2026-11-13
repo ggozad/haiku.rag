@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from haiku.rag.ingester.app import FailedDatabase
 
@@ -121,3 +121,34 @@ class StatsResponse(BaseModel):
     rejected_by_source: dict[str, int]
     queue_depth_by_source: dict[str, int]
     maintenance_by_database: dict[str, MaintenanceStats]
+
+
+class DocumentEdit(BaseModel):
+    """An edit of one document. An omitted field stays as stored. ``user``
+    replaces the whole editor metadata, and ``{}`` clears it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = None
+    user: dict[str, Any] | None = None
+
+    @field_validator("title", "user", mode="before")
+    @classmethod
+    def _present(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("null is not an edit: omit the field to keep it")
+        return value
+
+
+class EditedDocument(BaseModel):
+    id: str
+    uri: str | None
+    title: str | None
+    metadata: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+class DeleteResponse(BaseModel):
+    document_id: str
+    deleted: bool

@@ -2,9 +2,9 @@ import asyncio
 import logging
 import signal
 import sys
-from collections.abc import Awaitable, Callable, Collection, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -165,7 +165,8 @@ class _Database:
     """A database the app ingests into, with its sources' pollers. `opened`
     is what `_covering` returned, and `client` is what entering it returned.
     `ingester_lifespans` are its hooks' ingester lifespans, once entered.
-    Closing exits them, then `opened`, which retries a close that failed."""
+    Closing exits them, then `opened`, which retries a close that failed.
+    `edits` counts the API edits in flight."""
 
     ref: "DatabaseRef"
     opened: "HaikuRAG"
@@ -176,6 +177,22 @@ class _Database:
     ingester_lifespans: AbstractAsyncContextManager[None] | None = None
     maintenance: "DatabaseMaintenance | None" = None
     maintenance_task: asyncio.Task | None = None
+    edits: int = 0
+    edits_done: asyncio.Condition = field(default_factory=asyncio.Condition)
+
+    @asynccontextmanager
+    async def editing(self) -> AsyncIterator["HaikuRAG"]:
+        self.edits += 1
+        try:
+            yield self.client
+        finally:
+            self.edits -= 1
+            async with self.edits_done:
+                self.edits_done.notify_all()
+
+    async def wait_for_edits(self) -> None:
+        async with self.edits_done:
+            await self.edits_done.wait_for(lambda: self.edits == 0)
 
     async def close_client(
         self,
@@ -503,10 +520,19 @@ class IngesterApp:
         await self._jobs.cancel_sources(source_ids)
         await self._sync.delete_sources(source_ids)
         self._pool.remove_sources(source_ids)
+        await database.wait_for_edits()
         await self._close(database)
         del self._running[name]
         del self._ingested[name]
         self._maintenance.pop(name, None)
+
+    def _editing(self, name: str) -> AbstractAsyncContextManager["HaikuRAG"]:
+        """Hold the writable client of the running database `name` open for one
+        edit: its removal closes it once the edit ends."""
+        database = self._running.get(name)
+        if database is None or database.removing:
+            raise KeyError(name)
+        return database.editing()
 
     async def _prepare(
         self, ref: "DatabaseRef", pollers: "list[BasePoller]"
@@ -1218,6 +1244,7 @@ class IngesterApp:
                 maintenance=self._maintenance,
                 claim_lock=self._pool.claim_lock,
                 reload=self.reload,
+                editing=self._editing,
             )
         return self._api
 

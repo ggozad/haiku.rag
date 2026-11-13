@@ -289,7 +289,6 @@ async def _rebuild_title_only(
     session: SingleDatabaseSession, documents: list[Document]
 ) -> AsyncGenerator[str, None]:
     """Generate titles for documents that don't have one."""
-    repo = session.document_repository
     untitled = [d for d in documents if d.title is None]
     pending: list[Document] = []
     async for doc in _hydrate(session, untitled):
@@ -305,13 +304,39 @@ async def _rebuild_title_only(
             doc.title = title
             pending.append(doc)
             if len(pending) >= _REBUILD_BATCH_SIZE:
-                for saved in await repo.update_meta_all(pending):
+                for saved in await _write_titles(session, pending):
                     assert saved.id is not None
                     yield saved.id
                 pending = []
-    for saved in await repo.update_meta_all(pending):
+    for saved in await _write_titles(session, pending):
         assert saved.id is not None
         yield saved.id
+
+
+async def _write_titles(
+    session: SingleDatabaseSession, titled: list[Document]
+) -> list[Document]:
+    """Write each generated title where the stored title is still empty, over
+    the stored record."""
+    from haiku.rag.utils.sql import build_document_id_filter
+
+    if not titled:
+        return []
+    repo = session.document_repository
+    async with session.store._write_lock:
+        stored = {
+            doc.id: doc
+            for doc in await repo.list_all(
+                filter=build_document_id_filter([d.id for d in titled if d.id])
+            )
+        }
+        untitled = []
+        for doc in titled:
+            current = stored.get(doc.id)
+            if current is not None and current.title is None:
+                current.title = doc.title
+                untitled.append(current)
+        return await repo.update_meta_all(untitled)
 
 
 async def _has_vector_index(session: SingleDatabaseSession) -> bool:
@@ -687,8 +712,6 @@ async def _flush_rebuild_batch(
     Nothing in it may take the store's write lock again, so callers rebuild
     indexes and yield only after it returns.
     """
-    from haiku.rag.store.schema import DocumentMetaRecord
-
     if not documents:
         return
 
@@ -715,26 +738,17 @@ async def _flush_rebuild_batch(
                 .execute(source)
             )
 
-        meta_records = []
-        for doc in documents:
-            assert doc.id is not None
-            meta_records.append(
-                DocumentMetaRecord(
-                    id=doc.id,
-                    uri=doc.uri,
-                    title=doc.title,
-                    metadata=json.dumps(doc.metadata),
-                    created_at=doc.created_at.isoformat() if doc.created_at else now,
-                    updated_at=now,
-                )
-            )
-
-        await (
-            session.store.document_meta_table.merge_insert("id")
-            .when_matched_update_all()
-            .when_not_matched_insert_all()
-            .execute(meta_records)
+        # A rebuild changes no document's uri, title or metadata, and its copy
+        # of them can be older than the stored record.
+        meta_table = session.store.document_meta_table
+        meta_schema = await meta_table.schema()
+        touched = pa.Table.from_pylist(
+            [{"id": doc_id, "updated_at": now} for doc_id in document_ids],
+            schema=pa.schema(
+                [meta_schema.field("id"), meta_schema.field("updated_at")]
+            ),
         )
+        await meta_table.merge_insert("id").when_matched_update_all().execute(touched)
 
         # Batch create all chunks (single LanceDB version)
         if chunks:

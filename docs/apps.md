@@ -5,7 +5,7 @@ The web app is a browser interface to a haiku.rag knowledge base. In it you ask 
 ![Chat: an answer, its folded steps and its sources](img/app-chat.png)
 
 !!! warning "No authentication"
-    The app has no authentication, and the frontend adds `INGESTER_TOKEN` to every request it forwards to the ingester. Anyone who reaches the frontend reads every configured database and can refresh the ingester's sources and retry or cancel its jobs. The Compose files publish the ports on `127.0.0.1` only. To serve the app beyond the local machine, put the frontend behind a reverse proxy that authenticates users.
+    The app has no authentication, and the frontend adds `INGESTER_TOKEN` to every request it forwards to the ingester. Anyone who reaches the frontend reads every configured database and can refresh the ingester's sources, retry or cancel its jobs, and edit or delete documents. The Compose files publish the ports on `127.0.0.1` only. To serve the app beyond the local machine, put the frontend behind a reverse proxy that authenticates users.
 
 ## Set it up
 
@@ -162,6 +162,8 @@ The Inspector lists the documents of a database, filtered by title or URI, or by
 The agent searches and cites chunks, short passages of a document. A chunk's page shows its text, what the agent receives when a search returns it, its place on the original page, and the most similar chunks. It is the place to look when an answer cites the wrong passage or misses one.
 
 ![A chunk on its original page, a scanned report from 1970](img/app-inspector-chunk.png)
+
+When the ingester writes the database, Edit on a document sets its title and your own metadata, kept under `metadata.user` (see [Editor metadata](python.md#editor-metadata)). A value marked JSON is stored as JSON, any other as text. A source re-ingest keeps both. Delete removes a document without a `source_id`, with its attachments. Delete is disabled on a source-owned document, which is removed from the source instead, and on a PDF attachment, and its tooltip says why. The ingester makes both changes, so neither is offered on a database read at a tag or on one outside `ingester.databases`. The header shows the editor metadata under the title. The inspector reads the change after up to `lancedb.read_consistency_interval_seconds` (30 by default): until then, reopening the document shows its earlier state and the list still shows a deleted document.
 
 "Similar documents" on a document lists the ten documents nearest it by the average of their chunk embeddings, each a link to its page. "Compute similarity" there or on the doctor page compares every document, and "Compute again" refreshes the comparison after new documents arrive.
 

@@ -169,6 +169,8 @@ async def test_api_hides_another_namespace(state, engine):
         ("GET", "/providers"),
         ("GET", "/config"),
         ("GET", "/databases/docs"),
+        ("PATCH", "/databases/docs/documents/d"),
+        ("DELETE", "/databases/docs/documents/d"),
         ("DELETE", "/jobs/j"),
         ("POST", "/jobs/j/retry"),
         ("POST", "/dlq/j/retry"),

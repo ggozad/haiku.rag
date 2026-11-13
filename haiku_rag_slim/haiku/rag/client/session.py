@@ -228,13 +228,15 @@ class SingleDatabaseSession:
         *,
         allow_attachment: bool = False,
         source_id: str | None = None,
+        unowned_only: bool = False,
     ) -> "list[Document]":
         """Delete a document, cascading to children linked via
         ``metadata.parent_uri``. Returns the deleted documents in their
         last-known state; empty when the id matched nothing.
 
-        With ``source_id``, deletes only a document that source owns, checked
-        under the write lock.
+        With ``source_id``, deletes only a document that source owns. With
+        ``unowned_only``, raises ``SourceOwnedError`` for a source-owned
+        document. Both are checked under the write lock.
 
         The whole subtree (root + transitive children) is deleted under a single
         write lock and a single version snapshot, so the cascade is atomic: any
@@ -245,7 +247,10 @@ class SingleDatabaseSession:
         stored and outside the subtree, unless ``allow_attachment``.
         """
         from haiku.rag.client.documents import parent_uri_filter
-        from haiku.rag.client.exceptions import AttachmentDeletionError
+        from haiku.rag.client.exceptions import (
+            AttachmentDeletionError,
+            SourceOwnedError,
+        )
 
         async with self.store.write_transaction():
             # Resolve existence and collect the subtree under the lock so two
@@ -258,6 +263,10 @@ class SingleDatabaseSession:
                 root is None or root.metadata.get("source_id") != source_id
             ):
                 return []
+            owning_source = root.metadata.get("source_id") if root else None
+            refused = unowned_only and owning_source is not None
+            if refused:
+                root = None
             docs_to_delete: list[Document] = []
             seen: set[str] = set()
             queue = [root]
@@ -274,7 +283,7 @@ class SingleDatabaseSession:
                         )
                     )
 
-            if not docs_to_delete:
+            if not docs_to_delete and not refused:
                 return []
 
             parent_uri = (root.metadata or {}).get("parent_uri") if root else None
@@ -283,14 +292,19 @@ class SingleDatabaseSession:
                 if parent_uri is not None and not allow_attachment
                 else None
             )
-            # Raised after the transaction: raising inside it rolls back, and a
-            # rollback writes a version of every table.
+            # Raised after the transaction, as is SourceOwnedError: raising
+            # inside it rolls back, and a rollback writes a version of every table.
             owner = parent if parent is not None and parent.id not in seen else None
             if owner is None:
                 for doc in docs_to_delete:
                     assert doc.id is not None
                     await self.document_repository.delete(doc.id)
 
+        if refused:
+            raise SourceOwnedError(
+                f"Document {document_id} belongs to source {owning_source}. "
+                "Remove it from the source instead."
+            )
         if owner is not None:
             raise AttachmentDeletionError(
                 f"Document {document_id} is an attachment of {owner.id} "

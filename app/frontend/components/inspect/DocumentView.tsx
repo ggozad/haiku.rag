@@ -1,11 +1,12 @@
 "use client";
 
 import { Globe } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { publicUrl, readableUri } from "@/lib/format";
 import {
 	blocksOf,
+	editorRows,
 	headlineMetadata,
 	type Item,
 	type OutlineNode,
@@ -14,18 +15,10 @@ import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import ChunksTab, { type ChunkPage, PAGE } from "./ChunksTab";
 import ContentTab from "./ContentTab";
+import DocumentEditor, { type EditableDocument } from "./DocumentEditor";
 import OutlineTab from "./OutlineTab";
 import PagesTab, { type PageEntry } from "./PagesTab";
 import PicturesTab, { type Picture } from "./PicturesTab";
-
-interface DocumentInfo {
-	id: string;
-	title: string | null;
-	uri: string | null;
-	metadata: Record<string, unknown>;
-	created_at: string;
-	updated_at: string;
-}
 
 // The open tab, the chunk list's offset, the drawn page and the highlighted item.
 export interface DocumentState {
@@ -49,6 +42,8 @@ export default function DocumentView({
 	onState,
 	onOpenChunk,
 	actions,
+	editable = false,
+	onDeleted,
 }: {
 	source: string;
 	documentId: string;
@@ -56,12 +51,18 @@ export default function DocumentView({
 	onState: (change: Partial<DocumentState>) => void;
 	onOpenChunk: (chunkId: string) => void;
 	actions?: React.ReactNode;
+	editable?: boolean;
+	onDeleted?: () => void;
 }) {
 	const { tab, offset, page, item } = state;
 	const base = withBasePath(
 		`/api/backend/api/inspect/${encodeURIComponent(source)}/documents/${encodeURIComponent(documentId)}`,
 	);
-	const doc = useJson<DocumentInfo>(base);
+	// The ingester's answer to a save: the backend's read can show the old
+	// document for up to read_consistency_interval_seconds.
+	const [saved, setSaved] = useState<EditableDocument | null>(null);
+	const read = useJson<EditableDocument>(base);
+	const doc = { data: saved ?? read.data, error: read.error };
 	const items = useJson<{ items: Item[] }>(`${base}/items`);
 	const outline = useJson<{ outline: OutlineNode[] }>(`${base}/outline`);
 	const chunks = useJson<ChunkPage>(
@@ -85,6 +86,7 @@ export default function DocumentView({
 
 	const url = publicUrl(doc.data?.metadata);
 	const headline = doc.data ? headlineMetadata(doc.data.metadata) : [];
+	const edited = editorRows(doc.data?.metadata.user);
 
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -122,8 +124,28 @@ export default function DocumentView({
 						))}
 					</dl>
 				)}
+				{edited.length > 0 && (
+					<dl className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+						{edited.map(({ key, value }) => (
+							<div key={key} className="flex gap-1.5">
+								<dt className="text-muted-foreground">{key}</dt>
+								<dd>{value}</dd>
+							</div>
+						))}
+					</dl>
+				)}
 				{doc.error && <p className="text-sm text-destructive">{doc.error}</p>}
 				{doc.data && actions}
+				{doc.data && editable && (
+					<div className="flex flex-wrap gap-2">
+						<DocumentEditor
+							source={source}
+							document={doc.data}
+							onSaved={setSaved}
+							onDeleted={() => onDeleted?.()}
+						/>
+					</div>
+				)}
 				{doc.data && (
 					<details className="text-xs">
 						<summary className="cursor-pointer text-muted-foreground">

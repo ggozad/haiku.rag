@@ -101,7 +101,7 @@ class FixLettersHook(Hook):
 
 A key written after an ingest lasts until the next ingest that writes the document's content: a source ingest of changed bytes, or `create_document` or `import_document` over its URI.
 
-**A write of content replaces the metadata.** A source ingest of changed bytes stores the caller's metadata, the metadata provider's, the source's and the `before_ingest` hooks', each winning over the ones before it. The ingestion-owned keys come from the fetch. Of the stored keys only `source_id` and `parent_uri` carry over, so a key written after the ingest, by `update_document(metadata=...)` for example, is gone after the next change to the source. `create_document` and `import_document` over a stored URI replace it the same way with the caller's metadata alone: no provider or `before_ingest` hook runs, and `after_ingest` fires. `import_documents` looks up no URI, so it always creates new documents and replaces none. `update_document(content=...)` keeps the stored metadata unless it is also given `metadata`.
+**A write of content replaces the metadata.** A source ingest of changed bytes stores the caller's metadata, the metadata provider's, the source's and the `before_ingest` hooks', each winning over the ones before it. The ingestion-owned keys come from the fetch. Of the stored keys only `source_id`, `parent_uri` and the editor's `user` carry over, so a key written after the ingest, by `update_document(metadata=...)` for example, is gone after the next change to the source. `create_document` and `import_document` over a stored URI replace it the same way with the caller's metadata alone: no provider or `before_ingest` hook runs, and `after_ingest` fires. `import_documents` looks up no URI, so it always creates new documents and replaces none. `update_document(content=...)` keeps the stored metadata unless it is also given `metadata`.
 
 **An unchanged source writes no content.** An unchanged revision skips the fetch: no provider or hook runs, and the caller's metadata is merged over the stored keys. Unchanged bytes under a new revision run the provider and the `before_ingest` hooks, and their keys and the source's are merged over the stored keys. Other stored keys stay, and `after_ingest` does not fire. A PDF attachment with unchanged bytes is not written at all: it keeps its stored metadata, and keys added by a hook are dropped.
 
@@ -126,7 +126,9 @@ class LanguageHook(Hook):
             )
 ```
 
-`update_document(metadata=...)` replaces the stored metadata with the caller's and keeps the ingestion-owned keys. Every hook receives the same event, and its documents lack keys written by an earlier hook.
+`update_document(metadata=...)` replaces the stored metadata with the caller's and keeps the ingestion-owned keys and `user`.
+
+`metadata["user"]` belongs to the editor: only `edit_document` writes it. A provider, a source or a `before_ingest` hook that returns a `user` key has it dropped, and every write keeps the stored value. Every hook receives the same event, and its documents lack keys written by an earlier hook.
 
 ## Several databases
 

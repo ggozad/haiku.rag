@@ -5,10 +5,11 @@ export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ path: string[] }> };
 
 // The operator actions: refresh a source, retry its failed jobs, retry a job or
-// a dead letter, cancel a job.
+// a dead letter, cancel a job, edit or delete a document.
 const ACTIONS: Record<string, RegExp> = {
 	POST: /^(sources\/.+\/(refresh|retry)|jobs\/[^/]+\/retry|dlq\/[^/]+\/retry)$/,
-	DELETE: /^jobs\/[^/]+$/,
+	PATCH: /^databases\/.+\/documents\/[^/]+$/,
+	DELETE: /^(jobs\/[^/]+|databases\/.+\/documents\/[^/]+)$/,
 };
 
 async function handle(request: Request, { params }: Context) {
@@ -21,4 +22,5 @@ async function handle(request: Request, { params }: Context) {
 
 export const GET = handle;
 export const POST = handle;
+export const PATCH = handle;
 export const DELETE = handle;

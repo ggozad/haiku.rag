@@ -2,9 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- `HaikuRAG.edit_document(document_id, title=, user_metadata=)` sets a document's title and `metadata["user"]`, leaving every other key as stored.
+- `HaikuRAG.delete_document(..., unowned_only=True)` raises `SourceOwnedError` for a source-owned document.
+- `haiku-ingester` API: `PATCH /databases/{name}/documents/{id}` sets a document's `title` and `metadata.user`, `DELETE /databases/{name}/documents/{id}` deletes a document without a `source_id`.
+- Web app: the inspector edits a document's title and `metadata.user`, and deletes a document without a `source_id`, on a database listed under `ingester.databases`.
+
+### Changed
+
+- **Breaking:** `metadata["user"]` is written only by `edit_document`. Every other write, metadata providers, sources and `before_ingest` hooks included, drops a `user` key and keeps the stored one. Callers setting it move to `edit_document`.
+
 ### Removed
 
 - Store upgrade steps 0.20.0 through 0.64.0. Opening, `migrate`, `doctor`, reading at a tag and `tag restore` refuse a database or tag recorded before 0.64.0: migrate it with `uvx --from haiku.rag==0.111.1 haiku-rag migrate --db PATH` first.
+
+### Fixed
+
+- A source re-ingest keeps a title written while it converted and embedded.
+- `rebuild` (`--rechunk`, `--descriptions`, `--title-only`, and a full rebuild from stored content) keeps a title or metadata written while it ran.
 
 ## [0.111.1] - 2026-11-12
 

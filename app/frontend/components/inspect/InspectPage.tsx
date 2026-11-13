@@ -30,8 +30,9 @@ import {
 	searchOf,
 	withList,
 } from "@/lib/addresses";
-import { useDatabases } from "@/lib/databases";
+import { refreshDatabases, useDatabases } from "@/lib/databases";
 import { formatRelativeTime, readableUri } from "@/lib/format";
+import { ingestedDatabases } from "@/lib/ingestion";
 import { withBasePath } from "@/lib/paths";
 import { useJson } from "@/lib/useJson";
 import { cn } from "@/lib/utils";
@@ -135,6 +136,18 @@ export default function InspectPage() {
 	if (list.filter) params.set("filter", list.filter);
 	// A database the app cannot open offers Info only.
 	const selected = databases.find((db) => db.name === source);
+	// Edits go through the ingester, so only a database it writes, read live,
+	// offers them.
+	const ingesting = useJson<{ database: string | null }[]>(
+		withBasePath("/api/ingester/sources"),
+		info,
+	);
+	const editable = Boolean(
+		source &&
+			selected?.available &&
+			!selected.tag &&
+			ingestedDatabases(ingesting.data ?? []).includes(source),
+	);
 	// Read again whenever the databases are, so the ingester's writes appear.
 	const listing = useJson<Listing>(
 		source && selected?.available
@@ -429,6 +442,11 @@ export default function InspectPage() {
 								chunkId,
 							})
 						}
+						editable={editable}
+						onDeleted={() => {
+							void refreshDatabases();
+							router.push(databaseHref(view.db, listOf(listQuery)));
+						}}
 					/>
 				) : view.kind === "unknown" ? (
 					<Empty>The inspector has no page at this address.</Empty>

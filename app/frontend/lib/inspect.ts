@@ -124,3 +124,45 @@ export function searched(
 ): string[] {
 	return databases.map((db) => db.name).filter((name) => !unticked.has(name));
 }
+
+// One entry of the editor's metadata (`metadata.user`): a string value is
+// edited as text, any other value as JSON.
+export interface EditorRow {
+	key: string;
+	value: string;
+	json: boolean;
+}
+
+// The rows of a stored `metadata.user`, none for a value that is not an object.
+export function editorRows(user: unknown): EditorRow[] {
+	if (user === null || typeof user !== "object" || Array.isArray(user))
+		return [];
+	return Object.entries(user).map(([key, value]) =>
+		typeof value === "string"
+			? { key, value, json: false }
+			: { key, value: JSON.stringify(value), json: true },
+	);
+}
+
+// The rows as the object the ingester stores, or why they are not one.
+export function editorMetadata(
+	rows: EditorRow[],
+): Record<string, unknown> | string {
+	const entries = new Map<string, unknown>();
+	for (const row of rows) {
+		const key = row.key;
+		if (!key && !row.value) continue;
+		if (!key.trim()) return "Every value needs a key.";
+		if (entries.has(key)) return `${key} appears twice.`;
+		if (!row.json) {
+			entries.set(key, row.value);
+			continue;
+		}
+		try {
+			entries.set(key, JSON.parse(row.value));
+		} catch {
+			return `${key} is not valid JSON.`;
+		}
+	}
+	return Object.fromEntries(entries);
+}

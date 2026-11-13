@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
 	blocksOf,
 	chunkCount,
+	editorMetadata,
+	editorRows,
 	firstLine,
 	headlineMetadata,
 	type Item,
@@ -138,5 +140,58 @@ describe("labelCounts", () => {
 		).toBe("text ×2, list_item ×3");
 		expect(labelCounts(["table"])).toBe("table");
 		expect(labelCounts([])).toBe("");
+	});
+});
+
+describe("editorRows", () => {
+	it("edits a string as text and any other value as JSON", () => {
+		expect(editorRows({ reviewer: "ana", tags: ["a"], n: 2 })).toEqual([
+			{ key: "reviewer", value: "ana", json: false },
+			{ key: "tags", value: '["a"]', json: true },
+			{ key: "n", value: "2", json: true },
+		]);
+	});
+
+	it("reads a value that is not an object as no rows", () => {
+		expect(editorRows(undefined)).toEqual([]);
+		expect(editorRows("legacy")).toEqual([]);
+		expect(editorRows(["a"])).toEqual([]);
+	});
+});
+
+describe("editorMetadata", () => {
+	it("turns the rows back into the stored object", () => {
+		const user = { reviewer: "ana", tags: ["a"], n: 2 };
+		expect(editorMetadata(editorRows(user))).toEqual(user);
+	});
+
+	it("drops a blank row and keeps a key as written", () => {
+		expect(
+			editorMetadata([
+				{ key: " team ", value: "x", json: false },
+				{ key: "", value: "", json: false },
+			]),
+		).toEqual({ " team ": "x" });
+	});
+
+	it("keeps a key that names an Object property as data", () => {
+		const out = editorMetadata([{ key: "__proto__", value: "x", json: false }]);
+		expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+		expect(Object.keys(out)).toEqual(["__proto__"]);
+	});
+
+	it.each([
+		[[{ key: "", value: "x", json: false }], "Every value needs a key."],
+		[[{ key: "  ", value: "x", json: false }], "Every value needs a key."],
+		[
+			[
+				{ key: "a", value: "x", json: false },
+				{ key: "a", value: "y", json: false },
+			],
+			"a appears twice.",
+		],
+		[[{ key: "a", value: "{", json: true }], "a is not valid JSON."],
+	])("names why the rows are not an object", (rows, reason) => {
+		expect(editorMetadata(rows)).toBe(reason);
 	});
 });
