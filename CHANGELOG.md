@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.112.0] - 2026-11-13
+
 ### Added
 
 - `HaikuRAG.edit_document(document_id, title=, user_metadata=)` sets a document's title and `metadata["user"]`, leaving every other key as stored.
@@ -3334,7 +3336,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.111.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.0...HEAD
+[0.112.0]: https://github.com/ggozad/haiku.rag/compare/0.111.1...0.112.0
 [0.111.1]: https://github.com/ggozad/haiku.rag/compare/0.111.0...0.111.1
 [0.111.0]: https://github.com/ggozad/haiku.rag/compare/0.110.0...0.111.0
 [0.110.0]: https://github.com/ggozad/haiku.rag/compare/0.109.0...0.110.0
