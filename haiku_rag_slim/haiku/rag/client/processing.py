@@ -9,8 +9,8 @@ from urllib.parse import urlparse
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
-from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.store.models.document_item import _picture_description_text
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
+from haiku.rag.store.models.document_item import _picture_description_text, time_range
 from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
 
@@ -233,21 +233,26 @@ async def chunk(
     from haiku.rag.chunkers import get_chunker
 
     chunker = get_chunker(config)
-    text_chunks = await chunker.chunk(docling_document)
+    chunks = await chunker.chunk(docling_document)
 
-    if not embedder.supports_images:
-        for i, c in enumerate(text_chunks):
+    if embedder.supports_images:
+        chunks = await asyncio.to_thread(
+            _merge_picture_chunks,
+            docling_document,
+            chunks,
+            document_id,
+            existing_picture_data,
+            config.processing.min_picture_size,
+        )
+    else:
+        for i, c in enumerate(chunks):
             c.order = i
-        return text_chunks
 
-    return await asyncio.to_thread(
-        _merge_picture_chunks,
-        docling_document,
-        text_chunks,
-        document_id,
-        existing_picture_data,
-        config.processing.min_picture_size,
-    )
+    for c in chunks:
+        meta = ChunkMetadata.model_validate(c.metadata)
+        if times := time_range(meta.resolve_doc_items(docling_document)):
+            c.metadata["time_range"] = list(times)
+    return chunks
 
 
 def _min_picture_side(picture: "PictureItem", data: bytes) -> float | None:

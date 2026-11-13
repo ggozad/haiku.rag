@@ -28,12 +28,14 @@ class ChunkMetadata(BaseModel):
                   (e.g., ["Chapter 1", "Section 1.1"])
         labels: Semantic labels for each doc_item (e.g., ["paragraph", "table"])
         page_numbers: Page numbers where the chunk content appears
+        time_range: Start and end in seconds of the chunk's items in a recording
     """
 
     doc_item_refs: list[str] = []
     headings: list[str] | None = None
     labels: list[str] = []
     page_numbers: list[int] = []
+    time_range: tuple[float, float] | None = None
 
     def resolve_doc_items(self, docling_document: "DoclingDocument") -> list["DocItem"]:
         """Resolve doc_item_refs to actual DocItem objects.

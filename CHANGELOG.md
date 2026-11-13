@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `document_items.start_time` and `end_time`, and chunk metadata `time_range`: the time in seconds of a transcript item or chunk, from docling's `TrackSource`. Existing databases need `haiku-rag migrate`.
+
 ## [0.114.0] - 2026-11-27
 
 ### Added
