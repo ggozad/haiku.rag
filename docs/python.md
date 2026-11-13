@@ -193,6 +193,16 @@ await client.update_document(document_id=doc.id, chunks=custom_chunks)
 - Updates to `content` trigger re-chunking and re-embedding
 - Custom `chunks` with embeddings are stored as-is. Missing embeddings are generated automatically
 
+### Editor metadata
+
+```python
+await client.edit_document(
+    doc.id, title="Q3 report", user_metadata={"reviewer": "ana", "status": "final"}
+)
+```
+
+`edit_document` sets the title and `metadata["user"]`, each when given, and leaves every other key as stored. `user_metadata` replaces the whole `user` object, and `{}` clears it. No other write sets `metadata["user"]`: `update_document`, `create_document`, `import_document(s)`, `create_document_from_source`, metadata providers, sources and hooks drop a value they are given and keep the stored one, through re-ingests and rebuilds. A source re-ingest also keeps a title set by `edit_document`.
+
 ### Deleting documents
 
 ```python
@@ -204,6 +214,8 @@ Deleting a document also removes any child Documents linked to it via `metadata.
 A PDF attachment cannot be deleted on its own while its parent is stored: `delete_document` raises `AttachmentDeletionError` (from `haiku.rag.client.exceptions`) naming the parent. Delete the parent, or remove the file from the PDF and re-ingest it. An attachment whose parent is gone can be deleted.
 
 `delete_document(doc_id, source_id="fs:handbook")` deletes the document only when that source owns it (`metadata.source_id`), checked under the write lock, and returns `False` otherwise.
+
+`delete_document(doc_id, unowned_only=True)` raises `SourceOwnedError` (from `haiku.rag.client.exceptions`) for a source-owned document, checked under the write lock. The source's next sweep would ingest such a document again, so it is removed from the source instead.
 
 ## Searching documents
 

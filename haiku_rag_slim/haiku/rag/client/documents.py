@@ -93,6 +93,10 @@ _INGESTION_OWNED_KEYS = frozenset(
 # Ingestion-owned keys that no write path drops once stored.
 _LINEAGE_KEYS = ("source_id", "parent_uri")
 
+# The editor's metadata. Only `edit_document` writes it: every other write
+# keeps the stored value and drops one it is given.
+EDITOR_KEY = "user"
+
 # Keys the revision and MD5 short-circuits trust. Written to a document that
 # can have attachments only once its attachments have reconciled.
 _FRESHNESS_KEYS = ("md5", "source_revision")
@@ -226,13 +230,13 @@ async def _store_document_with_chunks(
                 else None
             )
 
+            document.metadata = _keep_stored_keys(
+                document.metadata, existing.metadata if existing else None
+            )
             if existing is not None:
                 document.id = existing.id
                 document.created_at = existing.created_at
                 replaced_owner = (existing.metadata or {}).get("source_id")
-                document.metadata = _keep_ingestion_keys(
-                    document.metadata, existing.metadata
-                )
                 stored_doc = await session.document_repository.update(document)
             else:
                 stored_doc = await session.document_repository.create(document)
@@ -548,11 +552,11 @@ async def _refresh_doc_metadata(
         before = (doc.title, doc.metadata)
         if title is not None:
             doc.title = title
-        doc.metadata = {
-            **(doc.metadata or {}),
-            **user_metadata,
-            **(source_metadata or {}),
-        }
+        doc.metadata = _keep_stored_keys(
+            {**(doc.metadata or {}), **user_metadata, **(source_metadata or {})},
+            doc.metadata,
+            (),
+        )
         updated = (doc.title, doc.metadata) != before
         if updated:
             await session.document_repository.update_meta(doc)
@@ -569,19 +573,22 @@ def _caller_metadata(metadata: dict | None) -> dict:
     return _storable(metadata or {})
 
 
-def _keep_ingestion_keys(
+def _keep_stored_keys(
     metadata: dict,
     previous_metadata: dict | None,
     keys: Collection[str] = _LINEAGE_KEYS,
 ) -> dict:
-    """``metadata`` with each stored key of ``keys`` it lacks restored."""
+    """``metadata`` with each stored key of ``keys`` it lacks restored, and the
+    stored editor metadata in place of any it carries."""
     previous = previous_metadata or {}
     kept = {
         key: previous[key]
         for key in keys
         if previous.get(key) is not None and metadata.get(key) is None
     }
-    return {**metadata, **kept}
+    if EDITOR_KEY in previous:
+        kept[EDITOR_KEY] = previous[EDITOR_KEY]
+    return {**{k: v for k, v in metadata.items() if k != EDITOR_KEY}, **kept}
 
 
 def _note_source_change(doc: Document, previous: str | None) -> Document:
@@ -613,7 +620,11 @@ async def _provider_metadata(
 
 
 def _storable(metadata: dict) -> dict:
-    return {k: v for k, v in metadata.items() if k not in _INGESTION_OWNED_KEYS}
+    return {
+        k: v
+        for k, v in metadata.items()
+        if k not in _INGESTION_OWNED_KEYS and k != EDITOR_KEY
+    }
 
 
 async def _before_ingest(
@@ -816,12 +827,21 @@ async def _ingest_fetch_result(
     )
 
     if existing_doc:
-        existing_doc.metadata = _keep_ingestion_keys(
-            final_metadata, existing_doc.metadata
-        )
+        assert existing_doc.id is not None
+        document_id = existing_doc.id
         if title is not None:
             existing_doc.title = title
         await _prepare_and_title(session, existing_doc, docling_document)
+
+        async def stored_meta() -> Document:
+            current = await session.document_repository.get_by_id(document_id)
+            if current is None:
+                raise ValueError(f"Document with ID {document_id} not found")
+            current.metadata = _keep_stored_keys(final_metadata, current.metadata)
+            if title is not None or current.title is None:
+                current.title = existing_doc.title
+            return current
+
         stored = await _update_document_with_chunks(
             session,
             client,
@@ -830,6 +850,7 @@ async def _ingest_fetch_result(
             docling_document,
             observed_uri=result.uri,
             notify_hooks=notify_hooks,
+            stored_meta=stored_meta,
             events=held,
         )
     else:
@@ -1377,7 +1398,7 @@ async def update_document(
         if title is not None:
             doc.title = title
         if metadata is not None:
-            doc.metadata = _keep_ingestion_keys(
+            doc.metadata = _keep_stored_keys(
                 _caller_metadata(metadata), doc.metadata, _INGESTION_OWNED_KEYS
             )
         if uri is not None:
@@ -1453,6 +1474,29 @@ async def update_document(
         converted_docling,
         stored_meta=read_and_apply,
     )
+
+
+async def edit_document(
+    session: SingleDatabaseSession,
+    document_id: str,
+    *,
+    title: str | None = None,
+    user_metadata: dict | None = None,
+) -> Document:
+    """Set a document's title and its editor metadata, each when given, and
+    leave every other key as stored."""
+    async with session.store._write_lock:
+        doc = await session.document_repository.get_by_id(document_id)
+        if doc is None:
+            raise ValueError(f"Document with ID {document_id} not found")
+        if title is not None:
+            doc.title = title
+        if user_metadata is not None:
+            doc.metadata = {**doc.metadata, EDITOR_KEY: user_metadata}
+        updated = await session.document_repository.update_meta(doc)
+    session.record_write()
+    session.name(updated)
+    return updated
 
 
 def check_source_accessible(uri: str) -> bool:

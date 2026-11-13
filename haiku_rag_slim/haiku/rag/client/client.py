@@ -765,6 +765,25 @@ class HaikuRAG:
             uri,
         )
 
+    async def edit_document(
+        self,
+        document_id: str,
+        *,
+        title: str | None = None,
+        user_metadata: dict | None = None,
+    ) -> Document:
+        """Set a document's title and its editor metadata (``metadata["user"]``),
+        each when given. The one write of the editor metadata: every other
+        write keeps it."""
+        from haiku.rag.client.documents import edit_document
+
+        return await edit_document(
+            self._single_session("edit_document"),
+            document_id,
+            title=title,
+            user_metadata=user_metadata,
+        )
+
     async def get_document_by_id(
         self, document_id: str, source: str | None = None
     ) -> Document | None:
@@ -893,13 +912,18 @@ class HaikuRAG:
         return None
 
     async def delete_document(
-        self, document_id: str, *, source_id: str | None = None
+        self,
+        document_id: str,
+        *,
+        source_id: str | None = None,
+        unowned_only: bool = False,
     ) -> bool:
         """Delete a document by its ID. Cascades to children linked via
         ``metadata.parent_uri``. With ``source_id``, deletes only a document
-        that source owns."""
+        that source owns. With ``unowned_only``, raises ``SourceOwnedError``
+        for a source-owned document."""
         deleted = await self._single_session("delete_document").delete_document(
-            document_id, source_id=source_id
+            document_id, source_id=source_id, unowned_only=unowned_only
         )
         if deleted:
             await notify(self._hooks, "after_delete", self, DeleteEvent(deleted))

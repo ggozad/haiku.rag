@@ -9,3 +9,8 @@ class UnsupportedSourceError(ValueError):
 
 class AttachmentDeletionError(ValueError):
     """A PDF attachment cannot be deleted on its own while its parent is stored."""
+
+
+class SourceOwnedError(ValueError):
+    """A source-owned document cannot be deleted on its own: the source's next
+    sweep ingests it again."""
