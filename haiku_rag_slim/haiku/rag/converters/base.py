@@ -58,6 +58,24 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
     return params
 
 
+def label_speakers(doc: "DoclingDocument") -> None:
+    """Prefix each text item with the `voice` of its `TrackSource`, so a chunk
+    that starts mid-turn still names who is talking."""
+    from docling_core.types.doc import TrackSource
+
+    for item in doc.texts:
+        voice = next(
+            (
+                s.voice
+                for s in item.source or []
+                if isinstance(s, TrackSource) and s.voice
+            ),
+            None,
+        )
+        if voice:
+            item.text = f"{voice}: {item.text}"
+
+
 def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     """Replace every inline group of text runs with the one text item it renders as.
 
