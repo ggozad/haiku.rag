@@ -1,6 +1,7 @@
 import asyncio
 import re
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,7 @@ from fastapi import Depends, FastAPI, Request
 from haiku.rag.ingester.api.auth import require_auth
 
 if TYPE_CHECKING:
+    from haiku.rag.client import HaikuRAG
     from haiku.rag.client.scope import DatabaseRef
     from haiku.rag.config import AppConfig
     from haiku.rag.ingester.app import ReloadReport
@@ -29,8 +31,10 @@ class APIState:
     served source id to the name of its database, and `maintenance` each
     maintained database's pass state. A retry holds `claim_lock`, the
     pool's, so it cannot land between a removal's unserve and its delete.
-    `reload` is the running app's. `file_counts` is the last count of
-    each source's files, with its `time.monotonic()` stamp."""
+    `reload` is the running app's. `editing(name)` raises `KeyError` unless
+    `name` is a running database, and returns a context manager holding its
+    writable client open for one edit. `file_counts` is the last count of each source's files, with
+    its `time.monotonic()` stamp."""
 
     config: "AppConfig"
     job_repo: "JobRepo"
@@ -43,6 +47,7 @@ class APIState:
     maintenance: "Mapping[str, DatabaseMaintenance]" = field(default_factory=dict)
     claim_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     reload: "Callable[[], Awaitable[ReloadReport]] | None" = None
+    editing: "Callable[[str], AbstractAsyncContextManager[HaikuRAG]] | None" = None
     file_counts: "tuple[float, dict[str, FileCounts]]" = (float("-inf"), {})
 
 
@@ -70,6 +75,7 @@ def build_app(
         dashboard,
         database,
         dlq,
+        documents,
         health,
         jobs,
         providers,
@@ -98,6 +104,7 @@ def build_app(
     app.include_router(dlq.router, dependencies=auth_dep)
     app.include_router(stats.router, dependencies=auth_dep)
     app.include_router(providers.router, dependencies=auth_dep)
+    app.include_router(documents.router, dependencies=auth_dep)
     app.include_router(database.router, dependencies=auth_dep)
     app.include_router(config_route.router, dependencies=auth_dep)
     app.include_router(reload.router, dependencies=auth_dep)

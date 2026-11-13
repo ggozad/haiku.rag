@@ -20,6 +20,7 @@ from haiku.rag.ingester.exceptions import (
     ReloadRefusedError,
 )
 from haiku.rag.sources.base import SourceEvent, SourceEventKind
+from haiku.rag.store.models.document import Document
 from tests.conftest import capture_logs
 from tests.ingester.conftest import (
     _api,
@@ -1201,6 +1202,61 @@ async def test_a_removal_exits_the_ingester_lifespan_after_its_job_in_flight(
 
     assert _changes(report) == {("papers", "removed")}
     assert log == ["enter", "ingested", "exit"]
+
+
+async def test_a_removal_closes_the_client_after_its_edit_in_flight(tmp_path, clients):
+    path = tmp_path / "haiku.rag.yaml"
+    papers, wiki = _fs(tmp_path, "papers"), _fs(tmp_path, "wiki")
+    _write(
+        path,
+        _settings(
+            tmp_path,
+            {"papers": ("papers.lancedb", [papers]), "wiki": ("wiki.lancedb", [wiki])},
+        ),
+    )
+    log: list[str] = []
+
+    @asynccontextmanager
+    async def _ingester_lifespans():
+        try:
+            yield
+        finally:
+            log.append("closed")
+
+    clients["papers"]._ingester_lifespans = _ingester_lifespans
+    gate, editing = asyncio.Event(), asyncio.Event()
+
+    async def _edit(document_id, *, title=None, user_metadata=None):
+        editing.set()
+        await gate.wait()
+        log.append("edited")
+        return Document(id=document_id, content="", title=title)
+
+    clients["papers"].edit_document.side_effect = _edit
+    app = _app(path)
+
+    async with _serving(app), _api(app) as api:
+        edit = asyncio.create_task(
+            api.patch("/databases/papers/documents/d", json={"title": "Edited"})
+        )
+        await asyncio.wait_for(editing.wait(), timeout=5.0)
+        _write(path, _settings(tmp_path, {"wiki": ("wiki.lancedb", [wiki])}))
+        removal = asyncio.create_task(app.reload())
+        await _wait_until(lambda: "papers" not in _pool(app)._served)
+        refused = await asyncio.wait_for(
+            api.patch("/databases/papers/documents/d", json={"title": "Late"}),
+            timeout=5.0,
+        )
+        await asyncio.sleep(0.1)
+        assert log == []
+
+        gate.set()
+        resp = await asyncio.wait_for(edit, timeout=5.0)
+        await asyncio.wait_for(removal, timeout=5.0)
+
+    assert resp.status_code == 200
+    assert refused.status_code == 404
+    assert log == ["edited", "closed"]
 
 
 async def test_a_cancelled_unwind_after_a_failed_ingester_lifespan_closes_the_client(
