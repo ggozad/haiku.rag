@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from click.exceptions import BadParameter
+from typer import BadParameter
 from typer.testing import CliRunner
 
 from haiku.rag.cli import _cli as cli

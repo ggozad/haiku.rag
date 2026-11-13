@@ -343,7 +343,7 @@ async def test_parse_zip_runs_off_event_loop_thread():
         called_from.append(threading.current_thread())
         return Mock()
 
-    converter._parse_zip_to_docling = spy  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
+    converter._parse_zip_to_docling = spy  # type: ignore[method-assign]
 
     files = {"files": ("doc.pdf", b"pdf", "application/octet-stream")}
     await converter._make_request(files, "doc.pdf")

@@ -58,7 +58,7 @@ class CohereMultimodalEmbedder(EmbedderWrapper):
 
 
 def _floats(result: object) -> list[list[float]]:
-    floats = result.embeddings.float_  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    floats = result.embeddings.float_  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     if floats is None:
         raise ValueError("Cohere returned no float embeddings.")
     return [list(e) for e in floats]

@@ -501,7 +501,7 @@ async def test_vllm_get_embedder_routes_to_multimodal():
     )
     embedder = get_embedder(config)
     assert embedder.supports_images is True
-    assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    assert embedder._base_url == "http://my-vllm:8000/v1"  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
 
 def test_multimodal_defaults_to_false():

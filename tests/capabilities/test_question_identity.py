@@ -298,7 +298,7 @@ async def test_a_resumed_question_keeps_its_identity_and_its_evidence(temp_db_pa
     sent: list[list[ModelMessage]] = []
     # ty cannot resolve the deps type parameter through a multi-member
     # `output_type`.
-    agent = Agent(  # ty: ignore[no-matching-overload]
+    agent = Agent(
         scripted(
             [
                 [ToolCallPart("search", {"query": "first"}, "call-1")],
@@ -329,19 +329,19 @@ async def test_a_resumed_question_keeps_its_identity_and_its_evidence(temp_db_pa
     with patch.object(RAGCapability, "_search", stub_search):
         first = await agent.run(
             None,
-            deps=deps,  # ty: ignore[invalid-argument-type]
+            deps=deps,
             message_history=[request("first")],
         )
         paused = await agent.run(
             None,
-            deps=deps,  # ty: ignore[invalid-argument-type]
+            deps=deps,
             message_history=[*first.all_messages(), request("second")],
         )
         assert isinstance(paused.output, DeferredToolRequests)
         question = deps.state["rag"]["evidence"]["question"]
         await agent.run(
             None,
-            deps=deps,  # ty: ignore[invalid-argument-type]
+            deps=deps,
             message_history=paused.all_messages(),
             deferred_tool_results=DeferredToolResults(calls={"call-4": "confirmed"}),
         )

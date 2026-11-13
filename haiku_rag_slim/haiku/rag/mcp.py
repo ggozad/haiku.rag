@@ -1,6 +1,6 @@
 import asyncio
 import base64
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from importlib import metadata
 from pathlib import Path
@@ -213,7 +213,7 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         return client
 
     @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
+    async def lifespan(_server: FastMCP) -> AsyncGenerator[None, None]:
         # Opened eagerly: an unopenable database fails at startup.
         nonlocal client
         await _client()

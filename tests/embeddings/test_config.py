@@ -41,9 +41,9 @@ def test_embedder_base_url_ends_in_one_v1(provider, suffix):
     )
     embedder = get_embedder(config)
     if provider == "ollama":
-        base_url = str(embedder._embedder._model.base_url)  # type: ignore[union-attr]  # ty: ignore[unresolved-attribute]
+        base_url = str(embedder._embedder._model.base_url)  # type: ignore[union-attr]  # ty: ignore[missing-union-attribute]
     else:
-        base_url = embedder._base_url  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        base_url = embedder._base_url  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     assert base_url.rstrip("/") == "http://my-host:8000/v1"
 
 
@@ -78,7 +78,7 @@ def test_sdk_providers_are_wired_without_a_request(
     assert embedder.vector_dim == 1024
     assert embedder.supports_images is False
     # The provider and model reach the underlying pydantic-ai embedder.
-    assert embedder._embedder._model == f"{provider}:{name}"  # ty: ignore[unresolved-attribute]
+    assert embedder._embedder._model == f"{provider}:{name}"  # ty: ignore[missing-union-attribute]
 
 
 def test_cohere_floats_rejects_missing_embeddings():
@@ -116,7 +116,7 @@ def test_openai_embedder_api_key_from_config():
     embedder = get_embedder(config)
 
     assert embedder._vector_dim == 768
-    assert embedder._embedder.model._client.api_key == "sk-vendor-a"  # ty: ignore[unresolved-attribute]
+    assert embedder._embedder.model._client.api_key == "sk-vendor-a"  # ty: ignore[missing-union-attribute, missing-attribute]
 
 
 def test_ollama_embedder_api_key_from_config():
@@ -138,10 +138,10 @@ def test_ollama_embedder_api_key_from_config():
     embedder = get_embedder(config)
 
     assert embedder._vector_dim == 512
-    assert str(embedder._embedder.model._client.base_url).startswith(  # ty: ignore[unresolved-attribute]
+    assert str(embedder._embedder.model._client.base_url).startswith(  # ty: ignore[missing-union-attribute, missing-attribute]
         "http://custom-ollama:8080/v1"
     )
-    assert embedder._embedder.model._client.api_key == "sk-proxy"  # ty: ignore[unresolved-attribute]
+    assert embedder._embedder.model._client.api_key == "sk-proxy"  # ty: ignore[missing-union-attribute, missing-attribute]
 
 
 @pytest.mark.parametrize("multimodal", [False, True])
@@ -161,7 +161,7 @@ def test_vllm_embedder_api_key_from_config(multimodal):
 
     embedder = get_embedder(config)
 
-    assert embedder._headers()["Authorization"] == "Bearer sk-vllm"  # ty: ignore[unresolved-attribute]
+    assert embedder._headers()["Authorization"] == "Bearer sk-vllm"  # ty: ignore[missing-attribute]
 
 
 def test_embedder_api_key_rejected_on_unplumbed_provider():

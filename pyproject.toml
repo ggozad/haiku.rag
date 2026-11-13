@@ -100,7 +100,7 @@ dev = [
     "pydantic-ai-slim[google]",
     "pydantic-ai-slim[groq]",
     "pydantic-ai-slim[mistral]",
-    "ty>=0.0.78",
+    "ty>=0.0.103",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
@@ -163,9 +163,10 @@ filterwarnings = [
     "error",
     "ignore::UserWarning",
     "ignore::DeprecationWarning",
-    # rapidocr 3.9.2 ships LaTeX in a docstring; beartype's import hook
-    # compiles it, and "error" would make the SyntaxWarning fatal.
-    "ignore:invalid escape sequence:SyntaxWarning",
+    # rapidocr and google-genai ship invalid escapes in string literals, which
+    # beartype's import hook compiles. Python 3.14 puts the escape first in the
+    # message, hence the leading ".*".
+    "ignore:.*invalid escape sequence:SyntaxWarning",
 ]
 
 [tool.coverage.run]

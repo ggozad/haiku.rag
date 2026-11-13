@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import yaml
+from sqlalchemy.engine import make_url
 from typer.testing import CliRunner
 
 from haiku.rag.config import AppConfig, QueueConfig
@@ -293,16 +294,16 @@ def test_run_batch_dry_run_writes_default_manifest(monkeypatch, tmp_path):
         monkeypatch,
     )
 
-    with runner.isolated_filesystem(temp_dir=tmp_path):
-        result = runner.invoke(cli, ["run-batch", "--dry-run"])
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(cli, ["run-batch", "--dry-run"])
 
-        assert result.exit_code == 0
-        assert "Dry run complete: 1 upsert, 1 delete, 2 unchanged -> manifest-" in (
-            result.output
-        )
-        written = list(tmp_path.glob("*/manifest-*.yaml"))
-        assert len(written) == 1
-        data = yaml.safe_load(written[0].read_text())
+    assert result.exit_code == 0
+    assert "Dry run complete: 1 upsert, 1 delete, 2 unchanged -> manifest-" in (
+        result.output
+    )
+    written = list(tmp_path.glob("manifest-*.yaml"))
+    assert len(written) == 1
+    data = yaml.safe_load(written[0].read_text())
 
     assert data["version"] == 1
     assert data["sources"][0]["source_id"] == "docs"
@@ -594,7 +595,8 @@ def test_queue_init_dburi_migrates_the_named_queue(tmp_path):
     )
 
     assert result.exit_code == 0
-    assert f"sqlite+aiosqlite:///{db_path}" in result.output
+    echoed = result.output.removeprefix("Queue initialized at ").strip()
+    assert make_url(echoed).database == str(db_path)
     assert _schema_version(db_path) == SCHEMA_VERSION
 
 
