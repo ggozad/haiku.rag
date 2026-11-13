@@ -202,6 +202,8 @@ jobs:
           python-version-file: ".python-version"
       - name: Install dependencies
         run: uv sync --all-extras
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Cache HuggingFace models
         id: hf-cache
         uses: actions/cache@v6
