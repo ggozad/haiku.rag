@@ -174,13 +174,15 @@ describe("routes", () => {
 
 	it("forwards only the operator actions to the ingester", async () => {
 		const calls = stubFetch(() => new Response("{}"));
-		const send = (method: "POST" | "DELETE", path: string[]) =>
-			(method === "POST" ? ingesterRoute.POST : ingesterRoute.DELETE)(
-				new Request("http://app/x", { method }),
-				{
-					params: Promise.resolve({ path }),
-				},
-			);
+		const routes = {
+			POST: ingesterRoute.POST,
+			PATCH: ingesterRoute.PATCH,
+			DELETE: ingesterRoute.DELETE,
+		};
+		const send = (method: keyof typeof routes, path: string[]) =>
+			routes[method](new Request("http://app/x", { method }), {
+				params: Promise.resolve({ path }),
+			});
 		for (const [method, path] of [
 			["POST", ["sources", "docs", "refresh"]],
 			["POST", ["sources", "docs", "retry"]],
@@ -188,6 +190,9 @@ describe("routes", () => {
 			["POST", ["jobs", "7", "retry"]],
 			["POST", ["dlq", "7", "retry"]],
 			["DELETE", ["jobs", "7"]],
+			["PATCH", ["databases", "docs", "documents", "d1"]],
+			["PATCH", ["databases", "team/docs", "documents", "d1"]],
+			["DELETE", ["databases", "docs", "documents", "d1"]],
 		] as const) {
 			expect((await send(method, [...path])).status).toBe(200);
 		}
@@ -196,10 +201,14 @@ describe("routes", () => {
 			["POST", ["sources", "docs", "prune"]],
 			["DELETE", ["sources", "docs"]],
 			["DELETE", ["jobs", "7", "retry"]],
+			["PATCH", ["jobs", "7"]],
+			["PATCH", ["databases", "docs"]],
+			["DELETE", ["databases", "docs"]],
+			["PATCH", ["databases", "docs", "documents", "d1", "x"]],
 		] as const) {
 			expect((await send(method, [...path])).status).toBe(405);
 		}
-		expect(calls).toHaveLength(6);
+		expect(calls).toHaveLength(9);
 	});
 
 	it("sends no token when none is configured", async () => {

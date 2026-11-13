@@ -7,6 +7,7 @@
 - `HaikuRAG.edit_document(document_id, title=, user_metadata=)` sets a document's title and `metadata["user"]`, leaving every other key as stored.
 - `HaikuRAG.delete_document(..., unowned_only=True)` raises `SourceOwnedError` for a source-owned document.
 - `haiku-ingester` API: `PATCH /databases/{name}/documents/{id}` sets a document's `title` and `metadata.user`, `DELETE /databases/{name}/documents/{id}` deletes a document without a `source_id`.
+- Web app: the inspector edits a document's title and `metadata.user`, and deletes a document without a `source_id`, on a database listed under `ingester.databases`.
 
 ### Changed
 

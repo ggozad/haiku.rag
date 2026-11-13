@@ -10,10 +10,12 @@ function Stateful({
 	source,
 	documentId,
 	onOpenChunk,
+	editable,
 }: {
 	source: string;
 	documentId: string;
 	onOpenChunk: (chunkId: string) => void;
+	editable?: boolean;
 }) {
 	const [state, setState] = useState<DocumentState>(OPENING);
 	return (
@@ -23,6 +25,8 @@ function Stateful({
 			state={state}
 			onState={(change) => setState((prev) => ({ ...prev, ...change }))}
 			onOpenChunk={onOpenChunk}
+			editable={editable}
+			onDeleted={() => {}}
 		/>
 	);
 }
@@ -318,5 +322,65 @@ describe("DocumentView", () => {
 		expect(
 			screen.getByRole("link", { name: "example.org" }).getAttribute("href"),
 		).toBe("https://example.org/d1");
+	});
+
+	it("offers edit controls only on an editable database", async () => {
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
+		await screen.findByText("Title of d1");
+		expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+		cleanup();
+
+		render(
+			<Stateful
+				source="alpha"
+				documentId="d1"
+				onOpenChunk={() => {}}
+				editable
+			/>,
+		);
+		await screen.findByText("Title of d1");
+		expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+	});
+
+	it("shows the editor metadata", async () => {
+		vi.stubGlobal(
+			"fetch",
+			serve("d1", { user: { reviewer: "ana", tags: ["a"] } }),
+		);
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
+		const reviewer = await screen.findByText("ana");
+		expect(reviewer.closest("dl")?.textContent).toContain('["a"]');
+	});
+
+	it("shows a saved edit while the document stays open", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) =>
+				url.includes("/api/ingester/")
+					? Response.json({
+							id: "d1",
+							title: "Edited",
+							uri: "doc://d1",
+							metadata: {},
+							created_at: "t",
+							updated_at: "t",
+						})
+					: serve("d1")(url),
+			),
+		);
+		const user = userEvent.setup();
+		render(
+			<Stateful
+				source="alpha"
+				documentId="d1"
+				onOpenChunk={() => {}}
+				editable
+			/>,
+		);
+		await screen.findByText("Title of d1");
+		await user.click(screen.getByRole("button", { name: "Edit" }));
+		await user.click(screen.getByRole("button", { name: "Save" }));
+
+		expect(await screen.findByRole("heading", { name: "Edited" })).toBeTruthy();
 	});
 });

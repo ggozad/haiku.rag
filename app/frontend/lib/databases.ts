@@ -8,6 +8,7 @@ export interface DatabaseEntry {
 	name: string;
 	available: boolean;
 	error: string | null;
+	tag?: string | null;
 	documents?: number;
 	chunks?: number;
 	supports_image_search?: boolean;
