@@ -231,7 +231,7 @@ processing:
       max_tokens: 200
 ```
 
-The model is called at `/v1/chat/completions` under its `base_url`, which may be written with or without `/v1`. Without a `base_url`, only `ollama` and `openai` are accepted. Writing a `model` block replaces the default `thinking: false`, so set it explicitly on a model that thinks by default. `timeout` and `max_tokens` bound each call during conversion. `rebuild --descriptions` runs the same model through Pydantic AI and does not apply them.
+The model is called at `/v1/chat/completions` under its `base_url`, which may be written with or without `/v1`. Without a `base_url`, only `ollama` and `openai` are accepted. Writing a `model` block replaces the default `thinking: false`, so set it explicitly on a model that thinks by default. `timeout` and `max_tokens` bound each call during conversion. `rebuild --descriptions` and video frame descriptions run the same model through Pydantic AI and do not apply them.
 
 **Switching modes on an existing database** doesn't require reingesting when the bytes are already stored:
 
@@ -345,6 +345,11 @@ A video also yields frames as pictures, sampled every `interval_seconds` or at
 scene changes, at most `max_frames`, and each with its time. `pictures: none`
 turns sampling off. A video needs `ffmpeg` on `PATH`, and so does audio
 transcribed with a preset. Audio sent to a server does not.
+
+With `pictures: description`, each frame is described by the picture
+description model after conversion, with either converter. A frame whose call
+fails stays undescribed, and the warning for a document without descriptions
+fires only when no frame was described.
 
 Audio and video convert on a docling converter of their own, one file at a
 time, so a long transcription never holds up other documents. A recording

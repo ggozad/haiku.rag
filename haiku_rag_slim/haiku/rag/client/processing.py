@@ -10,7 +10,11 @@ from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
-from haiku.rag.store.models.document_item import _picture_description_text, time_range
+from haiku.rag.store.models.document_item import (
+    _decode_picture_bytes,
+    _picture_description_text,
+    time_range,
+)
 from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
 
@@ -54,6 +58,26 @@ def _warn_if_descriptions_missing(
             model.base_url or "<provider default>",
             model.name,
         )
+
+
+async def _describe_frames(config: AppConfig, doc: "DoclingDocument") -> None:
+    """Describe video frames, which docling's video pipeline leaves undescribed."""
+    if config.processing.pictures != "description":
+        return
+    from haiku.rag.providers.picture_description import (
+        describe_pictures,
+        set_picture_descriptions,
+        undescribed_pictures,
+    )
+
+    frames = {
+        p.self_ref: data
+        for p in undescribed_pictures(doc)
+        if time_range([p]) is not None
+        and (data := _decode_picture_bytes(p)) is not None
+    }
+    if frames:
+        set_picture_descriptions(doc, await describe_pictures(frames, config=config))
 
 
 def _write_fetch_body_sync(body: bytes, suffix: str) -> Path:
@@ -113,7 +137,9 @@ async def convert(
             return await convert_pdf_with_splitting(
                 converter, file_path, effective_uri, config.processing.split_pages
             )
-        return await converter.convert_file(file_path, source_uri=effective_uri)
+        doc = await converter.convert_file(file_path, source_uri=effective_uri)
+        await _describe_frames(config, doc)
+        return doc
 
     if isinstance(source, Path):
         if not source.exists():
