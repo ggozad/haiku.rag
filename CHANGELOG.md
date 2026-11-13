@@ -8,6 +8,7 @@
 - `HaikuRAG.delete_document(..., unowned_only=True)` raises `SourceOwnedError` for a source-owned document.
 - `haiku-ingester` API: `PATCH /databases/{name}/documents/{id}` sets a document's `title` and `metadata.user`, `DELETE /databases/{name}/documents/{id}` deletes a document without a `source_id`.
 - Web app: the inspector edits a document's title and `metadata.user`, and deletes a document without a `source_id`, on a database listed under `ingester.databases`.
+- `document_items.start_time` and `end_time`, and chunk metadata `time_range`: the time in seconds of a transcript item or chunk, from docling's `TrackSource`. Existing databases need `haiku-rag migrate`.
 
 ### Changed
 

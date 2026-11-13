@@ -1,5 +1,5 @@
 import base64
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -23,6 +23,23 @@ class DocumentItem(BaseModel):
     picture_data: bytes | None = None
     heading_level: int = 0
     tree_depth: int = 0
+    start_time: float | None = None
+    end_time: float | None = None
+
+
+def time_range(items: Iterable[Any]) -> tuple[float, float] | None:
+    """Earliest start and latest end of the items' `TrackSource`s, in seconds."""
+    from docling_core.types.doc import TrackSource
+
+    tracks = [
+        s
+        for item in items
+        for s in getattr(item, "source", None) or []
+        if isinstance(s, TrackSource)
+    ]
+    if not tracks:
+        return None
+    return min(t.start_time for t in tracks), max(t.end_time for t in tracks)
 
 
 def _picture_description_text(item: "PictureItem") -> str | None:
@@ -212,6 +229,7 @@ def extract_items(
                 picture_data = existing.get(item.self_ref)
 
         heading_level = item.level if isinstance(item, SectionHeaderItem) else 0
+        times = time_range([item])
 
         items.append(
             DocumentItem(
@@ -224,6 +242,8 @@ def extract_items(
                 picture_data=picture_data,
                 heading_level=heading_level,
                 tree_depth=level,
+                start_time=times[0] if times else None,
+                end_time=times[1] if times else None,
             )
         )
 

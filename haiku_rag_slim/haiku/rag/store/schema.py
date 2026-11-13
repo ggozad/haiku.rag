@@ -118,6 +118,8 @@ class DocumentItemRecord(LanceModel):
     picture_data: bytes | None = None
     heading_level: int = Field(default=0)
     tree_depth: int = Field(default=0)
+    start_time: float | None = None
+    end_time: float | None = None
 
 
 def get_document_items_arrow_schema() -> pa.Schema:

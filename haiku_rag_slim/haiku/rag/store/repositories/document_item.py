@@ -18,6 +18,8 @@ _METADATA_COLUMNS = [
     "page_numbers",
     "heading_level",
     "tree_depth",
+    "start_time",
+    "end_time",
 ]
 
 
@@ -37,6 +39,8 @@ class DocumentItemRepository:
             page_numbers=json.loads(row.get("page_numbers", "[]")),
             heading_level=row.get("heading_level", 0) or 0,
             tree_depth=row.get("tree_depth", 0) or 0,
+            start_time=row.get("start_time"),
+            end_time=row.get("end_time"),
         )
 
     def _to_record(self, document_id: str, item: DocumentItem) -> DocumentItemRecord:
@@ -50,6 +54,8 @@ class DocumentItemRepository:
             picture_data=item.picture_data,
             heading_level=item.heading_level,
             tree_depth=item.tree_depth,
+            start_time=item.start_time,
+            end_time=item.end_time,
         )
 
     async def create_items(self, document_id: str, items: list[DocumentItem]) -> None:

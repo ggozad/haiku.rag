@@ -30,7 +30,7 @@ haiku_rag_slim/haiku/rag/   # Source code
 │   ├── info.py             # gather_database_info, get_database_stats, DatabaseInfo
 │   ├── models/             # Domain models: chunk (Chunk, SearchResult), document, document_item, citation
 │   ├── repositories/       # CRUD: DocumentRepository, ChunkRepository, DocumentItemRepository, SettingsRepository
-│   ├── upgrades/           # Version migrations (v0_75_0 … v0_91_0)
+│   ├── upgrades/           # Version migrations (v0_75_0 … v0_112_0)
 │   └── exceptions.py       # ReadOnlyError, MigrationRequiredError, UpgradeRequiredError, AmbiguousDatabaseError,
 │                           # UnknownDatabaseError, AmbiguousCitationError, SourceUnavailableError, ConfigMismatchError, TagError
 ├── embeddings/             # VoyageAI, Cohere, vLLM, OpenRouter (ollama/openai via pydantic-ai)
