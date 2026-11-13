@@ -1606,7 +1606,7 @@ async def test_a_worker_survives_a_failed_claim(client, jobs, sync, monkeypatch)
             await pool.stop()
 
     assert len(records) == 1
-    assert records[0].exc_info is not None
+    assert isinstance(records[0].exc_info, tuple)
     assert isinstance(records[0].exc_info[1], OperationalError)
 
 
@@ -1684,7 +1684,7 @@ async def test_a_job_whose_processing_raised_is_reaped_and_completed(
             await pool.stop()
 
     assert len(records) == 1
-    assert records[0].exc_info is not None
+    assert isinstance(records[0].exc_info, tuple)
     assert isinstance(records[0].exc_info[1], RuntimeError)
 
 
@@ -1716,7 +1716,7 @@ async def test_the_reaper_survives_a_failed_pass(client, jobs, sync, conn, monke
 
     assert passes >= 3
     assert len(records) == 1
-    assert records[0].exc_info is not None
+    assert isinstance(records[0].exc_info, tuple)
     assert isinstance(records[0].exc_info[1], OperationalError)
 
 

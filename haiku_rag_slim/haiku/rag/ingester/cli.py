@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -223,7 +223,7 @@ def _write_manifest(manifest: BatchManifest, path: Path) -> None:
 @contextmanager
 def _batch_progress(
     description: str,
-) -> "Iterator[BatchProgressCallback | None]":  # pragma: no cover
+) -> "Generator[BatchProgressCallback | None, None, None]":  # pragma: no cover
     console = Console(file=sys.stdout)
     if not console.is_terminal:
         yield None

@@ -173,7 +173,7 @@ class SearchModal(Screen):
         from haiku.rag.inspector.widgets.visual_modal import VisualGroundingModal
 
         # Use app's _switch_modal to close this modal before opening visual
-        await self.app._switch_modal(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        await self.app._switch_modal(  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
             VisualGroundingModal(
                 chunk=chunk,
                 client=self.client,

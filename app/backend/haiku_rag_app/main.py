@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -102,7 +102,7 @@ class Configuration:
         self._reload_lock = asyncio.Lock()
 
     @asynccontextmanager
-    async def use(self) -> AsyncIterator[Databases]:
+    async def use(self) -> AsyncGenerator[Databases, None]:
         databases = self.current
         databases.requests += 1
         try:

@@ -544,7 +544,7 @@ async def test_a_run_paused_for_deferred_results_is_not_a_violation(
         *completion,
     ]
 
-    agent = Agent(  # ty: ignore[no-matching-overload]
+    agent = Agent(
         scripted(responses),
         deps_type=Deps,
         output_type=[str, DeferredToolRequests],
@@ -562,13 +562,13 @@ async def test_a_run_paused_for_deferred_results_is_not_a_violation(
     with patch.object(RAGCapability, "_search", stub_search):
         paused = await agent.run(
             "what does the supervisor do?",
-            deps=deps,  # ty: ignore[invalid-argument-type]
+            deps=deps,
         )
         assert isinstance(paused.output, DeferredToolRequests)
         assert deps.state["citation_policy"]["violations"] == []
 
         resumed = await agent.run(
-            deps=deps,  # ty: ignore[invalid-argument-type]
+            deps=deps,
             message_history=paused.all_messages(),
             deferred_tool_results=DeferredToolResults(
                 calls={"call-2": "external result"}

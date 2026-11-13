@@ -39,7 +39,7 @@ class DecisionModel:
     system_prompts: list[str] = field(default_factory=list)
 
     def __call__(self, messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
-        system, user = (str(part.content) for part in messages[0].parts)  # ty: ignore[unresolved-attribute]
+        system, user = (str(part.content) for part in messages[0].parts)  # ty: ignore[missing-union-attribute]
         self.system_prompts.append(system)
         task = json.loads(user)
         self.tasks.append(task)

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -1070,7 +1070,7 @@ class Store:
         return {name: await table.version() for name, table in self._tables().items()}
 
     @asynccontextmanager
-    async def write_transaction(self) -> AsyncIterator[None]:
+    async def write_transaction(self) -> AsyncGenerator[None, None]:
         """Hold the write lock for a multi-table mutation, restoring every table
         to its pre-mutation version if the mutation fails.
 

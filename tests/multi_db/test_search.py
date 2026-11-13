@@ -272,7 +272,7 @@ class TestRerankerFusion:
         async def boom():
             raise RuntimeError("close failed")
 
-        sessions["alpha"].aclose = boom  # ty: ignore[invalid-assignment]
+        sessions["alpha"].aclose = boom
         beta = sessions["beta"].store
 
         await rag.__aexit__(None, None, None)

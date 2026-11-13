@@ -3,7 +3,7 @@ import json
 import os
 import signal
 import sys
-from collections.abc import AsyncIterator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Callable, Coroutine
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from itertools import zip_longest
@@ -195,7 +195,7 @@ class Sandbox:
     @asynccontextmanager
     async def _connection(
         self, owner: "HaikuRAG | None" = None
-    ) -> "AsyncIterator[HaikuRAG]":
+    ) -> "AsyncGenerator[HaikuRAG, None]":
         """Yield the shared connection, or an ephemeral read-only one.
 
         The lock, where there is one, is held for the block: what a caller does

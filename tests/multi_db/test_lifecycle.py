@@ -324,7 +324,7 @@ class TestReleasingAClient:
             closed.append("set")
             await real()
 
-        session.aclose = counting  # ty: ignore[invalid-assignment]
+        session.aclose = counting
 
         await rag.aclose()
         await rag.aclose()

@@ -149,7 +149,7 @@ class TestGetReranker:
             )
         )
         reranker = get_reranker(config)
-        assert reranker._headers["Authorization"] == "Bearer sk-rerank"  # ty: ignore[unresolved-attribute]
+        assert reranker._headers["Authorization"] == "Bearer sk-rerank"  # ty: ignore[missing-attribute]
 
     def test_api_key_rejected_on_unplumbed_provider(self):
         """Providers whose client we never build read their own vendor

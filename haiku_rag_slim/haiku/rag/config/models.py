@@ -749,7 +749,7 @@ class HTTPSourceConfig(_SourceBase):
     type: Literal["http"]
     # HTTP sources have no natural key to derive an id from (a list of urls
     # has no canonical representation), so require one.
-    id: str
+    id: str  # ty: ignore[incompatible-mutable-override]
     urls: list[str] = []
     headers: dict[str, str] = Field(default_factory=dict)
 
@@ -769,7 +769,7 @@ class WebDAVSourceConfig(_SourceBase):
     type: Literal["webdav"]
     # base_url can be deep + opaque (long URL paths, credentials embedded);
     # require an explicit short id for the queue and logs.
-    id: str
+    id: str  # ty: ignore[incompatible-mutable-override]
     base_url: str
     username: str | None = None
     password: str | None = None
@@ -785,7 +785,7 @@ class PluginSourceConfig(_SourceBase):
 
     type: Literal["plugin"]
     # No natural key to derive an id from; require an explicit one.
-    id: str
+    id: str  # ty: ignore[incompatible-mutable-override]
     plugin: str = Field(
         description="Name of a source factory registered under the "
         "'haiku.rag.sources' entry-point group."

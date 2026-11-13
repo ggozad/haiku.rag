@@ -1,6 +1,6 @@
 import asyncio
 import base64
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
@@ -27,7 +27,7 @@ def png(width: int = 8, height: int = 8) -> str:
 @asynccontextmanager
 async def served(
     config: AppConfig, sessions_path: Path, config_path: Path | None = None
-) -> AsyncIterator[tuple[Starlette, httpx.AsyncClient]]:
+) -> AsyncGenerator[tuple[Starlette, httpx.AsyncClient], None]:
     """An app over `config` and a client of it, closed on exit."""
     app = create_app(config, sessions_path=sessions_path, config_path=config_path)
     try:

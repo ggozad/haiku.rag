@@ -294,7 +294,7 @@ async def test_fs_source_fetch_reads_off_event_loop_thread(fs_root: Path):
         called_from.append(threading.current_thread())
         return original(path, uri)
 
-    src._read_body = spy  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
+    src._read_body = spy  # type: ignore[method-assign]
 
     result = await src.fetch(target.as_uri())
     assert result.body == b"alpha"

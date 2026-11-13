@@ -100,7 +100,7 @@ dev = [
     "pydantic-ai-slim[google]",
     "pydantic-ai-slim[groq]",
     "pydantic-ai-slim[mistral]",
-    "ty>=0.0.78",
+    "ty>=0.0.103",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",

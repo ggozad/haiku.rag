@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -65,7 +65,7 @@ _CENTRAL_CASSETTE_SUITES = frozenset(
 @contextmanager
 def capture_logs(
     logger: logging.Logger, level: int
-) -> Iterator[list[logging.LogRecord]]:
+) -> Generator[list[logging.LogRecord], None, None]:
     """Collect records emitted by ``logger`` at or above ``level``.
 
     Attaches directly to the given logger instead of using ``caplog``:
@@ -88,7 +88,9 @@ def capture_logs(
 
 
 @contextmanager
-def serving_url(content: bytes, content_type: str, status: int = 200) -> Iterator[None]:
+def serving_url(
+    content: bytes, content_type: str, status: int = 200
+) -> Generator[None, None, None]:
     """Answer every streamed httpx request with one response."""
     import httpx
 

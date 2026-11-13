@@ -2,7 +2,7 @@ import asyncio
 import logging
 import signal
 import sys
-from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Collection, Mapping
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -181,7 +181,7 @@ class _Database:
     edits_done: asyncio.Condition = field(default_factory=asyncio.Condition)
 
     @asynccontextmanager
-    async def editing(self) -> AsyncIterator["HaikuRAG"]:
+    async def editing(self) -> AsyncGenerator["HaikuRAG", None]:
         self.edits += 1
         try:
             yield self.client

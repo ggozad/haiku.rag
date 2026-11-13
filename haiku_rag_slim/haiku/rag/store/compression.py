@@ -1,10 +1,10 @@
 import json
 
 try:  # pragma: no cover
-    from compression.zstd import (  # ty: ignore[unresolved-import]
+    from compression.zstd import (  # ty: ignore[import-not-found]
         compress as _zstd_compress,  # type: ignore[import-not-found]
     )
-    from compression.zstd import (  # ty: ignore[unresolved-import]
+    from compression.zstd import (  # ty: ignore[import-not-found]
         decompress as _zstd_decompress,  # type: ignore[import-not-found]
     )
 except ImportError:
