@@ -101,6 +101,70 @@ async def two_pages(seeded):
     return document.id, [c.id for c in chunks]
 
 
+@pytest.fixture
+async def recording(seeded):
+    """A transcript of one sentence and one frame, chunked together."""
+    from docling_core.types.doc import ContentLayer, TrackSource
+    from docling_core.types.doc.document import DoclingDocument, ImageRef
+    from docling_core.types.doc.labels import DocItemLabel
+
+    doc = DoclingDocument(name="recording")
+    doc.add_text(
+        label=DocItemLabel.TEXT,
+        text="The crew moved into the lunar module.",
+        content_layer=ContentLayer.BODY,
+        source=TrackSource(start_time=4.48, end_time=7.6),
+    )
+    doc.add_picture(
+        image=ImageRef.from_pil(Image.new("RGB", (96, 96), "green"), dpi=72),
+        content_layer=ContentLayer.BODY,
+        source=TrackSource(start_time=10.0, end_time=10.001),
+    )
+
+    config, _ = seeded
+    dim = config.embeddings.model.vector_dim
+    async with HaikuRAG(config=config, sources=["alpha"]) as rag:
+        document = await rag.import_document(
+            doc,
+            [
+                Chunk(
+                    content="The crew moved into the lunar module.",
+                    embedding=[0.1] * dim,
+                    order=0,
+                    metadata={
+                        "doc_item_refs": ["#/texts/0", "#/pictures/0"],
+                        "time_range": [4.48, 10.001],
+                    },
+                )
+            ],
+            uri="test://alpha/recording",
+            title="recording",
+        )
+    return document.id
+
+
+async def test_a_frame_carries_its_time(client, recording):
+    body = (
+        await client.get(f"/api/inspect/alpha/documents/{recording}/pictures")
+    ).json()
+    [frame] = body["pictures"]
+    assert frame["time_range"] == [10.0, 10.001]
+    assert frame["page_numbers"] == []
+
+
+async def test_a_search_result_carries_its_time(client, recording, query_embedding):
+    body = (
+        await client.post(
+            "/api/search", json={"query": "lunar module", "sources": ["alpha"]}
+        )
+    ).json()
+    rows = {row["document_id"]: row for row in body["results"]}
+    assert rows[recording]["time_range"] == [4.48, 10.001]
+    assert {
+        r["time_range"] for r in body["results"] if r["document_id"] != recording
+    } == {None}
+
+
 async def test_pages_list_their_chunks_and_draw_them(client, two_pages):
     document_id, (first, picture) = two_pages
     base = f"/api/inspect/alpha/documents/{document_id}/pages"
@@ -147,6 +211,7 @@ async def test_pictures_carry_caption_description_and_chunk(client, two_pages):
             "caption": "Figure 1.",
             "description": "A red square.",
             "page_numbers": [2],
+            "time_range": None,
             "chunk_id": picture,
         }
     ]
