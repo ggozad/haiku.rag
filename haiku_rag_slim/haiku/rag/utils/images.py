@@ -93,13 +93,26 @@ def build_image_content_from_results(
     exclude: AbstractSet[PictureKey] = frozenset(),
 ) -> tuple[list[str | BinaryContent], set[PictureKey]]:
     """Decode and validate picture bytes attached to search results, labelled."""
+    from haiku.rag.utils.formatting import format_time_range
+
     collected, emitted = collect_pictures(results, exclude)
+    frame_times = {
+        (r.source, r.chunk_id, ref): at
+        for r in results
+        for ref, at in r.picture_times.items()
+    }
     content: list[str | BinaryContent] = []
     total = len(collected)
     for position, (source, chunk_id, self_ref, picture) in enumerate(collected, 1):
         collection = f"Collection: {source}. " if include_collection and source else ""
+        at = frame_times.get((source, chunk_id, self_ref))
+        kind = (
+            f"Video frame at {format_time_range((at, at))}, {position} of {total}"
+            if at is not None
+            else f"Page image {position} of {total}"
+        )
         content.append(
-            f"Page image {position} of {total}, retrieved from the knowledge base "
+            f"{kind}, retrieved from the knowledge base "
             f"for search result [{chunk_id}] ({self_ref}). {collection}"
             f"Not provided by the user. {RETRIEVED_IMAGE_TAG}"
         )

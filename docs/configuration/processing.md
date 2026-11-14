@@ -323,12 +323,18 @@ processing:
 Without `media`, audio and video files are not supported, and a source skips
 them. With it, `docling-local` transcribes `.wav`, `.mp3`, `.m4a`, `.aac`,
 `.ogg` and `.flac` files, and `.mp4`, `.avi`, `.mov`, `.mkv` and `.webm` videos.
-A transcript is one text item per sentence, each with its start and end time.
-Search results and citations carry the time range of their items.
+A transcript is a series of text items, each with its start and end time.
+docling ends an item only where a segment from the server ends a sentence, so
+one item can span minutes of speech. Search results and citations carry the
+time range of their items.
 
 `asr` is a transcription server or a docling preset. A server answers
 `/audio/transcriptions` with `response_format=verbose_json`, such as vLLM
-serving a Whisper model, and receives the audio. A preset transcribes
+serving a Whisper model, and receives the audio. The whole recording goes in one
+request, a video's audio as 16 kHz WAV of about 110 MB per hour, so `timeout`
+must cover the transcription. vLLM refuses audio longer than 600 s or larger
+than 25 MB unless `VLLM_MAX_AUDIO_DECODE_DURATION_S` and
+`VLLM_MAX_AUDIO_CLIP_FILESIZE_MB` are raised. A preset transcribes
 in-process with Whisper and needs the `asr` extra:
 
 ```yaml
@@ -342,9 +348,16 @@ Names ending in `_mlx`, `_native` or `_s2t` choose a backend explicitly. An
 unknown name fails when the converter starts and lists the known ones.
 
 A video also yields frames as pictures, sampled every `interval_seconds` or at
-scene changes, at most `max_frames`, and each with its time. `pictures: none`
-turns sampling off. A video needs `ffmpeg` on `PATH`, and so does audio
-transcribed with a preset. Audio sent to a server does not.
+scene changes, at most `max_frames`, and each with its time. Fixed-interval
+sampling stops at `max_frames`, so a video longer than `max_frames ×
+interval_seconds` has no frames after that point. `pictures: none` turns
+sampling off. A video needs `ffmpeg` on `PATH`, and so does audio transcribed
+with a preset. Audio sent to a server does not.
+
+A search result from a transcript carries up to four of the frames shown while
+it is spoken, spread over its time range, and a citation of it records them.
+With a multimodal embedder, each frame is also its own chunk, found by its
+image.
 
 With `pictures: description`, each frame is described by the picture
 description model after conversion, with either converter. A frame whose call

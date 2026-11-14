@@ -128,6 +128,7 @@
               "labels": [],
               "image_data": null,
               "picture_captions": {},
+              "picture_times": {},
               "annotations": null
             }
           ]
@@ -215,6 +216,7 @@
               "labels": [],
               "image_data": null,
               "picture_captions": {},
+              "picture_times": {},
               "annotations": null
             }
           ]

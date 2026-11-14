@@ -180,6 +180,7 @@ class SearchResult(BaseModel):
     labels: list[str] = []
     image_data: dict[str, str] | None = None
     picture_captions: dict[str, str] = {}
+    picture_times: dict[str, float] = {}
     annotations: list[str] | None = None
 
     @classmethod
