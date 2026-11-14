@@ -37,7 +37,11 @@ from collections.abc import Set as AbstractSet
 from typing import Any
 
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.store.models.document_item import DocumentItem, merge_time_ranges
+from haiku.rag.store.models.document_item import (
+    DocumentItem,
+    merge_time_ranges,
+    spread_frames,
+)
 
 _NOISE_LABELS = {"page_header", "page_footer", "document_index"}
 _SECTION_BOUNDARY_LABELS = {"section_header", "title"}
@@ -417,6 +421,7 @@ def _build_result(
     surviving_refs = set(refs)
     merged_image_data: dict[str, str] = {}
     merged_captions: dict[str, str] = {}
+    merged_times: dict[str, float] = {}
     merged_annotations: dict[str, None] = {}
     for r in original_results:
         if r.doc_item_refs and not surviving_refs.intersection(r.doc_item_refs):
@@ -425,8 +430,15 @@ def _build_result(
             merged_image_data.update(r.image_data)
         if r.picture_captions:
             merged_captions.update(r.picture_captions)
+        merged_times.update(r.picture_times)
         if r.annotations:
             merged_annotations.update(dict.fromkeys(r.annotations))
+
+    kept_frames = spread_frames(merged_times)
+    for ref in set(merged_times) - set(kept_frames):
+        merged_image_data.pop(ref, None)
+        merged_captions.pop(ref, None)
+        del merged_times[ref]
 
     return SearchResult(
         content=expanded_content,
@@ -446,6 +458,7 @@ def _build_result(
         labels=sorted(labels) or first.labels,
         image_data=merged_image_data or None,
         picture_captions=merged_captions,
+        picture_times=merged_times,
         annotations=list(merged_annotations) or None,
     )
 

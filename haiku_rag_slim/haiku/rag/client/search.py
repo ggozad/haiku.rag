@@ -8,7 +8,7 @@ from haiku.rag.store.models.chunk import (
     SearchType,
     qualified_id,
 )
-from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
+from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, spread_frames
 from haiku.rag.utils.concurrency import gather_all
 
 if TYPE_CHECKING:
@@ -390,6 +390,9 @@ async def populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -
     A result carries a picture when its refs include the picture directly, or
     when they include the picture's caption — the common case where a prose
     chunk carrying a figure's caption ranks while the picture is its own chunk.
+    A transcript result, one with a time range and text, carries instead the
+    frames starting in its range, end excluded, at most `MAX_FRAMES_PER_RESULT`
+    spread over it. Every attached frame records its time.
     Costs a fixed number of reads however many documents the result set spans.
     """
     repo = client.document_item_repository
@@ -405,23 +408,46 @@ async def populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -
         for doc_id, doc_results in by_doc.items()
     }
     captions_to_pictures = await repo.get_caption_picture_refs_grouped(refs_by_document)
+    ranges_by_document: dict[str, list[tuple[float, float]]] = {}
+    for doc_id, doc_results in by_doc.items():
+        ranges = [r.time_range for r in doc_results if r.time_range]
+        if ranges:
+            ranges_by_document[doc_id] = ranges
+    frames_by_document = (
+        await repo.get_frame_times_grouped(ranges_by_document)
+        if ranges_by_document
+        else {}
+    )
 
     # Which pictures each result wants, and which to fetch per document.
     result_pictures: list[tuple[SearchResult, list[str]]] = []
     wanted: dict[str, list[str]] = {}
     for doc_id, doc_results in by_doc.items():
         caption_to_picture = captions_to_pictures.get(doc_id, {})
+        frame_times = frames_by_document.get(doc_id, {})
         seen: set[str] = set()
         for r in doc_results:
             pictures: list[str] = []
-            for ref in r.doc_item_refs:
-                picture = (
-                    ref
-                    if ref.startswith(PICTURE_REF_PREFIX)
-                    else caption_to_picture.get(ref)
+            transcript = r.time_range and not all(
+                ref.startswith(PICTURE_REF_PREFIX) for ref in r.doc_item_refs
+            )
+            if transcript:
+                start, end = r.time_range
+                pictures = spread_frames(
+                    {ref: at for ref, at in frame_times.items() if start <= at < end}
                 )
-                if picture and picture not in pictures:
-                    pictures.append(picture)
+            else:
+                for ref in r.doc_item_refs:
+                    picture = (
+                        ref
+                        if ref.startswith(PICTURE_REF_PREFIX)
+                        else caption_to_picture.get(ref)
+                    )
+                    if picture and picture not in pictures:
+                        pictures.append(picture)
+            r.picture_times = {
+                ref: frame_times[ref] for ref in pictures if ref in frame_times
+            }
             if pictures:
                 result_pictures.append((r, pictures))
                 for picture in pictures:

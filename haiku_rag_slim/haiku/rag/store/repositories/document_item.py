@@ -331,6 +331,35 @@ class DocumentItemRepository:
                 texts.setdefault(row["document_id"], {})[row["self_ref"]] = text
         return blobs, texts
 
+    async def get_frame_times_grouped(
+        self, ranges_by_document: Mapping[str, Sequence[tuple[float, float]]]
+    ) -> dict[str, dict[str, float]]:
+        """`{document_id: {self_ref: start_time}}` of the pictures starting in
+        any of each document's `[start, end)` ranges, in one query. Every
+        document needs at least one range."""
+        clauses = []
+        for document_id, ranges in ranges_by_document.items():
+            within = " OR ".join(
+                f"(start_time >= {float(start)} AND start_time < {float(end)})"
+                for start, end in ranges
+            )
+            clauses.append(
+                f"(document_id = '{escape_sql_string(document_id)}' "
+                f"AND label = 'picture' AND ({within}))"
+            )
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["document_id", "self_ref", "start_time"])
+            .where(" OR ".join(clauses))
+            .to_list()
+        )
+        frames: dict[str, dict[str, float]] = {}
+        for row in rows:
+            frames.setdefault(row["document_id"], {})[row["self_ref"]] = row[
+                "start_time"
+            ]
+        return frames
+
     async def get_caption_picture_refs_grouped(
         self, refs_by_document: "Mapping[str, list[str]]"
     ) -> dict[str, dict[str, str]]:
