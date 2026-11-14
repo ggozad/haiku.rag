@@ -100,9 +100,11 @@ def resolve_citations(
         r = by_id.get(chunk_id)
         if not r:
             continue
-        picture_refs = [
-            ref for ref in r.doc_item_refs if ref.startswith(PICTURE_REF_PREFIX)
-        ]
+        picture_refs = (
+            list(r.image_data or {})
+            if r.time_range
+            else [ref for ref in r.doc_item_refs if ref.startswith(PICTURE_REF_PREFIX)]
+        )
         citations.append(
             Citation(
                 document_id=r.document_id or "",

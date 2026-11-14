@@ -1,5 +1,5 @@
 import base64
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
@@ -50,6 +50,20 @@ def time_range(items: Iterable[Any]) -> tuple[float, float] | None:
     if not tracks:
         return None
     return min(t.start_time for t in tracks), max(t.end_time for t in tracks)
+
+
+MAX_FRAMES_PER_RESULT = 4
+
+
+def spread_frames(
+    picture_times: Mapping[str, float], limit: int = MAX_FRAMES_PER_RESULT
+) -> list[str]:
+    """At most `limit` refs, evenly spaced in time order, first and last included."""
+    ordered = sorted(picture_times, key=picture_times.__getitem__)
+    if len(ordered) <= limit:
+        return ordered
+    last = len(ordered) - 1
+    return [ordered[round(i * last / (limit - 1))] for i in range(limit)]
 
 
 def _picture_description_text(item: "PictureItem") -> str | None:
