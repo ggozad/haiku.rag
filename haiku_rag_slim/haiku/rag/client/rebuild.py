@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+from lancedb.index import BTree
 from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import (
@@ -601,12 +602,13 @@ async def _rebuild_embed_only(
         await _populate_staging_table(session)
         await _mark_phase1_complete(session)
 
+    staging_table = await db.open_table(_STAGING_TABLE_NAME)
+    await staging_table.create_index("document_id", config=BTree(), replace=True)
+
     # Recreate the chunks table fresh (idempotent; handles vector-dim
     # changes and discards any partial new chunks from a prior crashed
     # phase 2).
     await _recreate_chunks_table(session, incomplete)
-
-    staging_table = await db.open_table(_STAGING_TABLE_NAME)
 
     pending_records: list[ChunkRecordBase] = []
     yielded_docs: set[str] = set()

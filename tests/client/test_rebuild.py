@@ -106,6 +106,7 @@ async def test_rebuild_embed_only_multi_doc_streams_via_staging(
     the chunks table, then streams doc-by-doc. This test verifies:
 
     - chunks survive across multiple documents (correctness),
+    - staging carries a BTree on document_id while phase 2 reads it,
     - the staging table is dropped at the end (no leak),
     - the rebuild yields every document with chunks, and
     - the recreated chunks table carries an FTS index covering its rows.
@@ -120,11 +121,18 @@ async def test_rebuild_embed_only_multi_doc_streams_via_staging(
         assert chunks_before_1 and chunks_before_2
         ids_before = {c.id for c in chunks_before_1} | {c.id for c in chunks_before_2}
 
-        processed_ids = [
-            doc_id
-            async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY)
-        ]
+        processed_ids = []
+        async for doc_id in client.rebuild_database(mode=RebuildMode.EMBED_ONLY):
+            if not processed_ids:
+                staging = await client.store.db.open_table("chunks_rebuild_staging")
+                staging_indexes = await staging.list_indices()
+            processed_ids.append(doc_id)
 
+        assert ("document_id", "BTree") in {
+            (column, index.index_type)
+            for index in staging_indexes
+            for column in index.columns
+        }
         assert doc1.id in processed_ids
         assert doc2.id in processed_ids
 

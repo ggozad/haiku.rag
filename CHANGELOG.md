@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `rebuild --embed-only` no longer scans its staging table once per document (#867).
+
 ## [0.112.0] - 2026-11-13
 
 ### Added
