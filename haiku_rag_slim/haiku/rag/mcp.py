@@ -143,7 +143,7 @@ def _search_result(results: list[SearchResult], covers_multiple: bool) -> ToolRe
             ImageContent(
                 type="image",
                 data=base64.b64encode(picture.data).decode("ascii"),
-                mime_type="image/png",
+                mime_type=picture.media_type,
             )
         )
     return ToolResult(content=content)

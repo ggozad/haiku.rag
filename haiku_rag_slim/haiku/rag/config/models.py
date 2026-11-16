@@ -350,6 +350,7 @@ class FrameSamplingConfig(ConfigModel):
     mode: Literal["fixed_interval", "scene_change"] = "fixed_interval"
     interval_seconds: float = Field(default=10.0, gt=0)
     max_frames: int = Field(default=200, gt=0)
+    max_width: int | None = Field(default=1280, gt=0)
 
 
 class MediaConfig(ConfigModel):
@@ -439,7 +440,11 @@ class ProcessingConfig(ConfigModel):
                 name
                 for name, value in (
                     ("asr", self.media.asr is not None),
-                    ("frames", self.media.frames != FrameSamplingConfig()),
+                    (
+                        "frames",
+                        self.media.frames.model_copy(update={"max_width": None})
+                        != FrameSamplingConfig(max_width=None),
+                    ),
                 )
                 if value
             }

@@ -517,6 +517,35 @@ class TestMCPSearchResultShape:
         ]
         assert result.structured_content is None
 
+    async def test_a_jpeg_picture_is_sent_as_jpeg(self, mcp_db, monkeypatch):
+        import base64
+        from io import BytesIO
+
+        from mcp.types import ImageContent
+        from PIL import Image as PILImage
+
+        buf = BytesIO()
+        PILImage.new("RGB", (4, 4), "red").save(buf, format="JPEG")
+        self._serve(
+            monkeypatch,
+            [
+                SearchResult(
+                    content="a",
+                    score=0.9,
+                    chunk_id="c1",
+                    document_id="d1",
+                    image_data={
+                        "#/pictures/0": base64.b64encode(buf.getvalue()).decode()
+                    },
+                )
+            ],
+        )
+
+        result = await _call(create_mcp_server(mcp_db), "search_documents", query="q")
+
+        [image] = [block for block in result.content if isinstance(block, ImageContent)]
+        assert image.mime_type == "image/jpeg"
+
     async def test_an_undecodable_picture_yields_no_image(self, mcp_db, monkeypatch):
         import base64
 

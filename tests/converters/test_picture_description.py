@@ -74,6 +74,23 @@ async def test_describe_pictures_returns_text_per_self_ref(monkeypatch):
     assert parts[0].media_type == "image/png"
 
 
+async def test_describe_pictures_sends_a_jpeg_as_jpeg(monkeypatch):
+    from io import BytesIO
+
+    from PIL import Image
+    from pydantic_ai.messages import BinaryContent
+
+    stub = _patch_agent(monkeypatch, outputs=["A red square."])
+    buf = BytesIO()
+    Image.new("RGB", (4, 4), "red").save(buf, format="JPEG")
+
+    await describe_pictures({"#/pictures/0": buf.getvalue()}, config=AppConfig())
+
+    [part] = stub.calls[0]
+    assert isinstance(part, BinaryContent)
+    assert part.media_type == "image/jpeg"
+
+
 async def test_describe_pictures_drops_empty_output(monkeypatch):
     """Pictures whose VLM response is empty/whitespace are dropped from
     the result map. Caller can decide whether the partial result is

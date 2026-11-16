@@ -60,6 +60,42 @@ def _warn_if_descriptions_missing(
         )
 
 
+_FRAME_JPEG_QUALITY = 90
+
+
+def _shrink_frames(config: AppConfig, doc: "DoclingDocument") -> None:
+    """Re-encode video frames as JPEG at most `frames.max_width` pixels wide."""
+    media = config.processing.media
+    if media is None or media.frames.max_width is None:
+        return
+    max_width = media.frames.max_width
+    import base64
+
+    from docling_core.types.doc import ImageRef, Size
+    from PIL import Image
+
+    for picture in doc.pictures:
+        if picture.image is None or time_range([picture]) is None:
+            continue
+        data = _decode_picture_bytes(picture)
+        if data is None:
+            continue
+        with Image.open(io.BytesIO(data)) as image:
+            frame = image.convert("RGB")
+        if frame.width > max_width:
+            height = max(1, round(frame.height * max_width / frame.width))
+            frame = frame.resize((max_width, height))
+        buffer = io.BytesIO()
+        frame.save(buffer, format="JPEG", quality=_FRAME_JPEG_QUALITY)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        picture.image = ImageRef(
+            mimetype="image/jpeg",
+            dpi=picture.image.dpi,
+            size=Size(width=frame.width, height=frame.height),
+            uri=f"data:image/jpeg;base64,{encoded}",
+        )
+
+
 async def _describe_frames(config: AppConfig, doc: "DoclingDocument") -> None:
     """Describe video frames, which docling's video pipeline leaves undescribed."""
     if config.processing.pictures != "description":
@@ -138,6 +174,7 @@ async def convert(
                 converter, file_path, effective_uri, config.processing.split_pages
             )
         doc = await converter.convert_file(file_path, source_uri=effective_uri)
+        await asyncio.to_thread(_shrink_frames, config, doc)
         await _describe_frames(config, doc)
         return doc
 
