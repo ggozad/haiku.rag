@@ -16,6 +16,7 @@ from obstore.exceptions import (
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.client.exceptions import UnsupportedSourceError
+from haiku.rag.converters.exceptions import ConversionFailedError
 from haiku.rag.hooks import Hook
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
 from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
@@ -500,6 +501,7 @@ async def test_a_hook_failure_caused_by_a_transient_error_is_retried(cause):
     "exc, match",
     [
         (UnsupportedSourceError("Unsupported file extension: .xyz"), "Unsupported"),
+        (ConversionFailedError("Failed to parse file: a.csv"), "converter refused"),
         (_http_status_error(401), None),
         (_http_status_error(403), None),
         (_http_status_error(404), None),

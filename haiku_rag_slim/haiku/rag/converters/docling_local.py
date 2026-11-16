@@ -31,6 +31,7 @@ from haiku.rag.converters.text_utils import (
     transcode,
 )
 from haiku.rag.utils.dependencies import raise_missing_extra
+from haiku.rag.utils.errors import causes
 
 if TYPE_CHECKING:
     from docling.backend.abstract_backend import AbstractDocumentBackend
@@ -543,8 +544,9 @@ class DoclingLocalConverter(DocumentConverter):
 
         Raises:
             UnsupportedSourceError: If the extension is not supported.
-            ConversionFailedError: If docling refuses the file or its encoding
-                is not detected, chaining the cause.
+            ConversionFailedError: If docling refuses the file, directly or
+                through a wrapped cause, or its encoding is not detected,
+                chaining the cause.
             ValueError: If the conversion fails for any other reason, chaining
                 the cause.
             TimeoutError: If it exceeds `processing.conversion_timeout`.
@@ -572,7 +574,11 @@ class DoclingLocalConverter(DocumentConverter):
         except (TimeoutError, ConverterWedgedError):
             raise
         except Exception as exc:
-            refused = isinstance(exc, ConversionError | ConversionFailedError)
+            # docling's pipeline wraps a backend's refusal in RuntimeError.
+            refused = any(
+                isinstance(e, ConversionError | ConversionFailedError)
+                for e in (exc, *causes(exc))
+            )
             error = ConversionFailedError if refused else ValueError
             raise error(f"Failed to parse file: {path}: {exc}") from exc
 

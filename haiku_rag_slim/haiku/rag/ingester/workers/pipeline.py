@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import socket
-from collections.abc import Iterator
 from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
@@ -16,6 +15,7 @@ from pydantic import BaseModel
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.converters.exceptions import (
+    ConversionFailedError,
     ConversionTimeoutError,
     ConverterWedgedError,
 )
@@ -26,6 +26,7 @@ from haiku.rag.sources.base import FileTooLargeError
 from haiku.rag.sources.http import HTTPSource, is_failure_marker
 from haiku.rag.sources.registry import resolve_configured_source
 from haiku.rag.telemetry import attach_context, logfire
+from haiku.rag.utils.errors import causes
 from haiku.rag.utils.http import is_transient_status
 
 if TYPE_CHECKING:
@@ -47,22 +48,6 @@ class JobResult(BaseModel):
     content_hash: str | None = None
     deleted: bool = False
     resource_restored: bool = False
-
-
-def _causes(exc: BaseException) -> Iterator[BaseException]:
-    """The exceptions behind `exc`, including every member of a group, such as
-    anyio's group of one failed connection per resolved address."""
-    seen: set[int] = set()
-    pending = [exc.__cause__ or exc.__context__]
-    while pending:
-        cause = pending.pop()
-        if cause is None or id(cause) in seen:
-            continue
-        seen.add(id(cause))
-        yield cause
-        pending.append(cause.__cause__ or cause.__context__)
-        if isinstance(cause, BaseExceptionGroup):
-            pending.extend(cause.exceptions)
 
 
 def _is_transient_cause(cause: BaseException) -> bool:
@@ -100,7 +85,7 @@ def _classify(exc: BaseException) -> Exception:
     if isinstance(exc, HookError):
         # A hook's own bug repeats on every retry. Its call to a service that
         # failed transiently does not.
-        if any(_is_transient_cause(cause) for cause in _causes(exc)):
+        if any(_is_transient_cause(cause) for cause in causes(exc)):
             return TransientError(str(exc))
         return PermanentError(str(exc))
 
@@ -118,6 +103,9 @@ def _classify(exc: BaseException) -> Exception:
         # Another document wedged the converter. This one is not at fault and
         # must survive to be retried after the restart.
         return TransientError(f"converter wedged: {exc}")
+
+    if isinstance(exc, ConversionFailedError):
+        return PermanentError(f"converter refused: {exc}")
 
     if isinstance(exc, ValueError):
         # Some downstream libraries (e.g. docling) raise plain ValueError

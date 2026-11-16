@@ -2,10 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- A PDF attachment refused by docling-local, such as a malformed CSV, is skipped instead of failing its PDF.
+
 ### Fixed
 
 - `rebuild --embed-only` no longer scans its staging table once per document (#867).
 - A PDF converted with `processing.split_pages` no longer fails when a slice's temporary file cannot be deleted (#869).
+- `haiku-ingester` dead-letters a file on its first attempt when docling-local refuses to parse it or cannot detect its text encoding (#872).
 
 ## [0.112.0] - 2026-11-13
 

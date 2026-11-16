@@ -10,7 +10,10 @@ from typing import TYPE_CHECKING
 import pypdfium2 as pdfium
 
 from haiku.rag.client.exceptions import UnsupportedSourceError
-from haiku.rag.converters.exceptions import ConverterWedgedError
+from haiku.rag.converters.exceptions import (
+    ConversionFailedError,
+    ConverterWedgedError,
+)
 from haiku.rag.telemetry import logfire
 
 # libpdfium has global state and is not thread-safe. Every in-process pdfium
@@ -84,10 +87,9 @@ async def convert_pdf_with_splitting(
 
     Slices are produced lazily — only one slice's bytes live in memory at a
     time, so peak working set stays bounded regardless of page count. A
-    single slice failure aborts the whole job (raised as ``ValueError`` so
-    the ingester pipeline classifies it as ``TransientError`` and the queue
-    retries the entire document). Per-slice retry would risk interleaved
-    partial state with subsequent runs and is not worth the complexity.
+    single slice failure aborts the whole document. ``TimeoutError`` and
+    ``ConverterWedgedError`` pass through unchanged, a refused slice raises
+    ``ConversionFailedError``, and any other failure ``ValueError``.
     """
     from docling_core.types.doc.document import DoclingDocument
 
@@ -123,7 +125,12 @@ async def convert_pdf_with_splitting(
                     except (TimeoutError, ConverterWedgedError):
                         raise
                     except Exception as exc:
-                        raise ValueError(
+                        error = (
+                            ConversionFailedError
+                            if isinstance(exc, ConversionFailedError)
+                            else ValueError
+                        )
+                        raise error(
                             f"Failed to convert slice pages {start}-{end} of {path}: {exc}"
                         ) from exc
                 converted.append(slice_doc)

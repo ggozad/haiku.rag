@@ -331,3 +331,24 @@ async def test_convert_raises_the_conversion_error_when_the_slice_cannot_be_dele
         f"Could not delete PDF slice {path}: [Errno 13] The process cannot access "
         "the file"
     ]
+
+
+async def test_convert_raises_conversion_failed_when_the_converter_refuses_a_slice(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.converters.exceptions import ConversionFailedError
+
+    src = _make_pdf(2, tmp_path)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+
+    class _RefusingConverter:
+        async def convert_file(self, path: Path, *, source_uri):
+            raise ConversionFailedError("File format not allowed")
+
+    with pytest.raises(ConversionFailedError, match="pages 1-2"):
+        await convert_pdf_with_splitting(
+            _RefusingConverter(),  # ty: ignore[invalid-argument-type]
+            src,
+            source_uri=None,
+            slice_size=2,
+        )
