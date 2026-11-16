@@ -174,7 +174,9 @@ def decode_picture(data: bytes, self_ref: str) -> BinaryContent | None:
             image.verify()
     except Exception:
         return None
-    return BinaryContent(data=data, media_type="image/png", identifier=self_ref)
+    return BinaryContent(
+        data=data, media_type=image_media_type(data), identifier=self_ref
+    )
 
 
 def collect_pictures(

@@ -4,7 +4,11 @@ import pypdfium2 as pdfium
 import pytest
 from PIL import Image
 
-from haiku.rag.utils.images import original_layout, render_original_pages
+from haiku.rag.utils.images import (
+    decode_picture,
+    original_layout,
+    render_original_pages,
+)
 
 
 def _pdf(*sizes: tuple[float, float]) -> bytes:
@@ -149,3 +153,16 @@ def test_the_layout_gives_every_page_the_size_rendering_gives(original, pdf):
     assert layout.sizes == {
         n: pytest.approx((page.width, page.height)) for n, page in rendered.items()
     }
+
+
+@pytest.mark.parametrize(
+    ("fmt", "media_type"), [("PNG", "image/png"), ("JPEG", "image/jpeg")]
+)
+def test_a_decoded_picture_carries_its_own_media_type(fmt, media_type):
+    buf = BytesIO()
+    Image.new("RGB", (4, 4), "red").save(buf, format=fmt)
+
+    picture = decode_picture(buf.getvalue(), "#/pictures/0")
+
+    assert picture is not None
+    assert picture.media_type == media_type

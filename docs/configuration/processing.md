@@ -322,6 +322,7 @@ processing:
       mode: fixed_interval                    # fixed_interval | scene_change
       interval_seconds: 10
       max_frames: 200
+      max_width: 1280                         # null keeps docling's PNG
 ```
 
 Without `media`, audio and video files are not supported, and a source skips
@@ -358,6 +359,12 @@ interval_seconds` has no frames after that point. `pictures: none` turns
 sampling off. A video needs `ffmpeg` on `PATH`, and so does audio transcribed
 with a preset. Audio sent to a server does not.
 
+Frames are stored as JPEG at quality 90, at most `max_width` pixels wide, with
+either converter. The picture description model, the embedder, the reranker and
+the chat model all receive that image. `max_width: null` keeps docling's
+full-size PNG. A new width reaches a stored recording when it is ingested
+again with `force` (`add-src --force`).
+
 A search result from a transcript carries up to four of the frames shown while
 it is spoken, spread over its time range, and a citation of it records them.
 With a multimodal embedder, each frame is also its own chunk, found by its
@@ -375,7 +382,8 @@ transcription that times out leaves the process unable to convert audio or
 video again, as a timed-out PDF does for documents.
 
 With `converter: docling-serve`, set `media: {}`: transcription is configured
-on the docling-serve server, and `asr` and `frames` are refused.
+on the docling-serve server, and `asr` and `frames` are refused, except
+`frames.max_width`.
 
 ### Chunking strategies
 

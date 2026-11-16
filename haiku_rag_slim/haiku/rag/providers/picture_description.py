@@ -16,6 +16,7 @@ from pydantic_ai.messages import BinaryContent
 
 from haiku.rag.config import AppConfig
 from haiku.rag.store.models.document_item import _picture_description_text
+from haiku.rag.utils.images import image_media_type
 from haiku.rag.utils.models import get_model
 
 if TYPE_CHECKING:
@@ -47,7 +48,9 @@ async def describe_pictures(
     out: dict[str, str] = {}
     for ref, blob in image_bytes_by_ref.items():
         try:
-            result = await agent.run([BinaryContent(data=blob, media_type="image/png")])
+            result = await agent.run(
+                [BinaryContent(data=blob, media_type=image_media_type(blob))]
+            )
         except Exception as e:
             logger.warning("VLM call failed for %s: %s", ref, e)
             continue

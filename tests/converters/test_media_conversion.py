@@ -66,6 +66,20 @@ def test_docling_serve_refuses_media_settings_it_cannot_honour(media):
         )
 
 
+def test_docling_serve_accepts_a_frame_width():
+    config = AppConfig.model_validate(
+        {
+            "processing": {
+                "converter": "docling-serve",
+                "media": {"frames": {"max_width": 640}},
+            }
+        }
+    )
+
+    assert config.processing.media is not None
+    assert config.processing.media.frames.max_width == 640
+
+
 @pytest.mark.parametrize("converter", ["docling-local", "docling-serve"])
 def test_media_config_survives_a_dump_and_reload(converter):
     media = {"asr": WHISPER} if converter == "docling-local" else {}
