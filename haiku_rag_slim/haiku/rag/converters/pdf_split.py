@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 import tempfile
 import threading
 from collections.abc import Generator
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 
     from haiku.rag.converters.base import DocumentConverter
+
+logger = logging.getLogger(__name__)
 
 _SENTINEL: object = object()
 
@@ -128,9 +131,16 @@ async def convert_pdf_with_splitting(
                 # `delete=False` is required so the converter (which opens
                 # tmp_path itself) sees a fully written, closed file. Unlink
                 # in finally so a mid-write disk-full / mid-convert failure
-                # doesn't leak the slice on disk.
+                # doesn't leak the slice on disk. On Windows another handle
+                # (an antivirus scan, a converter handle) can hold the slice
+                # and refuse its deletion.
                 if tmp_path is not None:  # pragma: no branch - None only if open raised
-                    tmp_path.unlink(missing_ok=True)
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except OSError as exc:
+                        logger.warning(
+                            "Could not delete PDF slice %s: %s", tmp_path, exc
+                        )
     finally:
         # Close the generator under the pdfium lock so src.close() runs
         # even when we abort mid-stream (slice failure, cancellation).
