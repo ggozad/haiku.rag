@@ -37,6 +37,12 @@ class Numbers(Evaluator):
         return {"number_match": 1.0 if ctx.output == ctx.expected_output else 0.0}
 
 
+@dataclass
+class Letters(Evaluator):
+    def evaluate(self, ctx: EvaluatorContext) -> dict[str, float]:
+        return {"letter_match": 1.0 if ctx.output == ctx.expected_output else 0.0}
+
+
 async def _task(question: str) -> str:
     if question == "boom":
         raise RuntimeError("dead")
@@ -141,8 +147,11 @@ class TestWriteResults:
         assert failed["attributes"] == {} and failed["task_duration"] is None
         assert rows["4_d"]["key"] is None
 
-    async def test_number_match_scores_pass_at_one(self, tmp_path: Path) -> None:
-        report = await _report(Numbers())
+    @pytest.mark.parametrize("evaluator", [Numbers(), Letters()])
+    async def test_a_match_score_passes_at_one(
+        self, tmp_path: Path, evaluator: Evaluator
+    ) -> None:
+        report = await _report(evaluator)
         rows = _rows(
             write_results(
                 report,

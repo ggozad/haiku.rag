@@ -14,6 +14,7 @@ from pydantic_evals.evaluators import EvaluatorContext
 
 from evaluations.config import ConversationInput, Turn
 from evaluations.evaluators import REFUSAL_RUBRIC, RefusalJudge
+from evaluations.evaluators.letter_match import LetterMatchEvaluator
 from evaluations.evaluators.map import MAPEvaluator
 from evaluations.evaluators.number_match import NumberMatchEvaluator
 from evaluations.evaluators.retrieval import NDCGEvaluator, RecallEvaluator
@@ -288,3 +289,32 @@ class TestNumberMatchEvaluator:
         ctx.expected_output = gold
         ctx.output = output
         assert NumberMatchEvaluator().evaluate(ctx) == score
+
+
+class TestLetterMatchEvaluator:
+    @pytest.mark.parametrize(
+        ("output", "score"),
+        [
+            ("F", 1.0),
+            ("The answer is F.", 1.0),
+            ("A video of a girl in Malaysia.\n\nFinal Answer: F", 1.0),
+            ("Final Answer: B\nOn reflection.\nFinal Answer: F", 1.0),
+            ("A video of a girl in Malaysia. Her mother is Chinese, option F.", 0.0),
+            ("Final Answer: B", 0.0),
+            ("the mother is from somewhere in east asia judging by the video", 0.0),
+        ],
+        ids=[
+            "bare-letter",
+            "official-prefix",
+            "final-answer-ignores-prose",
+            "last-final-answer-wins",
+            "first-letter-without-final-answer",
+            "wrong-letter",
+            "no-letter",
+        ],
+    )
+    def test_score(self, output: str, score: float) -> None:
+        ctx = MagicMock()
+        ctx.expected_output = "F"
+        ctx.output = output
+        assert LetterMatchEvaluator().evaluate(ctx) == score

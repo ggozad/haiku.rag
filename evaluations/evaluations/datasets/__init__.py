@@ -17,6 +17,7 @@ from .open_rag_bench import (
     ORB_TEXT_SPEC,
 )
 from .t2_ragbench import T2_FINQA_SPEC, T2_TATDQA_SPEC
+from .video_mme_v2 import VIDEO_MME_V2_PILOT_SPEC, VIDEO_MME_V2_SPEC
 
 DATASETS: dict[str, DatasetSpec] = {
     spec.key: spec
@@ -33,6 +34,8 @@ DATASETS: dict[str, DatasetSpec] = {
         ORB_MULTIMODAL_NEMOTRON_SPEC,
         T2_FINQA_SPEC,
         T2_TATDQA_SPEC,
+        VIDEO_MME_V2_SPEC,
+        VIDEO_MME_V2_PILOT_SPEC,
     )
 }
 

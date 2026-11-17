@@ -57,6 +57,18 @@ _MTRAG_CONVERSATION = {
         }
     ],
 }
+_VIDEO_MME_ROW = {
+    "video_id": "001",
+    "question_id": "001-1",
+    "question": "Q?",
+    "options": "A. X.\nB. Y.",
+    "answer": "A",
+    "group_type": "relevance",
+    "group_structure": "4",
+    "level": "1",
+    "second_head": "Frame-Only",
+    "third_head": "Basic Counting",
+}
 _ROWS = {
     "enterprise_rag": {
         "question_id": "qst_0001",
@@ -89,6 +101,8 @@ _ROWS = {
     "mtrag_clapnq_rewrite": _MTRAG_TASK,
     "mtrag_clapnq_live": _MTRAG_CONVERSATION,
     "mtrag_clapnq_live_uncompacted": _MTRAG_CONVERSATION,
+    "video_mme_v2": _VIDEO_MME_ROW,
+    "video_mme_v2_pilot": _VIDEO_MME_ROW,
 }
 
 

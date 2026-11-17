@@ -870,6 +870,49 @@ class TestDocumentFilterThreading:
         mock_run.assert_awaited_once()
         assert mock_run.call_args[1]["document_filter"] == "uri LIKE '%arxiv%'"
 
+    @pytest.mark.parametrize(
+        ("run_filter", "expected"),
+        [
+            (None, "uri = 'v1'"),
+            ("uri LIKE '%v%'", "(uri LIKE '%v%') AND (uri = 'v1')"),
+        ],
+    )
+    async def test_scoped_case_narrows_the_run_filter(
+        self, tmp_path: Path, run_filter: str | None, expected: str
+    ) -> None:
+        from pydantic_evals import Case
+
+        from evaluations.capability_runner import CapabilityRunResult
+        from evaluations.config import ScopedQuestion
+        from evaluations.evaluators import NumberMatchEvaluator
+
+        spec = stub_spec(
+            qa_loader=lambda: [{"question": "What is X?", "answer": "42"}],
+            qa_case_builder=lambda idx, doc: Case(
+                name=f"case-{idx}",
+                inputs=ScopedQuestion(
+                    question=doc["question"], document_filter="uri = 'v1'"
+                ),
+                expected_output=doc["answer"],
+            ),
+            qa_evaluator=NumberMatchEvaluator(),
+        )
+
+        with patch(
+            "evaluations.qa.run_capability_question",
+            new_callable=AsyncMock,
+            return_value=CapabilityRunResult(answer="ANSWER: 42"),
+        ) as mock_run:
+            await run_qa_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                document_filter=run_filter,
+            )
+
+        assert mock_run.call_args[1]["question"] == "What is X?"
+        assert mock_run.call_args[1]["document_filter"] == expected
+
     async def test_evaluate_dataset_forwards_its_arguments_to_both_phases(
         self, tmp_path: Path
     ) -> None:
