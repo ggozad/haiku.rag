@@ -386,7 +386,14 @@ REAL_PNG = base64.b64decode(
 
 
 async def _search_with_a_picture(
-    self, query: str, _limit: int | None, _run_step: int, _sources=None
+    self,
+    query: str,
+    _limit: int | None,
+    _run_step: int,
+    _sources=None,
+    content=None,
+    window=None,
+    include_images=True,
 ) -> str:
     """Record a result carrying a page image, the way a real search does."""
     cast(Any, self.state).searches[query] = [
@@ -466,7 +473,7 @@ async def _fanout_question_then_another(temp_db_path, cite: bool) -> list[list[A
     rag = create_rag(db_path=temp_db_path, config=AppConfig(), vision=True)
     client = AsyncMock()
     client.search.side_effect = [[_burst_result()], [_burst_result()]]
-    client.expand_context.side_effect = lambda results: results
+    client.expand_context.side_effect = lambda results, window=None: results
     client.source_names = ["main"]
     rag.borrowed_rag = client
     citing = (

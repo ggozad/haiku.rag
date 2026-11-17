@@ -287,7 +287,14 @@ async def test_without_a_limit_every_picture_is_sent(temp_db_path):
 
 
 async def _search_with_its_picture(
-    self, query: str, _limit: int | None, _run_step: int, _sources=None
+    self,
+    query: str,
+    _limit: int | None,
+    _run_step: int,
+    _sources=None,
+    content=None,
+    window=None,
+    include_images=True,
 ) -> ToolReturn:
     """A search whose one result carries the picture named by the query."""
     ref = f"#/pictures/{query}"

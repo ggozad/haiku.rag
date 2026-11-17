@@ -62,7 +62,14 @@ def test_rag_capability_api(temp_db_path):
     assert isinstance(capability, RAGCapability)
     assert capability.id == "haiku-rag"
     assert capability.defer_loading is False
-    assert set(capability.get_toolset().tools) == {"search", "execute_code", "cite"}
+    assert set(capability.get_toolset().tools) == {
+        "search",
+        "execute_code",
+        "cite",
+        "search_audio",
+        "search_video",
+        "list_recordings",
+    }
     toolset = capability.get_toolset()
     assert toolset.max_retries == 3
     assert toolset.sequential is True

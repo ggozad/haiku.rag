@@ -35,6 +35,7 @@ from haiku.rag.capabilities._tools import (
     EvidenceKey,
     limit_retrieved_images,
     merge_results,
+    refresh_results,
     require_collections,
     search_corpus,
     without_sources,
@@ -45,12 +46,13 @@ from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig
 from haiku.rag.sandbox import AnalysisContext, Sandbox
 from haiku.rag.store.exceptions import AmbiguousCitationError, AmbiguousDatabaseError
-from haiku.rag.store.models.chunk import SearchResult
+from haiku.rag.store.models.chunk import Content, SearchResult, TimeWindow
 from haiku.rag.store.models.citation import (
     Citation,
     ambiguous_citation,
     resolve_citations,
 )
+from haiku.rag.utils.formatting import format_time_range
 from haiku.rag.utils.images import PictureKey, build_image_content_from_results
 
 STATE_NAMESPACE = "rag"
@@ -58,7 +60,18 @@ CAPABILITY_ID = "haiku-rag"
 SEARCH_TOOL = "search"
 EXECUTE_CODE_TOOL = "execute_code"
 CITE_TOOL = "cite"
-TOOL_NAMES = frozenset({SEARCH_TOOL, EXECUTE_CODE_TOOL, CITE_TOOL})
+SEARCH_AUDIO_TOOL = "search_audio"
+SEARCH_VIDEO_TOOL = "search_video"
+LIST_RECORDINGS_TOOL = "list_recordings"
+MEDIA_SEARCH_TOOLS = frozenset({SEARCH_AUDIO_TOOL, SEARCH_VIDEO_TOOL})
+MEDIA_TOOLS = MEDIA_SEARCH_TOOLS | {LIST_RECORDINGS_TOOL}
+"""Tools declared only under `qa.media_tools`."""
+TOOL_NAMES = frozenset({SEARCH_TOOL, EXECUTE_CODE_TOOL, CITE_TOOL}) | MEDIA_TOOLS
+SEARCH_DOCUMENTS_DESCRIPTION = (
+    "Search the documents in the knowledge base. Audio and video recordings are "
+    f"searched with {SEARCH_AUDIO_TOOL} and {SEARCH_VIDEO_TOOL}, not here."
+)
+"""`search`'s description under `qa.media_tools`."""
 
 CITATION_GRACE_REQUESTS = 2
 """Requests calling this capability's tools that its cite tool outlives the rest by."""
@@ -73,6 +86,7 @@ _instructions_path = Path(__file__).parent / "instructions" / "rag.md"
 _multiple_collections_path = (
     Path(__file__).parent / "instructions" / "rag_multiple_collections.md"
 )
+_recordings_path = Path(__file__).parent / "instructions" / "rag_recordings.md"
 
 
 class RAGState(BaseModel):
@@ -117,6 +131,26 @@ def instructions() -> str:
 def multiple_collections_instructions() -> str:
     """Appended for a run that spans more than one collection."""
     return _multiple_collections_path.read_text(encoding="utf-8").rstrip()
+
+
+@cache
+def recordings_instructions() -> str:
+    """Appended under `qa.media_tools`."""
+    return _recordings_path.read_text(encoding="utf-8").rstrip()
+
+
+def _window(
+    recording: str | None, start: float | None, end: float | None
+) -> TimeWindow | None:
+    """The time window a media search names, or ToolFailed for one it cannot."""
+    if recording is None:
+        if start is not None or end is not None:
+            raise ToolFailed("A time window needs a recording: pass its document_id.")
+        return None
+    try:
+        return TimeWindow(recording, start=start, end=end)
+    except ValueError as error:
+        raise ToolFailed(str(error)) from error
 
 
 def _ambiguous_retry(error: AmbiguousCitationError) -> ModelRetry:
@@ -349,6 +383,8 @@ class RAGCapability(AbstractCapability[Any]):
         if self.spans_collections:
             parts.append(multiple_collections_instructions())
             parts.append(f"Collections in this run: {', '.join(self.collections)}.")
+        if self.config.qa.media_tools:
+            parts.append(recordings_instructions())
         return "\n\n".join(parts)
 
     async def before_model_request(
@@ -439,13 +475,28 @@ class RAGCapability(AbstractCapability[Any]):
         against the agent's unknown-tool retry budget, which kills the run after
         two attempts. A spent tool that keeps failing only wastes requests.
 
-        Over one collection the search tool has no ``sources`` parameter: there
-        is nothing to select among.
+        Over one collection the search tools have no ``sources`` parameter: there
+        is nothing to select among. The media tools exist only under
+        ``qa.media_tools``.
         """
+        if not self.config.qa.media_tools:
+            tool_defs = [
+                tool
+                for tool in tool_defs
+                if tool.capability_id != self.id or tool.name not in MEDIA_TOOLS
+            ]
+        else:
+            tool_defs = [
+                replace(tool, description=SEARCH_DOCUMENTS_DESCRIPTION)
+                if tool.capability_id == self.id and tool.name == SEARCH_TOOL
+                else tool
+                for tool in tool_defs
+            ]
         if not self.spans_collections:
             tool_defs = [
                 without_sources(tool)
-                if tool.capability_id == self.id and tool.name == SEARCH_TOOL
+                if tool.capability_id == self.id
+                and tool.name in {SEARCH_TOOL, *MEDIA_TOOLS}
                 else tool
                 for tool in tool_defs
             ]
@@ -479,13 +530,17 @@ class RAGCapability(AbstractCapability[Any]):
         ``qa.max_searches``, so code execution outlives a spent search budget as a
         way to reach new evidence.
         """
-        return {SEARCH_TOOL, EXECUTE_CODE_TOOL}
+        return {SEARCH_TOOL, EXECUTE_CODE_TOOL, *self._media_search_tools}
+
+    @property
+    def _media_search_tools(self) -> frozenset[str]:
+        return MEDIA_SEARCH_TOOLS if self.config.qa.media_tools else frozenset()
 
     def _spent_tool_names(self) -> set[str]:
         """This capability's tools whose own budget is exhausted."""
         spent = set()
         if self.search_count >= self._max_searches:
-            spent.add(SEARCH_TOOL)
+            spent |= {SEARCH_TOOL, *self._media_search_tools}
         if self.execute_count >= self.config.qa.max_executions:
             spent.add(EXECUTE_CODE_TOOL)
         return spent
@@ -655,6 +710,9 @@ class RAGCapability(AbstractCapability[Any]):
         limit: int | None,
         run_step: int,
         sources: list[str] | None = None,
+        content: Content | None = None,
+        window: TimeWindow | None = None,
+        include_images: bool = True,
     ) -> str | ToolReturn:
         assert self.state is not None
         if sources is not None:
@@ -683,6 +741,9 @@ class RAGCapability(AbstractCapability[Any]):
                 sources=self.state.sources if sources is None else sources,
                 shown=self.step_shown,
                 include_collection=self.spans_collections,
+                content=content,
+                window=window,
+                include_images=include_images,
             )
         parts: list[str | BinaryContent] = []
         emitted: set[PictureKey] = set()
@@ -700,12 +761,39 @@ class RAGCapability(AbstractCapability[Any]):
         # A model can search the same query twice with different limits, and the
         # narrower return must not drop what the wider one already showed it.
         merge_results(state.searches.setdefault(query, []), results)
+        # Every query holding a returned chunk takes the version just returned,
+        # so a citation resolves to the slice of the window searched last.
+        refresh_results(state.searches.values(), results)
         self._note_evidence()
         self.step_shown |= rendered
         self.step_pictures |= emitted
         if parts:
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
+
+    async def _list_recordings(self, sources: list[str] | None) -> str:
+        assert self.state is not None
+        if sources is not None:
+            require_collections(sources, self.collections)
+        async with self.rag_lock:
+            recordings = await (await self._ensure_rag()).list_recordings(
+                filter=self.state.document_filter,
+                sources=self.state.sources if sources is None else sources,
+            )
+        lines = []
+        for recording in recordings:
+            last = recording.last_time
+            line = (
+                f"- document_id: {recording.document_id}\n"
+                f"  Title: {recording.title or recording.uri or 'untitled'}\n"
+                f"  URI: {recording.uri}\n"
+                f"  Transcript runs to: {format_time_range((last, last))}\n"
+                f"  Kind: {'video' if recording.has_frames else 'audio'}"
+            )
+            if self.spans_collections:
+                line += f"\n  Collection: {recording.source}"
+            lines.append(line)
+        return "\n".join(lines) or "No recordings."
 
     async def _execute_code(self, code: str) -> str:
         assert self.state is not None
@@ -863,8 +951,102 @@ class RAGCapability(AbstractCapability[Any]):
                     collection this run covers; an empty list searches none.
             """
             return await self._with_state(
-                self._search(query, limit, ctx.run_step, sources)
+                self._search(
+                    query,
+                    limit,
+                    ctx.run_step,
+                    sources,
+                    content="documents" if self.config.qa.media_tools else None,
+                )
             )
+
+        async def search_audio(
+            ctx: RunContext[Any],
+            query: str,
+            recording: str | None = None,
+            start: float | None = None,
+            end: float | None = None,
+            limit: int | None = None,
+            sources: list[str] | None = None,
+        ) -> str | ToolReturn:
+            """Search what is said in the recordings, the soundtrack of a video
+            included. Returns transcript passages, each with a `Time:` line.
+
+            Args:
+                query: The words someone would say, not the question.
+                recording: A recording's document_id from `list_recordings`,
+                    to search only it.
+                start: Seconds into the recording where the search starts.
+                    Needs `recording`.
+                end: Seconds into the recording where the search ends.
+                    Needs `recording`.
+                limit: How many passages to return.
+                sources: Collections to search, by name. Omit to search every
+                    collection this run covers; an empty list searches none.
+            """
+            window = _window(recording, start, end)
+            return await self._with_state(
+                self._search(
+                    query,
+                    limit,
+                    ctx.run_step,
+                    sources,
+                    content="speech",
+                    window=window,
+                    include_images=False,
+                )
+            )
+
+        async def search_video(
+            ctx: RunContext[Any],
+            query: str,
+            recording: str | None = None,
+            start: float | None = None,
+            end: float | None = None,
+            limit: int | None = None,
+            sources: list[str] | None = None,
+        ) -> str | ToolReturn:
+            """Search what is seen in the videos. Returns frames as images,
+            each with its time and the speech within 15 seconds of it.
+
+            Args:
+                query: A description of the scene, such as "a man in a red
+                    jacket opening a door", not the question.
+                recording: A video's document_id from `list_recordings`, to
+                    search only it.
+                start: Seconds into the video where the search starts.
+                    Needs `recording`.
+                end: Seconds into the video where the search ends.
+                    Needs `recording`.
+                limit: How many frames to return.
+                sources: Collections to search, by name. Omit to search every
+                    collection this run covers; an empty list searches none.
+            """
+            window = _window(recording, start, end)
+            return await self._with_state(
+                self._search(
+                    query,
+                    limit,
+                    ctx.run_step,
+                    sources,
+                    content="frames",
+                    window=window,
+                )
+            )
+
+        async def list_recordings(
+            ctx: RunContext[Any], sources: list[str] | None = None
+        ) -> str:
+            """List the recordings: their document_id, title, how long their
+            transcript runs, and whether they are video. Takes no arguments over
+            one collection and does not search: call it for the document_id a
+            time window needs.
+
+            Args:
+                sources: Collections to list, by name. Omit to list every
+                    collection this run covers.
+            """
+            return await self._with_state(self._list_recordings(sources))
 
         async def execute_code(ctx: RunContext[Any], code: str) -> str:
             """Execute Python against the sandboxed document filesystem."""
@@ -875,10 +1057,14 @@ class RAGCapability(AbstractCapability[Any]):
             return await self._with_state(self._cite(chunk_ids))
 
         return FunctionToolset(
-            [search, execute_code, cite],
+            [search, execute_code, cite, search_audio, search_video, list_recordings],
             id=CAPABILITY_ID,
             max_retries=3,
             sequential=True,
+            # vLLM decodes a request with any strict tool under a grammar that
+            # leaves non-strict tools' arguments unconstrained, so a tool with
+            # no parameters is called with stray ones.
+            strict=False,
         )
 
 

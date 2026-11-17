@@ -16,7 +16,12 @@ from pydantic_ai.messages import (
 from pydantic_ai.tools import ToolDefinition
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.store.models.chunk import SearchResult, qualified_id
+from haiku.rag.store.models.chunk import (
+    Content,
+    SearchResult,
+    TimeWindow,
+    qualified_id,
+)
 from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, picture_keys
 
 IMAGES_OMITTED = (
@@ -79,6 +84,10 @@ def without_sources(tool_def: ToolDefinition) -> ToolDefinition:
     return replace(tool_def, parameters_json_schema=schema)
 
 
+FRAME_CONTEXT_SECONDS = 15.0
+"""Speech on each side of a frame that a frame search returns with it."""
+
+
 async def search_corpus(
     rag: HaikuRAG,
     query: str,
@@ -88,6 +97,9 @@ async def search_corpus(
     shown: AbstractSet[EvidenceKey] = frozenset(),
     *,
     include_collection: bool,
+    content: Content | None = None,
+    window: TimeWindow | None = None,
+    include_images: bool = True,
 ) -> tuple[str, list[SearchResult], set[EvidenceKey]]:
     """Search and context-expand results, eliding evidence already shown.
 
@@ -95,12 +107,22 @@ async def search_corpus(
     the formatting rendered in full. ``include_collection`` names each result's
     collection, a decision about the run that the caller makes. A result whose
     key is in ``shown`` keeps its slot but collapses to one line; the result
-    list is never filtered.
+    list is never filtered. `content`, `window` and `include_images` pass to
+    `HaikuRAG.search`, and `window` to the expansion.
     """
     results = await rag.search(
-        query, limit=limit, filter=document_filter, sources=sources
+        query,
+        limit=limit,
+        filter=document_filter,
+        include_images=include_images,
+        sources=sources,
+        content=content,
+        window=window,
     )
-    results = await rag.expand_context(results)
+    if content == "frames":
+        results = await _expand_frames(rag, results, window)
+    else:
+        results = await rag.expand_context(results, window=window)
     rendered: set[EvidenceKey] = set()
     parts: list[str] = []
     total = len(results)
@@ -122,6 +144,25 @@ async def search_corpus(
     return formatted or "No results found.", list(results), rendered
 
 
+async def _expand_frames(
+    rag: HaikuRAG, results: list[SearchResult], window: TimeWindow | None
+) -> list[SearchResult]:
+    """Expand each frame over the speech within `FRAME_CONTEXT_SECONDS` of it,
+    inside `window` when one is given."""
+    expanded: list[SearchResult] = []
+    for result in results:
+        assert result.document_id is not None and result.time_range is not None
+        at = result.time_range[0]
+        start = at - FRAME_CONTEXT_SECONDS
+        end = at + FRAME_CONTEXT_SECONDS
+        if window is not None:
+            start = max(start, window.start if window.start is not None else start)
+            end = min(end, window.end if window.end is not None else end)
+        near = TimeWindow(result.document_id, start=start, end=end)
+        expanded.extend(await rag.expand_context([result], window=near))
+    return expanded
+
+
 def merge_results(
     existing: list[SearchResult], incoming: Iterable[SearchResult]
 ) -> None:
@@ -136,6 +177,22 @@ def merge_results(
         if key not in seen:
             existing.append(result)
             seen.add(key)
+
+
+def refresh_results(
+    held: Iterable[list[SearchResult]], incoming: Iterable[SearchResult]
+) -> None:
+    """Replace every held version of an incoming chunk with the incoming one."""
+    latest = {
+        qualified_id(result.source, result.chunk_id): result
+        for result in incoming
+        if result.chunk_id is not None
+    }
+    for results in held:
+        for index, result in enumerate(results):
+            key = qualified_id(result.source, result.chunk_id)
+            if result.chunk_id is not None and key in latest:
+                results[index] = latest[key]
 
 
 def retrieved_pictures(content: Sequence[Any]) -> list[int]:
@@ -206,6 +263,7 @@ __all__ = [
     "evidence_key",
     "evidence_signature",
     "merge_results",
+    "refresh_results",
     "require_collections",
     "retrieved_pictures",
     "search_corpus",

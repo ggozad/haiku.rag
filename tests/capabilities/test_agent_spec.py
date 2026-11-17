@@ -48,7 +48,14 @@ def test_rag_capability_is_built_from_a_spec(temp_db_path):
     assert capability.scope.databases == (DatabaseRef.at(temp_db_path),)
     assert capability.id == "haiku-rag"
     assert capability.state_type is RAGState
-    assert capability.tool_names == {"search", "execute_code", "cite"}
+    assert capability.tool_names == {
+        "search",
+        "execute_code",
+        "cite",
+        "search_audio",
+        "search_video",
+        "list_recordings",
+    }
     assert capability.request_limit == 30
 
 

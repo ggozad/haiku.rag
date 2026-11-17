@@ -24,6 +24,11 @@ print(result.output)
 | `search(query, limit?, sources?)` | Hybrid vector and full-text search with context expansion. `sources` narrows one search to named collections within the run. It is offered only when the run spans more than one. |
 | `execute_code(code)` | Run Python against the virtual document filesystem. |
 | `cite(chunk_ids)` | Register retrieved or filesystem-derived chunk IDs as answer citations. |
+| `search_audio(query, recording?, start?, end?, limit?, sources?)` | Search the speech of every recording, the soundtrack of a video included. Under `qa.media_tools` only. |
+| `search_video(query, recording?, start?, end?, limit?, sources?)` | Search the frames of the videos by a description of the scene, vector-only. Frames are attached as images under `vision`, each with the speech within 15 seconds of it. Under `qa.media_tools` only. |
+| `list_recordings(sources?)` | List the recordings with their `document_id`, title, where their transcript ends, and whether they are video. Under `qa.media_tools` only. |
+
+Under `qa.media_tools`, `search` leaves recordings out. `recording` with `start` and `end` in seconds narrows a media search to that part of one recording, and its results expand only over items inside the window. A window without a recording fails the call. Media searches share the `qa.max_searches` budget with `search`, and searches in one response share one unit whichever of the three they are. `list_recordings` costs nothing.
 
 ## Parameters
 
