@@ -849,17 +849,15 @@ async def test_reap_stale_resets_old_claims(conn, jobs):
     )
     await conn.commit()
 
-    reset = await jobs.reap_stale(lease_ttl_seconds=60)
-    assert reset == 1
+    reaped = await jobs.reap_stale(lease_ttl_seconds=60)
+    assert [j.id for j in reaped] == [job.id]
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.QUEUED
     assert refreshed.claimed_at is None
     assert refreshed.claimed_by is None
     assert refreshed.last_heartbeat_at is None
-    # claim_next incremented to 1; reap undoes that since a reaped worker
-    # isn't a consumed attempt — matches release_if_claimed semantics.
-    assert refreshed.attempts == 0
+    assert refreshed.attempts == 1
 
 
 async def test_reap_stale_falls_back_to_claimed_at_when_no_heartbeat(conn, jobs):
@@ -877,8 +875,8 @@ async def test_reap_stale_falls_back_to_claimed_at_when_no_heartbeat(conn, jobs)
     )
     await conn.commit()
 
-    reset = await jobs.reap_stale(lease_ttl_seconds=60)
-    assert reset == 1
+    reaped = await jobs.reap_stale(lease_ttl_seconds=60)
+    assert len(reaped) == 1
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.QUEUED
@@ -889,8 +887,7 @@ async def test_reap_stale_leaves_fresh_claims_alone(jobs):
     claimed = await jobs.claim_next("w")
     assert claimed is not None
 
-    reset = await jobs.reap_stale(lease_ttl_seconds=3600)
-    assert reset == 0
+    assert await jobs.reap_stale(lease_ttl_seconds=3600) == []
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.CLAIMED
@@ -908,11 +905,42 @@ async def test_reap_stale_leaves_kept_claims_alone(conn, jobs):
     )
     await conn.commit()
 
-    assert await jobs.reap_stale(lease_ttl_seconds=60, keep=[kept.id]) == 1
+    assert len(await jobs.reap_stale(lease_ttl_seconds=60, keep=[kept.id])) == 1
     still = await jobs.get_job(kept.id)
     gone = await jobs.get_job(reaped.id)
     assert still is not None and still.status is JobStatus.CLAIMED
     assert gone is not None and gone.status is JobStatus.QUEUED
+
+
+async def test_reap_stale_dead_letters_an_upsert_on_its_last_attempt(jobs):
+    job = await jobs.enqueue("s", "u", JobOp.UPSERT, revision="r1", max_attempts=1)
+    assert job is not None
+    assert await jobs.claim_next("w") is not None
+
+    [reaped] = await jobs.reap_stale(lease_ttl_seconds=0)
+
+    assert reaped.id == job.id
+    assert reaped.status is JobStatus.DEAD
+    assert reaped.conversion_stalled
+    assert reaped.completed_at is not None
+    assert reaped.last_error == (
+        "claim expired on its last attempt: its worker stopped renewing it"
+    )
+    assert await jobs.get_job(job.id) == reaped
+    assert await jobs.enqueue("s", "u", JobOp.UPSERT, revision="r1") is None
+    assert await jobs.enqueue("s", "u", JobOp.UPSERT, revision="r2") is not None
+
+
+async def test_reap_stale_dead_letters_a_delete_without_holding_its_slot(jobs):
+    job = await jobs.enqueue("s", "u", JobOp.DELETE, max_attempts=1)
+    assert job is not None
+    assert await jobs.claim_next("w") is not None
+
+    [reaped] = await jobs.reap_stale(lease_ttl_seconds=0)
+
+    assert reaped.status is JobStatus.DEAD
+    assert not reaped.conversion_stalled
+    assert await jobs.enqueue("s", "u", JobOp.DELETE) is not None
 
 
 async def test_claim_next_sets_both_timestamps(jobs):
@@ -939,8 +967,7 @@ async def test_renew_claims_keeps_a_stale_claim_alive(conn, jobs):
     renewed = await jobs.renew_claims({job.id: "w"})
     assert renewed == 1
 
-    reset = await jobs.reap_stale(lease_ttl_seconds=60)
-    assert reset == 0
+    assert await jobs.reap_stale(lease_ttl_seconds=60) == []
     refreshed = await jobs.get_job(job.id)
     assert refreshed is not None
     assert refreshed.status is JobStatus.CLAIMED
@@ -1945,7 +1972,7 @@ async def test_reads_ignore_foreign_succeeded_jobs(own, foreign):
         (lambda repo, job_id: repo.mark_dead(job_id, "boom", "w"), False),
         (lambda repo, job_id: repo.reschedule(job_id, 60, "later", "w"), False),
         (lambda repo, job_id: repo.release_if_claimed(job_id, "w"), False),
-        (lambda repo, job_id: repo.reap_stale(lease_ttl_seconds=0), 0),
+        (lambda repo, job_id: repo.reap_stale(lease_ttl_seconds=0), []),
         (lambda repo, job_id: repo.renew_claims({job_id: "w"}), 0),
     ],
     ids=[

@@ -10,7 +10,7 @@ from uuid import uuid4
 from haiku.rag.circuit_breaker import CircuitBreaker
 from haiku.rag.config import CircuitBreakerConfig
 from haiku.rag.ingester.exceptions import PermanentError, TransientError
-from haiku.rag.ingester.queue.models import Job, JobOp
+from haiku.rag.ingester.queue.models import Job, JobOp, JobStatus
 from haiku.rag.ingester.queue.repository import JobRepo, SyncStateRepo
 from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.ingester.workers.retry import RetryPolicy, compute_backoff
@@ -287,9 +287,12 @@ class WorkerPool:
         # reboot) so fresh workers can take them over. Scoped by the lease TTL,
         # not 0: a peer process sharing the queue may hold live claims, and
         # those must not be wiped out from under it on our startup.
-        reset = await self._jobs.reap_stale(lease_ttl_seconds=self._lease_ttl_s)
-        if reset:
-            logger.info("Boot-reaped %d stale claim(s) from previous process", reset)
+        reaped = await self._jobs.reap_stale(lease_ttl_seconds=self._lease_ttl_s)
+        if reaped:
+            logger.info(
+                "Boot-reaped %d stale claim(s) from previous process", len(reaped)
+            )
+        await self._record_expired(reaped)
         for i in range(self._worker_count):
             self._workers.append(
                 asyncio.create_task(self._worker_loop(self._worker_id(i)))
@@ -394,13 +397,26 @@ class WorkerPool:
     async def _reap(self) -> None:
         # Under the claim lock every claim this pool holds is in `_inflight`.
         async with self.claim_lock:
-            reset = await self._jobs.reap_stale(self._lease_ttl_s, keep=self._inflight)
-        if reset:
-            logger.info("Reaper reset %d stale claim(s)", reset)
+            reaped = await self._jobs.reap_stale(self._lease_ttl_s, keep=self._inflight)
+        if reaped:
+            logger.info("Reaper reset %d stale claim(s)", len(reaped))
+        await self._record_expired(reaped)
         if self._retention_s is not None:
             pruned = await self._jobs.prune_terminal(self._retention_s)
             if pruned:
                 logger.info("Reaper pruned %d terminal job(s)", pruned)
+
+    async def _record_expired(self, reaped: list[Job]) -> None:
+        """Record the revision of each reaped job that went dead."""
+        for job in reaped:
+            if job.status is JobStatus.DEAD:
+                logger.info(
+                    "Job %s dead (claim expired on attempt %d/%d)",
+                    job.id,
+                    job.attempts,
+                    job.max_attempts,
+                )
+                await self._record_failed_revision(job, recorded=True)
 
     async def _heartbeat_loop(self) -> None:
         """Renew the lease on this pool's in-flight jobs, so the leases of a
@@ -537,7 +553,7 @@ class WorkerPool:
             # A process that cannot convert has to go however this branch
             # ends: `mark_dead` losing the claim or raising must not leave it
             # claiming jobs it will fail. Persistence still runs first, since
-            # `reap_stale` refunds the attempt of a vanished owner.
+            # `reap_stale` returns the claim of a vanished owner to the queue.
             try:
                 await self._finish_permanent(job, e, worker_id)
             finally:

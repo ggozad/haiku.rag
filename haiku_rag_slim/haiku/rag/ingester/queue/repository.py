@@ -56,6 +56,9 @@ def _requeued() -> dict:
     }
 
 
+_CLAIM_EXPIRED = "claim expired on its last attempt: its worker stopped renewing it"
+
+
 def _attempts_minus_one() -> sa.ColumnElement[int]:
     """attempts - 1, floored at 0. Renders identically on both dialects."""
     return sa.case((jobs.c.attempts - 1 < 0, 0), else_=jobs.c.attempts - 1)
@@ -738,38 +741,56 @@ class JobRepo:
 
     async def reap_stale(
         self, lease_ttl_seconds: int, *, keep: Collection[str] = ()
-    ) -> int:
-        """Reset claimed jobs whose lease has gone stale back to `queued`,
-        except the job ids in `keep`. A live worker renews its lease via
+    ) -> list[Job]:
+        """Release claimed jobs whose lease has gone stale, except the job ids
+        in `keep`, and return them as reaped. A live worker renews its lease via
         `renew_claims`, so a claim is stale only when its owner stopped
         renewing (crash, wedged loop, lost DB).
         Staleness is measured against the last heartbeat, falling back to
         claimed_at for a claim made by a process that doesn't write the lease
-        (an older version sharing the queue). Decrements `attempts` to undo the
-        increment from `claim_next` — a reaped worker isn't a consumed attempt."""
+        (an older version sharing the queue). A reaped claim keeps its attempt
+        and returns to `queued`. One on its last attempt goes `dead` instead,
+        an UPSERT holding its `uq_jobs_blocking_op` slot as a stalled
+        conversion does."""
         threshold = (
             datetime.now(UTC) - timedelta(seconds=lease_ttl_seconds)
         ).isoformat()
         lease = sa.func.coalesce(jobs.c.last_heartbeat_at, jobs.c.claimed_at)
-        stmt = (
+        stale = (
+            self._owned,
+            jobs.c.status == "claimed",
+            lease < threshold,
+            jobs.c.id.not_in(sorted(keep)),
+        )
+        exhausted = jobs.c.attempts >= jobs.c.max_attempts
+        dead = (
             sa.update(jobs)
-            .where(
-                self._owned,
-                jobs.c.status == "claimed",
-                lease < threshold,
-                jobs.c.id.not_in(sorted(keep)),
+            .where(*stale, exhausted)
+            .values(
+                status="dead",
+                completed_at=_utcnow_iso(),
+                last_error=_CLAIM_EXPIRED,
+                conversion_stalled=jobs.c.op == JobOp.UPSERT.value,
             )
+            .returning(*jobs.c)
+        )
+        requeued = (
+            sa.update(jobs)
+            .where(*stale, sa.not_(exhausted))
             .values(
                 status="queued",
                 claimed_at=None,
                 claimed_by=None,
                 last_heartbeat_at=None,
-                attempts=_attempts_minus_one(),
             )
+            .returning(*jobs.c)
         )
         async with self._engine.begin() as conn:
-            result = await conn.execute(stmt)
-        return result.rowcount or 0
+            rows = [
+                *(await conn.execute(dead)).mappings(),
+                *(await conn.execute(requeued)).mappings(),
+            ]
+        return [_row_to_job(row) for row in rows]
 
     async def renew_claims(self, claims: Mapping[str, str]) -> int:
         """Refresh `last_heartbeat_at` for the given `job_id -> claimed_by`

@@ -337,7 +337,7 @@ ingester:
 
 A DELETE job skipped because the resource is back at the source completes successfully and preserves its sync state and earlier dead or rejected jobs. Discovery can still detect a later removal. If the document belongs to another source or has no owner, the worker leaves it indexed and removes only the requesting source's sync state and failed jobs for that URI. A DELETE for a URL confirmed gone by a 404 keeps the source's sync state, at revision `http-404`.
 
-A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. The reaper never returns a job that its own process is running, so a slow job, a clock that jumps forward or a process that was suspended does not lose a claim.
+A worker renews its job's lease every `heartbeat_interval_s`. The reaper returns a job to the queue when its lease has not been renewed for `lease_ttl_s`, so a crashed worker's job is picked up again. The job keeps its attempt. A job on its last attempt goes to the dead-letter queue instead and, except for a DELETE, is held like a stalled document (see [Run it under a supervisor](#run-it-under-a-supervisor)), so a document that crashes the process stops being retried. Every job in flight when a process dies counts the attempt, not only the one that caused it. The reaper never returns a job that its own process is running, so a slow job, a clock that jumps forward or a process that was suspended does not lose a claim.
 
 - `lease_ttl_s` bounds how long a crashed worker's job waits before another worker takes it. It need not exceed job duration.
 - `heartbeat_interval_s` must be at most `lease_ttl_s / 3`.
@@ -451,7 +451,7 @@ A client that disconnects does not stop a reload. Shutdown does: a reload in pro
 
 A document can stall docling indefinitely. `processing.conversion_timeout` abandons it, but a stalled PDF or office conversion holds docling's shared converter, so the process cannot convert again. The worker records the document dead and exits non-zero, for the process to be replaced.
 
-So the service needs something to restart it: `restart: unless-stopped` in Compose (the example sets it), `Restart=always` in a systemd unit. Without one, the ingester stops the first time a document stalls. A restart mid-job is safe: the reaper returns the jobs of a vanished process to the queue once their leases expire, without counting the attempt.
+So the service needs something to restart it: `restart: unless-stopped` in Compose (the example sets it), `Restart=always` in a systemd unit. Without one, the ingester stops the first time a document stalls. A restart mid-job is safe: the reaper returns the jobs of a vanished process to the queue once their leases expire. A job reaped on its last attempt goes dead and, except for a DELETE, is held as a stalled document is.
 
 The stalled document is not retried by itself. Its dead job keeps discovery from queueing the same revision again, and retention never removes it. It is cleared by:
 

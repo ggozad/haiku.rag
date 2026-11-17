@@ -122,20 +122,24 @@ async def test_skip_locked_claims_each_job_once(postgres_dburi):
         assert {c.id for c in claimed} == {j.id for j in enqueued}
 
 
-async def test_reap_stale_clamps_attempts(postgres_dburi):
-    """The attempts-1 clamp (CASE) renders and runs on Postgres."""
+async def test_reap_stale_on_postgres(postgres_dburi):
+    """A reaped claim keeps its attempt, and one on its last attempt goes dead
+    holding its slot."""
     async with queue_engine(postgres_dburi) as engine:
         jobs = JobRepo(engine)
-        job = await jobs.enqueue("s", "u", JobOp.UPSERT)
-        assert job is not None
-        claimed = await jobs.claim_next("w")
-        assert claimed is not None and claimed.attempts == 1
-        reset = await jobs.reap_stale(lease_ttl_seconds=0)
-        assert reset == 1
-        refreshed = await jobs.get_job(job.id)
-        assert refreshed is not None
-        assert refreshed.status is JobStatus.QUEUED
-        assert refreshed.attempts == 0
+        requeued = await jobs.enqueue("s", "u", JobOp.UPSERT)
+        exhausted = await jobs.enqueue("s", "v", JobOp.UPSERT, max_attempts=1)
+        assert requeued is not None and exhausted is not None
+        assert await jobs.claim_next("w1") is not None
+        assert await jobs.claim_next("w2") is not None
+
+        reaped = {j.id: j for j in await jobs.reap_stale(lease_ttl_seconds=0)}
+
+        assert reaped[requeued.id].status is JobStatus.QUEUED
+        assert reaped[requeued.id].attempts == 1
+        assert reaped[exhausted.id].status is JobStatus.DEAD
+        assert reaped[exhausted.id].conversion_stalled
+        assert await jobs.enqueue("s", "v", JobOp.UPSERT) is None
 
 
 async def test_reap_stale_keep_on_postgres(postgres_dburi):
@@ -148,7 +152,7 @@ async def test_reap_stale_keep_on_postgres(postgres_dburi):
         assert await jobs.claim_next("w1") is not None
         assert await jobs.claim_next("w2") is not None
 
-        assert await jobs.reap_stale(lease_ttl_seconds=0, keep=[kept.id]) == 1
+        assert len(await jobs.reap_stale(lease_ttl_seconds=0, keep=[kept.id])) == 1
         still = await jobs.get_job(kept.id)
         gone = await jobs.get_job(reaped.id)
         assert still is not None and still.status is JobStatus.CLAIMED
@@ -172,7 +176,7 @@ async def test_renew_claims_survives_reap_on_postgres(postgres_dburi):
                 {"ts": "2000-01-01T00:00:00+00:00", "id": job.id},
             )
         assert await jobs.renew_claims({job.id: "w"}) == 1
-        assert await jobs.reap_stale(lease_ttl_seconds=60) == 0
+        assert await jobs.reap_stale(lease_ttl_seconds=60) == []
         refreshed = await jobs.get_job(job.id)
         assert refreshed is not None and refreshed.status is JobStatus.CLAIMED
 
