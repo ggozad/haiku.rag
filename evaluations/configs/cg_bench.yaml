@@ -1,0 +1,47 @@
+# Reference config for `cg_bench` and `cg_bench_sample` (300 questions stratified by
+# sub_category), over the 150 downloaded videos of the CG-Bench subset.
+# Videos are transcribed by vLLM Whisper and use the default frame sampling. Frames
+# are embedded by the nvidia/llama-nemotron-embed-vl-1b-v2 multimodal embedder. No
+# reranker: search returns hybrid vector and full-text order.
+# Run: evaluations run cg_bench_sample --skip-db --skip-retrieval --db PATH --config configs/cg_bench.yaml
+# base_url uses the `vllm` host serving each model over an OpenAI-compatible API.
+
+environment: development
+
+storage:
+  auto_vacuum: false
+
+embeddings:
+  model:
+    provider: vllm
+    name: nvidia/llama-nemotron-embed-vl-1b-v2
+    vector_dim: 2048
+    multimodal: true
+    base_url: http://vllm:11438/v1
+
+processing:
+  conversion_timeout: 7200
+  media:
+    asr:
+      base_url: http://vllm:11470/v1
+      model: openai/whisper-large-v3-turbo
+      timeout: 3600
+
+qa:
+  # The Qwen server accepts at most 20 images in one request.
+  max_images: 20
+  model:
+    provider: openai
+    name: Inferact/Qwen3.8-27B-NVFP4
+    base_url: http://vllm:11439/v1
+    vision: true
+    temperature: 0.6
+    max_tokens: 16384
+    extra_body:
+      top_p: 0.95
+      top_k: 20
+      min_p: 0
+      chat_template_kwargs:
+        # qwen3.8 defaults to xhigh, which spends the output budget
+        # deliberating and truncates the answer. low | medium | xhigh.
+        reasoning_effort: low

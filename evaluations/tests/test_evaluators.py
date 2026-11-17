@@ -318,3 +318,34 @@ class TestLetterMatchEvaluator:
         ctx.expected_output = "F"
         ctx.output = output
         assert LetterMatchEvaluator().evaluate(ctx) == score
+
+    @pytest.mark.parametrize(
+        ("output", "score"),
+        [
+            ("Final Answer: C", 1.0),
+            ("Final Answer: (C)", 1.0),
+            ("Final Answer: **C**", 1.0),
+            ("Final Answer: C. corn", 1.0),
+            ("The answer is C.", 1.0),
+            ("Final Answer: Cannot determine.", 0.0),
+            ("Cannot determine from supplied evidence", 0.0),
+            ("Final Answer: unclear", 0.0),
+        ],
+        ids=[
+            "letter",
+            "parenthesised",
+            "bold",
+            "letter-and-choice",
+            "official-prefix",
+            "refusal-after-final-answer",
+            "refusal",
+            "no-letter",
+        ],
+    )
+    def test_standalone_reads_only_an_answer_that_starts_with_a_letter(
+        self, output: str, score: float
+    ) -> None:
+        ctx = MagicMock()
+        ctx.expected_output = "C"
+        ctx.output = output
+        assert LetterMatchEvaluator(standalone=True).evaluate(ctx) == score

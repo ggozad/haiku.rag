@@ -424,6 +424,7 @@ async def run_qa_benchmark(
         set_eval_attribute("n_executions", result.n_executions)
         set_eval_attribute("n_sandbox_search_calls", result.n_sandbox_search_calls)
         set_eval_attribute("n_requests", result.n_requests)
+        set_eval_attribute("tool_calls", result.tool_calls)
         set_eval_attribute("citation_status", result.citation_status)
         return result.answer
 

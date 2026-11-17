@@ -69,7 +69,19 @@ _VIDEO_MME_ROW = {
     "second_head": "Frame-Only",
     "third_head": "Basic Counting",
 }
+_CG_BENCH_ROW = {
+    "qid": "26",
+    "video_uid": "BV1s94y1G7RD",
+    "question": "Q?",
+    "choices": ["X", "Y"],
+    "right_answer": "B",
+    "clue_intervals": [[5, 7]],
+    "domain": "Life Record",
+    "sub_category": "Entity Perception",
+}
 _ROWS = {
+    "cg_bench": _CG_BENCH_ROW,
+    "cg_bench_sample": _CG_BENCH_ROW,
     "enterprise_rag": {
         "question_id": "qst_0001",
         "question_type": "basic",
