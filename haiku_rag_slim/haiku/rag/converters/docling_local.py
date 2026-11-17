@@ -14,6 +14,8 @@ from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import (
     DocumentConverter,
     flatten_inline_groups,
+    label_speakers,
+    media_extensions,
     vlm_api_headers,
     vlm_api_params,
     vlm_api_url,
@@ -135,7 +137,11 @@ class DoclingLocalConverter(DocumentConverter):
     @property
     def supported_extensions(self) -> list[str]:
         """Return list of file extensions supported by this converter."""
-        return self.docling_extensions + TextFileHandler.text_extensions
+        return (
+            self.docling_extensions
+            + media_extensions(self.config)
+            + TextFileHandler.text_extensions
+        )
 
     def _get_ocr_options(self, opts: "ConversionOptions"):
         """Get OCR options based on configuration."""
@@ -352,6 +358,7 @@ class DoclingLocalConverter(DocumentConverter):
             doc = self._cached_converter().convert(source).document
 
         flatten_inline_groups(doc)
+        label_speakers(doc)
         return doc
 
     async def _convert_docling_file(

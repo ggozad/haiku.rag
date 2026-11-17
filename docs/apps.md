@@ -161,6 +161,8 @@ The Inspector lists the documents of a database, filtered by title or URI, or by
 
 The agent searches and cites chunks, short passages of a document. A chunk's page shows its text, what the agent receives when a search returns it, its place on the original page, and the most similar chunks. It is the place to look when an answer cites the wrong passage or misses one.
 
+An audio or video document has no pages. Its chunks, search results, citations and video frames show their time in the recording, as `00:12:03-00:12:41`.
+
 ![A chunk on its original page, a scanned report from 1970](img/app-inspector-chunk.png)
 
 When the ingester writes the database, Edit on a document sets its title and your own metadata, kept under `metadata.user` (see [Editor metadata](python.md#editor-metadata)). A value marked JSON is stored as JSON, any other as text. A source re-ingest keeps both. Delete removes a document without a `source_id`, with its attachments. Delete is disabled on a source-owned document, which is removed from the source instead, and on a PDF attachment, and its tooltip says why. The ingester makes both changes, so neither is offered on a database read at a tag or on one outside `ingester.databases`. The header shows the editor metadata under the title. The inspector reads the change after up to `lancedb.read_consistency_interval_seconds` (30 by default): until then, reopening the document shows its earlier state and the list still shows a deleted document.

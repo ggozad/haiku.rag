@@ -82,6 +82,8 @@ doc = await client.create_document_from_source(
 )
 ```
 
+A source with unchanged bytes returns its stored document. `force=True` converts it again into the same document.
+
 PDFs that carry attachments via the `/EmbeddedFiles` table are split into one Document per attachment, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
 
 ### Retrieving documents
@@ -445,6 +447,8 @@ doc = await client.import_document(
 ```
 
 The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
+
+Chunks are stored with the metadata you give them. `client.chunk(docling_doc)` fills `page_numbers` and, for a recording, `time_range` (start and end in seconds), and caller-built chunks carry them only if you set them. The document's items always get their pages and times from the `docling_document`.
 
 ### Batch import
 

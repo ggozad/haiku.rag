@@ -11,7 +11,7 @@ uv pip install haiku.rag        # full
 uv pip install haiku.rag-slim   # core, extras chosen by you
 ```
 
-`haiku.rag` is `haiku.rag-slim` with the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines four extras of its own, `tui`, `s3`, `cross-encoder` and `ingester`:
+`haiku.rag` is `haiku.rag-slim` with the `docling`, `asr`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines four extras of its own, `tui`, `s3`, `cross-encoder` and `ingester`:
 
 ```bash
 uv pip install 'haiku.rag[ingester]'   # the haiku-ingester service

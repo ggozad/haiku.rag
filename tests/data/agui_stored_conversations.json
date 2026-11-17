@@ -68,6 +68,7 @@
             "document_title": null,
             "document_meta": {},
             "page_numbers": [],
+            "time_range": null,
             "headings": null,
             "content": "evidence",
             "doc_item_refs": [],
@@ -122,10 +123,12 @@
               "order": 0,
               "doc_item_refs": [],
               "page_numbers": [],
+              "time_range": null,
               "headings": null,
               "labels": [],
               "image_data": null,
               "picture_captions": {},
+              "picture_times": {},
               "annotations": null
             }
           ]
@@ -208,10 +211,12 @@
               "order": 0,
               "doc_item_refs": [],
               "page_numbers": [],
+              "time_range": null,
               "headings": null,
               "labels": [],
               "image_data": null,
               "picture_captions": {},
+              "picture_times": {},
               "annotations": null
             }
           ]

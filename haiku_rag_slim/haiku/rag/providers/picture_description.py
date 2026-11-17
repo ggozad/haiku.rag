@@ -1,4 +1,5 @@
-"""Direct VLM client for picture description, used by ``rebuild --descriptions``.
+"""Direct VLM client for picture description, used by ``rebuild --descriptions``
+and for video frames at ingest.
 
 The docling-serve converter normally drives picture description as a side-effect
 of conversion. When we need to run the VLM against pictures already stored in
@@ -8,12 +9,18 @@ same ``get_model`` plumbing as every other agent in the codebase.
 """
 
 import logging
+from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import BinaryContent
 
 from haiku.rag.config import AppConfig
+from haiku.rag.store.models.document_item import _picture_description_text
+from haiku.rag.utils.images import image_media_type
 from haiku.rag.utils.models import get_model
+
+if TYPE_CHECKING:
+    from docling_core.types.doc.document import DoclingDocument, PictureItem
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +48,9 @@ async def describe_pictures(
     out: dict[str, str] = {}
     for ref, blob in image_bytes_by_ref.items():
         try:
-            result = await agent.run([BinaryContent(data=blob, media_type="image/png")])
+            result = await agent.run(
+                [BinaryContent(data=blob, media_type=image_media_type(blob))]
+            )
         except Exception as e:
             logger.warning("VLM call failed for %s: %s", ref, e)
             continue
@@ -50,3 +59,28 @@ async def describe_pictures(
             out[ref] = text
 
     return out
+
+
+def undescribed_pictures(doc: "DoclingDocument") -> list["PictureItem"]:
+    """Pictures for the description model: none in a recording, whose frames are
+    never described."""
+    from haiku.rag.converters.base import is_recording
+
+    if is_recording(doc):
+        return []
+    return [p for p in doc.pictures if not _picture_description_text(p)]
+
+
+def set_picture_descriptions(
+    doc: "DoclingDocument", descriptions: dict[str, str]
+) -> None:
+    """Write each description into its picture's `meta.description`."""
+    from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
+
+    for pic in doc.pictures:
+        text = descriptions.get(pic.self_ref)
+        if not text:
+            continue
+        if pic.meta is None:
+            pic.meta = PictureMeta()
+        pic.meta.description = DescriptionMetaField(text=text)

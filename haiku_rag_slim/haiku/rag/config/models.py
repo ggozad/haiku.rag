@@ -334,6 +334,32 @@ class ConversionOptions(ConfigModel):
 PicturesMode = Literal["none", "description", "image"]
 
 
+class TranscriptionServerConfig(ConfigModel):
+    """An OpenAI-compatible `/audio/transcriptions` server, such as vLLM Whisper."""
+
+    base_url: str
+    model: str
+    api_key: str | None = None
+    language: str | None = None
+    timeout: float = Field(default=600.0, gt=0)
+
+
+class FrameSamplingConfig(ConfigModel):
+    """Which video frames become pictures."""
+
+    mode: Literal["fixed_interval", "scene_change"] = "fixed_interval"
+    interval_seconds: float = Field(default=10.0, gt=0)
+    max_width: int | None = Field(default=1280, gt=0)
+
+
+class MediaConfig(ConfigModel):
+    """Audio and video ingestion, converted by haiku.rag whatever the
+    converter: `asr` transcribes, `frames` samples video frames."""
+
+    asr: TranscriptionServerConfig | None = None
+    frames: FrameSamplingConfig = Field(default_factory=FrameSamplingConfig)
+
+
 class ProcessingConfig(ConfigModel):
     chunk_size: int = Field(default=256, gt=0)
     converter: Literal["docling-local", "docling-serve"] = "docling-local"
@@ -387,6 +413,8 @@ class ProcessingConfig(ConfigModel):
     """When a PDF carries `/EmbeddedFiles`, ingest each attachment as a separate
     Document linked back to the wrapper via ``metadata.parent_uri``. Cap depth
     at 3 to bound nested-attachment recursion."""
+    media: MediaConfig | None = None
+    """Audio and video ingestion. Without it, no audio or video file is supported."""
     auto_title: bool = False
     title_model: ModelConfig = Field(
         default_factory=lambda: ModelConfig(
@@ -397,6 +425,14 @@ class ProcessingConfig(ConfigModel):
             max_tokens=100,
         )
     )
+
+    @model_validator(mode="after")
+    def _media_needs_a_transcription_server(self) -> "ProcessingConfig":
+        if self.media is None:
+            return self
+        if self.media.asr is None:
+            raise ValueError("processing.media.asr must name a transcription server")
+        return self
 
 
 FTSLanguage = Literal[

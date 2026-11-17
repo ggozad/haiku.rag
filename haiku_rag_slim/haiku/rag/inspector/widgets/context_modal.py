@@ -81,6 +81,7 @@ class ContextModal(Screen):
             document_title=self.chunk.document_title,
             doc_item_refs=chunk_meta.doc_item_refs,
             page_numbers=chunk_meta.page_numbers,
+            time_range=chunk_meta.time_range,
             headings=chunk_meta.headings,
             labels=chunk_meta.labels,
         )

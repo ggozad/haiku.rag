@@ -142,6 +142,14 @@ async def test_add_document_from_source_reports_one_document(app, client):
     assert "doc-1 added successfully" in out(app)
 
 
+async def test_add_document_from_source_passes_force(app, client):
+    client.create_document_from_source.return_value = _doc("from file")
+
+    await app.add_document_from_source("/tmp/x.md", force=True)
+
+    assert client.create_document_from_source.await_args.kwargs["force"] is True
+
+
 async def test_add_document_from_source_reports_a_directory_count(app, client):
     client.create_document_from_source.return_value = [_doc("a"), _doc("b")]
 
@@ -151,7 +159,7 @@ async def test_add_document_from_source_reports_a_directory_count(app, client):
 
 
 async def test_add_document_from_source_reports_failed_files(app, client):
-    async def ingest(source, *, title, metadata, failed):
+    async def ingest(source, *, title, metadata, failed, force):
         failed += ["file:///tmp/dir/a.md", "file:///tmp/dir/b.md"]
         return [_doc("c")]
 
@@ -1031,3 +1039,13 @@ async def test_history_annotates_a_partial_tag_only_where_it_exists(temp_db_path
     assert printed.count("<- partial") == 1
     chunks_section = printed.split("\nchunks\n")[1].split("\ndocument_items\n")[0]
     assert "<- partial" in chunks_section
+
+
+def test_search_result_rendering_includes_the_time(app):
+    result = SearchResult(
+        content="hit", score=0.5, chunk_id="c1", time_range=(4.48, 7.6)
+    )
+
+    app._rich_print_search_result(result)
+
+    assert "00:00:04-00:00:07" in out(app)

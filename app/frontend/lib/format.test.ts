@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, publicUrl, readableUri } from "./format";
+import { formatBytes, formatTimeRange, publicUrl, readableUri } from "./format";
 
 describe("readableUri", () => {
 	it("decodes percent-encoded characters", () => {
@@ -34,5 +34,20 @@ describe("formatBytes", () => {
 		expect(formatBytes(512)).toBe("512 B");
 		expect(formatBytes(4096000)).toBe("3.9 MB");
 		expect(formatBytes(5 * 1024 ** 5)).toBe("5120.0 TB");
+	});
+});
+
+describe("formatTimeRange", () => {
+	it("shows a span as two clock times", () => {
+		expect(formatTimeRange([4.48, 3725.6])).toBe("00:00:04-01:02:05");
+	});
+
+	it("shows one time when both ends fall in the same second", () => {
+		expect(formatTimeRange([10.0, 10.001])).toBe("00:00:10");
+	});
+
+	it("shows nothing without a range", () => {
+		expect(formatTimeRange(null)).toBeNull();
+		expect(formatTimeRange(undefined)).toBeNull();
 	});
 });
