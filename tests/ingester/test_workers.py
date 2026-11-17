@@ -472,27 +472,23 @@ async def test_transient_exhausted_job_is_not_queued_again_while_unchanged(
     assert len(await jobs.list_jobs(source_id="src")) == 1
 
 
-async def test_transient_exhausted_loses_claim_to_reaper_writes_no_marker(
+async def test_transient_exhausted_after_the_reaper_dead_lettered_it_writes_no_marker(
     client, jobs, sync
 ):
-    """A worker whose claim was reset and re-claimed before its last attempt
-    is recorded leaves the job and sync_state to the re-claiming worker."""
+    """A worker finishing a last-attempt claim, already dead-lettered by the
+    reaper, leaves the job and sync_state unchanged."""
     client._ingest_observed.side_effect = TransientError("blip")
     job = await jobs.enqueue("src", "u", JobOp.UPSERT, revision="r0", max_attempts=1)
     assert job is not None
-    claimed_by_a = await jobs.claim_next("worker-A")
-    assert claimed_by_a is not None
-    await jobs.reap_stale(lease_ttl_seconds=0)
-    await jobs.claim_next("worker-B")
+    claimed = await jobs.claim_next("worker-A")
+    assert claimed is not None
+    [reaped] = await jobs.reap_stale(lease_ttl_seconds=0)
 
     pool = _pool(client, jobs, sync, worker_count=1)
     with capture_logs(_POOL_LOGGER, logging.WARNING) as records:
-        await pool._process(claimed_by_a)
+        await pool._process(claimed)
 
-    refreshed = await jobs.get_job(job.id)
-    assert refreshed is not None
-    assert refreshed.status is JobStatus.CLAIMED
-    assert refreshed.claimed_by == "worker-B"
+    assert await jobs.get_job(job.id) == reaped
     assert await sync.get_revision_snapshot("src") == {}
     assert any("lost claim" in r.getMessage() for r in records)
 
@@ -1446,11 +1442,53 @@ async def test_boot_reap_resets_stale_pre_existing_claims(client, jobs, sync, co
         assert refreshed is not None
         assert refreshed.status is JobStatus.QUEUED
         assert refreshed.claimed_by is None
-        # attempts was incremented by claim_next; reap decrements it so the
-        # next claim doesn't see a consumed retry it never actually used.
-        assert refreshed.attempts == 0
+        assert refreshed.attempts == 1
     finally:
         await pool.stop()
+
+
+async def test_boot_reap_dead_letters_a_claim_on_its_last_attempt(
+    client, jobs, sync, conn
+):
+    job = await jobs.enqueue("src", "u", JobOp.UPSERT, revision="r1", max_attempts=1)
+    assert job is not None
+    assert await jobs.claim_next("ghost-worker") is not None
+    await _backdate_lease(conn, job.id)
+
+    pool = _pool(client, jobs, sync, worker_count=0)
+    await pool.start()
+    await pool.stop()
+
+    refreshed = await jobs.get_job(job.id)
+    assert refreshed is not None
+    assert refreshed.status is JobStatus.DEAD and refreshed.conversion_stalled
+    assert await sync.get_revision_snapshot("src") == {"u": "r1"}
+    assert await sync.list_ingested_uris("src") == set()
+
+
+async def test_the_reaper_dead_letters_a_claim_on_its_last_attempt(
+    client, jobs, sync, conn
+):
+    pool = _pool(
+        client, jobs, sync, worker_count=0, reaper_interval_s=0.05, lease_ttl_s=1
+    )
+    await pool.start()
+    try:
+        job = await jobs.enqueue(
+            "src", "u", JobOp.UPSERT, revision="r1", max_attempts=1
+        )
+        assert job is not None
+        assert await jobs.claim_next("external-worker") is not None
+        await _backdate_lease(conn, job.id)
+        await _wait_for_status(jobs, job.id, JobStatus.DEAD)
+        for _ in range(100):
+            if await sync.get_revision_snapshot("src"):
+                break
+            await asyncio.sleep(0.02)
+    finally:
+        await pool.stop()
+
+    assert await sync.get_revision_snapshot("src") == {"u": "r1"}
 
 
 async def test_boot_reap_leaves_a_peer_process_fresh_claim_alone(client, jobs, sync):
@@ -1871,9 +1909,8 @@ async def test_reaper_skips_prune_when_retention_none(client, jobs, sync, conn):
 async def test_fatal_permanent_error_terminates_after_the_job_is_dead(
     client, jobs, sync, monkeypatch
 ):
-    """The job must be recorded dead before the process goes. `reap_stale`
-    refunds the attempt of a claim whose owner vanished, so terminating first
-    would return the poison document to the queue on every restart."""
+    """The job must be recorded dead before the process goes. Terminating
+    first leaves the claim to the reaper, which returns it to the queue."""
     from haiku.rag.ingester.workers import pool as pool_module
 
     client._ingest_observed.side_effect = PermanentError(
@@ -2028,7 +2065,7 @@ async def test_wait_idle_waits_for_an_execution_that_lost_its_claim(jobs, sync):
     stale = asyncio.create_task(pool._process(first))
     try:
         await asyncio.sleep(0.05)
-        assert await jobs.reap_stale(0) == 1
+        assert len(await jobs.reap_stale(0)) == 1
         second = await pool._claim(pool._worker_id(1))
         assert second is not None and second.id == first.id
         await pool._process(second)

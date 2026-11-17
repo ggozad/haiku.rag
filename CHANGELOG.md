@@ -5,6 +5,7 @@
 ### Changed
 
 - A PDF attachment refused by docling-local, such as a malformed CSV, is skipped instead of failing its PDF.
+- `haiku-ingester`: a job reclaimed after its worker stopped renewing its lease keeps its attempt. On its last attempt it goes dead, and an UPSERT is held like a stalled conversion until a new revision, a DELETE or a retry (#870).
 
 ### Fixed
 
