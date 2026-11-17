@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from haiku.rag.config import AppConfig
-from haiku.rag.converters.docling_local import DoclingLocalConverter
+from haiku.rag.converters.media import MediaConverter
+from tests.platform import needs_ffmpeg
 
 DATA = Path(__file__).parents[1] / "data"
 
@@ -23,6 +24,7 @@ def _config() -> AppConfig:
     )
 
 
+@needs_ffmpeg
 @pytest.mark.vcr()
 async def test_force_converts_an_unchanged_file_again(
     temp_db_path, tmp_path, monkeypatch
@@ -30,13 +32,13 @@ async def test_force_converts_an_unchanged_file_again(
     from haiku.rag.client import HaikuRAG
 
     converted: list[Path] = []
-    convert_file = DoclingLocalConverter.convert_file
+    convert_file = MediaConverter.convert_file
 
     async def counting(self, path, *args, **kwargs):
         converted.append(path)
         return await convert_file(self, path, *args, **kwargs)
 
-    monkeypatch.setattr(DoclingLocalConverter, "convert_file", counting)
+    monkeypatch.setattr(MediaConverter, "convert_file", counting)
     talk = tmp_path / "talk.mp3"
     talk.write_bytes((DATA / "speech.mp3").read_bytes())
 

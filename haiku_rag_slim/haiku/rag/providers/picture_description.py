@@ -62,6 +62,12 @@ async def describe_pictures(
 
 
 def undescribed_pictures(doc: "DoclingDocument") -> list["PictureItem"]:
+    """Pictures for the description model: none in a recording, whose frames are
+    never described."""
+    from haiku.rag.converters.base import is_recording
+
+    if is_recording(doc):
+        return []
     return [p for p in doc.pictures if not _picture_description_text(p)]
 
 

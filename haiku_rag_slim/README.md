@@ -16,7 +16,7 @@ uv pip install 'haiku.rag-slim[docling,anthropic,cross-encoder]'
 
 The core includes OpenAI and Ollama support, the MCP server and Logfire. Without `docling`, documents can be converted through docling-serve.
 
-Extras: `docling`, `tui`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina`, `s3`, `ingester`, and one per model provider: `anthropic`, `google`, `groq`, `mistral`, `bedrock`, `vertexai`. Ollama and any OpenAI-compatible endpoint need none. [Installation](https://ggozad.github.io/haiku.rag/installation/) lists what each provides.
+Extras: `docling`, `media`, `tui`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina`, `s3`, `ingester`, and one per model provider: `anthropic`, `google`, `groq`, `mistral`, `bedrock`, `vertexai`. Ollama and any OpenAI-compatible endpoint need none. [Installation](https://ggozad.github.io/haiku.rag/installation/) lists what each provides.
 
 ## Documentation
 

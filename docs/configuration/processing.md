@@ -321,73 +321,66 @@ processing:
     frames:
       mode: fixed_interval                    # fixed_interval | scene_change
       interval_seconds: 10
-      max_frames: 200
-      max_width: 1280                         # null keeps docling's PNG
+      max_width: 1280                         # null keeps the video's width
 ```
 
 Without `media`, audio and video files are not supported, and a source skips
-them. With it, `docling-local` transcribes `.wav`, `.mp3`, `.m4a`, `.aac`,
-`.ogg` and `.flac` files, and `.mp4`, `.avi`, `.mov`, `.mkv` and `.webm` videos.
-A transcript is a series of text items, each with its start and end time.
-docling ends an item only where a segment from the server ends a sentence, so
-one item can span minutes of speech. Search results and citations carry the
-time range of their items.
+them. With it, `.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg` and `.flac` files are
+converted by haiku.rag itself, with either converter: docling and docling-serve
+never see a recording. `.mp4`, `.avi`, `.mov`, `.mkv` and `.webm` videos also
+need a multimodal embedder (`embeddings.model.multimodal: true`), since their
+frames are searched by their image. Under a text embedder they are not
+supported, and a source skips them.
+Conversion needs `ffmpeg` and `ffprobe` on `PATH`, and `haiku.rag-slim` needs
+the `media` extra. A transcript is a series of
+text items, each with its start and end time. Search results and citations
+carry the time range of their items.
 
-`asr` is a transcription server or a docling preset. A server answers
-`/audio/transcriptions` with `response_format=verbose_json`, such as vLLM
-serving a Whisper model, and receives the audio. The whole recording goes in one
-request, a video's audio as 16 kHz WAV of about 110 MB per hour, so `timeout`
-must cover the transcription. vLLM refuses audio longer than 600 s or larger
-than 25 MB unless `VLLM_MAX_AUDIO_DECODE_DURATION_S` and
-`VLLM_MAX_AUDIO_CLIP_FILESIZE_MB` are raised. A preset transcribes
-in-process with Whisper and needs the `asr` extra:
+`asr` is a transcription server answering `/audio/transcriptions` with
+`response_format=verbose_json`, such as vLLM serving a Whisper model. The audio
+is cut into pieces of at most 590 s, each cut at the longest silence in the
+60 s before it, and each piece goes to the server as 16 kHz mono MP3, up to four
+at a time. A default vLLM server accepts these pieces, since it refuses audio
+over 600 s or 25 MB. Each segment of the server's answer becomes one text item. `timeout`
+bounds one request.
 
-```yaml
-processing:
-  media:
-    asr: whisper_turbo    # whisper_tiny, whisper_small, whisper_medium, whisper_large, ...
-```
+Whisper writes text over music, noise and silence: "Thank you." across a
+30 s window, one line repeated through a song. A segment is dropped when Silero
+VAD finds almost no speech within a second of it and its text either repeats
+three times in the recording or spreads a few words over 10 s or more. Silero
+misses speech over a music bed, so a segment with little detected speech but
+neither shape is kept. The VAD model (`onnx-community/silero-vad`, 2 MB) is
+downloaded on first use and by `download-models`.
 
-The plain names pick MLX Whisper on Apple Silicon and openai-whisper elsewhere.
-Names ending in `_mlx`, `_native` or `_s2t` choose a backend explicitly. An
-unknown name fails when the converter starts and lists the known ones.
+A video also yields frames as pictures, each with its time. `fixed_interval`
+takes the frame shown every `interval_seconds` from time zero, in one ffmpeg
+pass. `scene_change` finds scenes with docling's scene-change detector and takes
+the frame in the middle of each. `pictures: none` turns sampling off. A video
+without an audio track has frames only.
 
-A video also yields frames as pictures, sampled every `interval_seconds` or at
-scene changes, at most `max_frames`, and each with its time. Fixed-interval
-sampling stops at `max_frames`, so a video longer than `max_frames ×
-interval_seconds` has no frames after that point. `pictures: none` turns
-sampling off. A video needs `ffmpeg` on `PATH`, and so does audio transcribed
-with a preset. Audio sent to a server does not.
-
-Frames are stored as JPEG at quality 90, at most `max_width` pixels wide, with
-either converter. The picture description model, the embedder, the reranker and
-the chat model all receive that image. `max_width: null` keeps docling's
-full-size PNG. A new width reaches a stored recording when it is ingested
-again with `force` (`add-src --force`).
+Frames are stored as JPEG, at most `max_width` pixels wide. The picture
+description model, the embedder, the reranker and the chat model all receive
+that image. A new width reaches a stored recording when it is ingested again
+with `force` (`add-src --force`).
 
 A search result from a transcript carries up to four of the frames shown while
 it is spoken, spread over its time range, and a citation of it records them.
-With a multimodal embedder, each frame is also its own chunk, found by its
-image.
+Each frame is also its own chunk, found by its image.
 
-With `pictures: description`, each frame is described by the picture
-description model after conversion, with either converter. A frame whose call
-fails stays undescribed, and the warning for a document without descriptions
-fires only when no frame was described.
+Frames are never described, whatever `pictures` says, and `rebuild
+--descriptions` leaves recordings alone.
 
-Audio and video convert on a docling converter of their own, one file at a
-time, so a long transcription never holds up other documents. A recording
-longer than a few minutes may need a larger `conversion_timeout`. A
-transcription that times out leaves the process unable to convert audio or
-video again, as a timed-out PDF does for documents.
-
-With `converter: docling-serve`, set `media: {}`: transcription is configured
-on the docling-serve server, and `asr` and `frames` are refused, except
-`frames.max_width`.
+`conversion_timeout` bounds the conversion of a recording, and a recording
+longer than a few minutes may need a larger one. A conversion that times out
+stops its ffmpeg processes, scene detection and transcription requests, and the process converts the next document normally.
 
 ### Chunking strategies
 
-`chunker_type` picks the docling chunker:
+`chunker_type` picks the docling chunker for documents. An audio or video
+transcript is joined into one text and split by the hybrid chunker of the
+configured `chunker` whatever `chunker_type` names, so chunks end between
+sentences wherever the transcript punctuates them. A chunk references the
+segments covered by its text, and takes its time from them.
 
 - `hybrid` (default): docling's `HybridChunker`. Starts from the document's structure, splits items longer than `chunk_size` tokens of `chunking_tokenizer`, and with `chunking_merge_peers` merges undersized neighbours under the same headings.
 - `hierarchical`: docling's `HierarchicalChunker`. One chunk per document item (paragraph, list, table), with no token limit, so `chunk_size` does not apply.
@@ -396,10 +389,10 @@ on the docling-serve server, and `asr` and `frames` are refused, except
 
 ```yaml
 processing:
-  chunk_size: 256  # Maximum tokens per chunk
+  chunk_size: 256                # Maximum tokens per chunk
 ```
 
-`chunk_size` applies to the `hybrid` chunker. How much surrounding content a search result carries is set in `search`, see [Search settings](qa.md#search-settings).
+`chunk_size` applies to the `hybrid` chunker and to transcripts. How much surrounding content a search result carries is set in `search`, see [Search settings](qa.md#search-settings).
 
 ### Table serialization
 
