@@ -1047,7 +1047,10 @@ async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeyp
 
     monkeypatch.setattr(jobs, "release_if_claimed", _slow_release)
 
+    ingesting = asyncio.Event()
+
     async def _hangs_forever(*args, **kwargs):
+        ingesting.set()
         await asyncio.sleep(60)
         return Document(id="doc", content="x", uri="u")
 
@@ -1058,7 +1061,7 @@ async def test_cancel_cleanup_survives_second_cancel(client, jobs, sync, monkeyp
     pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()
     try:
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(ingesting.wait(), timeout=1.0)
         worker_task = pool._workers[0]
         worker_task.cancel()
         # Wait until the worker is inside the shielded release call.
@@ -1095,7 +1098,10 @@ async def test_drain_pending_releases_waits_for_orphan_releases(
 
     monkeypatch.setattr(jobs, "release_if_claimed", _slow_release)
 
+    ingesting = asyncio.Event()
+
     async def _hangs_forever(*args, **kwargs):
+        ingesting.set()
         await asyncio.sleep(60)
         return Document(id="doc", content="x", uri="u")
 
@@ -1106,7 +1112,7 @@ async def test_drain_pending_releases_waits_for_orphan_releases(
     pool = _pool(client, jobs, sync, worker_count=1)
     await pool.start()
     try:
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(ingesting.wait(), timeout=1.0)
         worker_task = pool._workers[0]
         worker_task.cancel()
         await asyncio.wait_for(release_entered.wait(), timeout=1.0)
