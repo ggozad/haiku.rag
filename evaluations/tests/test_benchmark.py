@@ -35,6 +35,62 @@ class TestResolveDataset:
             _resolve_dataset("nonexistent")
 
 
+class _DatasetEntryPoint:
+    def __init__(self, name: str, spec: DatasetSpec | None = None) -> None:
+        self.name = name
+        self.spec = spec
+
+    def load(self) -> DatasetSpec:
+        if self.spec is None:
+            raise AssertionError(f"entry point {self.name!r} was loaded")
+        return self.spec
+
+
+class TestRegisteredDatasets:
+    @pytest.fixture
+    def registered(self, monkeypatch: pytest.MonkeyPatch) -> list[_DatasetEntryPoint]:
+        from evaluations import datasets
+
+        points: list[_DatasetEntryPoint] = []
+
+        def fake_entry_points(*, group: str) -> list[_DatasetEntryPoint]:
+            assert group == datasets.ENTRY_POINT_GROUP
+            return points
+
+        monkeypatch.setattr(datasets, "entry_points", fake_entry_points)
+        return points
+
+    def test_resolves_a_registered_dataset(
+        self, registered: list[_DatasetEntryPoint]
+    ) -> None:
+        spec = stub_spec(key="my_dataset")
+        registered.append(_DatasetEntryPoint("my_dataset", spec))
+        assert _resolve_dataset("MY_DATASET") is spec
+
+    def test_loads_only_the_requested_entry_point(
+        self, registered: list[_DatasetEntryPoint]
+    ) -> None:
+        spec = stub_spec(key="my_dataset")
+        registered += [
+            _DatasetEntryPoint("broken"),
+            _DatasetEntryPoint("my_dataset", spec),
+        ]
+        assert _resolve_dataset("my_dataset") is spec
+
+    def test_a_builtin_dataset_never_loads_an_entry_point(
+        self, registered: list[_DatasetEntryPoint]
+    ) -> None:
+        registered.append(_DatasetEntryPoint("hotpotqa"))
+        assert _resolve_dataset("hotpotqa").key == "hotpotqa"
+
+    def test_an_unknown_dataset_lists_the_registered_ones(
+        self, registered: list[_DatasetEntryPoint]
+    ) -> None:
+        registered.append(_DatasetEntryPoint("my_dataset"))
+        with pytest.raises(typer.BadParameter, match="Choose from: .*my_dataset"):
+            _resolve_dataset("nonexistent")
+
+
 class TestConversationInputDispatch:
     async def test_prefix_rides_as_message_history(self, tmp_path: Path) -> None:
         """A ConversationInput case runs its prefix as message history and records its citation status."""
