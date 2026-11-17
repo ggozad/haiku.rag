@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.112.2] - 2026-11-17
+
 ### Added
 
 - `evaluations run` resolves datasets registered under the `haiku.rag.evaluations.datasets` entry-point group.
@@ -3353,7 +3355,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.2...HEAD
+[0.112.2]: https://github.com/ggozad/haiku.rag/compare/0.112.1...0.112.2
 [0.112.1]: https://github.com/ggozad/haiku.rag/compare/0.112.0...0.112.1
 [0.112.0]: https://github.com/ggozad/haiku.rag/compare/0.111.1...0.112.0
 [0.111.1]: https://github.com/ggozad/haiku.rag/compare/0.111.0...0.111.1
