@@ -58,20 +58,26 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
     return params
 
 
-MEDIA_EXTENSIONS = (
-    ".wav",
-    ".mp3",
-    ".m4a",
-    ".aac",
-    ".ogg",
-    ".flac",
-    ".mp4",
-    ".avi",
-    ".mov",
-    ".mkv",
-    ".webm",
-)
+AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac")
 VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".webm")
+MEDIA_EXTENSIONS = AUDIO_EXTENSIONS + VIDEO_EXTENSIONS
+
+
+def media_extensions(config: "AppConfig") -> list[str]:
+    """The recordings a converter accepts: audio once `processing.media` is set,
+    and video only under a multimodal embedder, since its frames are searched by
+    their image."""
+    if not config.processing.media:
+        return []
+    if config.embeddings.model.multimodal:
+        return list(MEDIA_EXTENSIONS)
+    return list(AUDIO_EXTENSIONS)
+
+
+def is_recording(doc: "DoclingDocument | None") -> bool:
+    """Whether the document was converted from audio or video."""
+    mimetype = doc.origin.mimetype if doc is not None and doc.origin else ""
+    return mimetype.startswith(("audio/", "video/"))
 
 
 def label_speakers(doc: "DoclingDocument") -> None:

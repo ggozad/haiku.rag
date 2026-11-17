@@ -349,19 +349,14 @@ class FrameSamplingConfig(ConfigModel):
 
     mode: Literal["fixed_interval", "scene_change"] = "fixed_interval"
     interval_seconds: float = Field(default=10.0, gt=0)
-    max_frames: int = Field(default=200, gt=0)
     max_width: int | None = Field(default=1280, gt=0)
 
 
 class MediaConfig(ConfigModel):
-    """Audio and video ingestion. `asr` and `frames` apply to `docling-local`:
-    docling-serve configures transcription on the server.
+    """Audio and video ingestion, converted by haiku.rag whatever the
+    converter: `asr` transcribes, `frames` samples video frames."""
 
-    `asr` is a transcription server, or the name of a docling in-process
-    preset such as `whisper_turbo`, which needs the `asr` extra.
-    """
-
-    asr: TranscriptionServerConfig | str | None = None
+    asr: TranscriptionServerConfig | None = None
     frames: FrameSamplingConfig = Field(default_factory=FrameSamplingConfig)
 
 
@@ -432,32 +427,11 @@ class ProcessingConfig(ConfigModel):
     )
 
     @model_validator(mode="after")
-    def _media_matches_converter(self) -> "ProcessingConfig":
+    def _media_needs_a_transcription_server(self) -> "ProcessingConfig":
         if self.media is None:
             return self
-        if self.converter == "docling-serve":
-            local_only = {
-                name
-                for name, value in (
-                    ("asr", self.media.asr is not None),
-                    (
-                        "frames",
-                        self.media.frames.model_copy(update={"max_width": None})
-                        != FrameSamplingConfig(max_width=None),
-                    ),
-                )
-                if value
-            }
-            if local_only:
-                raise ValueError(
-                    f"processing.media.{', '.join(sorted(local_only))} apply to "
-                    "docling-local. docling-serve configures them on the server"
-                )
-        elif self.media.asr is None:
-            raise ValueError(
-                "processing.media.asr must name a transcription server for "
-                "docling-local"
-            )
+        if self.media.asr is None:
+            raise ValueError("processing.media.asr must name a transcription server")
         return self
 
 

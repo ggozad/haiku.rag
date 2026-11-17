@@ -9,9 +9,9 @@ from urllib.parse import urlparse
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.base import MEDIA_EXTENSIONS, is_recording
 from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
 from haiku.rag.store.models.document_item import (
-    _decode_picture_bytes,
     _picture_description_text,
     time_range,
 )
@@ -42,7 +42,7 @@ def _warn_if_descriptions_missing(
     """
     if config.processing.pictures != "description":
         return
-    if not doc.pictures:
+    if not doc.pictures or is_recording(doc):
         return
     described = sum(1 for p in doc.pictures if _picture_description_text(p))
     if described == 0:
@@ -58,62 +58,6 @@ def _warn_if_descriptions_missing(
             model.base_url or "<provider default>",
             model.name,
         )
-
-
-_FRAME_JPEG_QUALITY = 90
-
-
-def _shrink_frames(config: AppConfig, doc: "DoclingDocument") -> None:
-    """Re-encode video frames as JPEG at most `frames.max_width` pixels wide."""
-    media = config.processing.media
-    if media is None or media.frames.max_width is None:
-        return
-    max_width = media.frames.max_width
-    import base64
-
-    from docling_core.types.doc import ImageRef, Size
-    from PIL import Image
-
-    for picture in doc.pictures:
-        if picture.image is None or time_range([picture]) is None:
-            continue
-        data = _decode_picture_bytes(picture)
-        if data is None:
-            continue
-        with Image.open(io.BytesIO(data)) as image:
-            frame = image.convert("RGB")
-        if frame.width > max_width:
-            height = max(1, round(frame.height * max_width / frame.width))
-            frame = frame.resize((max_width, height))
-        buffer = io.BytesIO()
-        frame.save(buffer, format="JPEG", quality=_FRAME_JPEG_QUALITY)
-        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-        picture.image = ImageRef(
-            mimetype="image/jpeg",
-            dpi=picture.image.dpi,
-            size=Size(width=frame.width, height=frame.height),
-            uri=f"data:image/jpeg;base64,{encoded}",
-        )
-
-
-async def _describe_frames(config: AppConfig, doc: "DoclingDocument") -> None:
-    """Describe video frames, which docling's video pipeline leaves undescribed."""
-    if config.processing.pictures != "description":
-        return
-    from haiku.rag.providers.picture_description import (
-        describe_pictures,
-        set_picture_descriptions,
-        undescribed_pictures,
-    )
-
-    frames = {
-        p.self_ref: data
-        for p in undescribed_pictures(doc)
-        if time_range([p]) is not None
-        and (data := _decode_picture_bytes(p)) is not None
-    }
-    if frames:
-        set_picture_descriptions(doc, await describe_pictures(frames, config=config))
 
 
 def _write_fetch_body_sync(body: bytes, suffix: str) -> Path:
@@ -173,10 +117,11 @@ async def convert(
             return await convert_pdf_with_splitting(
                 converter, file_path, effective_uri, config.processing.split_pages
             )
-        doc = await converter.convert_file(file_path, source_uri=effective_uri)
-        await asyncio.to_thread(_shrink_frames, config, doc)
-        await _describe_frames(config, doc)
-        return doc
+        if file_path.suffix.lower() not in MEDIA_EXTENSIONS:
+            return await converter.convert_file(file_path, source_uri=effective_uri)
+        from haiku.rag.converters.media import MediaConverter
+
+        return await MediaConverter(config).convert_file(file_path)
 
     if isinstance(source, Path):
         if not source.exists():
@@ -294,8 +239,16 @@ async def chunk(
     path where the docling is loaded from the stored blob.
     """
     from haiku.rag.chunkers import get_chunker
+    from haiku.rag.chunkers.transcript import TranscriptChunker
 
-    chunker = get_chunker(config)
+    if is_recording(docling_document):
+        # A transcript is one text item, which the hierarchical chunker never splits.
+        hybrid = config.processing.model_copy(update={"chunker_type": "hybrid"})
+        chunker = TranscriptChunker(
+            get_chunker(config.model_copy(update={"processing": hybrid}))
+        )
+    else:
+        chunker = get_chunker(config)
     chunks = await chunker.chunk(docling_document)
 
     if embedder.supports_images:

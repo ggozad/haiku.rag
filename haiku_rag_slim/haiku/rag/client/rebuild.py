@@ -19,6 +19,7 @@ from haiku.rag.client.documents import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.base import is_recording
 from haiku.rag.hooks import ConvertedDocument, HookError, overrides
 from haiku.rag.store.compression import compress_docling_split
 from haiku.rag.store.engine import REBUILD_COMMANDS
@@ -999,13 +1000,7 @@ async def _is_recording(session: SingleDatabaseSession, document: Document) -> b
     """Whether the stored docling document was converted from audio or video."""
     assert document.id is not None
     stored = await session.document_repository.get_docling_data(document.id)
-    docling_document = stored.get_docling_document() if stored else None
-    mimetype = (
-        docling_document.origin.mimetype
-        if docling_document and docling_document.origin
-        else ""
-    )
-    return mimetype.startswith(("audio/", "video/"))
+    return is_recording(stored.get_docling_document() if stored else None)
 
 
 async def _rebuild_full(

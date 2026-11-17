@@ -5,7 +5,6 @@ import contextvars
 import hashlib
 import importlib
 import logging
-import shutil
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -13,11 +12,10 @@ from typing import TYPE_CHECKING, ClassVar
 
 from haiku.rag.config import AppConfig
 from haiku.rag.converters.base import (
-    MEDIA_EXTENSIONS,
-    VIDEO_EXTENSIONS,
     DocumentConverter,
     flatten_inline_groups,
     label_speakers,
+    media_extensions,
     vlm_api_headers,
     vlm_api_params,
     vlm_api_url,
@@ -65,15 +63,6 @@ _WEDGED = threading.Event()
 _WEDGED_MESSAGE = (
     "A previous conversion timed out and still holds the docling converter; "
     "restart the process to convert again."
-)
-
-# Audio and video convert on a converter and lock of their own, so a long
-# transcription never holds the document converter.
-_MEDIA_LOCK = threading.Lock()
-_MEDIA_WEDGED = threading.Event()
-_MEDIA_WEDGED_MESSAGE = (
-    "A previous audio or video conversion timed out and still holds the media "
-    "converter. Restart the process to convert audio or video again."
 )
 
 # How long a queued conversion waits for the converter before looking at
@@ -144,28 +133,15 @@ class DoclingLocalConverter(DocumentConverter):
         except ModuleNotFoundError as exc:
             raise_missing_extra("docling", "docling", exc)
         self.config = config
-        media = config.processing.media
-        if media is not None and isinstance(media.asr, str):
-            self._asr_preset(media.asr)
-
-    @staticmethod
-    def _asr_preset(name: str):
-        """The docling in-process ASR options for a preset name."""
-        from docling.datamodel import asr_model_specs
-        from docling.datamodel.asr_model_specs import AsrModelType
-
-        if name not in {m.value for m in AsrModelType}:
-            known = ", ".join(m.value for m in AsrModelType)
-            raise ValueError(
-                f"processing.media.asr: unknown preset {name!r}. Known presets: {known}"
-            )
-        return getattr(asr_model_specs, name.upper())
 
     @property
     def supported_extensions(self) -> list[str]:
         """Return list of file extensions supported by this converter."""
-        media = list(MEDIA_EXTENSIONS) if self.config.processing.media else []
-        return self.docling_extensions + media + TextFileHandler.text_extensions
+        return (
+            self.docling_extensions
+            + media_extensions(self.config)
+            + TextFileHandler.text_extensions
+        )
 
     def _get_ocr_options(self, opts: "ConversionOptions"):
         """Get OCR options based on configuration."""
@@ -323,110 +299,10 @@ class DoclingLocalConverter(DocumentConverter):
             InputFormat.EPUB: EpubFormatOption(pipeline_options=pipeline_options),
         }
 
-    def _require_media_tools(self, path: Path) -> None:
-        """Raise unless the tools converting this recording are installed.
-
-        A video needs ffmpeg, and so does audio transcribed in-process.
-        In-process transcription needs the `asr` extra.
-        """
-        media = self.config.processing.media
-        assert media is not None
-        preset = media.asr if isinstance(media.asr, str) else None
-        in_video = path.suffix.lower() in VIDEO_EXTENSIONS
-        if (in_video or preset) and shutil.which("ffmpeg") is None:
-            raise ConversionFailedError(f"Converting {path} needs ffmpeg on PATH")
-        if preset:
-            from docling.datamodel.pipeline_options_asr_model import (
-                InlineAsrMlxWhisperOptions,
-                InlineAsrWhisperS2TOptions,
-            )
-
-            spec = self._asr_preset(preset)
-            module = (
-                "mlx_whisper"
-                if isinstance(spec, InlineAsrMlxWhisperOptions)
-                else "whisper_s2t"
-                if isinstance(spec, InlineAsrWhisperS2TOptions)
-                else "whisper"
-            )
-            try:
-                importlib.import_module(module)
-            except ModuleNotFoundError as exc:
-                raise_missing_extra(module, "asr", exc)
-
-    def _media_format_options(self) -> "dict[InputFormat, FormatOption]":
-        """Audio and video format options from `processing.media`."""
-        from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.pipeline_options import (
-            AsrPipelineOptions,
-            VideoPipelineOptions,
-        )
-        from docling.datamodel.pipeline_options_asr_model import ApiAsrOptions
-        from docling.document_converter import AudioFormatOption, VideoFormatOption
-        from docling.utils.video_frame_sampling import VideoFrameSamplingMode
-
-        media = self.config.processing.media
-        assert media is not None and media.asr is not None
-        server = media.asr
-        if isinstance(server, str):
-            asr = self._asr_preset(server)
-        else:
-            asr = ApiAsrOptions(
-                url=f"{server.base_url.rstrip('/')}/audio/transcriptions",
-                model=server.model,
-                language=server.language,
-                headers=(
-                    {"Authorization": f"Bearer {server.api_key}"}
-                    if server.api_key
-                    else {}
-                ),
-                timeout=server.timeout,
-            )
-        remote = not isinstance(server, str)
-        frames = media.frames
-        return {
-            InputFormat.AUDIO: AudioFormatOption(
-                pipeline_options=AsrPipelineOptions(
-                    asr_options=asr, enable_remote_services=remote
-                )
-            ),
-            InputFormat.VIDEO: VideoFormatOption(
-                pipeline_options=VideoPipelineOptions(
-                    asr_options=asr,
-                    enable_remote_services=remote,
-                    generate_frame_images=self.config.processing.pictures != "none",
-                    frame_sampling_mode=VideoFrameSamplingMode(frames.mode),
-                    frame_interval_seconds=frames.interval_seconds,
-                    max_sampled_frames=frames.max_frames,
-                )
-            ),
-        }
-
-    def _cached_media_converter(self) -> "DoclingDocConverter":
-        """The converter shared by every audio and video conversion with these
-        options. The caller must hold `_MEDIA_LOCK`."""
-        from docling.document_converter import (
-            DocumentConverter as DoclingDocConverter,
-        )
-
-        options = self._media_format_options()
-        key = (
-            "media:"
-            + hashlib.md5(
-                b"\0".join(
-                    o.pipeline_options.model_dump_json(serialize_as_any=True).encode()
-                    for o in options.values()
-                    if o.pipeline_options is not None
-                ),
-                usedforsecurity=False,
-            ).hexdigest()
-        )
-        converter = _CONVERTERS.get(key)
-        if converter is None:
-            converter = _CONVERTERS[key] = DoclingDocConverter(
-                allowed_formats=list(options), format_options=options
-            )
-        return converter
+    def _refuse_if_wedged(self) -> None:
+        """Refuse before doing any work if the shared converter is stranded."""
+        if _WEDGED.is_set():
+            raise ConverterWedgedError(_WEDGED_MESSAGE)
 
     def _cached_converter(self) -> "DoclingDocConverter":
         """The converter shared by every conversion with these pipeline
@@ -469,10 +345,7 @@ class DoclingLocalConverter(DocumentConverter):
     ) -> "DoclingDocument":
         """The part of a conversion the deadline covers. For shared formats the
         caller holds `_CONVERTER_LOCK`."""
-        suffix = Path(source.name).suffix.lower()
-        if suffix in MEDIA_EXTENSIONS:
-            doc = self._cached_media_converter().convert(source).document
-        elif suffix in _URI_AWARE_EXTENSIONS:
+        if Path(source.name).suffix.lower() in _URI_AWARE_EXTENSIONS:
             from docling.document_converter import (
                 DocumentConverter as DoclingDocConverter,
             )
@@ -509,20 +382,14 @@ class DoclingLocalConverter(DocumentConverter):
         from docling_core.types.io import DocumentStream
 
         timeout = self.config.processing.conversion_timeout
-        media = path.suffix.lower() in MEDIA_EXTENSIONS
         shared = path.suffix.lower() not in _URI_AWARE_EXTENSIONS
-        lock, wedged, wedged_message = (
-            (_MEDIA_LOCK, _MEDIA_WEDGED, _MEDIA_WEDGED_MESSAGE)
-            if media
-            else (_CONVERTER_LOCK, _WEDGED, _WEDGED_MESSAGE)
-        )
         source: Path | DocumentStream = path
         if content is not None:
             source = DocumentStream(
                 name=docling_safe_name(path.name), stream=BytesIO(content)
             )
-        if shared and wedged.is_set():
-            raise ConverterWedgedError(wedged_message)
+        if shared:
+            self._refuse_if_wedged()
 
         loop = asyncio.get_running_loop()
         admitted: asyncio.Future[None] = loop.create_future()
@@ -554,16 +421,16 @@ class DoclingLocalConverter(DocumentConverter):
             # Polled rather than blocking: a conversion parked here when a
             # sibling's deadline fires has to learn that the converter is
             # stranded, and its caller has to hear about it.
-            while not lock.acquire(timeout=_LOCK_POLL_SECONDS):
-                if wedged.is_set():
-                    raise ConverterWedgedError(wedged_message)
+            while not _CONVERTER_LOCK.acquire(timeout=_LOCK_POLL_SECONDS):
+                if _WEDGED.is_set():
+                    raise ConverterWedgedError(_WEDGED_MESSAGE)
                 if abandoned.is_set():
                     return None
             try:
-                if wedged.is_set():
+                if _WEDGED.is_set():
                     # The holder returned after its deadline. The converter has
                     # been declared stranded and nothing may run on it.
-                    raise ConverterWedgedError(wedged_message)
+                    raise ConverterWedgedError(_WEDGED_MESSAGE)
                 if abandoned.is_set():
                     # Nobody is waiting for this document any more, and
                     # converting it would hold the converter for no one.
@@ -571,7 +438,7 @@ class DoclingLocalConverter(DocumentConverter):
                 _admit_from_thread()
                 return _convert()
             finally:
-                lock.release()
+                _CONVERTER_LOCK.release()
 
         # A daemon thread, not the default executor: `asyncio.run`'s teardown
         # joins that executor and interpreter exit joins its non-daemon
@@ -635,7 +502,7 @@ class DoclingLocalConverter(DocumentConverter):
                     "on for as long as it lasts."
                 )
                 if shared:
-                    wedged.set()
+                    _WEDGED.set()
                 if abandoned.is_set():
                     logger.error(
                         "Converting %s exceeded processing.conversion_timeout "
@@ -694,14 +561,10 @@ class DoclingLocalConverter(DocumentConverter):
         from docling.exceptions import ConversionError
 
         self.require_supported(path)
-        if path.suffix.lower() in MEDIA_EXTENSIONS:
-            self._require_media_tools(path)
         try:
             file_extension = path.suffix.lower()
 
-            if file_extension in self.docling_extensions or (
-                file_extension in MEDIA_EXTENSIONS
-            ):
+            if file_extension in self.docling_extensions:
                 content = None
                 if file_extension in DOCLING_TEXT_EXTENSIONS:
                     content = await asyncio.to_thread(transcode, path)

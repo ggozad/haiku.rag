@@ -12,8 +12,10 @@ from haiku.rag.config.models import ModelConfig
 @pytest.fixture
 def mock_to_thread():
     """Patch asyncio.to_thread to skip docling/tokenizer downloads."""
-    with patch("haiku.rag.client.downloads.asyncio.to_thread", new_callable=AsyncMock):
-        yield
+    with patch(
+        "haiku.rag.client.downloads.asyncio.to_thread", new_callable=AsyncMock
+    ) as to_thread:
+        yield to_thread
 
 
 @asynccontextmanager
@@ -190,3 +192,22 @@ async def test_ollama_models_from_every_config_slot_are_pulled(
         }
 
     assert expected_model in pulled
+
+
+async def test_download_models_fetches_the_speech_detector_for_media(mock_to_thread):
+    from haiku.rag.config import AppConfig
+    from haiku.rag.converters.media import VAD_REPO, speech_detector
+
+    config = AppConfig.model_validate(
+        {"processing": {"media": {"asr": {"base_url": "http://x/v1", "model": "w"}}}}
+    )
+    events = []
+    async for progress in download_models(config):
+        events.append((progress.model, progress.status))
+        if progress.model == VAD_REPO and progress.status == "done":
+            break
+
+    assert (VAD_REPO, "start") in events
+    assert any(
+        call.args == (speech_detector,) for call in mock_to_thread.await_args_list
+    )

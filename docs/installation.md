@@ -31,7 +31,6 @@ Every extra `haiku.rag-slim` defines:
 | Extra | Provides | In `haiku.rag` |
 |---|---|---|
 | `docling` | PDF, DOCX, PPTX, XLSX, HTML, EPUB, LaTeX, email and images, converted locally | yes |
-| `asr` | In-process Whisper transcription of audio and video (`processing.media.asr` set to a preset) | yes |
 | `tui` | Terminal UI for `chat` and `inspect` | yes |
 | `voyageai` | VoyageAI embeddings | yes |
 | `cohere` | Cohere embeddings and reranking | yes |
