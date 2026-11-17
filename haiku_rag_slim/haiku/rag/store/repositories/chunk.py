@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import Store
-from haiku.rag.store.models.chunk import Chunk, SearchType
+from haiku.rag.store.models.chunk import Chunk, SearchType, chunk_media
 from haiku.rag.store.schema import ensure_indexes, query_to_pydantic
 from haiku.rag.utils.sql import escape_sql_string
 
@@ -77,6 +77,7 @@ class ChunkRepository:
     def _to_record(self, chunk: Chunk, chunk_id: str):
         assert chunk.document_id is not None
         assert chunk.embedding is not None
+        media, start_time, end_time = chunk_media(chunk.metadata)
         return self.store.ChunkRecord(
             id=chunk_id,
             document_id=chunk.document_id,
@@ -86,6 +87,9 @@ class ChunkRepository:
                 {k: v for k, v in chunk.metadata.items() if k != "order"}
             ),
             order=int(chunk.order),
+            media=media,
+            start_time=start_time,
+            end_time=end_time,
             vector=chunk.embedding,
         )
 

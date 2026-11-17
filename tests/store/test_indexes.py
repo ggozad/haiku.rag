@@ -13,12 +13,12 @@ from haiku.rag.store.schema import ensure_indexes, rebuild_indexes
 EXPECTED_INDEXED_COLUMNS = {
     "documents": {"id"},
     "document_meta": {"id", "uri"},
-    "chunks": {"id", "document_id"},
+    "chunks": {"id", "document_id", "media"},
     "document_items": {"document_id", "position", "self_ref", "label"},
 }
 
 # content_fts joins the set once the table holds rows to index.
-EXPECTED_POPULATED_CHUNK_COLUMNS = {"content_fts", "id", "document_id"}
+EXPECTED_POPULATED_CHUNK_COLUMNS = {"content_fts", "id", "document_id", "media"}
 
 
 async def _fts_indexed_rows(table) -> int | None:
@@ -392,7 +392,7 @@ async def test_rebuild_indexes_skips_fts_while_the_table_is_empty(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         applied = await rebuild_indexes(store.chunks_table, "chunks", "English")
 
-        assert sorted(applied) == ["document_id", "id"]
+        assert sorted(applied) == ["document_id", "id", "media"]
         assert await _fts_indexed_rows(store.chunks_table) is None
 
 
@@ -436,7 +436,7 @@ async def test_store_rebuild_indexes_covers_every_table(temp_db_path):
         assert rebuilt == {
             "documents": ["id"],
             "document_meta": ["id", "uri"],
-            "chunks": ["content_fts", "id", "document_id"],
+            "chunks": ["content_fts", "id", "document_id", "media"],
             "document_items": ["document_id", "position", "self_ref", "label"],
             "settings": [],
         }

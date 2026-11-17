@@ -1,8 +1,10 @@
 import json
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, PrivateAttr
 
+from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 from haiku.rag.utils.formatting import format_time_range
 
 if TYPE_CHECKING:
@@ -91,6 +93,22 @@ class ChunkMetadata(BaseModel):
                     )
                 )
         return bounding_boxes
+
+
+Media = Literal["speech", "frame"]
+
+
+def chunk_media(
+    metadata: Mapping[str, Any],
+) -> tuple[Media | None, float | None, float | None]:
+    """A recording chunk's kind and times, from its metadata, or Nones for a
+    document chunk."""
+    times = metadata.get("time_range")
+    if not times:
+        return None, None, None
+    refs = metadata.get("doc_item_refs") or []
+    frame = len(refs) == 1 and refs[0].startswith(PICTURE_REF_PREFIX)
+    return ("frame" if frame else "speech"), times[0], times[1]
 
 
 class Chunk(BaseModel):

@@ -278,7 +278,8 @@ async def test_rebuild_resumes_phase2_from_staging_after_crash(
 
 def test_staging_chunk_record_mirrors_chunk_record_schema():
     """``_StagingChunkRecord`` must hold every ``ChunkRecordBase`` field except
-    those that are re-derived (``content_fts``) or replaced (``vector``).
+    those that are re-derived (``content_fts`` and the ``chunk_media`` columns)
+    or replaced (``vector``).
 
     If someone adds a column to ``ChunkRecordBase`` without updating
     ``_StagingChunkRecord``, embed-only rebuilds will silently drop that
@@ -287,7 +288,13 @@ def test_staging_chunk_record_mirrors_chunk_record_schema():
     from haiku.rag.client.rebuild import _StagingChunkRecord
     from haiku.rag.store.schema import ChunkRecordBase
 
-    expected = set(ChunkRecordBase.model_fields) - {"content_fts", "vector"}
+    expected = set(ChunkRecordBase.model_fields) - {
+        "content_fts",
+        "vector",
+        "media",
+        "start_time",
+        "end_time",
+    }
     assert set(_StagingChunkRecord.model_fields) == expected
 
 
@@ -2028,6 +2035,7 @@ async def test_rebuild_reindex_works_on_empty_database(temp_db_path):
         assert {i.name for i in await client.store.chunks_table.list_indices()} == {
             "id_idx",
             "document_id_idx",
+            "media_idx",
         }
 
 

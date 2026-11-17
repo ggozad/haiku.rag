@@ -100,6 +100,7 @@ from haiku.rag.store.upgrades.v0_114_0 import (
     upgrade_blob_originals as upgrade_0_114_0_blob_originals,
 )
 from haiku.rag.store.upgrades.v0_115_0 import (
+    upgrade_chunk_media as upgrade_0_115_0_chunk_media,
     upgrade_item_times as upgrade_0_115_0_item_times,
 )
 
@@ -109,3 +110,4 @@ upgrades.append(upgrade_0_91_0_fts_format_v2)
 upgrades.append(upgrade_0_113_0_original_columns)
 upgrades.append(upgrade_0_114_0_blob_originals)
 upgrades.append(upgrade_0_115_0_item_times)
+upgrades.append(upgrade_0_115_0_chunk_media)

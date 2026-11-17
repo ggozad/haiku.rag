@@ -117,6 +117,9 @@ class ChunkRecordBase(LanceModel):
     content_fts: str = Field(default="")
     metadata: str = Field(default="{}")
     order: int = Field(default=0)
+    media: str | None = None
+    start_time: float | None = None
+    end_time: float | None = None
     vector: list[float] = Field(default_factory=list)
 
 
@@ -185,6 +188,7 @@ def index_specs(
                 ),
                 ("id", BTree()),
                 ("document_id", BTree()),
+                ("media", Bitmap()),
             ]
         case "document_items":
             return [
@@ -195,6 +199,19 @@ def index_specs(
             ]
         case _:
             return []
+
+
+async def _declared_columns(
+    table: lancedb.AsyncTable, table_name: str, fts_language: str
+) -> list[tuple[str, Bitmap | BTree | FTS]]:
+    """The declared indexes whose column the table has. An upgrade step that
+    runs before a later step adds a column must not index it."""
+    present = {field.name for field in await table.schema()}
+    return [
+        (column, config)
+        for column, config in index_specs(table_name, fts_language)
+        if column in present
+    ]
 
 
 async def ensure_indexes(
@@ -218,7 +235,7 @@ async def ensure_indexes(
                 fts_names.setdefault(column, index.name)
 
     applied: list[str] = []
-    for column, config in index_specs(table_name, fts_language):
+    for column, config in await _declared_columns(table, table_name, fts_language):
         declared = type(config).__name__
         present = covering.get(column, set())
         if declared in present:
@@ -278,7 +295,7 @@ async def rebuild_indexes(
 
     populated = await table.count_rows() > 0
     applied: list[str] = []
-    for column, config in index_specs(table_name, fts_language):
+    for column, config in await _declared_columns(table, table_name, fts_language):
         if isinstance(config, FTS) and not populated:
             continue
         name = names.get((column, type(config).__name__), f"{column}_idx")
