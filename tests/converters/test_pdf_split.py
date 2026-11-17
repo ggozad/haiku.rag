@@ -7,6 +7,7 @@ the docling-core concatenate contract in isolation.
 """
 
 import io
+import logging
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -251,3 +252,82 @@ def test_iter_pdf_slices_rejects_unopenable_pdf(tmp_path):
 
     with pytest.raises(UnsupportedSourceError, match="cannot open PDF"):
         list(iter_pdf_slices(junk, slice_size=1))
+
+
+def _locked_slices(monkeypatch, tmp_path: Path) -> list[Path]:
+    """Pin slices to `tmp_path` and make deleting one raise WinError 32's
+    `PermissionError`. Returns the slice paths whose deletion was refused."""
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    refused: list[Path] = []
+    real_unlink = Path.unlink
+
+    def _unlink(self, missing_ok=False):
+        if self.parent == tmp_path and self.name.startswith("tmp"):
+            refused.append(self)
+            raise PermissionError(13, "The process cannot access the file")
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+    return refused
+
+
+async def test_convert_survives_a_slice_that_cannot_be_deleted(tmp_path, monkeypatch):
+    from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.converters import pdf_split
+    from tests.conftest import capture_logs
+
+    src = _make_pdf(4, tmp_path)
+    refused = _locked_slices(monkeypatch, tmp_path)
+
+    class _Converter:
+        async def convert_file(self, path: Path, *, source_uri):
+            return DoclingDocument(name="slice")
+
+    with capture_logs(pdf_split.logger, logging.WARNING) as records:
+        doc = await convert_pdf_with_splitting(
+            _Converter(),  # ty: ignore[invalid-argument-type]
+            src,
+            source_uri=None,
+            slice_size=2,
+        )
+
+    assert isinstance(doc, DoclingDocument)
+    assert len(refused) == 2
+    assert [r.getMessage() for r in records] == [
+        f"Could not delete PDF slice {path}: [Errno 13] The process cannot access "
+        "the file"
+        for path in refused
+    ]
+
+
+async def test_convert_raises_the_conversion_error_when_the_slice_cannot_be_deleted(
+    tmp_path, monkeypatch
+):
+    from haiku.rag.converters import pdf_split
+    from haiku.rag.converters.exceptions import ConversionTimeoutError
+    from tests.conftest import capture_logs
+
+    src = _make_pdf(2, tmp_path)
+    refused = _locked_slices(monkeypatch, tmp_path)
+
+    class _StalledConverter:
+        async def convert_file(self, path: Path, *, source_uri):
+            raise ConversionTimeoutError("deadline", converter_wedged=False)
+
+    with (
+        capture_logs(pdf_split.logger, logging.WARNING) as records,
+        pytest.raises(ConversionTimeoutError, match="deadline"),
+    ):
+        await convert_pdf_with_splitting(
+            _StalledConverter(),  # ty: ignore[invalid-argument-type]
+            src,
+            source_uri=None,
+            slice_size=2,
+        )
+
+    [path] = refused
+    assert [r.getMessage() for r in records] == [
+        f"Could not delete PDF slice {path}: [Errno 13] The process cannot access "
+        "the file"
+    ]

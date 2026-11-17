@@ -5,6 +5,7 @@
 ### Fixed
 
 - `rebuild --embed-only` no longer scans its staging table once per document (#867).
+- A PDF converted with `processing.split_pages` no longer fails when a slice's temporary file cannot be deleted (#869).
 
 ## [0.112.0] - 2026-11-13
 
