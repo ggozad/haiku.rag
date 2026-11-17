@@ -1,3 +1,5 @@
+from importlib.metadata import EntryPoint, entry_points
+
 from evaluations.config import DatasetSpec
 
 from .enterprise_rag import ENTERPRISE_RAG_SPEC
@@ -34,4 +36,13 @@ DATASETS: dict[str, DatasetSpec] = {
     )
 }
 
-__all__ = ["DATASETS"]
+ENTRY_POINT_GROUP = "haiku.rag.evaluations.datasets"
+
+
+def registered_datasets() -> dict[str, EntryPoint]:
+    """The entry points registered under ENTRY_POINT_GROUP by lowercased name,
+    unloaded, so a dataset with a broken import fails only when it is run."""
+    return {ep.name.lower(): ep for ep in entry_points(group=ENTRY_POINT_GROUP)}
+
+
+__all__ = ["DATASETS", "ENTRY_POINT_GROUP", "registered_datasets"]

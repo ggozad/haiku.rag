@@ -39,6 +39,17 @@ Reference configs are in `evaluations/configs/`. Every QA run also scores citati
   - `mtrag_clapnq_live` replays each conversation through one capability session, carrying the model's own answers, tool history and state, with `EvidenceCompactionCapability` registered. It reports per-turn outcomes with micro (per turn) and macro (per conversation) aggregates.
   - `mtrag_clapnq_live_uncompacted` is the same replay without compaction.
 
+### Registering a dataset
+
+Another package adds a dataset by registering a `DatasetSpec` under the `haiku.rag.evaluations.datasets` entry-point group:
+
+```toml
+[project.entry-points."haiku.rag.evaluations.datasets"]
+my_dataset = "my_package.datasets:MY_DATASET_SPEC"
+```
+
+`evaluations run my_dataset` then loads that spec. Entry points are read from the metadata of installed distributions, so the package has to be installed. Being importable is not enough. The entry-point name is the dataset key, matched case-insensitively. A built-in dataset with the same key takes precedence. Only the requested entry point is imported. `download all` and `upload all` cover the built-in datasets only.
+
 ## Running a benchmark
 
 ```bash

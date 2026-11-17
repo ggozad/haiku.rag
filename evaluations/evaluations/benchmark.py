@@ -8,7 +8,7 @@ from rich.console import Console
 
 from evaluations.artifacts import download_dataset_db, upload_dataset_db
 from evaluations.config import DatasetSpec
-from evaluations.datasets import DATASETS
+from evaluations.datasets import DATASETS, registered_datasets
 from evaluations.experiment import code_revision, config_hash
 from evaluations.pairing import pair_outcomes, render
 from evaluations.population import populate_db
@@ -161,14 +161,18 @@ def _load_case_ids(path: Path | None) -> set[str] | None:
 
 
 def _resolve_dataset(dataset: str) -> DatasetSpec:
-    """Resolve a dataset key to a DatasetSpec or raise BadParameter."""
-    spec = DATASETS.get(dataset.lower())
-    if spec is None:
-        valid_datasets = ", ".join(sorted(DATASETS))
-        raise typer.BadParameter(
-            f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
-        )
-    return spec
+    """Resolve a dataset key to a built-in DatasetSpec, else to the one
+    registered under that name, or raise BadParameter."""
+    key = dataset.lower()
+    if key in DATASETS:
+        return DATASETS[key]
+    registered = registered_datasets()
+    if key in registered:
+        return registered[key].load()
+    valid_datasets = ", ".join(sorted({*DATASETS, *registered}))
+    raise typer.BadParameter(
+        f"Unknown dataset '{dataset}'. Choose from: {valid_datasets}"
+    )
 
 
 def _resolve_datasets(dataset: str) -> list[DatasetSpec]:

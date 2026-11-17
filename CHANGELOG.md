@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `evaluations run` resolves datasets registered under the `haiku.rag.evaluations.datasets` entry-point group.
+
 ## [0.112.1] - 2026-11-17
 
 ### Changed
