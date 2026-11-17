@@ -751,6 +751,36 @@ class TestDoclingLocalConverter:
         with pytest.raises(ConversionFailedError, match="File format not allowed"):
             await converter.convert_file(source)
 
+    async def test_convert_file_raises_conversion_failed_for_unparseable_csv(
+        self, converter, tmp_path
+    ):
+        """docling's pipeline wraps the CSV backend's refusal in `RuntimeError`."""
+        source = tmp_path / "broken.csv"
+        source.write_text('a,b,c\n1,2\n"unterminated,8\n', encoding="utf-8")
+
+        with pytest.raises(ConversionFailedError, match="SimplePipeline failed"):
+            await converter.convert_file(source)
+
+    async def test_convert_file_keeps_a_wrapped_os_error_retryable(
+        self, converter, tmp_path, monkeypatch
+    ):
+        from haiku.rag.converters.docling_local import DoclingLocalConverter
+
+        async def failing(self, path, source_uri, content=None):
+            try:
+                raise OSError("disk read failed")
+            except OSError as exc:
+                raise RuntimeError("Pipeline SimplePipeline failed") from exc
+
+        monkeypatch.setattr(DoclingLocalConverter, "_convert_docling_file", failing)
+        source = tmp_path / "table.csv"
+        source.write_text("a,b\n1,2\n", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="Failed to parse file") as exc:
+            await converter.convert_file(source)
+
+        assert not isinstance(exc.value, ConversionFailedError)
+
     @pytest.mark.parametrize(
         ("name", "body"),
         [
