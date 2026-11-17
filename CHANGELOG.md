@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.112.1] - 2026-11-17
+
 ### Changed
 
 - A PDF attachment refused by docling-local, such as a malformed CSV, is skipped instead of failing its PDF.
@@ -3347,7 +3349,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.1...HEAD
+[0.112.1]: https://github.com/ggozad/haiku.rag/compare/0.112.0...0.112.1
 [0.112.0]: https://github.com/ggozad/haiku.rag/compare/0.111.1...0.112.0
 [0.111.1]: https://github.com/ggozad/haiku.rag/compare/0.111.0...0.111.1
 [0.111.0]: https://github.com/ggozad/haiku.rag/compare/0.110.0...0.111.0
