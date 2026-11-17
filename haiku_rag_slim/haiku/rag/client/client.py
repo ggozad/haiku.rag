@@ -32,13 +32,19 @@ from haiku.rag.store.exceptions import (
     ConfigMismatchError,
     UnknownDatabaseError,
 )
-from haiku.rag.store.models.chunk import Chunk, SearchResult, SearchType
-from haiku.rag.store.models.document import Document
+from haiku.rag.store.models.chunk import (
+    Chunk,
+    Content,
+    SearchResult,
+    SearchType,
+    TimeWindow,
+)
+from haiku.rag.store.models.document import Document, Recording
 from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from haiku.rag.utils.concurrency import gather_all
-from haiku.rag.utils.sql import escape_sql_string
+from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
@@ -984,6 +990,45 @@ class HaikuRAG:
             limit=limit, offset=offset, filter=filter, include_content=include_content
         )
 
+    async def list_recordings(
+        self, filter: str | None = None, sources: list[str] | None = None
+    ) -> list[Recording]:
+        """The recordings among the documents matching `filter`, in every
+        covered database or in those named by `sources`."""
+        if self.covers_multiple:
+            groups = await gather_all(
+                *(
+                    owner.list_recordings(filter=filter)
+                    for owner in await self.clients_covering(sources)
+                )
+            )
+            return [recording for group in groups for recording in group]
+        if not await self.clients_covering(sources):
+            return []
+        spans = await self.chunk_repository.recording_spans(filter)
+        if not spans:
+            return []
+        documents = {
+            doc.id: doc
+            for doc in await self.list_documents(
+                filter=build_document_id_filter(list(spans))
+            )
+        }
+        recordings = []
+        for document_id, (last_time, has_frames) in spans.items():
+            document = documents.get(document_id)
+            recordings.append(
+                Recording(
+                    document_id=document_id,
+                    title=document.title if document else None,
+                    uri=document.uri if document else None,
+                    source=self.source,
+                    last_time=last_time,
+                    has_frames=has_frames,
+                )
+            )
+        return recordings
+
     async def count_documents(self, filter: str | None = None) -> int:
         """Count documents with optional filtering.
 
@@ -1061,7 +1106,14 @@ class HaikuRAG:
         filter: str | None = None,
         include_images: bool = True,
         sources: list[str] | None = None,
+        content: Content | None = None,
+        window: TimeWindow | None = None,
     ) -> list[SearchResult]:
+        """Search the covered databases.
+
+        `content` keeps only document chunks, speech or frames, and `window`
+        only the chunks of one recording overlapping its times.
+        """
         from haiku.rag.client.search import (
             _resolved_search_type,
             search,
@@ -1074,7 +1126,7 @@ class HaikuRAG:
         request = SearchRequest(
             query=query,
             filter=filter,
-            search_type=_resolved_search_type(query, search_type),
+            search_type=_resolved_search_type(query, search_type, content),
             limit=limit,
         )
         if isinstance(query, str):
@@ -1090,18 +1142,35 @@ class HaikuRAG:
             # A hook may have cleared it on the way through. after_search reads
             # the same request, so it has to end up carrying what retrieval ran
             # with.
-            request.search_type = request.search_type or "hybrid"
+            request.search_type = _resolved_search_type(
+                query, request.search_type, content
+            )
             search_type = request.search_type
 
         if self.covers_multiple:
             results = await search_sources(
-                self, query, limit, search_type, filter, include_images, sources
+                self,
+                query,
+                limit,
+                search_type,
+                filter,
+                include_images,
+                sources,
+                content=content,
+                window=window,
             )
         elif not await self.clients_covering(sources):
             results = []
         else:
             results = await search(
-                self, query, limit, search_type, filter, include_images
+                self,
+                query,
+                limit,
+                search_type,
+                filter,
+                include_images,
+                content=content,
+                window=window,
             )
             for result in results:
                 result.source = self.source
@@ -1117,13 +1186,16 @@ class HaikuRAG:
     async def expand_context(
         self,
         search_results: list[SearchResult],
+        window: TimeWindow | None = None,
     ) -> list[SearchResult]:
+        """Expand results with their surrounding content. Under `window`, a
+        result of that recording expands only over items overlapping it."""
         from haiku.rag.client.search import expand_context, expand_sources
 
         if isinstance(self._session, FederatedSession):
-            return await expand_sources(self._session, search_results)
+            return await expand_sources(self._session, search_results, window)
         return await expand_context(
-            self._single_session("expand_context"), search_results
+            self._single_session("expand_context"), search_results, window
         )
 
     async def ask(

@@ -1,13 +1,16 @@
 import asyncio
 import base64
 from collections.abc import Sequence
+from collections.abc import Set as AbstractSet
 from typing import TYPE_CHECKING, NamedTuple
 
 from haiku.rag.store.models.chunk import (
     BoundingBox,
     Chunk,
+    Content,
     SearchResult,
     SearchType,
+    TimeWindow,
     qualified_id,
 )
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, spread_frames
@@ -18,6 +21,7 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.client.session import FederatedSession, SingleDatabaseSession
+    from haiku.rag.reranking.base import RerankerBase
 
 
 async def search(
@@ -27,6 +31,8 @@ async def search(
     search_type: SearchType | None = None,
     filter: str | None = None,
     include_images: bool = True,
+    content: Content | None = None,
+    window: TimeWindow | None = None,
 ) -> list[SearchResult]:
     """Search for relevant chunks with optional reranking.
 
@@ -40,6 +46,8 @@ async def search(
         filter: Optional SQL WHERE clause to filter documents before searching chunks.
         include_images: When True, populate ``SearchResult.image_data`` with
             base64 picture bytes for picture-labeled chunks.
+        content: Only document chunks, speech or frames. Everything when None.
+        window: Only chunks of one recording, overlapping its times.
 
     Returns:
         List of SearchResult objects ordered by relevance.
@@ -47,19 +55,22 @@ async def search(
     if limit is None:
         limit = client._config.search.limit
 
-    resolved = _resolved_search_type(query, search_type)
+    resolved = _resolved_search_type(query, search_type, content)
     # The repository embeds late, so a filter matching nothing never embeds.
     query_vector = (
         None if isinstance(query, str) else await _embed_query(client, query, resolved)
     )
+    reranker = _reranker_for(client, query, content)
     candidates = await client.chunk_repository.search(
         query=query if isinstance(query, str) else "",
-        limit=_fetch_limit(client, query, limit),
+        limit=_fetch_limit(client, reranker, limit),
         search_type=resolved,
         filter=filter,
         query_vector=query_vector,
+        content=content,
+        window=window,
     )
-    chunk_results = await _rank(client, query, candidates, limit)
+    chunk_results = await _rank(client, reranker, query, candidates, limit)
 
     results = [SearchResult.from_chunk(chunk, score) for chunk, score in chunk_results]
     results = _dedup_picture_chunks(results)
@@ -78,6 +89,8 @@ async def search_sources(
     filter: str | None = None,
     include_images: bool = True,
     sources: list[str] | None = None,
+    content: Content | None = None,
+    window: TimeWindow | None = None,
 ) -> list[SearchResult]:
     """Search several databases and fuse their results into one ranked list.
 
@@ -93,22 +106,27 @@ async def search_sources(
         # One database is an ordinary search: it keeps the database's own
         # hybrid scores and embeds late.
         return await selected[0].search(
-            query, limit, search_type, filter, include_images
+            query,
+            limit,
+            search_type,
+            filter,
+            include_images,
+            content=content,
+            window=window,
         )
-    resolved = _resolved_search_type(query, search_type)
+    resolved = _resolved_search_type(query, search_type, content)
     if resolved != "fts":
         client._require_one_embedder(selected)
 
     # One over-fetch decision, one query vector and one reranker for the whole
     # set: the databases share an embedder.
-    fetch_limit = _fetch_limit(client, query, limit)
+    reranker = _reranker_for(client, query, content)
+    fetch_limit = _fetch_limit(client, reranker, limit)
     query_vector = await _embed_query(selected[0], query, resolved)
     text = query if isinstance(query, str) else ""
     # Embeddings are read only by cosine fusion: a reranker scores the union
     # itself, and its 10x over-fetch would materialize them for nothing.
-    uses_cosine = query_vector is not None and (
-        not isinstance(query, str) or client.reranker is None
-    )
+    uses_cosine = query_vector is not None and reranker is None
     per_source = await gather_all(
         *(
             c.chunk_repository.search(
@@ -118,13 +136,21 @@ async def search_sources(
                 filter=filter,
                 query_vector=query_vector,
                 with_vectors=uses_cosine,
+                content=content,
+                window=window,
             )
             for c in selected
         )
     )
 
     ranked = await _fuse(
-        client, selected, query, per_source, limit, query_vector=query_vector
+        client,
+        reranker,
+        selected,
+        query,
+        per_source,
+        limit,
+        query_vector=query_vector,
     )
 
     results: list[SearchResult] = []
@@ -152,6 +178,7 @@ async def search_sources(
 
 async def _fuse(
     federator: "HaikuRAG",
+    reranker: "RerankerBase | None",
     clients: list["HaikuRAG"],
     query: "str | bytes | PILImage.Image",
     per_source: list[list[tuple[Chunk, float]]],
@@ -180,11 +207,7 @@ async def _fuse(
     if not owned:
         return []
 
-    # The reranker interface takes a text query, so an image query skips it,
-    # and the check precedes `reranker`, which builds the reranker on first
-    # access.
     if isinstance(query, str):
-        reranker = federator.reranker
         if reranker is not None:
             chunks = [chunk for _, chunk, _ in owned]
             if federator._config.reranking.multimodal:
@@ -245,33 +268,47 @@ def _cosine_to(query_vector: list[float], embeddings: list[list[float]]) -> list
 _RRF_K = 60
 
 
-def _fetch_limit(
+def _reranker_for(
     client: "HaikuRAG",
     query: "str | bytes | PILImage.Image",
-    limit: int,
-) -> int:
-    """How many candidates to fetch per database.
+    content: Content | None,
+) -> "RerankerBase | None":
+    """The reranker that orders this search, or None to keep the retrieval order.
 
-    Only a text query with a reranker over-fetches: an image query keeps its
-    vector ranking, and the type is checked before `reranker`, which loads model
-    weights for a local one on first access.
+    The reranker interface takes a text query, so an image query keeps its
+    vector ranking. A text reranker drops chunks with no text, so a frame
+    search keeps its vector ranking unless the reranker scores images. The
+    query type is checked before `client.reranker`, which loads model weights
+    for a local one on first access.
     """
     if not isinstance(query, str):
-        return limit
-    if not client.reranker:
+        return None
+    if content == "frames" and not client._config.reranking.multimodal:
+        return None
+    return client.reranker
+
+
+def _fetch_limit(
+    client: "HaikuRAG", reranker: "RerankerBase | None", limit: int
+) -> int:
+    """How many candidates to fetch per database: more when a reranker orders
+    them."""
+    if reranker is None:
         return limit
     return limit * client._config.search.rerank_pool_factor
 
 
 def _resolved_search_type(
-    query: "str | bytes | PILImage.Image", search_type: SearchType | None
+    query: "str | bytes | PILImage.Image",
+    search_type: SearchType | None,
+    content: Content | None = None,
 ) -> SearchType:
     """The search actually run for this query.
 
-    An image query has no text to match against, so it is vector-only whatever
-    the caller asked for; a text query defaults to hybrid.
+    An image query, or a search of frames, has no text to match, so it is
+    vector-only whatever the caller asked for; a text query defaults to hybrid.
     """
-    if not isinstance(query, str):
+    if not isinstance(query, str) or content == "frames":
         return "vector"
     return search_type or "hybrid"
 
@@ -302,21 +339,13 @@ async def _embed_query(
 
 async def _rank(
     client: "HaikuRAG",
+    reranker: "RerankerBase | None",
     query: "str | bytes | PILImage.Image",
     candidates: list[tuple[Chunk, float]],
     limit: int,
 ) -> list[tuple[Chunk, float]]:
-    """Order candidates and cut them to `limit`.
-
-    The reranker interface takes a text query, so an image query keeps the
-    vector ranking. Its type is checked before `client.reranker`, which builds
-    the reranker on first access and loads model weights for a local one.
-    """
-    if not isinstance(query, str):
-        return candidates[:limit]
-
-    reranker = client.reranker
-    if reranker is None:
+    """Order candidates and cut them to `limit`."""
+    if reranker is None or not isinstance(query, str):
         return candidates[:limit]
 
     chunks = [chunk for chunk, _ in candidates]
@@ -486,6 +515,7 @@ async def populate_image_data(client: "HaikuRAG", results: list[SearchResult]) -
 async def expand_sources(
     federated: "FederatedSession",
     search_results: list[SearchResult],
+    window: TimeWindow | None = None,
 ) -> list[SearchResult]:
     """Expand results drawn from several databases, each through its own.
 
@@ -503,7 +533,7 @@ async def expand_sources(
     sessions = await federated.sessions_for(names)
     expanded_groups = await gather_all(
         *(
-            expand_context(session, by_source[name])
+            expand_context(session, by_source[name], window)
             for name, session in zip(names, sessions, strict=True)
         )
     )
@@ -533,6 +563,7 @@ async def expand_sources(
 async def expand_context(
     session: "SingleDatabaseSession",
     search_results: list[SearchResult],
+    window: TimeWindow | None = None,
 ) -> list[SearchResult]:
     """Expand search results with surrounding content from the document.
 
@@ -574,6 +605,27 @@ async def expand_context(
         if positions
     }
     items_by_document = await repo.get_items_in_ranges(windows)
+    clipped_doc = None
+    if window is not None and window.clipped and window.document_id in windows:
+        clipped_doc = window.document_id
+        kept = [
+            item
+            for item in items_by_document.get(clipped_doc, [])
+            if window.overlaps(item.start_time, item.end_time)
+        ]
+        positions = {item.position for item in kept}
+        items_by_document[clipped_doc] = kept
+        positions_by_document[clipped_doc] = {
+            ref: position
+            for ref, position in positions_by_document[clipped_doc].items()
+            if position in positions
+        }
+        inside = {item.self_ref for item in kept}
+        document_groups[clipped_doc] = [
+            _keep_pictures(result, inside)
+            for result in document_groups[clipped_doc]
+            if inside.intersection(result.doc_item_refs)
+        ]
 
     # In document_groups order: the score sort below is stable, so assembling
     # expandable and passthrough documents in separate passes would reorder
@@ -588,6 +640,7 @@ async def expand_context(
                 max_chars,
                 positions_by_document.get(doc_id, {}),
                 items_by_document.get(doc_id, []),
+                doc_id == clipped_doc,
             )
         )
 
@@ -597,6 +650,28 @@ async def expand_context(
     # introduced by section expansion, so the multimodal payload stays
     # bounded by what was originally retrieved.
     return expanded_results
+
+
+def _keep_pictures(result: SearchResult, refs: AbstractSet[str]) -> SearchResult:
+    """The result with only the attached pictures among `refs`."""
+    return result.model_copy(
+        update={
+            "image_data": {
+                ref: data
+                for ref, data in (result.image_data or {}).items()
+                if ref in refs
+            }
+            or None,
+            "picture_captions": {
+                ref: caption
+                for ref, caption in result.picture_captions.items()
+                if ref in refs
+            },
+            "picture_times": {
+                ref: at for ref, at in result.picture_times.items() if ref in refs
+            },
+        }
+    )
 
 
 class GroundingBox(NamedTuple):

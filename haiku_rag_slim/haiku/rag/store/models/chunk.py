@@ -1,11 +1,13 @@
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, PrivateAttr
 
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
 from haiku.rag.utils.formatting import format_time_range
+from haiku.rag.utils.sql import escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
@@ -96,6 +98,42 @@ class ChunkMetadata(BaseModel):
 
 
 Media = Literal["speech", "frame"]
+Content = Literal["documents", "speech", "frames"]
+
+
+@dataclass(frozen=True)
+class TimeWindow:
+    """A recording, narrowed to `start`..`end` seconds when either is set."""
+
+    document_id: str
+    start: float | None = None
+    end: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.start is not None and self.end is not None and self.end <= self.start:
+            raise ValueError("A time window must end after it starts")
+
+    @property
+    def clipped(self) -> bool:
+        return self.start is not None or self.end is not None
+
+    def overlaps(self, start: float | None, end: float | None) -> bool:
+        """Whether a span of the recording overlaps the window. An untimed span
+        never does."""
+        if start is None or end is None:
+            return False
+        return (self.end is None or start < self.end) and (
+            self.start is None or end > self.start
+        )
+
+    def where(self) -> str:
+        """SQL selecting the recording's rows whose times overlap the window."""
+        clauses = [f"document_id = '{escape_sql_string(self.document_id)}'"]
+        if self.end is not None:
+            clauses.append(f"start_time < {float(self.end)}")
+        if self.start is not None:
+            clauses.append(f"end_time > {float(self.start)}")
+        return " AND ".join(clauses)
 
 
 def chunk_media(

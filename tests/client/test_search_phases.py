@@ -20,7 +20,13 @@ async def test_a_reranked_text_search_fetches_the_configured_pool(
         seen = {}
 
         async def fake_search(
-            query, limit, search_type="hybrid", filter=None, query_vector=None
+            query,
+            limit,
+            search_type="hybrid",
+            filter=None,
+            query_vector=None,
+            content=None,
+            window=None,
         ):
             seen["limit"] = limit
             return []

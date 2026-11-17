@@ -355,6 +355,27 @@ results = await client.search(
 
 Image queries return picture chunks (synthetic per-figure chunks emitted at ingest under a multimodal embedder) and any text chunks whose vectors are near the image vector in the shared embedding space. Calling `client.search(bytes)` against a text-only embedder raises a `ValueError`.
 
+### Searching recordings
+
+`content` restricts a search to document chunks (`"documents"`), a recording's speech (`"speech"`) or its frames (`"frames"`). A `TimeWindow` restricts it to one recording, and to the chunks overlapping `start` to `end` seconds when either is set. `list_recordings` lists each recording with its title, URI, the time its last segment or frame ends (`last_time`), and whether it has frames.
+
+```python
+from haiku.rag.store.models.chunk import TimeWindow
+
+recordings = await client.list_recordings()
+talk = recordings[0]
+
+said = await client.search("why the budget was cut", content="speech")
+
+window = TimeWindow(talk.document_id, start=60.0, end=180.0)
+seen = await client.search("a man opening a red door", content="frames", window=window)
+around = await client.expand_context(
+    await client.search("budget", content="speech", window=window), window=window
+)
+```
+
+Frames have no text, so a frame search is vector-only, whatever `search_type` says, and skips a text-only reranker. A reranker with `reranking.multimodal: true` still orders frames. `expand_context` with a window expands that recording's results only over the items overlapping it, keeps only their frames inside it, and drops a result with nothing inside it. A segment keeps its own times, so text at the window's edges can run past it by up to one segment.
+
 ### Expanding search context
 
 Expand search results with surrounding content from the document:

@@ -323,8 +323,12 @@ def _build_result(
     pos_to_item: dict[int, DocumentItem],
     noise: AbstractSet[int],
     max_chars: int,
+    clipped: bool = False,
 ) -> SearchResult:
-    """Build one expanded result from the items in ``[range_start, range_end]``."""
+    """Build one expanded result from the items in ``[range_start, range_end]``.
+
+    `clipped` items were filtered to a time window, so their text stands even
+    when it is shorter than the chunk's."""
     content_parts: list[str] = []
     # Char span of each contributing item within the joined content, so
     # metadata can be narrowed to whatever survives a budget clip.
@@ -371,7 +375,7 @@ def _build_result(
     # This can happen when item texts are fragmented (e.g., docling splits
     # formatted HTML list items into many small text nodes); fall back to
     # the chunk's own content, described by the chunk's own metadata.
-    if len(joined) < len(first.content):
+    if not clipped and len(joined) < len(first.content):
         base_content, base_spans = first.content, None
     else:
         base_content, base_spans = joined, item_spans
@@ -481,11 +485,13 @@ def expand_with_items(
     max_chars: int,
     ref_positions: dict[str, int],
     window_items: list[DocumentItem],
+    clipped: bool = False,
 ) -> list[SearchResult]:
     """Expand results from items already fetched.
 
     Fetching is the caller's, so one query can serve every document in a result
-    set rather than one per document.
+    set rather than one per document. `clipped` items were filtered to a time
+    window.
     """
     if not ref_positions or not window_items:
         return results
@@ -525,7 +531,13 @@ def expand_with_items(
     final_results: list[SearchResult] = []
     for range_start, range_end, group in merged:
         built = _build_result(
-            range_start, range_end, group, pos_to_item, noise_for(group), max_chars
+            range_start,
+            range_end,
+            group,
+            pos_to_item,
+            noise_for(group),
+            max_chars,
+            clipped,
         )
         if len(group) > 1 and _group_lost_constituent(built, group):
             # The merged window cannot afford every constituent's evidence:
@@ -535,7 +547,13 @@ def expand_with_items(
                 lo, hi = constituent_range[id(result)]
                 final_results.append(
                     _build_result(
-                        lo, hi, [result], pos_to_item, noise_for([result]), max_chars
+                        lo,
+                        hi,
+                        [result],
+                        pos_to_item,
+                        noise_for([result]),
+                        max_chars,
+                        clipped,
                     )
                 )
             continue

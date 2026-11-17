@@ -67,3 +67,15 @@ class Document(BaseModel):
 
         json_str = decompress_json(self.docling_document)
         return DoclingDocument.model_validate_json(json_str)
+
+
+class Recording(BaseModel):
+    """An audio or video document. `last_time` is when its last speech segment
+    or frame ends, in seconds. The recording itself can run on past it."""
+
+    document_id: str
+    title: str | None = None
+    uri: str | None = None
+    source: str | None = None
+    last_time: float
+    has_frames: bool
