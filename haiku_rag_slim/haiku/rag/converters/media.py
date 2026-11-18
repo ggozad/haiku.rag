@@ -12,9 +12,10 @@ import subprocess
 import sys
 import tempfile
 import threading
+from bisect import bisect_right
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -71,6 +72,12 @@ MIN_SPEECH_SHARE = 0.05
 REPEATS = 3
 SPARSE_SECONDS = 10.0
 SPARSE_WORDS_PER_SECOND = 0.4
+# A sentence without closing punctuation is cut at its first pause of at least
+# PAUSE_SECONDS once it runs past MAX_SENTENCE_SECONDS.
+MAX_SENTENCE_SECONDS = 10.0
+PAUSE_SECONDS = 0.5
+SENTENCE_ENDS = (".", "?", "!", "…", "。", "？", "！")
+CLOSERS = "\"'”’)]»」』"
 JPEG_QUALITY = "2"
 SCENE_PROBE_FPS = 1.0
 CHILD_GRACE_SECONDS = 2.0
@@ -81,10 +88,19 @@ _PTS_TIME = re.compile(r"pts_time:(-?[\d.]+)")
 
 
 @dataclass(frozen=True)
+class Word:
+    start: float
+    end: float
+    text: str
+    """As the server spaced it, with its leading space."""
+
+
+@dataclass(frozen=True)
 class Utterance:
     start: float
     end: float
     text: str
+    words: tuple[Word, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -310,7 +326,7 @@ async def _transcribe(
     data = {
         "model": server.model,
         "response_format": "verbose_json",
-        "timestamp_granularities[]": "segment",
+        "timestamp_granularities[]": ["word", "segment"],
     }
     if server.language:
         data["language"] = server.language
@@ -329,14 +345,78 @@ async def _transcribe(
             "The transcription server gave no timed segments. It must support "
             "response_format=verbose_json"
         )
-    utterances = []
+    utterances, raw_texts = [], []
     for segment in segments:
         text = segment["text"].strip()
         if text:
             start = offset + segment["start"]
             end = max(offset + segment["end"], start + MIN_SEGMENT_SECONDS)
             utterances.append(Utterance(start, end, text))
-    return utterances
+            raw_texts.append(segment["text"])
+    words = [
+        Word(offset + w["start"], offset + w["end"], w["word"])
+        for w in response.json().get("words") or []
+    ]
+    spaced = any(w.text[:1].isspace() for w in words)
+    starts = [u.start for u in utterances]
+    owned: list[list[Word]] = [[] for _ in utterances]
+    for word in words:
+        owned[max(0, bisect_right(starts, word.start) - 1)].append(word)
+    # The unstripped text keeps the space between a segment and the one before it.
+    return [
+        replace(u, words=tuple(mine if spaced else respaced(mine, raw)))
+        for u, mine, raw in zip(utterances, owned, raw_texts, strict=True)
+    ]
+
+
+def respaced(words: list[Word], text: str) -> list[Word]:
+    """Words sent without their spaces, each given the space that `text`, their
+    segment's text, puts before it."""
+    result, cursor = [], 0
+    for word in words:
+        at = text.find(word.text, cursor)
+        if at < 0:
+            result.append(word)
+            continue
+        gap = text[cursor:at]
+        result.append(
+            replace(word, text=f" {word.text}" if gap.isspace() else word.text)
+        )
+        cursor = at + len(word.text)
+    return result
+
+
+def sentences(utterances: list[Utterance]) -> list[Utterance]:
+    """The utterances recut into sentences by their words' times. A sentence
+    can run across utterances. An utterance without words is kept as it is."""
+    result: list[Utterance] = []
+    current: list[Word] = []
+
+    def close() -> None:
+        text = "".join(w.text for w in current).strip()
+        if text:
+            start = current[0].start
+            end = max(current[-1].end, start + MIN_SEGMENT_SECONDS)
+            result.append(Utterance(start, end, text))
+        current.clear()
+
+    for utterance in utterances:
+        if not utterance.words:
+            close()
+            result.append(utterance)
+            continue
+        for word in utterance.words:
+            if (
+                current
+                and word.start - current[-1].end >= PAUSE_SECONDS
+                and word.start - current[0].start > MAX_SENTENCE_SECONDS
+            ):
+                close()
+            current.append(word)
+            if word.text.strip().rstrip(CLOSERS).endswith(SENTENCE_ENDS):
+                close()
+    close()
+    return result
 
 
 async def transcribe(
@@ -372,7 +452,15 @@ async def transcribe(
             *(segment(start, end) for start, end in zip(bounds, ends, strict=True))
         )
     scored = [pair for piece in pieces for pair in piece]
-    return spoken([u for u, _ in scored], [share for _, share in scored])
+    kept = {
+        id(u) for u in spoken([u for u, _ in scored], [share for _, share in scored])
+    }
+    # Pieces are transcribed apart, so a sentence ends with its piece.
+    return [
+        sentence
+        for piece in pieces
+        for sentence in sentences([u for u, _ in piece if id(u) in kept])
+    ]
 
 
 def _scale(max_width: int | None) -> list[str]:

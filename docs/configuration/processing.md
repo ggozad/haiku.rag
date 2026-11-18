@@ -341,11 +341,22 @@ carry the time range of their items.
 is cut into pieces of at most 590 s, each cut at the longest silence in the
 60 s before it, and each piece goes to the server as 16 kHz mono MP3, up to four
 at a time. A default vLLM server accepts these pieces, since it refuses audio
-over 600 s or 25 MB. Each segment of the server's answer becomes one text item. `timeout`
-bounds one request.
+over 600 s or 25 MB. `timeout` bounds one request.
+
+haiku.rag asks for word and segment times
+(`timestamp_granularities[]=word,segment`). When the server returns word times,
+each sentence becomes one text item, timed from its first word to its last. A
+sentence ends at `.`, `?`, `!` or `…` (or their Chinese forms), and one still
+running after 10 s ends at its next pause of half a second. A sentence never
+runs from one piece into the next. When the server returns no word times, each
+segment of its answer becomes one text item. vLLM does not return word times,
+and its segments can run to 30 s, so a time in a search result covers a
+longer stretch. speaches, faster-whisper's server, and OpenAI's `whisper-1`
+return them.
 
 Whisper writes text over music, noise and silence: "Thank you." across a
-30 s window, one line repeated through a song. A segment is dropped when Silero
+30 s window, one line repeated through a song. This filter reads the server's
+segments, before any sentence is built. A segment is dropped when Silero
 VAD finds almost no speech within a second of it and its text either repeats
 three times in the recording or spreads a few words over 10 s or more. Silero
 misses speech over a music bed, so a segment with little detected speech but
@@ -380,7 +391,7 @@ stops its ffmpeg processes, scene detection and transcription requests, and the 
 transcript is joined into one text and split by the hybrid chunker of the
 configured `chunker` whatever `chunker_type` names, so chunks end between
 sentences wherever the transcript punctuates them. A chunk references the
-segments covered by its text, and takes its time from them.
+text items covered by its text, and takes its time from them.
 
 - `hybrid` (default): docling's `HybridChunker`. Starts from the document's structure, splits items longer than `chunk_size` tokens of `chunking_tokenizer`, and with `chunking_merge_peers` merges undersized neighbours under the same headings.
 - `hierarchical`: docling's `HierarchicalChunker`. One chunk per document item (paragraph, list, table), with no token limit, so `chunk_size` does not apply.

@@ -133,6 +133,297 @@ async def test_segments_are_transcribed_separately_and_offset(
     ]
 
 
+def _timed(
+    segments: list[tuple[float, float, str]],
+    words: list[tuple[float, float, str]] | None,
+) -> httpx.Response:
+    body: dict = {
+        "segments": [
+            {"start": start, "end": end, "text": text} for start, end, text in segments
+        ],
+        "words": None
+        if words is None
+        else [{"start": start, "end": end, "word": word} for start, end, word in words],
+    }
+    return httpx.Response(200, json=body)
+
+
+TWO_SENTENCES = (
+    [(0.0, 9.0, " It starts with a beam of light. Mapping")],
+    [
+        (0.0, 1.4, " It"),
+        (3.5, 3.8, " starts"),
+        (3.8, 4.3, " with"),
+        (4.3, 4.4, " a"),
+        (4.4, 4.6, " beam"),
+        (4.6, 4.8, " of"),
+        (4.8, 5.0, " light."),
+        (5.5, 6.0, " Mapping"),
+    ],
+)
+
+
+@needs_ffmpeg
+async def test_a_transcription_asks_for_word_and_segment_times(
+    transcription_server,
+):
+    seen = transcription_server(lambda request: _timed(*TWO_SENTENCES))
+
+    await MediaConverter(_config()).convert_file(DATA / "speech.mp3")
+
+    body = seen[0].content.decode("latin-1")
+    granularities = body.split('name="timestamp_granularities[]"')[1:]
+    assert sorted(g.split()[0] for g in granularities) == ["segment", "word"]
+
+
+@needs_ffmpeg
+async def test_words_make_one_item_per_sentence_at_its_words_times(
+    monkeypatch, transcription_server
+):
+    monkeypatch.setattr(media, "SEGMENT_SECONDS", 10.0)
+    monkeypatch.setattr(media, "CUT_WINDOW_SECONDS", 0.0)
+    transcription_server(lambda request: _timed(*TWO_SENTENCES))
+
+    doc = await MediaConverter(_config()).convert_file(DATA / "speech.mp3")
+
+    timed = [(t.source[0].start_time, t.source[0].end_time, t.text) for t in doc.texts]
+    assert timed[:2] == [
+        (0.0, 5.0, "It starts with a beam of light."),
+        (5.5, 6.0, "Mapping"),
+    ]
+    # The second piece starts at 10 s, so its words are offset by it.
+    assert timed[2:4] == [
+        (10.0, 15.0, "It starts with a beam of light."),
+        (15.5, 16.0, "Mapping"),
+    ]
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("words", [None, "absent"])
+async def test_without_words_the_items_are_the_segments(words, transcription_server):
+    def reply(request: httpx.Request) -> httpx.Response:
+        if words is None:
+            return _timed(*TWO_SENTENCES[:1], None)
+        return _segments(*TWO_SENTENCES[0])
+
+    transcription_server(reply)
+
+    doc = await MediaConverter(_config()).convert_file(DATA / "speech.mp3")
+
+    assert [(t.source[0].start_time, t.text) for t in doc.texts] == [
+        (0.0, "It starts with a beam of light. Mapping")
+    ]
+
+
+def _word_run(start: float, count: int, step: float, pause_at: int | None = None):
+    """`count` unpunctuated words `step` seconds apart, with a 0.6 s pause
+    before word `pause_at`."""
+    from haiku.rag.converters.media import Word
+
+    words, at = [], start
+    for i in range(count):
+        if i == pause_at:
+            at += 0.6
+        words.append(Word(at, at + step * 0.8, f" w{i}"))
+        at += step
+    return tuple(words)
+
+
+def test_a_long_unpunctuated_run_is_cut_at_its_first_pause_past_ten_seconds():
+    from haiku.rag.converters.media import Utterance, sentences
+
+    words = _word_run(0.0, 30, 0.5, pause_at=25)
+    run = Utterance(words[0].start, words[-1].end, "", words)
+
+    [first, second] = sentences([run])
+
+    assert first.text == " ".join(f"w{i}" for i in range(25))
+    assert (first.start, second.start) == (0.0, words[25].start)
+
+
+def test_a_run_with_no_pause_stays_whole():
+    from haiku.rag.converters.media import Utterance, sentences
+
+    words = _word_run(0.0, 40, 0.5)
+
+    [whole] = sentences([Utterance(0.0, words[-1].end, "", words)])
+
+    assert (whole.start, whole.end) == (0.0, words[-1].end)
+
+
+def test_a_sentence_runs_on_across_segments_and_ends_at_closing_punctuation():
+    from haiku.rag.converters.media import Utterance, Word, sentences
+
+    first = Utterance(
+        0.0, 2.0, "He said", (Word(0.0, 0.5, " He"), Word(0.6, 1.0, " said"))
+    )
+    second = Utterance(
+        2.0, 3.0, '"stop." Then', (Word(2.0, 2.5, ' "stop."'), Word(2.6, 3.0, " Then"))
+    )
+
+    assert [(u.start, u.end, u.text) for u in sentences([first, second])] == [
+        (0.0, 2.5, 'He said "stop."'),
+        (2.6, 3.0, "Then"),
+    ]
+
+
+def test_a_pause_before_ten_seconds_does_not_cut_even_if_the_next_word_ends_after():
+    from haiku.rag.converters.media import Utterance, Word, sentences
+
+    words = (
+        Word(0.0, 9.0, " a"),
+        Word(9.5, 10.5, " b"),
+        Word(10.5, 10.8, " c"),
+        Word(11.4, 11.8, " d"),
+    )
+
+    assert [u.text for u in sentences([Utterance(0.0, 11.8, "", words)])] == [
+        "a b c",
+        "d",
+    ]
+
+
+@pytest.mark.parametrize(
+    "tokens, text, joined",
+    [
+        (["Hello", ",", "world", "."], "Hello, world.", "Hello, world."),
+        (["你", "好。"], "你好。", "你好。"),
+        (["It's", "fine"], "It's fine", "It's fine"),
+        # A word the segment text does not hold keeps the text it was sent with.
+        (["Hello", "wrld"], "Hello world", "Hellowrld"),
+    ],
+)
+def test_unspaced_words_take_their_spacing_from_the_segment_text(tokens, text, joined):
+    from haiku.rag.converters.media import Word, respaced
+
+    words = [Word(float(i), float(i) + 0.5, t) for i, t in enumerate(tokens)]
+
+    assert "".join(w.text for w in respaced(words, text)).strip() == joined
+
+
+@needs_ffmpeg
+async def test_unspaced_words_from_a_server_keep_the_segment_spacing(
+    transcription_server,
+):
+    transcription_server(
+        lambda request: _timed(
+            [(0.0, 2.0, "Hello, world.")],
+            [
+                (0.0, 0.5, "Hello"),
+                (0.5, 0.6, ","),
+                (0.7, 1.2, "world"),
+                (1.2, 1.3, "."),
+            ],
+        )
+    )
+
+    doc = await MediaConverter(_config()).convert_file(DATA / "speech.mp3")
+
+    assert [t.text for t in doc.texts] == ["Hello, world."]
+
+
+@needs_ffmpeg
+async def test_unspaced_words_keep_the_space_between_segments(transcription_server):
+    transcription_server(
+        lambda request: _timed(
+            [(0.0, 1.0, " Hello"), (1.0, 2.0, " world.")],
+            [(0.0, 0.5, "Hello"), (1.0, 1.5, "world.")],
+        )
+    )
+
+    doc = await MediaConverter(_config()).convert_file(DATA / "speech.mp3")
+
+    assert [t.text for t in doc.texts] == ["Hello world."]
+
+
+@needs_ffmpeg
+async def test_only_the_spoken_segments_words_become_sentences(
+    monkeypatch, tmp_path, transcription_server
+):
+    import numpy as np
+
+    recording = tmp_path / "noise.mp3"
+    await media._run(
+        "ffmpeg",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "anoisesrc=duration=50:color=pink:amplitude=0.3",
+        str(recording),
+    )
+    window = media.VAD_WINDOW / 16000
+    speech = np.zeros(int(50 / window), dtype=bool)
+    speech[: int(5 / window)] = True
+
+    async def speech_windows(path, start, end):
+        return speech
+
+    monkeypatch.setattr(media, "speech_windows", speech_windows)
+    transcription_server(
+        lambda request: _timed(
+            [
+                (0.0, 4.0, " Hello there. How are you?"),
+                (10.0, 39.0, " Thank you."),
+                (40.0, 41.0, " Shhh."),
+                (42.0, 43.0, " Shhh."),
+                (44.0, 45.0, " Shhh."),
+            ],
+            [
+                (0.0, 0.4, " Hello"),
+                (0.5, 1.0, " there."),
+                (1.5, 1.8, " How"),
+                (1.8, 2.0, " are"),
+                (2.0, 2.4, " you?"),
+                (20.0, 20.3, " Thank"),
+                (20.3, 20.6, " you."),
+                (40.1, 40.6, " Shhh."),
+                (42.1, 42.6, " Shhh."),
+                (44.1, 44.6, " Shhh."),
+            ],
+        )
+    )
+
+    doc = await MediaConverter(_config()).convert_file(recording)
+
+    assert [
+        (t.source[0].start_time, t.source[0].end_time, t.text) for t in doc.texts
+    ] == [(0.0, 1.0, "Hello there."), (1.5, 2.4, "How are you?")]
+
+
+@needs_ffmpeg
+async def test_text_over_noise_is_dropped_with_word_times_too(
+    tmp_path, transcription_server
+):
+    noise = tmp_path / "noise.mp3"
+    await media._run(
+        "ffmpeg",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "anoisesrc=duration=40:color=pink:amplitude=0.3",
+        str(noise),
+    )
+    # A sparse invention over 29 s whose two words sit close together.
+    transcription_server(
+        lambda request: _timed(
+            [(0.0, 29.0, " Thank you.")],
+            [(10.0, 10.3, " Thank"), (10.3, 10.6, " you.")],
+        )
+    )
+
+    silent = await MediaConverter(_config()).convert_file(noise)
+    spoken = await MediaConverter(_config()).convert_file(DATA / "speech.mp3")
+
+    assert not silent.texts
+    assert [(t.source[0].start_time, t.text) for t in spoken.texts] == [
+        (10.0, "Thank you.")
+    ]
+
+
 @needs_ffmpeg
 async def test_a_zero_length_segment_is_kept(transcription_server):
     transcription_server(lambda request: _segments((2.0, 2.0, "Yes.")))
