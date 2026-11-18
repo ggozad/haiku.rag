@@ -7,3 +7,6 @@ class AnalysisContext:
 
     filter: str | None = None
     sources: list[str] | None = None
+    separate_recordings: bool = False
+    """`search()` and `list_documents()` leave recordings out, which the media
+    functions search and list."""

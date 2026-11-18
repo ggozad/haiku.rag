@@ -45,7 +45,9 @@ section, subsections included.
 `execute_code` runs a Python program on the server over the same documents.
 Under `/documents/{id}/` each has `metadata.json`, `content.txt`, `items.jsonl`,
 `chunks.jsonl` and `toc.json`, and the program can `await search(query)` and
-`await list_documents()`. Write code when the answer is a count, an aggregate, a
+`await list_documents()`. For audio and video, `await search_audio(query)`,
+`await search_video(query)` and `await list_recordings()` search speech and
+frames, with `recording`, `start` and `end` narrowing one. Write code when the answer is a count, an aggregate, a
 comparison across many documents, a lookup by document or chunk metadata, or a
 pattern over whole documents: whatever search cannot rank. Each call is one
 program and variables do not carry over, so gather, compute and `print` a

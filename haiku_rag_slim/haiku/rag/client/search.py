@@ -24,6 +24,28 @@ if TYPE_CHECKING:
     from haiku.rag.reranking.base import RerankerBase
 
 
+CONTEXT_SECONDS = 15.0
+"""Speech on each side of a hit that a speech or frame search returns with it."""
+
+
+async def expand_near(
+    rag: "HaikuRAG", results: list[SearchResult], window: TimeWindow | None
+) -> list[SearchResult]:
+    """Expand each speech or frame hit over the speech within `CONTEXT_SECONDS`
+    of its times, inside `window` when one is given."""
+    expanded: list[SearchResult] = []
+    for result in results:
+        assert result.document_id is not None and result.time_range is not None
+        start = result.time_range[0] - CONTEXT_SECONDS
+        end = result.time_range[1] + CONTEXT_SECONDS
+        if window is not None:
+            start = max(start, window.start if window.start is not None else start)
+            end = min(end, window.end if window.end is not None else end)
+        near = TimeWindow(result.document_id, start=start, end=end)
+        expanded.extend(await rag.expand_context([result], window=near))
+    return expanded
+
+
 async def search(
     client: "HaikuRAG",
     query: "str | bytes | PILImage.Image",

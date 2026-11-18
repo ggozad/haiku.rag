@@ -59,7 +59,13 @@ class TestSearchPictureRefs:
 
         sandbox = Sandbox(temp_db_path, AppConfig(), AnalysisContext())
         external = sandbox._build_external_functions()
-        assert set(external) == {"search", "list_documents"}
+        assert set(external) == {
+            "search",
+            "list_documents",
+            "search_audio",
+            "search_video",
+            "list_recordings",
+        }
         results = await external["search"]("anything")
 
         assert len(results) == 2

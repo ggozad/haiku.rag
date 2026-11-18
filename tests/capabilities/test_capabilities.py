@@ -582,8 +582,13 @@ async def test_records_new_sandbox_search_results(temp_db_path):
     new = SearchResult(content="new", score=1, chunk_id="chunk-2")
     capability.state = RAGState(searches={"_sandbox": [existing]})
     sandbox = AsyncMock()
-    sandbox.execute.return_value = SandboxResult(stdout="done", stderr="", success=True)
-    sandbox.search_results = (existing, new)
+    sandbox.search_results = (existing,)
+
+    async def execute(code: str) -> SandboxResult:
+        sandbox.search_results = (existing, new)
+        return SandboxResult(stdout="done", stderr="", success=True)
+
+    sandbox.execute.side_effect = execute
     capability.sandbox = cast(Sandbox, sandbox)
 
     result = await capability._execute_code("print('done')")

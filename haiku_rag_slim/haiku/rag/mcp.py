@@ -453,7 +453,12 @@ def _covering(scope: "DatabaseScope", config: AppConfig) -> FastMCP:
         document_title, document_uri, source, score, page_numbers, time_range
         for a recording, headings, doc_item_refs, labels, picture_refs (the
         doc_item_refs that are pictures) and chunk_meta. `await list_documents()` returns dicts with
-        id, title, uri, created_at, source and metadata. Both see the documents
+        id, title, uri, created_at, source and metadata. `await search_audio(query,
+        recording=None, start=None, end=None, limit=10)` and `await
+        search_video(...)` search the speech and the frames of recordings, a
+        document_id and times in seconds narrowing one, and return `search()`'s
+        dicts. `await list_recordings()` returns dicts with document_id, title,
+        uri, source, last_time and has_frames. All of them see the documents
         `filter` and `sources` select. Useful modules include json, re, math,
         pathlib, datetime, collections, itertools, functools, dataclasses and
         decimal; statistics does not exist. No generator functions or class

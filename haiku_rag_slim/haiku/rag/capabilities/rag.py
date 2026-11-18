@@ -147,12 +147,8 @@ def _window(
     recording: str | None, start: float | None, end: float | None
 ) -> TimeWindow | None:
     """The time window a media search names, or ToolFailed for one it cannot."""
-    if recording is None:
-        if start is not None or end is not None:
-            raise ToolFailed("A time window needs a recording: pass its document_id.")
-        return None
     try:
-        return TimeWindow(recording, start=start, end=end)
+        return TimeWindow.named(recording, start, end)
     except ValueError as error:
         raise ToolFailed(str(error)) from error
 
@@ -608,6 +604,7 @@ class RAGCapability(AbstractCapability[Any]):
                 context=AnalysisContext(
                     filter=self.state.document_filter,
                     sources=self.state.sources,
+                    separate_recordings=self.config.qa.media_tools,
                 ),
                 rag=rag,
                 lock=self.rag_lock,
@@ -897,12 +894,14 @@ class RAGCapability(AbstractCapability[Any]):
                 f"you already have; do not call {EXECUTE_CODE_TOOL} again."
             )
         sandbox = await self._ensure_sandbox()
+        earlier = len(sandbox.search_results)
         result = await sandbox.execute(code)
         if result.success or result.stdout:
             self._note_evidence()
-        found = sandbox.search_results
+        found = list(sandbox.search_results[earlier:])
         if found:
             merge_results(self.state.searches.setdefault("_sandbox", []), found)
+            refresh_results(self.state.searches.values(), found)
         self.state.executions.append(
             CodeExecutionEntry(
                 code=code,

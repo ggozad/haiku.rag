@@ -65,7 +65,7 @@ When `qa.max_searches` or `qa.max_executions` runs out, the exhausted tool keeps
 | `chunks.jsonl` | Chunk ids with their metadata |
 | `toc.json` | The section tree |
 
-Code can also `await search(query)`, whose rows carry `chunk_meta` and `picture_refs`, and `await list_documents()`, whose rows carry `metadata`.
+Code can also `await search(query)`, whose rows carry `chunk_meta` and `picture_refs`, and `await list_documents()`, whose rows carry `metadata`. `await search_audio(query, recording=None, start=None, end=None, limit=10)` and `await search_video(...)` search a recording's speech and frames as the tools do, and return `search()`'s rows with `time_range`. `await list_recordings()` returns `document_id`, `title`, `uri`, `source`, `last_time` and `has_frames`. Under `qa.media_tools`, `search()` and `list_documents()` leave recordings out, and a recording's files stay under `/documents`. In-code searches do not count against `qa.max_searches`.
 
 Monty is a Python subset. Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools`, `dataclasses` and `decimal`. `statistics` is absent. Class inheritance and generators are not supported. Files are read-only, and there is no network and no filesystem beyond `/documents`, which is the working directory. `time.sleep()` returns immediately.
 

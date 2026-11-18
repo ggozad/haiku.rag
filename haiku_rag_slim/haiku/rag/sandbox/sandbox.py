@@ -18,10 +18,11 @@ from pydantic_monty import (
     ResourceLimits,
 )
 
+from haiku.rag.client.search import expand_near
 from haiku.rag.config.models import AppConfig
 from haiku.rag.context import build_toc
 from haiku.rag.sandbox.dependencies import AnalysisContext
-from haiku.rag.store.models.chunk import Chunk, SearchResult
+from haiku.rag.store.models.chunk import Chunk, Content, SearchResult, TimeWindow
 from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX, DocumentItem
 from haiku.rag.telemetry import logfire
 from haiku.rag.utils.concurrency import gather_all
@@ -118,7 +119,8 @@ class Sandbox:
 
     Uses pydantic-monty, a minimal secure Python interpreter written in Rust.
     The interpreter runs in a subprocess worker checked out of an ``AsyncMonty``
-    pool. External functions (search, list_documents) are called by Monty code
+    pool. External functions (search, list_documents, search_audio, search_video,
+    list_recordings) are called by Monty code
     using ``await`` and resolved asynchronously on the host. Documents are
     exposed via a virtual filesystem at ``/documents/{id}/``: ``metadata.json``,
     ``content.txt``, ``items.jsonl``, ``chunks.jsonl`` and ``toc.json``.
@@ -445,14 +447,72 @@ class Sandbox:
                         limit=limit,
                         filter=context.filter,
                         sources=context.sources,
+                        content="documents" if context.separate_recordings else None,
                     )
                     expanded = await rag.expand_context(results)
             self._search_results.extend(expanded)
             return [_search_row(r) for r in expanded]
 
+        async def search_media(
+            query: str,
+            content: Content,
+            recording: str | None,
+            start: float | None,
+            end: float | None,
+            limit: int,
+        ) -> list[dict[str, Any]]:
+            self._search_calls += 1
+            with logfire.span(
+                "sandbox.search", query=query, limit=limit, content=content
+            ):
+                self._check_deadline()
+                window = TimeWindow.named(recording, start, end)
+                async with self._connection() as rag:
+                    results = await rag.search(
+                        query,
+                        limit=limit,
+                        filter=context.filter,
+                        sources=context.sources,
+                        content=content,
+                        window=window,
+                        include_images=False,
+                    )
+                    expanded = await expand_near(rag, results, window)
+            self._search_results.extend(expanded)
+            return [_search_row(r) for r in expanded]
+
+        async def search_audio(
+            query: str,
+            recording: str | None = None,
+            start: float | None = None,
+            end: float | None = None,
+            limit: int = 10,
+        ) -> list[dict[str, Any]]:
+            return await search_media(query, "speech", recording, start, end, limit)
+
+        async def search_video(
+            query: str,
+            recording: str | None = None,
+            start: float | None = None,
+            end: float | None = None,
+            limit: int = 10,
+        ) -> list[dict[str, Any]]:
+            return await search_media(query, "frames", recording, start, end, limit)
+
+        async def list_recordings() -> list[dict[str, Any]]:
+            self._check_deadline()
+            async with self._connection() as rag:
+                recordings = await rag.list_recordings(
+                    filter=context.filter, sources=context.sources
+                )
+            return [r.model_dump() for r in recordings]
+
         async def list_documents() -> list[dict[str, Any]]:
             self._check_deadline()
             docs, _ = await self._documents()
+            if context.separate_recordings:
+                recordings = {r["document_id"] for r in await list_recordings()}
+                docs = [d for d in docs if d.id not in recordings]
             return [
                 {
                     "id": d.id,
@@ -468,6 +528,9 @@ class Sandbox:
         return {
             "search": search,
             "list_documents": list_documents,
+            "search_audio": search_audio,
+            "search_video": search_video,
+            "list_recordings": list_recordings,
         }
 
     async def _build_vfs(self) -> OSAccess:
@@ -701,7 +764,7 @@ class Sandbox:
 
     @property
     def search_results(self) -> tuple[SearchResult, ...]:
-        """Every result the session's in-code ``search()`` calls returned, in order."""
+        """Every result the session's in-code searches returned, in order."""
         return tuple(self._search_results)
 
     async def execute(self, code: str) -> SandboxResult:

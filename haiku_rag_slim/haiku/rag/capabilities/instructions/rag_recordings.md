@@ -11,4 +11,6 @@ A question about what someone said, explained or named goes to `search_audio`. A
 
 Every result of a recording carries a `Time:` line, the time in the recording it comes from, as hours:minutes:seconds. Its text is one line per sentence, each starting with the time it is said, and a frame returned with it appears among the lines as `(frame)` at the time it was shown. Both tools take a time window: `recording` (a `document_id`) with `start` and `end` in seconds narrows the search to that part of that recording. A window needs a recording. Use a window when the question names a time ("after the first ten minutes", "at the end") or when an earlier result shows where the answer is.
 
+Inside `execute_code`, `search()` and `list_documents()` leave recordings out too. `await search_audio(query, recording=None, start=None, end=None, limit=10)`, `await search_video(...)` with the same parameters, and `await list_recordings()` work as the tools do and return dicts, a recording's result with `time_range` in seconds. A recording's `items.jsonl` holds one row per sentence and per frame, each with `start_time` and `end_time`.
+
 Cite recording results by their `chunk_id` like any other result, and call `cite` before answering.

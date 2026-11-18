@@ -113,6 +113,20 @@ class TimeWindow:
         if self.start is not None and self.end is not None and self.end <= self.start:
             raise ValueError("A time window must end after it starts")
 
+    @classmethod
+    def named(
+        cls, recording: str | None, start: float | None, end: float | None
+    ) -> "TimeWindow | None":
+        """The window a media search names, `None` for no recording. Times
+        without a recording raise `ValueError`."""
+        if recording is None:
+            if start is not None or end is not None:
+                raise ValueError(
+                    "A time window needs a recording: pass its document_id."
+                )
+            return None
+        return cls(recording, start=start, end=end)
+
     @property
     def clipped(self) -> bool:
         return self.start is not None or self.end is not None
