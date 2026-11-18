@@ -8,6 +8,6 @@ The knowledge base also holds audio and video recordings. `search` does not retu
 
 A question about what someone said, explained or named goes to `search_audio`. A question about what appears, happens or is shown goes to `search_video`. When a question needs both, call both in the same response: searches in one response share one unit of the search budget.
 
-Every result of a recording carries a `Time:` line, the time in the recording it comes from, as hours:minutes:seconds. Both tools take a time window: `recording` (a `document_id`) with `start` and `end` in seconds narrows the search to that part of that recording. A window needs a recording. Use a window when the question names a time ("after the first ten minutes", "at the end") or when an earlier result shows where the answer is.
+Every result of a recording carries a `Time:` line, the time in the recording it comes from, as hours:minutes:seconds. Its text is one line per sentence, each starting with the time it is said, and a frame returned with it appears among the lines as `(frame)` at the time it was shown. Both tools take a time window: `recording` (a `document_id`) with `start` and `end` in seconds narrows the search to that part of that recording. A window needs a recording. Use a window when the question names a time ("after the first ten minutes", "at the end") or when an earlier result shows where the answer is.
 
 Cite recording results by their `chunk_id` like any other result, and call `cite` before answering.

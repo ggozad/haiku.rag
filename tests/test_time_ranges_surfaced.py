@@ -66,32 +66,23 @@ def test_expansion_spans_the_items_it_returns():
 
 
 def test_a_clipped_expansion_spans_the_surviving_items():
-    [expanded] = _expand(
-        [_result("#/texts/1", SENTENCES[1], (4.48, 7.6))], len(SENTENCES[1])
-    )
+    line = f"[00:00:04] {SENTENCES[1]}"
+    [expanded] = _expand([_result("#/texts/1", SENTENCES[1], (4.48, 7.6))], len(line))
 
-    assert expanded.content == SENTENCES[1]
+    assert expanded.content == line
     assert expanded.time_range == (4.48, 7.6)
 
 
-def test_an_expansion_falling_back_to_the_chunk_keeps_its_range():
+def test_a_recording_never_falls_back_to_a_longer_chunk():
     longer = SENTENCES[1] + " " + "padding " * 200
     [expanded] = _expand([_result("#/texts/1", longer, (4.48, 7.6))], 100_000)
 
-    assert expanded.content == longer
-    assert expanded.time_range == (4.48, 7.6)
-
-
-def test_a_fallback_keeps_only_the_primary_chunk_range():
-    primary = _result(
-        "#/texts/1", SENTENCES[1] + " " + "padding " * 200, (0.0, 4.0), 2.0
-    )
-    other = _result("#/texts/1", SENTENCES[1], (6.0, 10.0), 1.0)
-
-    [expanded] = _expand([primary, other], 100_000)
-
-    assert expanded.content == primary.content
-    assert expanded.time_range == (0.0, 4.0)
+    assert expanded.content.splitlines() == [
+        f"[00:00:00] {SENTENCES[0]}",
+        f"[00:00:04] {SENTENCES[1]}",
+        f"[00:00:07] {SENTENCES[2]}",
+    ]
+    assert expanded.time_range == (0.0, 12.12)
 
 
 def test_merged_results_span_their_items():
@@ -100,9 +91,10 @@ def test_merged_results_span_their_items():
         _result("#/texts/1", SENTENCES[1], (4.48, 7.6)),
     ]
 
-    [expanded] = _expand(results, len(SENTENCES[0]) + len(SENTENCES[1]) + 2)
+    lines = [f"[00:00:00] {SENTENCES[0]}", f"[00:00:04] {SENTENCES[1]}"]
+    [expanded] = _expand(results, len("\n".join(lines)))
 
-    assert expanded.content == f"{SENTENCES[0]}\n\n{SENTENCES[1]}"
+    assert expanded.content == "\n".join(lines)
     assert expanded.time_range == (0.0, 7.6)
 
 
@@ -213,3 +205,88 @@ def test_sandbox_rows_carry_times_only_for_recordings():
         4.48,
         7.6,
     )
+
+
+def _recording(*events: tuple[str, float]):
+    """A recording of text items and frames, `("frame", t)` for a frame."""
+    from docling_core.types.doc import ContentLayer, DocItemLabel, ImageRef, TrackSource
+    from docling_core.types.doc.document import DoclingDocument
+    from PIL import Image
+
+    doc = DoclingDocument(name="recording")
+    for text, at in events:
+        source = TrackSource(start_time=at, end_time=at + 4.0)
+        if text == "frame":
+            doc.add_picture(
+                image=ImageRef.from_pil(Image.new("RGB", (8, 8)), dpi=72),
+                content_layer=ContentLayer.BODY,
+                source=source,
+            )
+        else:
+            doc.add_text(
+                label=DocItemLabel.TEXT,
+                text=text,
+                content_layer=ContentLayer.BODY,
+                source=source,
+            )
+    return extract_items("doc-1", doc)
+
+
+def _expand_items(results, max_chars, items):
+    positions = {item.self_ref: item.position for item in items}
+    return expand_with_items(
+        results,
+        max_chars,
+        {ref: positions[ref] for r in results for ref in r.doc_item_refs},
+        items,
+    )
+
+
+def test_a_shrunk_clip_stays_on_the_hit_when_part_of_it_repeats_earlier():
+    from haiku.rag.store.models.document_item import DocumentItem
+
+    hit = "S" * 36 + "M" * 128 + "E" * 36
+    item = DocumentItem(
+        document_id="doc-1",
+        position=0,
+        self_ref="#/texts/0",
+        label="text",
+        text="M" * 128 + "Z" * 100 + hit,
+        start_time=0.0,
+        end_time=30.0,
+    )
+
+    [expanded] = _expand_items([_result("#/texts/0", hit, (0.0, 30.0))], 200, [item])
+
+    assert len(expanded.content) <= 200
+    assert "Z" not in expanded.content
+    assert "SSS" in expanded.content and "EEE" in expanded.content
+
+
+def test_a_frame_clipped_out_of_the_text_loses_its_image_too():
+    items = _recording(
+        ("frame", 0.0),
+        ("A sentence said before the hit, long enough to clip.", 1.0),
+        ("The hit.", 5.0),
+    )
+    hit = _result("#/texts/1", "The hit.", (5.0, 9.0))
+    hit.image_data = {"#/pictures/0": "aGk="}
+    hit.picture_times = {"#/pictures/0": 0.0}
+
+    [expanded] = _expand_items([hit], len("[00:00:05] The hit."), items)
+
+    assert expanded.content == "[00:00:05] The hit."
+    assert not expanded.image_data
+    assert not expanded.picture_times
+
+
+def test_a_frame_marker_longer_than_the_budget_is_left_out():
+    items = _recording(("frame", 10.0))
+    frame = _result("#/pictures/0", "", (10.0, 10.001))
+    frame.image_data = {"#/pictures/0": "aGk="}
+    frame.picture_times = {"#/pictures/0": 10.0}
+
+    [expanded] = _expand_items([frame], 10, items)
+
+    assert len(expanded.content) <= 10
+    assert not expanded.image_data

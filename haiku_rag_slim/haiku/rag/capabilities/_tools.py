@@ -84,8 +84,8 @@ def without_sources(tool_def: ToolDefinition) -> ToolDefinition:
     return replace(tool_def, parameters_json_schema=schema)
 
 
-FRAME_CONTEXT_SECONDS = 15.0
-"""Speech on each side of a frame that a frame search returns with it."""
+CONTEXT_SECONDS = 15.0
+"""Speech on each side of a hit that a speech or frame search returns with it."""
 
 
 async def search_corpus(
@@ -119,8 +119,8 @@ async def search_corpus(
         content=content,
         window=window,
     )
-    if content == "frames":
-        results = await _expand_frames(rag, results, window)
+    if content in ("speech", "frames"):
+        results = await _expand_near(rag, results, window)
     else:
         results = await rag.expand_context(results, window=window)
     rendered: set[EvidenceKey] = set()
@@ -144,17 +144,16 @@ async def search_corpus(
     return formatted or "No results found.", list(results), rendered
 
 
-async def _expand_frames(
+async def _expand_near(
     rag: HaikuRAG, results: list[SearchResult], window: TimeWindow | None
 ) -> list[SearchResult]:
-    """Expand each frame over the speech within `FRAME_CONTEXT_SECONDS` of it,
-    inside `window` when one is given."""
+    """Expand each speech or frame hit over the speech within `CONTEXT_SECONDS`
+    of its times, inside `window` when one is given."""
     expanded: list[SearchResult] = []
     for result in results:
         assert result.document_id is not None and result.time_range is not None
-        at = result.time_range[0]
-        start = at - FRAME_CONTEXT_SECONDS
-        end = at + FRAME_CONTEXT_SECONDS
+        start = result.time_range[0] - CONTEXT_SECONDS
+        end = result.time_range[1] + CONTEXT_SECONDS
         if window is not None:
             start = max(start, window.start if window.start is not None else start)
             end = min(end, window.end if window.end is not None else end)

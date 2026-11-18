@@ -28,8 +28,8 @@ processing:
       timeout: 3600
 
 qa:
-  # The Qwen server accepts at most 20 images in one request.
-  max_images: 20
+  # The Qwen server accepts at most 50 images in one request.
+  max_images: 50
   model:
     provider: openai
     name: Inferact/Qwen3.8-27B-NVFP4

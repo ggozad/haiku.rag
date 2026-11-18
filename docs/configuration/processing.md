@@ -374,7 +374,10 @@ description model, the embedder, the reranker and the chat model all receive
 that image. A new width reaches a stored recording when it is ingested again
 with `force` (`add-src --force`).
 
-A search result from a transcript carries up to four of the frames shown while
+A search result from a recording shows one line per text item, each starting
+with its time, such as `[00:00:11] Introducing …`, and each frame it attaches
+as a `[00:00:12] (frame)` line among them. The times count against
+`search.max_context_chars`. A search result from a transcript carries up to four of the frames shown while
 it is spoken, spread over its time range, and a citation of it records them.
 Each frame is also its own chunk, found by its image.
 

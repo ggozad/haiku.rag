@@ -173,7 +173,7 @@ async def test_expanding_a_windowed_result_keeps_to_the_window(temp_db_path):
         [clipped] = await rag.expand_context([result], window=window)
 
         assert "oxygen tank" in unclipped.content
-        assert clipped.content == "The crew moved into the lunar module."
+        assert clipped.content == "[00:00:04] The crew moved into the lunar module."
         assert clipped.time_range == (4.48, 7.6)
 
 
@@ -336,7 +336,7 @@ async def test_a_windowed_chunk_spanning_several_segments_expands_to_those_insid
         )
 
         assert set(result.picture_times) == {"#/pictures/0", "#/pictures/1"}
-        assert expanded.content == "The crew moved into the lunar module."
+        assert expanded.content == "[00:00:04] The crew moved into the lunar module."
         assert expanded.time_range == (4.48, 7.6)
         assert (expanded.image_data, expanded.picture_times) == (None, {})
 
@@ -349,7 +349,10 @@ async def test_a_windowed_chunk_keeps_only_the_frames_inside_the_window(
 
         _, [expanded] = await _windowed(rag, TimeWindow(video_id, start=9.0, end=11.0))
 
-        assert expanded.content == "Engineers improvised a carbon dioxide filter."
+        assert expanded.content.splitlines() == [
+            "[00:00:07] Engineers improvised a carbon dioxide filter.",
+            "[00:00:10] (frame)",
+        ]
         assert set(expanded.image_data or {}) == {"#/pictures/1"}
         assert set(expanded.picture_times) == {"#/pictures/1"}
 
@@ -460,3 +463,46 @@ async def test_a_frame_search_is_vector_only(temp_db_path, search_type):
 )
 def test_a_window_overlaps_spans_that_share_time_with_it(span, overlaps):
     assert TimeWindow("doc", start=5.0, end=10.0).overlaps(*span) is overlaps
+
+
+async def test_a_clipped_transcript_keeps_its_late_match_within_the_budget(tmp_path):
+    from docling_core.types.doc import ContentLayer, DocItemLabel, TrackSource
+    from docling_core.types.doc.document import DoclingDocument
+
+    from haiku.rag.config import AppConfig
+
+    config = AppConfig()
+    config.search.max_context_chars = 300
+    dim = config.embeddings.model.vector_dim
+    doc = DoclingDocument(name="long")
+    for i in range(60):
+        doc.add_text(
+            label=DocItemLabel.TEXT,
+            text=f"Line {i} spoken here.",
+            content_layer=ContentLayer.BODY,
+            source=TrackSource(start_time=i * 5.0, end_time=i * 5.0 + 4.5),
+        )
+    doc.origin = DocumentOrigin(mimetype="audio/mpeg", filename="l.mp3", binary_hash=1)
+    async with HaikuRAG(tmp_path / "long.lancedb", config=config, create=True) as rag:
+        await rag.import_document(
+            doc,
+            [
+                Chunk(
+                    content="Line 55 spoken here.",
+                    embedding=[0.1] * dim,
+                    order=0,
+                    metadata={
+                        "doc_item_refs": ["#/texts/55"],
+                        "labels": ["text"],
+                        "time_range": [275.0, 279.5],
+                    },
+                )
+            ],
+            uri="file:///long.mp3",
+        )
+        [result] = await rag.expand_context(await rag.search("Line 55", limit=1))
+
+    lines = result.content.splitlines()
+    assert "[00:04:35] Line 55 spoken here." in lines
+    assert all(line.startswith("[00:") for line in lines)
+    assert len(result.content) <= 300

@@ -18,6 +18,7 @@ from haiku.rag.capabilities.rag import RAGState
 from haiku.rag.capabilities.rag import create_capability as create_rag
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig
+from tests.capabilities.conftest import _seeded_vector
 from tests.capabilities.helpers import Deps
 from tests.client.test_media_search import FRAMES, SEGMENTS, _seed
 
@@ -285,7 +286,8 @@ async def test_list_recordings_names_the_collection_over_several(tmp_path):
 
 
 async def _lecture(tmp_path):
-    """Ten ten-second segments of speech and one frame at 50 seconds."""
+    """Ten ten-second segments of speech, one chunk each, and one frame at 50
+    seconds."""
     from docling_core.types.doc import (
         ContentLayer,
         DocItemLabel,
@@ -316,6 +318,23 @@ async def _lecture(tmp_path):
             )
     doc.origin = DocumentOrigin(mimetype="video/mp4", filename="l.mp4", binary_hash=1)
     path = tmp_path / "lecture.lancedb"
+    # The query "50" embeds closest to the 50 s chunk, so hybrid search ranks it
+    # first on both lists instead of tying every chunk on the vector side.
+    speech = [
+        Chunk(
+            content=item.text,
+            embedding=_seeded_vector("50")
+            if item.text == "Said at 50 seconds."
+            else [0.1] * dim,
+            order=i + 1,
+            metadata={
+                "doc_item_refs": [item.self_ref],
+                "labels": ["text"],
+                "time_range": [item.source[0].start_time, item.source[0].end_time],
+            },
+        )
+        for i, item in enumerate(doc.texts)
+    ]
     async with HaikuRAG(path, create=True) as rag:
         stored = await rag.import_document(
             doc,
@@ -329,7 +348,8 @@ async def _lecture(tmp_path):
                         "labels": ["picture"],
                         "time_range": [50.0, 50.001],
                     },
-                )
+                ),
+                *speech,
             ],
             uri="file:///lecture.mp4",
         )
@@ -361,6 +381,151 @@ async def test_a_frame_hit_keeps_to_the_window_it_was_searched_in(tmp_path):
     assert "Said at 50 seconds." in result.content
     assert "Said at 30 seconds." not in result.content
     assert "Said at 60 seconds." not in result.content
+
+
+async def test_a_frame_hit_shows_each_line_with_its_time_and_the_frame_among_them(
+    tmp_path,
+):
+    path, _ = await _lecture(tmp_path)
+
+    result, _, state = await run(path, [[("search_video", {"query": "red"})]])
+
+    [hit] = state.searches["red"]
+    assert hit.content.splitlines() == [
+        "[00:00:30] Said at 30 seconds.",
+        "[00:00:40] Said at 40 seconds.",
+        "[00:00:50] (frame)",
+        "[00:00:50] Said at 50 seconds.",
+        "[00:01:00] Said at 60 seconds.",
+    ]
+    [part] = returns(result, "search_video")
+    assert "Type: frame" in str(part.content)
+
+
+async def test_a_speech_hit_shows_the_lines_within_15_seconds_of_its_chunk(tmp_path):
+    path, _ = await _lecture(tmp_path)
+
+    result, _, state = await run(
+        path, [[("search_audio", {"query": "50", "limit": 1})]]
+    )
+
+    [hit] = state.searches["50"]
+    assert hit.content.splitlines() == [
+        "[00:00:30] Said at 30 seconds.",
+        "[00:00:40] Said at 40 seconds.",
+        "[00:00:50] Said at 50 seconds.",
+        "[00:01:00] Said at 60 seconds.",
+        "[00:01:10] Said at 70 seconds.",
+    ]
+    [part] = returns(result, "search_audio")
+    assert "Type: speech" in str(part.content)
+
+
+async def test_a_window_narrower_than_15_seconds_clips_a_speech_hit(tmp_path):
+    path, lecture_id = await _lecture(tmp_path)
+    window = {"recording": lecture_id, "start": 48.0, "end": 62.0}
+
+    _, _, state = await run(
+        path, [[("search_audio", {"query": "50", "limit": 1, **window})]]
+    )
+
+    [hit] = state.searches["50"]
+    assert hit.content.splitlines() == [
+        "[00:00:40] Said at 40 seconds.",
+        "[00:00:50] Said at 50 seconds.",
+        "[00:01:00] Said at 60 seconds.",
+    ]
+
+
+async def test_citing_a_chunk_again_holds_the_slice_cited_last(tmp_path):
+    from tests.client.test_media_search import _seed_spanning_chunk
+
+    path = tmp_path / "spanning.lancedb"
+    async with HaikuRAG(path, create=True) as rag:
+        video_id = await _seed_spanning_chunk(rag)
+    windows = [(5.0, 7.0), (9.0, 11.0)]
+
+    def model_function(messages, info: AgentInfo) -> ModelResponse:
+        parts = [part for message in messages for part in message.parts]
+        searched = [
+            p
+            for p in parts
+            if isinstance(p, ToolReturnPart) and p.tool_name == "search_audio"
+        ]
+        cited = [
+            p for p in parts if isinstance(p, ToolReturnPart) and p.tool_name == "cite"
+        ]
+        if len(searched) == len(cited) < len(windows):
+            start, end = windows[len(searched)]
+            args = {"query": "crew", "recording": video_id, "start": start, "end": end}
+            return ModelResponse(parts=[ToolCallPart("search_audio", args)])
+        if len(cited) < len(searched):
+            chunk_id = re.search(UUID, str(searched[-1].content))
+            assert chunk_id is not None
+            return ModelResponse(
+                parts=[ToolCallPart("cite", {"chunk_ids": [chunk_id.group(0)]})]
+            )
+        return ModelResponse(parts=[TextPart("done")])
+
+    capability = create_rag(db_path=path, config=_config())
+    agent = Agent(
+        FunctionModel(model_function), deps_type=Deps, capabilities=[capability]
+    )
+    deps = Deps()
+    await agent.run("question", deps=deps)
+
+    state = RAGState.model_validate(deps.state["rag"])
+    # The compaction capsule renders the held citation's content.
+    [citation] = state.citation_index.values()
+    assert (
+        citation.content == "[00:00:07] Engineers improvised a carbon dioxide filter."
+    )
+    assert citation.time_range == (7.92, 12.12)
+    assert citation.index == 1
+
+
+async def test_citing_a_held_chunk_without_searching_keeps_the_held_slice(media_db):
+    db_path, video_id = media_db
+    chunk_ids: list[str] = []
+
+    def first_question(messages, info: AgentInfo) -> ModelResponse:
+        parts = [part for message in messages for part in message.parts]
+        searched = [
+            p
+            for p in parts
+            if isinstance(p, ToolReturnPart) and p.tool_name == "search_audio"
+        ]
+        if not searched:
+            args = {"query": "crew", "recording": video_id, "start": 5.0, "end": 7.0}
+            return ModelResponse(parts=[ToolCallPart("search_audio", args)])
+        if not any(
+            isinstance(p, ToolReturnPart) and p.tool_name == "cite" for p in parts
+        ):
+            found = re.search(UUID, str(searched[0].content))
+            assert found is not None
+            chunk_ids.append(found.group(0))
+            return ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": chunk_ids})])
+        return ModelResponse(parts=[TextPart("done")])
+
+    def second_question(messages, info: AgentInfo) -> ModelResponse:
+        last = messages[-1].parts
+        if any(isinstance(p, ToolReturnPart) and p.tool_name == "cite" for p in last):
+            return ModelResponse(parts=[TextPart("done")])
+        return ModelResponse(parts=[ToolCallPart("cite", {"chunk_ids": chunk_ids})])
+
+    capability = create_rag(db_path=db_path, config=_config())
+    deps = Deps()
+    first = await Agent(
+        FunctionModel(first_question), deps_type=Deps, capabilities=[capability]
+    ).run("first", deps=deps)
+    held = RAGState.model_validate(deps.state["rag"]).citation_index[chunk_ids[0]]
+    await Agent(
+        FunctionModel(second_question), deps_type=Deps, capabilities=[capability]
+    ).run("second", deps=deps, message_history=first.all_messages())
+
+    state = RAGState.model_validate(deps.state["rag"])
+    assert state.citation_index[chunk_ids[0]] == held
+    assert held.content.startswith("[00:00:04] ")
 
 
 @pytest.mark.parametrize(
@@ -415,7 +580,9 @@ async def test_a_repeated_query_in_another_window_cites_the_latest_slice(
 
     state = RAGState.model_validate(deps.state["rag"])
     [citation] = [state.citation_index[c] for c in state.citations]
-    assert citation.content == "Engineers improvised a carbon dioxide filter."
+    assert (
+        citation.content == "[00:00:07] Engineers improvised a carbon dioxide filter."
+    )
     assert citation.time_range == (7.92, 12.12)
 
 

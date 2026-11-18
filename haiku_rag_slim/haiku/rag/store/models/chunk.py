@@ -318,8 +318,12 @@ class SearchResult(BaseModel):
         if self.time_range:
             parts.append(f"Time: {format_time_range(self.time_range)}")
 
+        # A recording's chunk is speech or a frame, whatever its expansion's labels.
+        kind = chunk_media(self.chunk_meta)[0] if self.time_range else None
+        if kind:
+            parts.append(f"Type: {kind}")
         # Content type (use primary label if available)
-        if self.labels:
+        elif self.labels:
             primary_label = self._get_primary_label()
             if primary_label:
                 parts.append(f"Type: {primary_label}")

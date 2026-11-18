@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Awaitable
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field, replace
 from difflib import get_close_matches
 from functools import cache
@@ -848,6 +849,8 @@ class RAGCapability(AbstractCapability[Any]):
             raise _ambiguous_retry(error) from error
         resolved = {citation.chunk_id for citation in citations}
         missing = [cid for cid in requested if cid not in resolved]
+        # Chunks this question cites without having retrieved them.
+        unsearched: set[str] = set()
 
         if missing:
             async with self.rag_lock:
@@ -886,7 +889,9 @@ class RAGCapability(AbstractCapability[Any]):
                     result = SearchResult.from_chunk(chunk, score=1.0)
                     result.source = owner.source
                     synthetic.append(result)
-                citations.extend(resolve_citations(missing, synthetic))
+                fallback = resolve_citations(missing, synthetic)
+                citations.extend(fallback)
+                unsearched = {citation.chunk_id for citation in fallback}
 
         if not citations:
             raise ModelRetry(
@@ -894,7 +899,7 @@ class RAGCapability(AbstractCapability[Any]):
                 "Copy chunk_ids verbatim from search results."
             )
         try:
-            self._register_citations(citations)
+            self._register_citations(citations, unsearched)
         except AmbiguousCitationError as error:
             raise _ambiguous_retry(error) from error
         self._declare(citations)
@@ -912,11 +917,15 @@ class RAGCapability(AbstractCapability[Any]):
             )
         return f"Registered {len(citations)} citation(s)."
 
-    def _register_citations(self, citations: list[Citation]) -> None:
+    def _register_citations(
+        self, citations: list[Citation], unsearched: AbstractSet[str] = frozenset()
+    ) -> None:
         """Index the citations, numbering the ones not already registered.
 
         The index is keyed by chunk id and outlives the question, so an id
-        already registered from another database is refused here.
+        already registered from another database is refused here. A chunk cited
+        again takes the slice this question retrieved, and keeps the held one
+        when it was resolved from the database (`unsearched`).
         """
         assert self.state is not None
         state = self.state
@@ -930,9 +939,13 @@ class RAGCapability(AbstractCapability[Any]):
                 )
         next_index = len(state.citation_index) + 1
         for citation in citations:
-            if citation.chunk_id not in state.citation_index:
+            held = state.citation_index.get(citation.chunk_id)
+            if held is None:
                 citation.index = next_index
                 next_index += 1
+                state.citation_index[citation.chunk_id] = citation
+            elif citation.chunk_id not in unsearched:
+                citation.index = held.index
                 state.citation_index[citation.chunk_id] = citation
             if citation.chunk_id not in state.citations:
                 state.citations.append(citation.chunk_id)
@@ -970,7 +983,8 @@ class RAGCapability(AbstractCapability[Any]):
             sources: list[str] | None = None,
         ) -> str | ToolReturn:
             """Search what is said in the recordings, the soundtrack of a video
-            included. Returns transcript passages, each with a `Time:` line.
+            included. Returns transcript passages, one line per sentence, each
+            starting with its time.
 
             Args:
                 query: The words someone would say, not the question.
