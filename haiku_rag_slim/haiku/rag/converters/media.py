@@ -14,7 +14,7 @@ import tempfile
 import threading
 from bisect import bisect_right
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
@@ -50,10 +50,10 @@ MEDIA_MIMETYPES = {
     ".webm": "video/webm",
 }
 
-# vLLM refuses audio over 600 s or 25 MB by default. A piece of at most 590 s
-# leaves room for MP3 padding, and 16 kHz mono MP3 at 32 kbit/s keeps it near 2.4 MB.
-SEGMENT_SECONDS = 590.0
-CUT_WINDOW_SECONDS = 60.0
+# Whisper decodes 30 s windows. A piece within one is decoded on its own, so a
+# repetition loop ends with its piece. MP3 padding adds about 0.1 s.
+SEGMENT_SECONDS = 29.5
+CUT_WINDOW_SECONDS = 10.0
 MAX_CONCURRENT_TRANSCRIPTIONS = 4
 MIN_SEGMENT_SECONDS = 0.01
 FRAME_SECONDS = 0.001
@@ -317,13 +317,14 @@ def spoken(utterances: list[Utterance], shares: list[float]) -> list[Utterance]:
     ]
 
 
-async def _transcribe(
+async def _request(
     client: "httpx.AsyncClient",
     server: TranscriptionServerConfig,
     audio: bytes,
-    offset: float,
-) -> list[Utterance]:
-    data = {
+    extra: Mapping[str, str | int | float | bool],
+) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        **extra,
         "model": server.model,
         "response_format": "verbose_json",
         "timestamp_granularities[]": ["word", "segment"],
@@ -339,7 +340,17 @@ async def _transcribe(
         headers=headers,
     )
     response.raise_for_status()
-    segments = response.json().get("segments")
+    return response.json()
+
+
+async def _transcribe(
+    client: "httpx.AsyncClient",
+    server: TranscriptionServerConfig,
+    audio: bytes,
+    offset: float,
+) -> list[Utterance]:
+    answer = await _request(client, server, audio, server.extra_body or {})
+    segments = answer.get("segments")
     if not isinstance(segments, list):
         raise ConversionFailedError(
             "The transcription server gave no timed segments. It must support "
@@ -355,7 +366,7 @@ async def _transcribe(
             raw_texts.append(segment["text"])
     words = [
         Word(offset + w["start"], offset + w["end"], w["word"])
-        for w in response.json().get("words") or []
+        for w in answer.get("words") or []
     ]
     spaced = any(w.text[:1].isspace() for w in words)
     starts = [u.start for u in utterances]

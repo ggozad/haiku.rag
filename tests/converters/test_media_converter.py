@@ -73,30 +73,46 @@ def _segments(*segments: tuple[float, float, str]) -> httpx.Response:
 
 
 def test_a_cut_moves_back_to_the_longest_silence_before_its_target():
-    silences = [(500.0, 510.0), (540.0, 544.0), (580.0, 581.0), (595.0, 620.0)]
+    silences = [(15.0, 17.0), (24.0, 26.0), (28.0, 28.5), (31.0, 40.0)]
 
-    assert cut_points(1000.0, silences) == [542.0]
+    assert cut_points(40.0, silences) == [25.0]
 
 
 def test_without_a_silence_before_it_the_cut_is_at_the_target():
-    assert cut_points(1300.0, [(100.0, 120.0)]) == [590.0, 1180.0]
+    assert cut_points(70.0, [(1.0, 2.0)]) == [29.5, 59.0]
 
 
-def test_no_piece_is_longer_than_a_default_vllm_server_accepts():
+def test_no_piece_is_longer_than_whispers_window():
     import random
 
     rng = random.Random(7)
     for _ in range(200):
-        duration = rng.uniform(600.0, 5000.0)
+        duration = rng.uniform(30.0, 600.0)
         starts = sorted(rng.uniform(0.0, duration) for _ in range(rng.randint(0, 80)))
-        silences = [(s, min(duration, s + rng.uniform(0.1, 20.0))) for s in starts]
+        silences = [(s, min(duration, s + rng.uniform(0.1, 5.0))) for s in starts]
         bounds = [0.0, *cut_points(duration, silences), duration]
 
-        assert max(b - a for a, b in zip(bounds, bounds[1:])) <= 590.0 + 1e-9
+        assert max(b - a for a, b in zip(bounds, bounds[1:])) <= 29.5 + 1e-9
+
+
+@needs_ffmpeg
+async def test_an_uploaded_piece_fits_whispers_window(tmp_path):
+    recording = tmp_path / "tone.mp3"
+    await media._run(
+        "ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=duration=60", str(recording)
+    )
+    piece = tmp_path / "piece.mp3"
+    piece.write_bytes(
+        await media._extract_audio(recording, 3.0, 3.0 + media.SEGMENT_SECONDS)
+    )
+
+    duration, _ = await media.probe(piece)
+
+    assert duration <= 30.0
 
 
 def test_a_short_recording_is_not_cut():
-    assert cut_points(590.0, []) == []
+    assert cut_points(29.5, []) == []
 
 
 @needs_ffmpeg
@@ -361,6 +377,7 @@ async def test_only_the_spoken_segments_words_become_sentences(
         return speech
 
     monkeypatch.setattr(media, "speech_windows", speech_windows)
+    monkeypatch.setattr(media, "SEGMENT_SECONDS", 60.0)
     transcription_server(
         lambda request: _timed(
             [
@@ -422,6 +439,36 @@ async def test_text_over_noise_is_dropped_with_word_times_too(
     assert [(t.source[0].start_time, t.text) for t in spoken.texts] == [
         (10.0, "Thank you.")
     ]
+
+
+def _with_fields(**fields) -> AppConfig:
+    return AppConfig.model_validate(
+        {"processing": {"media": {"asr": {**WHISPER, "extra_body": fields}}}}
+    )
+
+
+@needs_ffmpeg
+async def test_extra_body_fields_reach_the_transcription_server(transcription_server):
+    seen = transcription_server(lambda request: _segments((0.0, 2.0, "Hello.")))
+
+    await MediaConverter(_with_fields(vad_filter=False)).convert_file(
+        DATA / "speech.mp3"
+    )
+
+    field = seen[0].content.decode("latin-1").split('name="vad_filter"')[1]
+    assert field.split()[0] == "false"
+
+
+@needs_ffmpeg
+async def test_malformed_segments_fail_naming_verbose_json_with_extra_fields(
+    transcription_server,
+):
+    transcription_server(lambda request: httpx.Response(200, json={"segments": "x"}))
+
+    with pytest.raises(ConversionFailedError, match="verbose_json"):
+        await MediaConverter(_with_fields(vad_filter=False)).convert_file(
+            DATA / "speech.mp3"
+        )
 
 
 @needs_ffmpeg

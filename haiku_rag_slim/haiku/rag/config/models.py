@@ -354,6 +354,7 @@ class TranscriptionServerConfig(ConfigModel):
     api_key: str | None = None
     language: str | None = None
     timeout: float = Field(default=600.0, gt=0)
+    extra_body: dict[str, str | int | float | bool] | None = None
 
 
 class FrameSamplingConfig(ConfigModel):

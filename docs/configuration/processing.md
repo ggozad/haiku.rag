@@ -318,6 +318,7 @@ processing:
       api_key: null
       language: null                          # detected when unset
       timeout: 600
+      extra_body: null                        # extra form fields, e.g. {vad_filter: false}
     frames:
       mode: fixed_interval                    # fixed_interval | scene_change
       interval_seconds: 10
@@ -338,10 +339,14 @@ carry the time range of their items.
 
 `asr` is a transcription server answering `/audio/transcriptions` with
 `response_format=verbose_json`, such as vLLM serving a Whisper model. The audio
-is cut into pieces of at most 590 s, each cut at the longest silence in the
-60 s before it, and each piece goes to the server as 16 kHz mono MP3, up to four
-at a time. A default vLLM server accepts these pieces, since it refuses audio
-over 600 s or 25 MB. `timeout` bounds one request.
+is cut into pieces of at most 29.5 s, within Whisper's 30 s window, each cut at the longest
+silence in the 10 s before it, and each piece goes to the server as 16 kHz mono
+MP3, up to four at a time. Each piece is decoded on its own, so a repetition
+loop ends with its piece. `timeout` bounds one request.
+
+`extra_body` adds form fields to every request. speaches filters the audio
+through its own voice activity detection by default (`vad_filter`), which drops
+speech over music. `extra_body: {vad_filter: false}` turns it off.
 
 haiku.rag asks for word and segment times
 (`timestamp_granularities[]=word,segment`). When the server returns word times,
