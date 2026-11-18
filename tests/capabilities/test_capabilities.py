@@ -68,6 +68,7 @@ def test_rag_capability_api(temp_db_path):
         "cite",
         "search_audio",
         "search_video",
+        "view",
         "list_recordings",
     }
     toolset = capability.get_toolset()

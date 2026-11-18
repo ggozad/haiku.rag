@@ -54,6 +54,7 @@ def test_rag_capability_is_built_from_a_spec(temp_db_path):
         "cite",
         "search_audio",
         "search_video",
+        "view",
         "list_recordings",
     }
     assert capability.request_limit == 30

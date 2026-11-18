@@ -1,6 +1,7 @@
+import base64
 from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic import BaseModel
@@ -22,6 +23,13 @@ from haiku.rag.store.models.chunk import (
     TimeWindow,
     qualified_id,
 )
+from haiku.rag.store.models.document import Recording
+from haiku.rag.store.models.document_item import (
+    DocumentItem,
+    merge_time_ranges,
+    spread_frames,
+)
+from haiku.rag.utils.formatting import format_time_range
 from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, picture_keys
 
 IMAGES_OMITTED = (
@@ -72,15 +80,17 @@ def require_collections(requested: Sequence[str], available: Sequence[str]) -> N
 
 
 def without_sources(tool_def: ToolDefinition) -> ToolDefinition:
-    """The tool's definition without its `sources` parameter."""
+    """The tool's definition without its `sources` or `source` parameter."""
     schema = dict(tool_def.parameters_json_schema)
     schema["properties"] = {
         name: spec
         for name, spec in schema.get("properties", {}).items()
-        if name != "sources"
+        if name not in ("sources", "source")
     }
     if "required" in schema:
-        schema["required"] = [name for name in schema["required"] if name != "sources"]
+        schema["required"] = [
+            name for name in schema["required"] if name not in ("sources", "source")
+        ]
     return replace(tool_def, parameters_json_schema=schema)
 
 
@@ -160,6 +170,111 @@ async def _expand_near(
         near = TimeWindow(result.document_id, start=start, end=end)
         expanded.extend(await rag.expand_context([result], window=near))
     return expanded
+
+
+@dataclass
+class RecordingView:
+    """What `view` returned: a result per speech chunk holding only the lines
+    shown, and one per frame chunk holding only its frame, in time order."""
+
+    results: list[SearchResult]
+    continues_at: float | None
+
+
+async def view_recording(
+    rag: HaikuRAG,
+    recording: Recording,
+    window: TimeWindow,
+    max_chars: int,
+    include_images: bool,
+) -> RecordingView:
+    """The sentences of `recording` inside `window`, whole, up to `max_chars`
+    (at least one), and up to `MAX_FRAMES_PER_RESULT` of its frames spread
+    across the window."""
+    items = await rag.document_item_repository.get_items_in_window(window)
+    lines = [
+        item
+        for item in items
+        if item.label != "picture" and item.text and item.start_time is not None
+    ]
+    shown: list[DocumentItem] = []
+    used = 0
+    continues_at = None
+    for index, item in enumerate(lines):
+        # The line adds `[HH:MM:SS] ` before the text and a newline after it.
+        cost = len(item.text) + 12
+        if shown and used + cost > max_chars:
+            # Past the end of everything shown, so reading on from here skips
+            # every item already returned, an overlapping one included. Items
+            # ending before it are never read on, so they stay on this page.
+            continues_at = max(i.end_time for i in shown if i.end_time is not None)
+            shown.extend(
+                rest
+                for rest in lines[index:]
+                if rest.end_time is not None and rest.end_time <= continues_at
+            )
+            break
+        shown.append(item)
+        used += cost
+    frames = spread_frames(
+        {
+            item.self_ref: item.start_time
+            for item in items
+            if item.label == "picture" and item.start_time is not None
+        }
+    )
+    index = (
+        await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
+            [recording.document_id]
+        )
+    ).get(recording.document_id, {})
+    # An item two chunks share is shown once, under the first of them.
+    members: dict[str, list[DocumentItem]] = {}
+    for item in shown:
+        for chunk_id in index.get(item.self_ref, [])[:1]:
+            members.setdefault(chunk_id, []).append(item)
+    frame_items = {item.self_ref: item for item in items if item.self_ref in frames}
+    for ref in frames:
+        for chunk_id in index.get(ref, []):
+            members.setdefault(chunk_id, []).append(frame_items[ref])
+
+    results = []
+    for chunk_id, chunk_items in members.items():
+        chunk = await rag.chunk_repository.get_by_id(chunk_id)
+        if chunk is None:  # pragma: no cover - the index was read from the table
+            continue
+        result = SearchResult.from_chunk(chunk, score=1.0)
+        result.source = recording.source
+        result.document_title = recording.title
+        result.document_uri = recording.uri
+        lines, pictures, spans = [], {}, []
+        for item in chunk_items:
+            assert item.start_time is not None and item.end_time is not None
+            spans.append((item.start_time, item.end_time))
+            clock = format_time_range((item.start_time, item.start_time))
+            if item.label == "picture":
+                lines.append(f"[{clock}] (frame)")
+                pictures[item.self_ref] = item.start_time
+            else:
+                lines.append(f"[{clock}] {item.text}")
+        result.content = "\n".join(lines)
+        result.doc_item_refs = [item.self_ref for item in chunk_items]
+        result.time_range = merge_time_ranges(spans)
+        result.picture_times = pictures
+        result.image_data = None
+        if include_images and pictures:
+            result.image_data = {}
+            for ref in pictures:
+                data = await rag.document_item_repository.get_picture_bytes(
+                    recording.document_id, ref
+                )
+                if data:  # pragma: no branch - every stored frame has its bytes
+                    result.image_data[ref] = base64.b64encode(data).decode("ascii")
+        results.append(result)
+    results.sort(
+        key=lambda r: (r.time_range[0] if r.time_range else 0.0, not r.picture_times)
+    )
+    return RecordingView(results, continues_at)
 
 
 def merge_results(

@@ -1,4 +1,5 @@
 import asyncio
+import math
 from collections.abc import Awaitable
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, field, replace
@@ -39,6 +40,7 @@ from haiku.rag.capabilities._tools import (
     refresh_results,
     require_collections,
     search_corpus,
+    view_recording,
     without_sources,
 )
 from haiku.rag.capabilities.ledger import CapabilityEvidenceRecord, EvidenceRef
@@ -64,7 +66,8 @@ CITE_TOOL = "cite"
 SEARCH_AUDIO_TOOL = "search_audio"
 SEARCH_VIDEO_TOOL = "search_video"
 LIST_RECORDINGS_TOOL = "list_recordings"
-MEDIA_SEARCH_TOOLS = frozenset({SEARCH_AUDIO_TOOL, SEARCH_VIDEO_TOOL})
+VIEW_TOOL = "view"
+MEDIA_SEARCH_TOOLS = frozenset({SEARCH_AUDIO_TOOL, SEARCH_VIDEO_TOOL, VIEW_TOOL})
 MEDIA_TOOLS = MEDIA_SEARCH_TOOLS | {LIST_RECORDINGS_TOOL}
 """Tools declared only under `qa.media_tools`."""
 TOOL_NAMES = frozenset({SEARCH_TOOL, EXECUTE_CODE_TOOL, CITE_TOOL}) | MEDIA_TOOLS
@@ -718,21 +721,7 @@ class RAGCapability(AbstractCapability[Any]):
         assert self.state is not None
         if sources is not None:
             require_collections(sources, self.collections)
-        if run_step != self.search_step:
-            self.search_step = run_step
-            self.step_searches = 0
-            self.step_rejected = False
-            self.step_shown = set()
-            self.step_pictures = set()
-        self.step_searches += 1
-        if (self.step_searches - 1) % FREE_SIBLINGS_PER_ROUND == 0:
-            self.search_count += 1
-        if self.step_rejected or self.search_count > self._max_searches:
-            self.step_rejected = True
-            raise ToolFailed(
-                "Search limit reached. Answer the question using "
-                "the results you already have."
-            )
+        self._charge_search(run_step)
         async with self.rag_lock:
             formatted, results, rendered = await search_corpus(
                 await self._ensure_rag(),
@@ -768,6 +757,109 @@ class RAGCapability(AbstractCapability[Any]):
         self._note_evidence()
         self.step_shown |= rendered
         self.step_pictures |= emitted
+        if parts:
+            return ToolReturn(return_value=formatted, content=parts)
+        return formatted
+
+    def _charge_search(self, run_step: int) -> None:
+        """Pay for one search under the sibling rule, or fail once spent."""
+        if run_step != self.search_step:
+            self.search_step = run_step
+            self.step_searches = 0
+            self.step_rejected = False
+            self.step_shown = set()
+            self.step_pictures = set()
+        self.step_searches += 1
+        if (self.step_searches - 1) % FREE_SIBLINGS_PER_ROUND == 0:
+            self.search_count += 1
+        if self.step_rejected or self.search_count > self._max_searches:
+            self.step_rejected = True
+            raise ToolFailed(
+                "Search limit reached. Answer the question using "
+                "the results you already have."
+            )
+
+    async def _view(
+        self,
+        recording: str,
+        start: float,
+        end: float,
+        source: str | None,
+        run_step: int,
+    ) -> str | ToolReturn:
+        assert self.state is not None
+        window = _window(recording, start, end)
+        assert window is not None
+        if source is not None:
+            require_collections([source], self.collections)
+        self._charge_search(run_step)
+        async with self.rag_lock:
+            rag = await self._ensure_rag()
+            matches = [
+                found
+                for found in await rag.list_recordings(
+                    filter=self.state.document_filter,
+                    sources=self.state.sources if source is None else [source],
+                )
+                if found.document_id == recording
+            ]
+            if not matches:
+                raise ToolFailed(
+                    f"No recording {recording} in this run. Take a document_id "
+                    "from list_recordings."
+                )
+            if len(matches) > 1:
+                names = ", ".join(sorted(str(m.source) for m in matches))
+                raise ToolFailed(
+                    f"Recording {recording} is in collections {names}. "
+                    "Pass source to name one."
+                )
+            [found] = matches
+            owner = await rag.reader_for(found.source)
+            assert owner is not None
+            viewed = await view_recording(
+                owner,
+                found,
+                window,
+                self.config.search.max_context_chars,
+                include_images=self.vision,
+            )
+        parts: list[str | BinaryContent] = []
+        emitted: set[PictureKey] = set()
+        if self.vision:
+            parts, emitted = build_image_content_from_results(
+                viewed.results,
+                include_collection=self.spans_collections,
+                exclude=self.step_pictures,
+            )
+        state = self.state
+        key = f"view {recording} {start:g}-{end:g}"
+        merge_results(state.searches.setdefault(key, []), viewed.results)
+        refresh_results(state.searches.values(), viewed.results)
+        self._note_evidence()
+        self.step_pictures |= emitted
+        total = len(viewed.results)
+        formatted = (
+            "\n\n---\n\n".join(
+                result.format_for_agent(
+                    rank=index + 1,
+                    total=total,
+                    include_collection=self.spans_collections,
+                )
+                for index, result in enumerate(viewed.results)
+            )
+            or "Nothing is said or shown in this window."
+        )
+        if viewed.continues_at is not None:
+            # Rounded up to the millisecond, so reading on never starts before
+            # the end of what was shown.
+            at = math.ceil(viewed.continues_at * 1000) / 1000
+            clock = format_time_range((at, at))
+            seconds = f"{at:.3f}".rstrip("0").rstrip(".")
+            formatted += (
+                f"\n\nThe transcript continues at [{clock}] ({seconds} s). "
+                "Call view again from there to read on."
+            )
         if parts:
             return ToolReturn(return_value=formatted, content=parts)
         return formatted
@@ -1048,6 +1140,29 @@ class RAGCapability(AbstractCapability[Any]):
                 )
             )
 
+        async def view(
+            ctx: RunContext[Any],
+            recording: str,
+            start: float,
+            end: float,
+            source: str | None = None,
+        ) -> str | ToolReturn:
+            """Read a recording between two times: what is said, one line per
+            sentence with its time, and up to 4 frames of a video spread across
+            the window, as images. Use it to read on around a result, or to read
+            a part of a recording the question names.
+
+            Args:
+                recording: A recording's document_id from `list_recordings`.
+                start: Seconds into the recording where the window starts.
+                end: Seconds into the recording where the window ends.
+                source: The collection holding the recording, needed when it is
+                    in more than one.
+            """
+            return await self._with_state(
+                self._view(recording, start, end, source, ctx.run_step)
+            )
+
         async def list_recordings(
             ctx: RunContext[Any], sources: list[str] | None = None
         ) -> str:
@@ -1071,7 +1186,15 @@ class RAGCapability(AbstractCapability[Any]):
             return await self._with_state(self._cite(chunk_ids))
 
         return FunctionToolset(
-            [search, execute_code, cite, search_audio, search_video, list_recordings],
+            [
+                search,
+                execute_code,
+                cite,
+                search_audio,
+                search_video,
+                view,
+                list_recordings,
+            ],
             id=CAPABILITY_ID,
             max_retries=3,
             sequential=True,

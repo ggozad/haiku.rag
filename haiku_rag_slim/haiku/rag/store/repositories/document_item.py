@@ -1,10 +1,14 @@
 import json
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document_item import DocumentItem
 from haiku.rag.store.schema import DocumentItemRecord
 from haiku.rag.utils.sql import escape_sql_string
+
+if TYPE_CHECKING:
+    from haiku.rag.store.models.chunk import TimeWindow
 
 # Per-item metadata columns. The payload column ``picture_data`` is fetched
 # explicitly via ``get_picture_bytes`` / ``get_pictures_for_chunk`` /
@@ -114,6 +118,18 @@ class DocumentItemRepository:
         items = [self._record_to_item(row) for row in rows]
         items.sort(key=lambda x: x.position)
         return items
+
+    async def get_items_in_window(self, window: "TimeWindow") -> list[DocumentItem]:
+        """A recording's items whose times overlap `window`, sorted by position."""
+        rows = await (
+            self.store.document_items_table.query()
+            .select(_METADATA_COLUMNS)
+            .where(window.where())
+            .to_list()
+        )
+        return sorted(
+            (self._record_to_item(row) for row in rows), key=lambda x: x.position
+        )
 
     async def resolve_refs_grouped(
         self, refs_by_document: "Mapping[str, Sequence[str]]"

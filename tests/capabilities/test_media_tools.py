@@ -22,7 +22,7 @@ from tests.capabilities.conftest import _seeded_vector
 from tests.capabilities.helpers import Deps
 from tests.client.test_media_search import FRAMES, SEGMENTS, _seed
 
-MEDIA_TOOLS = {"search_audio", "search_video", "list_recordings"}
+MEDIA_TOOLS = {"search_audio", "search_video", "view", "list_recordings"}
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 
