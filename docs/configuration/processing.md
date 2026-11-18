@@ -393,8 +393,10 @@ stops its ffmpeg processes, scene detection and transcription requests, and the 
 `chunker_type` picks the docling chunker for documents. An audio or video
 transcript is joined into one text and split by the hybrid chunker of the
 configured `chunker` whatever `chunker_type` names, so chunks end between
-sentences wherever the transcript punctuates them. A chunk references the
-text items covered by its text, and takes its time from them.
+sentences wherever the transcript punctuates them. A chunk spanning more
+than 30 seconds is split between items into pieces of at most 30 seconds, and
+an item longer than that is a chunk of its own. A chunk references the text
+items covered by its text, and takes its time from them.
 
 - `hybrid` (default): docling's `HybridChunker`. Starts from the document's structure, splits items longer than `chunk_size` tokens of `chunking_tokenizer`, and with `chunking_merge_peers` merges undersized neighbours under the same headings.
 - `hierarchical`: docling's `HierarchicalChunker`. One chunk per document item (paragraph, list, table), with no token limit, so `chunk_size` does not apply.

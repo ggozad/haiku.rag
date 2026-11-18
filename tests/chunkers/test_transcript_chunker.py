@@ -114,6 +114,66 @@ async def test_a_chunk_missing_from_the_transcript_fails():
         raise AssertionError("expected ValueError")
 
 
+async def test_a_chunk_longer_than_the_cap_splits_between_segments():
+    doc = _recording(
+        (0.0, 10.0, "One."),
+        (10.0, 20.0, "Two."),
+        (20.0, 30.0, "Three."),
+        (30.0, 40.0, "Four."),
+    )
+
+    assert await _chunks(doc) == [
+        ("One. Two. Three.", ["#/texts/0", "#/texts/1", "#/texts/2"]),
+        ("Four.", ["#/texts/3"]),
+    ]
+
+
+async def test_a_segment_longer_than_the_cap_is_a_chunk_alone():
+    doc = _recording((0.0, 40.0, "Long."), (40.0, 45.0, "Short."))
+
+    assert await _chunks(doc) == [
+        ("Long.", ["#/texts/0"]),
+        ("Short.", ["#/texts/1"]),
+    ]
+
+
+async def test_the_cap_measures_every_segment_of_a_chunk():
+    doc = _recording((10.0, 20.0, "One."), (0.0, 5.0, "Two."), (20.0, 35.0, "Three."))
+
+    assert await _chunks(doc) == [
+        ("One. Two.", ["#/texts/0", "#/texts/1"]),
+        ("Three.", ["#/texts/2"]),
+    ]
+
+
+async def test_untimed_segments_stay_in_one_chunk():
+    doc = _recording()
+    for text in ("One.", "Two.", "Three."):
+        doc.add_text(
+            label=DocItemLabel.TEXT, text=text, content_layer=ContentLayer.BODY
+        )
+
+    assert await _chunks(doc) == [
+        ("One. Two. Three.", ["#/texts/0", "#/texts/1", "#/texts/2"])
+    ]
+
+
+async def test_a_split_chunk_keeps_the_text_it_starts_with():
+    doc = _recording(
+        (0.0, 20.0, "One two"), (20.0, 40.0, "three four"), (40.0, 50.0, "five")
+    )
+
+    chunks = await TranscriptChunker(_Returning("One", "two three four five")).chunk(
+        doc
+    )
+
+    assert [(c.content, c.metadata["doc_item_refs"]) for c in chunks] == [
+        ("One", ["#/texts/0"]),
+        ("two", ["#/texts/0"]),
+        ("three four five", ["#/texts/1", "#/texts/2"]),
+    ]
+
+
 async def test_frames_are_in_no_chunk_even_when_described():
     doc = _recording((0.0, 2.0, "The oxygen tank failed."))
     _described_frame(doc, 2.0, "A tank on a test stand.")
