@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `pydantic-monty` raised to 1.6.
+
 ## [0.112.2] - 2026-11-17
 
 ### Added
