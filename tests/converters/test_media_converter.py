@@ -267,6 +267,34 @@ def test_a_run_with_no_pause_stays_whole():
     assert (whole.start, whole.end) == (0.0, words[-1].end)
 
 
+def _gapless(start: float, count: int) -> media.Utterance:
+    """A segment of `count` unpunctuated words half a second long, each ending
+    where the next starts."""
+    from haiku.rag.converters.media import Utterance, Word
+
+    words = tuple(
+        Word(start + i * 0.5, start + (i + 1) * 0.5, f" s{start:g}w{i}")
+        for i in range(count)
+    )
+    return Utterance(start, words[-1].end, "", words)
+
+
+def test_a_long_unpunctuated_run_is_cut_at_a_segment_end_past_ten_seconds():
+    from haiku.rag.converters.media import sentences
+
+    segments = [_gapless(0.0, 12), _gapless(6.0, 12), _gapless(12.0, 12)]
+    cut = sentences(segments)
+
+    assert [u.text for u in cut] == [
+        "".join(w.text for s in segments[:2] for w in s.words).strip(),
+        "".join(w.text for w in segments[2].words).strip(),
+    ]
+    assert [(u.start, u.end) for u in cut] == [
+        (0.0, 12.0),
+        (12.0, 18.0),
+    ]
+
+
 def test_a_sentence_runs_on_across_segments_and_ends_at_closing_punctuation():
     from haiku.rag.converters.media import Utterance, Word, sentences
 
@@ -439,6 +467,21 @@ async def test_text_over_noise_is_dropped_with_word_times_too(
     assert [(t.source[0].start_time, t.text) for t in spoken.texts] == [
         (10.0, "Thank you.")
     ]
+
+
+def test_a_looping_segment_without_speech_is_dropped():
+    from haiku.rag.converters.media import Utterance, spoken
+
+    loop = " Department of State" * 12
+    segments = [
+        Utterance(0.0, 25.0, loop),
+        Utterance(30.0, 55.0, loop),
+        Utterance(60.0, 62.0, " Thank you."),
+    ]
+
+    kept = spoken(segments, [0.0, 0.5, 0.0])
+
+    assert kept == segments[1:]
 
 
 def _with_fields(**fields) -> AppConfig:

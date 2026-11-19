@@ -352,7 +352,8 @@ haiku.rag asks for word and segment times
 (`timestamp_granularities[]=word,segment`). When the server returns word times,
 each sentence becomes one text item, timed from its first word to its last. A
 sentence ends at `.`, `?`, `!` or `…` (or their Chinese forms), and one still
-running after 10 s ends at its next pause of half a second. A sentence never
+running after 10 s ends at its next pause of half a second or at the end of the
+server's segment, whichever comes first. A sentence never
 runs from one piece into the next. When the server returns no word times, each
 segment of its answer becomes one text item. vLLM does not return word times,
 and its segments can run to 30 s, so a time in a search result covers a
@@ -362,10 +363,11 @@ return them.
 Whisper writes text over music, noise and silence: "Thank you." across a
 30 s window, one line repeated through a song. This filter reads the server's
 segments, before any sentence is built. A segment is dropped when Silero
-VAD finds almost no speech within a second of it and its text either repeats
-three times in the recording or spreads a few words over 10 s or more. Silero
-misses speech over a music bed, so a segment with little detected speech but
-neither shape is kept. The VAD model (`onnx-community/silero-vad`, 2 MB) is
+VAD finds almost no speech within a second of it and its text repeats three
+times in the recording, repeats itself (Whisper's compression ratio above 2.4)
+or spreads a few words over 10 s or more. Silero
+misses speech over a music bed, so a segment with little detected speech and
+none of these shapes is kept. The VAD model (`onnx-community/silero-vad`, 2 MB) is
 downloaded on first use and by `download-models`.
 
 A WebVTT or SRT file beside a local recording, with the same stem

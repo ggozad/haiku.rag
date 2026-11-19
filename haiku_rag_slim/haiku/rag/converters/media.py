@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import zlib
 from bisect import bisect_right
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -73,8 +74,10 @@ MIN_SPEECH_SHARE = 0.05
 REPEATS = 3
 SPARSE_SECONDS = 10.0
 SPARSE_WORDS_PER_SECOND = 0.4
+# Whisper's own threshold for output that repeats itself.
+LOOP_COMPRESSION_RATIO = 2.4
 # A sentence without closing punctuation is cut at its first pause of at least
-# PAUSE_SECONDS once it runs past MAX_SENTENCE_SECONDS.
+# PAUSE_SECONDS, or its first utterance end, once it runs past MAX_SENTENCE_SECONDS.
 MAX_SENTENCE_SECONDS = 10.0
 PAUSE_SECONDS = 0.5
 SENTENCE_ENDS = (".", "?", "!", "…", "。", "？", "！")
@@ -304,8 +307,8 @@ def speech_shares(
 
 def spoken(utterances: list[Utterance], shares: list[float]) -> list[Utterance]:
     """The utterances that are not Whisper's text over music, noise or silence:
-    almost no speech around it, and text the recording repeats or a few words
-    over a long stretch. Silero misses speech over a music bed, so a low share
+    almost no speech around it, and text the recording repeats, text that
+    repeats itself, or a few words over a long stretch. Silero misses speech over a music bed, so a low share
     alone drops real speech."""
     counts = Counter(u.text for u in utterances)
 
@@ -315,7 +318,11 @@ def spoken(utterances: list[Utterance], shares: list[float]) -> list[Utterance]:
             seconds >= SPARSE_SECONDS
             and len(u.text.split()) / seconds < SPARSE_WORDS_PER_SECOND
         )
-        return share < MIN_SPEECH_SHARE and (counts[u.text] >= REPEATS or sparse)
+        text = u.text.encode()
+        looped = len(text) / len(zlib.compress(text)) > LOOP_COMPRESSION_RATIO
+        return share < MIN_SPEECH_SHARE and (
+            counts[u.text] >= REPEATS or sparse or looped
+        )
 
     return [
         u for u, share in zip(utterances, shares, strict=True) if not invented(u, share)
@@ -404,7 +411,8 @@ def respaced(words: list[Word], text: str) -> list[Word]:
 
 def sentences(utterances: list[Utterance]) -> list[Utterance]:
     """The utterances recut into sentences by their words' times. A sentence
-    can run across utterances. An utterance without words is kept as it is."""
+    can run across utterances. One running past `MAX_SENTENCE_SECONDS` ends at
+    its next pause or utterance end. An utterance without words is kept as it is."""
     result: list[Utterance] = []
     current: list[Word] = []
 
@@ -431,6 +439,10 @@ def sentences(utterances: list[Utterance]) -> list[Utterance]:
             current.append(word)
             if word.text.strip().rstrip(CLOSERS).endswith(SENTENCE_ENDS):
                 close()
+        # faster-whisper's word times leave no gap between words, so a pause
+        # never shows in them and an utterance end is the boundary left.
+        if current and current[-1].end - current[0].start > MAX_SENTENCE_SECONDS:
+            close()
     close()
     return result
 
