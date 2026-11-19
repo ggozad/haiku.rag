@@ -113,7 +113,7 @@ def _times(state: RAGState) -> list[tuple[float, str]]:
     )
 
 
-async def test_a_window_returns_its_sentences_in_order_and_at_most_four_frames(film):
+async def test_a_window_returns_its_sentences_in_order_and_at_most_eight_frames(film):
     path, film_id = film
 
     result, state = await view(path, [{"recording": film_id, "start": 0, "end": 100}])
@@ -122,8 +122,18 @@ async def test_a_window_returns_its_sentences_in_order_and_at_most_four_frames(f
     said = re.findall(r"\[(\d\d:\d\d:\d\d)\] Said at", str(part.content))
     assert said == [f"00:0{s // 60}:{s % 60:02d}" for s in range(0, 100, 10)]
     frames = [at for at, kind in _times(state) if kind == "frame"]
-    assert frames == [5.0, 35.0, 65.0, 95.0]
-    assert len(images(result)) == 4
+    assert frames == [5.0, 15.0, 35.0, 45.0, 55.0, 65.0, 85.0, 95.0]
+    assert len(images(result)) == 8
+
+
+async def test_a_window_with_eight_frames_returns_every_one(film):
+    path, film_id = film
+
+    result, state = await view(path, [{"recording": film_id, "start": 0, "end": 80}])
+
+    frames = [at for at, kind in _times(state) if kind == "frame"]
+    assert frames == [5.0, 15.0, 25.0, 35.0, 45.0, 55.0, 65.0, 75.0]
+    assert len(images(result)) == 8
 
 
 async def test_a_narrow_window_returns_only_what_overlaps_it(film):
@@ -199,7 +209,7 @@ async def test_cited_frames_carry_only_their_own_frame(film):
 
     state = RAGState.model_validate(deps.state["rag"])
     framed = [c for c in state.citation_index.values() if c.picture_refs]
-    assert len(framed) == 4
+    assert len(framed) == 8
     assert all(len(c.picture_refs) == 1 for c in framed)
 
 
@@ -213,7 +223,7 @@ async def test_no_images_without_vision(film):
     )
 
     assert images(result) == []
-    assert [kind for _, kind in _times(state)].count("frame") == 4
+    assert [kind for _, kind in _times(state)].count("frame") == 8
 
 
 @pytest.mark.parametrize(

@@ -1147,9 +1147,10 @@ class RAGCapability(AbstractCapability[Any]):
             source: str | None = None,
         ) -> str | ToolReturn:
             """Read a recording between two times: what is said, one line per
-            sentence with its time, and up to 4 frames of a video spread across
-            the window, as images. Use it to read on around a result, or to read
-            a part of a recording the question names.
+            sentence with its time, and a video's frames in the window as
+            images, all of them up to 8, or 8 spread across a window holding
+            more. Use it to read on around a result, or to read a part of a
+            recording the question names.
 
             Args:
                 recording: A recording's document_id from `list_recordings`.

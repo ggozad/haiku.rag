@@ -33,6 +33,8 @@ from haiku.rag.store.models.document_item import (
 from haiku.rag.utils.formatting import format_time_range
 from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, picture_keys
 
+VIEW_MAX_FRAMES = 8
+
 IMAGES_OMITTED = (
     "[Page images retrieved from the knowledge base are omitted here: the request "
     "reached its image limit.]"
@@ -168,8 +170,8 @@ async def view_recording(
     include_images: bool,
 ) -> RecordingView:
     """The sentences of `recording` inside `window`, whole, up to `max_chars`
-    (at least one), and up to `MAX_FRAMES_PER_RESULT` of its frames spread
-    across the window."""
+    (at least one), and its frames, spread across the window down to
+    `VIEW_MAX_FRAMES` when it holds more."""
     items = await rag.document_item_repository.get_items_in_window(window)
     lines = [
         item
@@ -200,7 +202,8 @@ async def view_recording(
             item.self_ref: item.start_time
             for item in items
             if item.label == "picture" and item.start_time is not None
-        }
+        },
+        VIEW_MAX_FRAMES,
     )
     index = (
         await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
