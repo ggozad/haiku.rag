@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import hashlib
+import html
 import io
 import json
 import multiprocessing
@@ -85,6 +86,10 @@ CHILD_GRACE_SECONDS = 2.0
 _FFMPEG = ("ffmpeg", "-nostdin", "-hide_banner", "-nostats")
 _SILENCE = re.compile(r"silence_(start|end): (-?[\d.]+)")
 _PTS_TIME = re.compile(r"pts_time:(-?[\d.]+)")
+SUBTITLE_EXTENSIONS = (".vtt", ".srt")
+_CUE_STAMP = r"((?:\d+:)?\d+:\d{2}[.,]\d{3})"
+_CUE_TIMES = re.compile(rf"^{_CUE_STAMP}\s*-->\s*{_CUE_STAMP}")
+_TAG = re.compile(r"<[^>]*>")
 
 
 @dataclass(frozen=True)
@@ -407,7 +412,7 @@ def sentences(utterances: list[Utterance]) -> list[Utterance]:
         text = "".join(w.text for w in current).strip()
         if text:
             start = current[0].start
-            end = max(current[-1].end, start + MIN_SEGMENT_SECONDS)
+            end = max(*(w.end for w in current), start + MIN_SEGMENT_SECONDS)
             result.append(Utterance(start, end, text))
         current.clear()
 
@@ -428,6 +433,51 @@ def sentences(utterances: list[Utterance]) -> list[Utterance]:
                 close()
     close()
     return result
+
+
+def subtitles(path: Path) -> Path | None:
+    """The WebVTT or SRT file beside `path` with its stem, if there is one."""
+    for suffix in SUBTITLE_EXTENSIONS:
+        sidecar = path.with_suffix(suffix)
+        if sidecar.is_file():
+            return sidecar
+    return None
+
+
+def _cue_seconds(stamp: str) -> float:
+    seconds = 0.0
+    for part in stamp.replace(",", ".").split(":"):
+        seconds = seconds * 60 + float(part)
+    return seconds
+
+
+def parse_cues(text: str) -> list[Word]:
+    """The cues of a WebVTT or SRT file, each a `Word` of its text with markup
+    removed and a leading space."""
+    words = []
+    for block in re.split(r"\n\s*\n", text.replace("\r\n", "\n")):
+        lines = block.strip().split("\n")
+        for at, line in enumerate(lines):
+            times = _CUE_TIMES.match(line)
+            if times is None:
+                continue
+            cue = " ".join(
+                _TAG.sub("", cue_line).strip() for cue_line in lines[at + 1 :]
+            )
+            cue = html.unescape(cue).strip()
+            if cue:
+                start, end = (_cue_seconds(stamp) for stamp in times.groups())
+                words.append(Word(start, end, f" {cue}"))
+            break
+    return words
+
+
+def read_subtitles(path: Path) -> list[Utterance]:
+    """The sentences of the subtitles at `path`, cut by their cue times."""
+    words = parse_cues(path.read_text(encoding="utf-8-sig"))
+    if not words:
+        return []
+    return sentences([Utterance(words[0].start, words[-1].end, "", tuple(words))])
 
 
 async def transcribe(
@@ -687,8 +737,15 @@ class MediaConverter:
         require_ffmpeg()
         duration, audio = await probe(path)
         video = path.suffix.lower() in VIDEO_EXTENSIONS
+        sidecar = subtitles(path)
+        if sidecar is not None:
+            transcript = asyncio.to_thread(read_subtitles, sidecar)
+        elif audio:
+            transcript = transcribe(path, duration, media.asr)
+        else:
+            transcript = _nothing()
         utterances, frames = await _gather(
-            transcribe(path, duration, media.asr) if audio else _nothing(),
+            transcript,
             self._frames(path, duration, media.frames) if video else _nothing(),
         )
         return await asyncio.to_thread(_build_document, path, utterances, frames)

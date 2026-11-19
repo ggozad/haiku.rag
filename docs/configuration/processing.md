@@ -368,6 +368,16 @@ misses speech over a music bed, so a segment with little detected speech but
 neither shape is kept. The VAD model (`onnx-community/silero-vad`, 2 MB) is
 downloaded on first use and by `download-models`.
 
+A WebVTT or SRT file beside a local recording, with the same stem
+(`talk.mp4` and `talk.vtt`), is its transcript, and the server is not called.
+Its cues are cut into sentences as word times are, the VAD filter does not
+run, and markup in cue text is removed. A recording fetched from a URL or
+object storage is always transcribed. `.vtt` and `.srt` files are not ingested
+as documents.
+A recording's revision and hash cover the recording alone, so a subtitle file
+added or changed later reaches its transcript only through
+`haiku-rag add-src --force`.
+
 A video also yields frames as pictures, each with its time. `fixed_interval`
 takes the frame shown every `interval_seconds` from time zero, in one ffmpeg
 pass. `scene_change` finds scenes with docling's scene-change detector and takes
