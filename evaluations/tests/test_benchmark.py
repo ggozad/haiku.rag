@@ -1130,3 +1130,109 @@ class TestRunRefusesAnUnusableName:
 
         assert result.exit_code == 1
         assert "run name" in result.output
+
+
+class TestConcurrency:
+    async def test_questions_run_side_by_side_and_each_row_keeps_its_own_answer(
+        self, tmp_path: Path
+    ) -> None:
+        import asyncio
+        from dataclasses import dataclass
+
+        from pydantic_evals import Case, Dataset
+        from pydantic_evals.evaluators import Evaluator, EvaluatorContext
+
+        from evaluations.capability_runner import CapabilityRunResult
+
+        @dataclass
+        class AlwaysOne(Evaluator):
+            def evaluate(self, ctx: EvaluatorContext) -> float:
+                return 1.0
+
+        spec = stub_spec(
+            qa_loader=lambda: [{"id": "a"}, {"id": "b"}, {"id": "c"}],
+            qa_case_builder=lambda idx, doc: Case(
+                name=doc["id"], inputs=doc["id"], expected_output="ref"
+            ),
+            qa_evaluator=AlwaysOne(),
+        )
+        running, most = 0, 0
+
+        async def answer(**kwargs) -> CapabilityRunResult:
+            nonlocal running, most
+            question = kwargs["question"]
+            running += 1
+            most = max(most, running)
+            # The first question finishes last, so the cases interleave.
+            await asyncio.sleep(0.1 if question == "a" else 0.02)
+            running -= 1
+            return CapabilityRunResult(
+                answer=f"answer {question}", n_requests=ord(question)
+            )
+
+        evaluate = Dataset.evaluate
+        seen: dict = {}
+
+        async def recording(self, *args, **kwargs):
+            seen.update(kwargs)
+            return await evaluate(self, *args, **kwargs)
+
+        with (
+            patch("evaluations.qa.get_model", return_value="fake-model"),
+            patch("evaluations.qa.run_capability_question", side_effect=answer),
+            patch.object(Dataset, "evaluate", recording),
+        ):
+            await run_qa_benchmark(
+                spec,
+                AppConfig(),
+                db_path=tmp_path / "test.lancedb",
+                results_dir=tmp_path / "results",
+                concurrency=2,
+            )
+
+        assert most == 2
+        assert seen["metadata"]["qa_concurrency"] == 2
+        [results] = (tmp_path / "results").glob("*.jsonl")
+        rows = [json.loads(line) for line in results.read_text().splitlines()]
+        assert sorted(row["case_name"] for row in rows) == ["a", "b", "c"]
+        for row in rows:
+            assert row["answer"] == f"answer {row['case_name']}"
+            assert row["attributes"]["n_requests"] == ord(row["case_name"])
+
+    async def test_evaluate_dataset_passes_it_to_the_qa_run(self) -> None:
+        with patch(
+            "evaluations.benchmark.run_qa_benchmark", new_callable=AsyncMock
+        ) as mock_qa:
+            await evaluate_dataset(
+                spec=stub_spec(),
+                config=AppConfig(),
+                skip_db=True,
+                skip_retrieval=True,
+                skip_qa=False,
+                limit=None,
+                name=None,
+                db_path=None,
+                concurrency=2,
+            )
+
+        assert mock_qa.call_args[1]["concurrency"] == 2
+
+    def test_run_takes_it_from_the_command_line(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import evaluations.benchmark as benchmark
+
+        seen: dict = {}
+
+        async def record(**kwargs) -> None:
+            seen.update(kwargs)
+
+        monkeypatch.setattr(benchmark, "evaluate_dataset", record)
+        with patch("evaluations.benchmark.find_config_file", return_value=None):
+            result = CliRunner().invoke(
+                benchmark.app,
+                ["run", "frames", "--skip-db", "--no-telemetry", "--concurrency", "2"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert seen["concurrency"] == 2

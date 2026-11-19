@@ -41,6 +41,7 @@ async def evaluate_dataset(
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
     results_dir: Path | None = None,
+    concurrency: int = 1,
 ) -> None:
     if document_filter is not None:
         console.print(f"Document filter: {document_filter}", style="dim")
@@ -101,6 +102,7 @@ async def evaluate_dataset(
                 case_ids=case_ids,
                 document_filter=document_filter,
                 results_dir=results_dir,
+                concurrency=concurrency,
             )
 
 
@@ -258,6 +260,12 @@ def run(
             "evaluations/results/ in the haiku.rag data directory."
         ),
     ),
+    concurrency: int = typer.Option(
+        1,
+        "--concurrency",
+        min=1,
+        help="Questions answered at once in a single-question QA run.",
+    ),
 ) -> None:
     if name is not None:
         try:
@@ -294,6 +302,7 @@ def run(
             case_ids=_load_case_ids(filter_ids),
             document_filter=document_filter,
             results_dir=results or default_results_path(),
+            concurrency=concurrency,
         )
     )
 

@@ -315,6 +315,7 @@ async def run_qa_benchmark(
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
     results_dir: Path | None = None,
+    concurrency: int = 1,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     run = await _prepare_qa_run(
         spec,
@@ -327,6 +328,7 @@ async def run_qa_benchmark(
         document_filter,
     )
     cases, judge_config = run.cases, run.judge_config
+    run.experiment_metadata["qa_concurrency"] = concurrency
 
     _attach_relevant_uris(cases, spec, limit)
     citation_evaluator = spec.citation_evaluator
@@ -433,7 +435,7 @@ async def run_qa_benchmark(
         report = await evaluation_dataset.evaluate(
             answer_question,
             name=run.eval_name,
-            max_concurrency=1,
+            max_concurrency=concurrency,
             progress=True,
             metadata=run.experiment_metadata,
             lifecycle=None
