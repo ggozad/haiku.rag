@@ -15,7 +15,7 @@ from haiku.rag.config.models import (
     EmbeddingsConfig,
     StorageConfig,
 )
-from haiku.rag.store.engine import ConnectionMode, Store
+from haiku.rag.store.engine import MAX_VECTOR_INDEX_SEGMENTS, ConnectionMode, Store
 from haiku.rag.store.exceptions import ReadOnlyError
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.schema import has_vector_index
@@ -122,6 +122,40 @@ async def test_retrains_an_existing_index(temp_db_path):
         stats = await _vector_index_stats(client)
         assert stats is not None
         assert stats.num_indexed_rows == 266
+
+
+async def _vector_index_partitions(client: HaikuRAG) -> list[int]:
+    dataset = await client.store.chunks_table.to_lance()
+    segments = dataset.stats.index_stats("vector_idx")["indices"]
+    return [segment["num_partitions"] for segment in segments]
+
+
+async def test_vacuum_bounds_the_vector_index_segments(temp_db_path):
+    async with HaikuRAG(temp_db_path, CONFIG, create=True) as client:
+        await _import(client, 256, "test://base")
+        await client.create_vector_index()
+
+        for i in range(MAX_VECTOR_INDEX_SEGMENTS + 2):
+            await _import(client, 10, f"test://{i}")
+            await client.vacuum(retention_seconds=0)
+
+            stats = await _vector_index_stats(client)
+            assert stats is not None
+            assert stats.num_indices <= MAX_VECTOR_INDEX_SEGMENTS
+            assert stats.num_unindexed_rows == 0
+
+
+async def test_vacuum_still_splits_vector_index_partitions(temp_db_path):
+    async with HaikuRAG(temp_db_path, CONFIG, create=True) as client:
+        await _import(client, 256, "test://base")
+        await client.create_vector_index()
+        assert await _vector_index_partitions(client) == [1]
+
+        for i in range(10):
+            await _import(client, 5000, f"test://{i}")
+            await client.vacuum(retention_seconds=0)
+
+        assert max(await _vector_index_partitions(client)) > 1
 
 
 async def test_builds_nothing_on_lancedb_cloud(temp_db_path):

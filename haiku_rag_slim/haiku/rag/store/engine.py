@@ -42,6 +42,24 @@ from haiku.rag.store.schema import (
 
 logger = logging.getLogger(__name__)
 
+MAX_VECTOR_INDEX_SEGMENTS = 4
+
+
+def _optimize_indices(dataset: "lance.LanceDataset") -> None:
+    """Index new rows, merging the vector index once it exceeds its segment cap.
+
+    The default optimize adds a vector index segment per call until an IVF
+    partition splits, and every search opens files per segment. An explicit
+    merge count on every call disables the splits.
+    """
+    dataset.optimize.optimize_indices()
+    segments = sum(1 for i in dataset.list_indices() if i["name"] == "vector_idx")
+    if segments > MAX_VECTOR_INDEX_SEGMENTS:
+        dataset.optimize.optimize_indices(
+            index_names=["vector_idx"], num_indices_to_merge=segments
+        )
+
+
 REBUILD_COMMANDS = {
     "full": "rebuild",
     "rechunk": "rebuild --rechunk",
@@ -668,9 +686,7 @@ class Store:
                         await self._run_lance_maintenance(
                             table, lambda ds: ds.optimize.compact_files()
                         )
-                        await self._run_lance_maintenance(
-                            table, lambda ds: ds.optimize.optimize_indices()
-                        )
+                        await self._run_lance_maintenance(table, _optimize_indices)
                     # Tagged versions are kept and every other version older
                     # than the retention is removed with its files.
                     await self._run_lance_maintenance(
@@ -752,9 +768,7 @@ class Store:
         )
         logger.info(f"{table.name}: compacted in {monotonic() - started:.1f}s")
         # compact_files leaves indices covering the pre-compaction fragments.
-        await self._run_lance_maintenance(
-            table, lambda ds: ds.optimize.optimize_indices()
-        )
+        await self._run_lance_maintenance(table, _optimize_indices)
 
     @property
     def location(self) -> Path | str:
