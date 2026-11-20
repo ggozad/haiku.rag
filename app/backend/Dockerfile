@@ -25,6 +25,11 @@ LABEL org.opencontainers.image.source="https://github.com/ggozad/haiku.rag" \
       org.opencontainers.image.version="${VERSION}"
 WORKDIR /app
 
+# Cited frames are decoded from stored recordings through ffmpeg
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN addgroup --system --gid 1001 haiku && \
     adduser --system --uid 1001 --ingroup haiku haiku
 

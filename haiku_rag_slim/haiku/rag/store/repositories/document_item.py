@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.models.recording import DECODED_FRAME_PREFIX
 from haiku.rag.store.schema import DocumentItemRecord
 from haiku.rag.utils.sql import escape_sql_string
 
@@ -205,7 +206,10 @@ class DocumentItemRepository:
         await self.store.document_items_table.delete(f"document_id IN ({ids})")
 
     async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
-        """Fetch raw picture bytes for a single picture item by self_ref."""
+        """Fetch raw picture bytes for a single picture item by self_ref. A
+        decoded frame's ref is decoded again from the stored recording."""
+        if self_ref.startswith(DECODED_FRAME_PREFIX):
+            return await self._decoded_frame(document_id, self_ref)
         safe_id = escape_sql_string(document_id)
         safe_ref = escape_sql_string(self_ref)
         rows = await (
@@ -218,6 +222,21 @@ class DocumentItemRepository:
         if not rows:
             return None
         return rows[0].get("picture_data")
+
+    async def _decoded_frame(self, document_id: str, ref: str) -> bytes | None:
+        from haiku.rag.converters.media import (
+            decode_frames,
+            decode_width,
+            decoded_frame_time,
+        )
+        from haiku.rag.store.repositories.recording import RecordingRepository
+
+        at = decoded_frame_time(ref)
+        stored = await RecordingRepository(self.store).open(document_id)
+        if at is None or stored is None:
+            return None
+        [frame] = await decode_frames(stored, [at], decode_width(self.store._config))
+        return frame
 
     async def get_all_picture_data(self, document_id: str) -> dict[str, bytes]:
         """Snapshot every picture row's bytes for a single document.

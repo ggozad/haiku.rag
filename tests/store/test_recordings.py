@@ -274,6 +274,17 @@ async def test_info_at_a_tag_from_before_the_recordings_table_asks_for_a_migrati
         await gather_database_info(temp_db_path, config, tag="old")
 
 
+async def test_lancedb_cloud_opens_no_recording(temp_db_path, monkeypatch):
+    from haiku.rag.store.engine import ConnectionMode
+
+    async with Store(temp_db_path, create=True) as store:
+        doc = await _stored(store)
+        await RecordingRepository(store).put(doc, VIDEO, duration=1.0)
+        monkeypatch.setattr(Store, "_connection_mode", ConnectionMode.CLOUD)
+
+        assert await RecordingRepository(store).open(doc) is None
+
+
 async def test_info_counts_the_stored_files_in_the_recordings_size(temp_db_path):
     from haiku.rag.store.info import gather_database_info
 

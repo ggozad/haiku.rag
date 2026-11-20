@@ -1,4 +1,5 @@
 import base64
+import logging
 from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass, replace
@@ -30,8 +31,11 @@ from haiku.rag.store.models.document_item import (
     merge_time_ranges,
     spread_frames,
 )
+from haiku.rag.store.repositories.recording import RecordingRepository
 from haiku.rag.utils.formatting import format_time_range
 from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, picture_keys
+
+logger = logging.getLogger(__name__)
 
 VIEW_MAX_FRAMES = 8
 
@@ -160,6 +164,8 @@ class RecordingView:
 
     results: list[SearchResult]
     continues_at: float | None
+    # Why the frames shown are the ones sampled at ingest, when decoding failed.
+    note: str | None = None
 
 
 async def view_recording(
@@ -170,8 +176,9 @@ async def view_recording(
     include_images: bool,
 ) -> RecordingView:
     """The sentences of `recording` inside `window`, whole, up to `max_chars`
-    (at least one), and its frames, spread across the window down to
-    `VIEW_MAX_FRAMES` when it holds more."""
+    (at least one), and `VIEW_MAX_FRAMES` frames decoded at even times from
+    its stored file. Without a stored file, or when decoding fails, the frames
+    sampled at ingest, spread across the window down to `VIEW_MAX_FRAMES`."""
     items = await rag.document_item_repository.get_items_in_window(window)
     lines = [
         item
@@ -197,14 +204,6 @@ async def view_recording(
             break
         shown.append(item)
         used += cost
-    frames = spread_frames(
-        {
-            item.self_ref: item.start_time
-            for item in items
-            if item.label == "picture" and item.start_time is not None
-        },
-        VIEW_MAX_FRAMES,
-    )
     index = (
         await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
             [recording.document_id]
@@ -215,10 +214,40 @@ async def view_recording(
     for item in shown:
         for chunk_id in index.get(item.self_ref, [])[:1]:
             members.setdefault(chunk_id, []).append(item)
-    frame_items = {item.self_ref: item for item in items if item.self_ref in frames}
-    for ref in frames:
-        for chunk_id in index.get(ref, []):
-            members.setdefault(chunk_id, []).append(frame_items[ref])
+
+    decoded, note = (
+        await _decoded_frames(rag, recording, window) if include_images else ({}, None)
+    )
+    if decoded:
+        owners = _frame_owners(
+            await rag.chunk_repository.get_time_spans(recording.document_id),
+            {ref: t for ref, (t, _) in decoded.items()},
+        )
+        for ref, chunk_id in owners.items():
+            at = decoded[ref][0]
+            members.setdefault(chunk_id, []).append(
+                DocumentItem(
+                    document_id=recording.document_id,
+                    position=-1,
+                    self_ref=ref,
+                    label="picture",
+                    start_time=at,
+                    end_time=at,
+                )
+            )
+    else:
+        frames = spread_frames(
+            {
+                item.self_ref: item.start_time
+                for item in items
+                if item.label == "picture" and item.start_time is not None
+            },
+            VIEW_MAX_FRAMES,
+        )
+        frame_items = {item.self_ref: item for item in items if item.self_ref in frames}
+        for ref in frames:
+            for chunk_id in index.get(ref, []):
+                members.setdefault(chunk_id, []).append(frame_items[ref])
 
     results = []
     for chunk_id, chunk_items in members.items():
@@ -247,8 +276,12 @@ async def view_recording(
         if include_images and pictures:
             result.image_data = {}
             for ref in pictures:
-                data = await rag.document_item_repository.get_picture_bytes(
-                    recording.document_id, ref
+                data = (
+                    decoded[ref][1]
+                    if ref in decoded
+                    else await rag.document_item_repository.get_picture_bytes(
+                        recording.document_id, ref
+                    )
                 )
                 if data:  # pragma: no branch - every stored frame has its bytes
                     result.image_data[ref] = base64.b64encode(data).decode("ascii")
@@ -256,7 +289,62 @@ async def view_recording(
     results.sort(
         key=lambda r: (r.time_range[0] if r.time_range else 0.0, not r.picture_times)
     )
-    return RecordingView(results, continues_at)
+    return RecordingView(results, continues_at, note)
+
+
+async def _decoded_frames(
+    rag: HaikuRAG, recording: Recording, window: TimeWindow
+) -> tuple[dict[str, tuple[float, bytes]], str | None]:
+    """The frames decoded across `window` from the stored file, by ref, or
+    why none could be."""
+    from haiku.rag.converters.base import VIDEO_EXTENSIONS
+    from haiku.rag.converters.exceptions import ConversionFailedError
+    from haiku.rag.converters.media import (
+        decode_frames,
+        decode_width,
+        decoded_frame_ref,
+        frame_times,
+    )
+
+    try:
+        stored = await RecordingRepository(rag.store).open(recording.document_id)
+        if stored is None or stored.suffix.lower() not in VIDEO_EXTENSIONS:
+            return {}, None
+        times = frame_times(
+            window.start or 0.0,
+            stored.duration if window.end is None else window.end,
+            stored.duration,
+            VIEW_MAX_FRAMES,
+        )
+        if not times:
+            return {}, None
+        frames = await decode_frames(stored, times, decode_width(rag._config))
+    except (ConversionFailedError, TimeoutError, OSError) as exc:
+        logger.warning("Decoding frames of %s failed: %s", recording.document_id, exc)
+        reason = str(exc) or "it timed out"
+        return {}, (
+            f"Frames could not be decoded from the recording ({reason}). "
+            "The frames shown were sampled at ingest."
+        )
+    return {decoded_frame_ref(t): (t, data) for t, data in zip(times, frames)}, None
+
+
+def _frame_owners(
+    spans: dict[str, tuple[float, float]], times: dict[str, float]
+) -> dict[str, str]:
+    """The chunk each decoded frame belongs to: the one whose time span holds
+    it, else the one nearest in time."""
+    if not spans:  # pragma: no cover - a listed recording has a timed chunk
+        return {}
+    ordered = sorted(spans.items(), key=lambda entry: entry[1])
+
+    def distance(span: tuple[float, float], at: float) -> float:
+        return max(span[0] - at, at - span[1], 0.0)
+
+    return {
+        ref: min(ordered, key=lambda entry: distance(entry[1], at))[0]
+        for ref, at in times.items()
+    }
 
 
 def merge_results(

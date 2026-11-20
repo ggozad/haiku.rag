@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Final layer
 FROM python:3.13-slim-trixie
 WORKDIR /app
-# docling-local reads video through ffmpeg
+# Recordings are converted, and frames decoded from stored ones, through ffmpeg
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*

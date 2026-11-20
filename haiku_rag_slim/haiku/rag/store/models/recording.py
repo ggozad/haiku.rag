@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+# The ref of a frame decoded from a stored recording on demand, then its time.
+DECODED_FRAME_PREFIX = "#/frames/"
+
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
 

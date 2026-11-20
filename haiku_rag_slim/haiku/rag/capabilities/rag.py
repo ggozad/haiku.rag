@@ -847,6 +847,8 @@ class RAGCapability(AbstractCapability[Any]):
             )
             or "Nothing is said or shown in this window."
         )
+        if viewed.note is not None:
+            formatted += f"\n\n{viewed.note}"
         if viewed.continues_at is not None:
             # Rounded up to the millisecond, so reading on never starts before
             # the end of what was shown.
@@ -1147,10 +1149,11 @@ class RAGCapability(AbstractCapability[Any]):
             source: str | None = None,
         ) -> str | ToolReturn:
             """Read a recording between two times: what is said, one line per
-            sentence with its time, and a video's frames in the window as
-            images, all of them up to 8, or 8 spread across a window holding
-            more. Use it to read on around a result, or to read a part of a
-            recording the question names.
+            sentence with its time, and 8 of a video's frames as images,
+            evenly spaced across the window, so a shorter window shows them
+            closer together. Use it to read on around a result, to read a
+            part of a recording the question names, or to look closely at a
+            moment.
 
             Args:
                 recording: A recording's document_id from `list_recordings`.

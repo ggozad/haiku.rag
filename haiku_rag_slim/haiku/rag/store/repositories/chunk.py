@@ -244,6 +244,19 @@ class ChunkRepository:
             self.store.chunks_table, "chunks", self.store._config.search.fts_language
         )
 
+    async def get_time_spans(self, document_id: str) -> dict[str, tuple[float, float]]:
+        """The time span of every timed chunk of a document, by chunk id."""
+        rows = (
+            await self.store.chunks_table.query()
+            .where(
+                f"document_id = '{escape_sql_string(document_id)}' "
+                "AND start_time IS NOT NULL AND end_time IS NOT NULL"
+            )
+            .select(["id", "start_time", "end_time"])
+            .to_list()
+        )
+        return {row["id"]: (row["start_time"], row["end_time"]) for row in rows}
+
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
         self.store._assert_writable()

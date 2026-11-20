@@ -34,7 +34,7 @@ class RecordingRepository:
             )
         row = {
             "document_id": document_id,
-            "suffix": recording.suffix,
+            "suffix": recording.suffix.lower(),
             "sha256": hashlib.sha256(recording.content).hexdigest(),
             "duration": duration,
             "subtitles": recording.subtitles,
@@ -52,7 +52,11 @@ class RecordingRepository:
 
     async def open(self, document_id: str) -> StoredRecording | None:
         """The document's stored recording, or None when it has none."""
-        if self.store.recordings_table is None:
+        # LanceDB Cloud stores no recording, and lance cannot open its tables.
+        if (
+            self.store.recordings_table is None
+            or self.store._connection_mode == ConnectionMode.CLOUD
+        ):
             return None
         dataset = await self.store.recordings_table.to_lance()
 

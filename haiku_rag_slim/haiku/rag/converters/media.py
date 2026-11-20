@@ -1,14 +1,17 @@
 import asyncio
 import base64
+import contextlib
 import hashlib
 import html
 import io
 import json
+import math
 import multiprocessing
 import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -16,7 +19,8 @@ import threading
 import zlib
 from bisect import bisect_right
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import cache
 from pathlib import Path
@@ -29,7 +33,11 @@ from haiku.rag.converters.exceptions import (
     ConversionFailedError,
     ConversionTimeoutError,
 )
-from haiku.rag.store.models.recording import RecordingFile
+from haiku.rag.store.models.recording import (
+    DECODED_FRAME_PREFIX,
+    RecordingFile,
+    StoredRecording,
+)
 from haiku.rag.utils.dependencies import raise_missing_extra
 from haiku.rag.utils.http import pooled_client, post_retrying_dropped_connection
 
@@ -605,7 +613,7 @@ async def interval_frames(
     return [Frame(t, jpeg) for t, jpeg in zip(times, jpegs, strict=True)]
 
 
-async def _frame_at(path: Path, time: float, max_width: int | None) -> bytes:
+async def _frame_at(path: Path | str, time: float, max_width: int | None) -> bytes:
     scale = _scale(max_width)
     out, _ = await _run(
         *_FFMPEG,
@@ -630,6 +638,148 @@ async def _frame_at(path: Path, time: float, max_width: int | None) -> bytes:
     if not out:
         raise ConversionFailedError(f"ffmpeg gave no frame at {time:.3f}s of {path}")
     return out
+
+
+# A frame further from the end than this decodes, and one at the end does not.
+END_MARGIN_SECONDS = 0.1
+DECODE_TIMEOUT_SECONDS = 60.0
+# How long a request to the loopback server waits on its socket.
+_SERVED_SOCKET_SECONDS = 10.0
+_SERVED_READ_BYTES = 4 * 2**20
+_RANGE = re.compile(r"bytes=(\d*)-(\d*)")
+
+
+def decode_width(config: AppConfig) -> int | None:
+    """The width frames are decoded at, the sampling width even for a reader
+    configured without `processing.media`."""
+    media = config.processing.media
+    return (media.frames if media is not None else FrameSamplingConfig()).max_width
+
+
+def decoded_frame_ref(time: float) -> str:
+    """The picture ref of the frame decoded at `time`."""
+    return f"{DECODED_FRAME_PREFIX}{time:.3f}"
+
+
+def decoded_frame_time(ref: str) -> float | None:
+    """The time a decoded-frame ref names, or None when it names none."""
+    try:
+        at = float(ref.removeprefix(DECODED_FRAME_PREFIX))
+    except ValueError:
+        return None
+    return at if math.isfinite(at) and at >= 0 else None
+
+
+def frame_times(start: float, end: float, duration: float, count: int) -> list[float]:
+    """Up to `count` times, to the millisecond, evenly spread over the part of
+    [start, end] that decodes."""
+    end = min(end, duration - END_MARGIN_SECONDS)
+    start = max(start, 0.0)
+    if end <= start:
+        return []
+    step = (end - start) / count
+    times = (round(start + (i + 0.5) * step, 3) for i in range(count))
+    return sorted({t for t in times if start <= t <= end})
+
+
+async def decode_frames(
+    recording: StoredRecording, times: list[float], max_width: int | None
+) -> list[bytes]:
+    """JPEG frames of a stored recording at `times`. ffmpeg reads the file
+    over loopback HTTP, by range, so nothing is copied out of the store."""
+    require_ffmpeg()
+    async with _served(recording) as url, asyncio.timeout(DECODE_TIMEOUT_SECONDS):
+        return [await _frame_at(url, time, max_width) for time in times]
+
+
+def _byte_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """The first and last byte a Range header asks for, the whole file without
+    one, and None when it cannot be served."""
+    if header is None:
+        return (0, size - 1) if size else None
+    match = _RANGE.fullmatch(header.strip())
+    if match is None:
+        return None
+    first, last = match.groups()
+    if first:
+        start, end = int(first), int(last) if last else size - 1
+    elif last:
+        start, end = max(size - int(last), 0), size - 1
+    else:
+        return None
+    end = min(end, size - 1)
+    return (start, end) if start <= end else None
+
+
+@asynccontextmanager
+async def _served(recording: StoredRecording) -> AsyncGenerator[str]:
+    """A loopback URL answering byte ranges of the recording. Its path is a
+    secret, and any other path is not found."""
+    import http.server
+    import secrets
+
+    path = f"/{secrets.token_urlsafe(16)}{recording.suffix}"
+    size = recording.size
+    connections: set[socket.socket] = set()
+
+    class Ranges(http.server.BaseHTTPRequestHandler):
+        timeout = _SERVED_SOCKET_SECONDS
+
+        def do_GET(self) -> None:
+            if self.path != path:
+                self.send_error(404)
+                return
+            asked = self.headers.get("Range")
+            served = _byte_range(asked, size)
+            if served is None:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+            first, last = served
+            self.send_response(206 if asked else 200)
+            if asked:
+                self.send_header("Content-Range", f"bytes {first}-{last}/{size}")
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(last - first + 1))
+            self.end_headers()
+            try:
+                for offset in range(first, last + 1, _SERVED_READ_BYTES):
+                    length = min(_SERVED_READ_BYTES, last + 1 - offset)
+                    self.wfile.write(recording.read_range(offset, length))
+            except (  # pragma: no cover - ffmpeg closing a connection mid-response
+                BrokenPipeError,
+                ConnectionResetError,
+            ):
+                pass
+
+        def log_message(self, format: str, *args: Any) -> None:
+            pass
+
+    class Server(http.server.ThreadingHTTPServer):
+        # Recorded as accepted, before a thread serves it, so cleanup after
+        # shutdown sees every connection.
+        def process_request(self, request: Any, client_address: Any) -> None:
+            connections.add(request)
+            super().process_request(request, client_address)
+
+        def shutdown_request(self, request: Any) -> None:
+            connections.discard(request)
+            super().shutdown_request(request)
+
+    server = Server(("127.0.0.1", 0), Ranges)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}{path}"
+    finally:
+        await asyncio.to_thread(server.shutdown)
+        server.server_close()
+        # A request still open, however slow, ends with the decoder.
+        for connection in list(connections):
+            with contextlib.suppress(OSError):
+                connection.shutdown(socket.SHUT_RDWR)
 
 
 def _detect_scenes(  # pragma: no cover - runs in a spawned child

@@ -1,3 +1,4 @@
+import hashlib
 import re
 import shutil
 from typing import Any
@@ -15,9 +16,10 @@ from tests.capabilities.helpers import Deps
 from tests.capabilities.test_media_tools import UUID, _config, images, returns, scripted
 
 
-async def _film(path, frames: bool = True):
+async def _film(path, frames: bool = True, recording=None):
     """Ten ten-second sentences, each its own chunk, and a frame five seconds
-    into each, each its own chunk."""
+    into each, each its own chunk. `recording`, a `RecordingFile`, is stored
+    as the file the film was converted from."""
     from docling_core.types.doc import (
         ContentLayer,
         DocItemLabel,
@@ -71,9 +73,16 @@ async def _film(path, frames: bool = True):
                     },
                 )
             )
-    doc.origin = DocumentOrigin(mimetype="video/mp4", filename="f.mp4", binary_hash=1)
+    digest = hashlib.sha256(recording.content).hexdigest() if recording else "1"
+    doc.origin = DocumentOrigin(
+        mimetype="video/mp4",
+        filename="f.mp4",
+        binary_hash=int(digest, 16) & (2**64 - 1),
+    )
     async with HaikuRAG(path, create=True) as rag:
-        stored = await rag.import_document(doc, chunks, uri="file:///film.mp4")
+        stored = await rag.import_document(
+            doc, chunks, uri="file:///film.mp4", recording=recording
+        )
         await rag.create_document("A manual.", uri="file:///manual.md")
     assert stored.id is not None
     return stored.id
