@@ -401,6 +401,36 @@ Each frame is also its own chunk, found by its image.
 Frames are never described, whatever `pictures` says, and `rebuild
 --descriptions` leaves recordings alone.
 
+#### Stored recordings
+
+Every ingested audio and video file is stored in the database, verbatim, in a
+`recordings` table, together with its duration and any subtitles read beside
+it. It takes the file's own size, on top of the frames. The file is written,
+replaced and deleted with its document, and tags and `tag restore` cover it.
+Vacuum removes old versions of the table and never compacts it, since
+compaction would rewrite every stored file. An existing database gains the
+table with `haiku-rag migrate`.
+
+`view` decodes its frames from a stored video file: eight at even times across
+the part of the window inside the recording, fewer in a window only a few
+milliseconds wide, at `max_width` (1280 when `processing.media` is unset). Each joins the
+result of the chunk whose time holds it, or of the chunk nearest in time. When decoding fails or takes more
+than 60 s, `view` shows the frames sampled at ingest and says why. A cited
+decoded frame is decoded again when it is shown, so a process showing such a
+citation needs `ffmpeg`: the published slim image and the web app's backend
+image include it. The MCP server has no `view` and never cites a decoded frame.
+A full `rebuild` converts a recording again from its stored file and
+subtitles.
+
+`import_document(recording=)` and `DocumentImport.recording` store the file of
+an imported recording, as a `RecordingFile(content, suffix, subtitles)`. The
+import is refused unless the document is a recording converted from those
+bytes (its `origin.binary_hash`). An import without a file keeps a stored file
+with a hash matching the document. A recording without a stored file, an
+audio recording included, shows the frames sampled at ingest, and a full
+`rebuild` re-chunks it. LanceDB Cloud stores no recordings: ingesting one there
+raises `UnsupportedRecordingStorageError`.
+
 `conversion_timeout` bounds the conversion of a recording, and a recording
 longer than a few minutes may need a larger one. A conversion that times out
 stops its ffmpeg processes, scene detection and transcription requests, and the process converts the next document normally.
