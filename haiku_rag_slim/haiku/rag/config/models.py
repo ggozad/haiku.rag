@@ -267,6 +267,17 @@ DEFAULT_FETCH_USER_AGENT = "haiku.rag (+https://github.com/ggozad/haiku.rag)"
 class ConversionOptions(ConfigModel):
     """Options for document conversion."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _page_images_name_their_replacement(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "generate_page_images" in data:
+            raise ValueError(
+                "processing.conversion_options.generate_page_images was removed; "
+                "delete the key. Visual grounding renders the stored original "
+                "file, which storage.store_originals turns off"
+            )
+        return data
+
     # OCR options
     do_ocr: bool = True
     force_ocr: bool = False
@@ -287,7 +298,6 @@ class ConversionOptions(ConfigModel):
 
     # Image options
     images_scale: float = Field(default=2.0, gt=0)
-    generate_page_images: bool = True
 
     # Fetch images referenced by URL in HTML and Markdown inputs.
     # docling-local only — docling-serve cannot fetch external images.

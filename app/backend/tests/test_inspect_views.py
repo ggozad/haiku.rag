@@ -6,7 +6,7 @@ from PIL import Image
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models import Chunk
-from tests.support import png, served
+from tests.support import letter_pdf, png, served
 
 
 @pytest.fixture
@@ -51,7 +51,6 @@ async def two_pages(seeded):
     from docling_core.types.doc.document import (
         DescriptionMetaField,
         DoclingDocument,
-        ImageRef,
         PictureMeta,
         ProvenanceItem,
     )
@@ -64,11 +63,7 @@ async def two_pages(seeded):
 
     doc = DoclingDocument(name="two pages")
     for page in (1, 2):
-        doc.add_page(
-            page_no=page,
-            size=Size(width=612.0, height=792.0),
-            image=ImageRef.from_pil(Image.new("RGB", (612, 792), "white"), dpi=72),
-        )
+        doc.add_page(page_no=page, size=Size(width=612.0, height=792.0))
     doc.add_text(label=DocItemLabel.PARAGRAPH, text="first", prov=prov(1))
     doc.add_text(label=DocItemLabel.PARAGRAPH, text="second", prov=prov(2))
     caption = doc.add_text(label=DocItemLabel.CAPTION, text="Figure 1.", prov=prov(2))
@@ -96,6 +91,7 @@ async def two_pages(seeded):
             ],
             uri="test://alpha/two-pages",
             title="two pages",
+            original=letter_pdf(2),
         )
         chunks = await rag.chunk_repository.get_by_document_id(document.id)
     return document.id, [c.id for c in chunks]
@@ -120,7 +116,7 @@ async def test_pages_list_their_chunks_and_draw_them(client, two_pages):
 async def test_an_unchunked_page_is_shown_plain_and_without_its_image_is_not_found(
     client, two_pages, seeded, monkeypatch
 ):
-    from haiku.rag.store.models.document import Document
+    from haiku.rag.store.repositories.document import DocumentRepository
 
     document_id, (first, picture) = two_pages
     config, _ = seeded
@@ -132,7 +128,11 @@ async def test_an_unchunked_page_is_shown_plain_and_without_its_image_is_not_fou
     image = await client.get(f"{base}/2")
     assert image.headers["content-type"] == "image/png"
     assert image.content.startswith(b"\x89PNG")
-    monkeypatch.setattr(Document, "get_page_images", lambda self, pages: {})
+
+    async def no_original(self, document_id):
+        return None
+
+    monkeypatch.setattr(DocumentRepository, "get_original", no_original)
     assert (await client.get(f"{base}/2")).status_code == 404
 
 

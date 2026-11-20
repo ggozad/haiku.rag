@@ -34,9 +34,9 @@ def decompress_json(data: bytes) -> str:
     return _zstd_decompress(data).decode("utf-8")
 
 
-# docling-core encodes page and picture images with `cv2.imencode(".png", ...)`,
-# which passes no compression level, so OpenCV uses 1. Remove both callers of
-# this once docling-project/docling-core#758 ships.
+# docling-core encodes picture images with `cv2.imencode(".png", ...)`, which
+# passes no compression level, so OpenCV uses 1. Remove the caller of this once
+# docling-project/docling-core#758 ships.
 _PNG_COMPRESS_LEVEL = 6
 
 
@@ -63,52 +63,22 @@ def recompress_png(data: bytes) -> bytes:
     return recompressed if len(recompressed) < len(data) else data
 
 
-def recompress_png_data_uri(uri: str) -> str:
-    """Re-encode the PNG payload of a ``data:`` URI, or return it unchanged."""
-    import base64
+def compress_docling(data: dict) -> bytes:
+    """Compress a DoclingDocument dict with zstd, without its images.
 
-    if not uri.startswith("data:image/png;base64,"):
-        return uri
-    head, _, encoded = uri.partition(",")
-    try:
-        raw = base64.b64decode(encoded, validate=False)
-    except ValueError:
-        return uri
-    recompressed = recompress_png(raw)
-    if recompressed is raw:
-        return uri
-    return f"{head},{base64.b64encode(recompressed).decode('ascii')}"
+    Pages keep their size and lose their raster. Picture images are stored on
+    the ``document_items.picture_data`` rows. ``ImageRef.uri`` is required when
+    the field is present, so each ``image`` is set to ``None`` rather than
+    partially mutated, which keeps the JSON re-validating.
 
-
-def compress_docling_split(data: dict) -> tuple[bytes, bytes | None]:
-    """Split a DoclingDocument dict into structure and pages, compress both with zstd.
-
-    Picture image URIs are stripped from the structure blob — they are stored on
-    the corresponding ``document_items.picture_data`` rows and don't need to be
-    duplicated inside the structure JSON. ``ImageRef.uri`` is required when the
-    field is present, so each picture's ``image`` is set to ``None`` rather than
-    partially mutated to keep the JSON re-validating cleanly.
-
-    Mutates ``data`` in place (pops ``pages``, nulls picture images); callers
-    pass a freshly built dict (``model_dump`` / ``json.loads`` output), so this
-    never touches a live DoclingDocument.
-
-    Returns:
-        Tuple of (structure_bytes, pages_bytes). pages_bytes is None if the
-        document has no page images.
+    Mutates ``data`` in place: callers pass a freshly built dict
+    (``model_dump`` / ``json.loads`` output), never a live DoclingDocument.
     """
-    pages = data.pop("pages", None)
-
-    for page in (pages or {}).values():
-        image = page.get("image") if isinstance(page, dict) else None
-        if isinstance(image, dict) and isinstance(image.get("uri"), str):
-            image["uri"] = recompress_png_data_uri(image["uri"])
+    for page in (data.get("pages") or {}).values():
+        page["image"] = None
 
     for picture in data.get("pictures") or []:
         if isinstance(picture, dict):
             picture["image"] = None
 
-    structure_bytes = compress_json(json.dumps(data))
-    pages_bytes = compress_json(json.dumps(pages)) if pages else None
-
-    return structure_bytes, pages_bytes
+    return compress_json(json.dumps(data))

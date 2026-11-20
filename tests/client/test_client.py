@@ -981,7 +981,7 @@ async def test_client_import_document_with_custom_chunks(temp_db_path):
         assert document.docling_document is not None
         assert document.docling_version == docling_doc.version
         structure = json.loads(decompress_json(document.docling_document))
-        assert "pages" not in structure
+        assert all(p["image"] is None for p in structure["pages"].values())
         assert structure["name"] == "test"
 
         # Verify the chunks were created correctly
@@ -1635,9 +1635,9 @@ async def test_client_update_document_with_docling_rechunks(temp_db_path):
         assert "Completely different text" in updated_doc.content
         assert updated_doc.docling_document is not None
         assert updated_doc.docling_version == docling_doc.version
-        # Structure is stored without pages
+        # Structure is stored without page images
         structure = json.loads(decompress_json(updated_doc.docling_document))
-        assert "pages" not in structure
+        assert all(p["image"] is None for p in structure["pages"].values())
         assert structure["name"] == "updated"
 
         # Chunks should be regenerated
@@ -1678,7 +1678,7 @@ async def test_client_update_document_docling_with_chunks(temp_db_path):
         assert "Text from docling" in updated_doc.content
         assert updated_doc.docling_document is not None
         structure = json.loads(decompress_json(updated_doc.docling_document))
-        assert "pages" not in structure
+        assert all(p["image"] is None for p in structure["pages"].values())
 
         # Custom chunks should be used (not rechunked from docling)
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
@@ -1731,18 +1731,20 @@ async def test_update_document_with_url_prefixed_content(temp_db_path, monkeypat
         assert "New heading" in updated.content
 
 
-async def test_update_document_with_chunks_keeps_page_images(temp_db_path, monkeypatch):
+async def test_update_document_with_chunks_keeps_the_structure(
+    temp_db_path, monkeypatch
+):
     """Replacing content and chunks without a docling document writes the stored
-    record back as-is, so its page rasters must survive the round trip."""
+    record back as-is, so its structure and original survive the round trip."""
     _patch_embed_chunks(monkeypatch)
 
     async with HaikuRAG(temp_db_path, create=True) as client:
         doc = await client.create_document(content="initial body", uri="test://pages")
         assert doc.id is not None
-
-        sentinel_pages = b"\x80SENTINEL_PAGE_BYTES"
+        before = await client.document_repository.get_by_id(doc.id, include_blobs=True)
+        assert before is not None and before.docling_document is not None
         await client.store.documents_table.update(
-            {"docling_pages": sentinel_pages}, where=f"id = '{doc.id}'"
+            {"original": b"%PDF-sentinel"}, where=f"id = '{doc.id}'"
         )
 
         await client.update_document(
@@ -1754,7 +1756,10 @@ async def test_update_document_with_chunks_keeps_page_images(temp_db_path, monke
         stored = await client.document_repository.get_by_id(doc.id, include_blobs=True)
         assert stored is not None
         assert stored.content == "replacement body"
-        assert stored.docling_pages == sentinel_pages
+        assert stored.docling_document == before.docling_document
+        assert await client.document_repository.get_original(doc.id) == (
+            b"%PDF-sentinel"
+        )
 
 
 async def test_rebuild_rechunk_with_url_prefixed_stored_content(

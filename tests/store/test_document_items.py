@@ -708,16 +708,13 @@ class TestExtractItemTextDescription:
         assert picture_items[0].text == "A small red square"
 
 
-class TestCompressDoclingSplitStripsPictureUris:
-    """compress_docling_split removes inline picture URIs from the structure."""
+class TestCompressDoclingStripsPictureUris:
+    """compress_docling removes inline picture URIs from the structure."""
 
     def test_picture_image_set_to_none_in_structure(self):
         import json
 
-        from haiku.rag.store.compression import (
-            compress_docling_split,
-            decompress_json,
-        )
+        from haiku.rag.store.compression import compress_docling, decompress_json
 
         doc_json = {
             "schema_name": "DoclingDocument",
@@ -736,12 +733,10 @@ class TestCompressDoclingSplitStripsPictureUris:
             "pages": {},
         }
 
-        structure_bytes, pages_bytes = compress_docling_split(doc_json)
-        decoded = json.loads(decompress_json(structure_bytes))
+        decoded = json.loads(decompress_json(compress_docling(doc_json)))
 
         for pic in decoded["pictures"]:
             assert pic["image"] is None
-        assert pages_bytes is None  # no pages in this fixture
 
 
 class TestPictureDataPreservedThroughRoundTrip:

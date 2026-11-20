@@ -101,9 +101,9 @@ haiku-rag ask "What are the main findings?" --full-citations
 |---|---|
 | `haiku-rag chat [--model PROVIDER:NAME]` | Conversational RAG in the terminal. See [Chat](chat.md) |
 | `haiku-rag inspect` | Browse documents and chunks, search, preview expanded context. See [Inspector](chat.md#inspector) |
-| `haiku-rag visualize CHUNK_ID [--no-expand]` | Draw a chunk on its page images, its expanded context fainter. `--no-expand` draws the chunk alone |
+| `haiku-rag visualize CHUNK_ID [--no-expand]` | Draw a chunk on its pages, its expanded context fainter. `--no-expand` draws the chunk alone |
 
-`chat` and `inspect` need the `tui` extra, which the full package includes. `visualize` needs a terminal with inline images (iTerm2, Kitty, WezTerm) and documents converted with page images.
+`chat` and `inspect` need the `tui` extra, which the full package includes. `visualize` needs a terminal with inline images (iTerm2, Kitty, WezTerm) and documents with a stored original.
 
 ## Database lifecycle
 
@@ -183,6 +183,8 @@ haiku-rag migrate --db /path/to/your.lancedb
 ```
 
 Back up the database first. `migrate` exits 1 on failure.
+
+The 0.113.0 migration deletes the stored page images and reclaims their space at once: it rewrites every row of `documents`, then vacuums the database at zero retention. Stop every other process using the database before running it. A tag taken before it keeps its page images on disk, and `migrate` names such tags. Visual grounding then renders from a document's original file, which an existing document gets when it is re-ingested, a full [`rebuild`](#rebuild) included.
 
 `init` and `migrate` record the schema the release writes as `schema_version`. A release refuses to write to a database whose `schema_version` is newer than its own schema, and a read-only open warns:
 

@@ -323,10 +323,9 @@ def serve_http():
 
 async def test_parse_zip_runs_off_event_loop_thread():
     """_parse_zip_to_docling does zip decompress, per-image base64 re-encoding,
-    and DoclingDocument.model_validate — all synchronous and CPU-heavy (full-
-    resolution page rasters when generate_page_images is on). It must run off
-    the event-loop thread, or it stalls every other worker's coroutine. Capture
-    the thread it runs on and assert it is not the event-loop thread."""
+    and DoclingDocument.model_validate — all synchronous and CPU-heavy. It must
+    run off the event-loop thread, or it stalls every other worker's coroutine.
+    Capture the thread it runs on and assert it is not the event-loop thread."""
     import threading
 
     config = AppConfig()
@@ -1337,43 +1336,21 @@ class TestDoclingLocalConverter:
 
     @pytest.mark.slow
     @pytest.mark.usefixtures("docling_local_models")
-    async def test_convert_pdf_without_page_images(
-        self, config, doclaynet_first_page_pdf
-    ):
-        """Test PDF conversion excludes page images when disabled."""
-        pdf_path = doclaynet_first_page_pdf
-        config.processing.conversion_options.generate_page_images = False
-        converter = DoclingLocalConverter(config)
-
-        doc = await converter.convert_file(pdf_path)
-        assert isinstance(doc, DoclingDocument)
-
-        # Check that pages don't have image data
-        for page in doc.pages.values():
-            assert page.image is None, (
-                "Pages should not have image data when generate_page_images=False"
-            )
-
-    @pytest.mark.slow
-    @pytest.mark.usefixtures("docling_local_models")
     @pytest.mark.filterwarnings(
         "error:^DoclingParseDocumentBackend is deprecated:DeprecationWarning"
     )
-    async def test_convert_pdf_with_page_and_picture_images(
+    async def test_convert_pdf_keeps_page_sizes_and_picture_images_only(
         self, config, doclaynet_first_page_pdf
     ):
-        """Pages and pictures carry image data when page images are enabled."""
+        """Pages carry their size and no raster; pictures carry image data."""
         pdf_path = doclaynet_first_page_pdf
-        config.processing.conversion_options.generate_page_images = True
         converter = DoclingLocalConverter(config)
 
         doc = await converter.convert_file(pdf_path)
         assert isinstance(doc, DoclingDocument)
 
-        pages_with_images = [p for p in doc.pages.values() if p.image is not None]
-        assert len(pages_with_images) > 0, (
-            "Pages should have image data when generate_page_images=True"
-        )
+        assert doc.pages
+        assert all(p.image is None and p.size.width > 0 for p in doc.pages.values())
         pictures_with_images = [p for p in doc.pictures if p.image is not None]
         if doc.pictures:
             assert len(pictures_with_images) > 0, (
@@ -2059,6 +2036,7 @@ class TestDoclingServeConverter:
         assert data["do_table_structure"] == "false"
         assert data["images_scale"] == "3.0"
         assert data["include_images"] == "true"
+        assert data["include_page_images"] == "false"
         assert data["image_export_mode"] == "referenced"
         assert data["target_type"] == "zip"
 
@@ -2452,35 +2430,15 @@ class TestDoclingServeConverterIntegration:
     async def test_convert_pdf_without_page_images(
         self, config, doclaynet_first_page_pdf
     ):
-        """Test PDF conversion excludes page images when disabled."""
+        """Pages carry their size and no raster."""
         pdf_path = doclaynet_first_page_pdf
-        config.processing.conversion_options.generate_page_images = False
         converter = DoclingServeConverter(config)
 
         doc = await converter.convert_file(pdf_path)
         assert isinstance(doc, DoclingDocument)
 
-        # Check that pages don't have image data
-        for page in doc.pages.values():
-            assert page.image is None, (
-                "Pages should not have image data when generate_page_images=False"
-            )
-
-    @pytest.mark.vcr()
-    async def test_convert_pdf_with_page_images(self, config, doclaynet_first_page_pdf):
-        """Test PDF conversion includes page images when enabled."""
-        pdf_path = doclaynet_first_page_pdf
-        config.processing.conversion_options.generate_page_images = True
-        converter = DoclingServeConverter(config)
-
-        doc = await converter.convert_file(pdf_path)
-        assert isinstance(doc, DoclingDocument)
-
-        # Check that pages have image data
-        pages_with_images = [p for p in doc.pages.values() if p.image is not None]
-        assert len(pages_with_images) > 0, (
-            "Pages should have image data when generate_page_images=True"
-        )
+        assert doc.pages
+        assert all(p.image is None and p.size.width > 0 for p in doc.pages.values())
 
     @pytest.mark.vcr()
     async def test_convert_pdf_with_ocr_engine(self, config, doclaynet_first_page_pdf):
@@ -2595,13 +2553,9 @@ class TestDoclingServeZipParsing:
         with pytest.raises(ValidationError):
             converter._parse_zip_to_docling(blob, "doc.pdf")
 
-    @pytest.mark.parametrize("keep_page_image", [False, True])
-    def test_page_images_follow_conversion_config(self, converter, keep_page_image):
+    def test_a_page_image_in_the_response_is_dropped(self, converter):
         import json as _json
 
-        converter.config.processing.conversion_options.generate_page_images = (
-            keep_page_image
-        )
         page_image = {
             "mimetype": "image/png",
             "dpi": 72,
@@ -2626,12 +2580,7 @@ class TestDoclingServeZipParsing:
 
         doc = converter._parse_zip_to_docling(blob, "doc.pdf")
 
-        image = doc.pages[1].image
-        if keep_page_image:
-            assert image is not None
-            assert str(image.uri).startswith("data:image/png;base64,")
-        else:
-            assert image is None
+        assert doc.pages[1].image is None
 
     async def test_convert_text_rejects_unsupported_format(self, converter):
         with pytest.raises(ValueError, match="Unsupported format"):

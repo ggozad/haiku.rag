@@ -608,11 +608,10 @@ async def visualize_chunk(
     fainter, so the matched content stands out from its surrounding context.
     Chunks from a different document than the first are ignored.
 
-    Returns a list of PIL Image objects, one per page with bounding boxes.
-    Empty list if no bounding boxes or page images available.
+    Returns a list of PIL Image objects, one per page with bounding boxes,
+    rendered from the document's stored original. Empty list without bounding
+    boxes or an original.
     """
-    from copy import deepcopy
-
     from PIL import ImageDraw
 
     from haiku.rag.store.models.chunk import ChunkMetadata
@@ -685,32 +684,21 @@ async def visualize_chunk(
             boxes_by_page[bbox.page_no] = []
         boxes_by_page[bbox.page_no].append((bbox, is_matched))
 
-    # Load only the needed page images
-    pages_doc = await session.document_repository.get_pages_data(document_id)
-    if not pages_doc:
-        return []
-    page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))
     rendered = await _render_original(session, document_id, list(boxes_by_page))
 
     images = []
     for page_no in sorted(boxes_by_page.keys()):
-        if page_no not in page_images:
-            continue
-
-        page = page_images[page_no]
-        pil_image = rendered.get(page_no) or (
-            page.image.pil_image if page.image else None
-        )
-        if pil_image is None:
+        page = docling_doc.pages.get(page_no)
+        image = rendered.get(page_no)
+        if page is None or image is None:
             continue
 
         page_height = page.size.height
 
         # Scale factor: image pixels vs document coordinates
-        scale_x = pil_image.width / page.size.width
-        scale_y = pil_image.height / page.size.height
+        scale_x = image.width / page.size.width
+        scale_y = image.height / page.size.height
 
-        image = deepcopy(pil_image)
         draw = ImageDraw.Draw(image, "RGBA")
 
         for bbox, is_matched in boxes_by_page[page_no]:

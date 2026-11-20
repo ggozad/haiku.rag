@@ -9,6 +9,9 @@
 
 ### Changed
 
+- **Breaking:** page images are no longer stored. Visual grounding renders the stored original, so a document has none until it is re-ingested. The 0.113.0 migration drops `documents.docling_pages`, rewrites every `documents` row and vacuums at zero retention: stop every other process before `haiku-rag migrate`.
+- **Breaking:** `processing.conversion_options.generate_page_images` removed. A config carrying it fails to load.
+- **Breaking:** `Document.docling_pages`, `Document.get_page_images` and `DocumentRepository.get_pages_data` removed. `DocumentRepository.get_original` returns the original file.
 - `pydantic-ai-slim` raised to 2.71. With `provider: vllm` or `ollama`, every system prompt carries pydantic-ai 2.71's `<system>` framing announcement (`framing_announcement: always`), and chat-template special tokens in content are sent with a zero-width joiner. Ollama receives `max_tokens` instead of `max_completion_tokens`.
 
 ## [0.112.3] - 2026-11-20

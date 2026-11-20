@@ -126,10 +126,25 @@ def _best_shift(expected: Image.Image, actual: Image.Image) -> tuple[int, int]:
     return min(scores, key=scores.__getitem__)
 
 
+@pytest.fixture(autouse=True)
+def docling_rasters(monkeypatch):
+    """docling-local with page images on: the raster renders are compared to."""
+    from haiku.rag.converters.docling_local import DoclingLocalConverter
+
+    build = DoclingLocalConverter._build_pipeline_options
+
+    def with_page_images(self):
+        options = build(self)
+        options.generate_page_images = True
+        return options
+
+    monkeypatch.setattr(
+        DoclingLocalConverter, "_build_pipeline_options", with_page_images
+    )
+
+
 def _config() -> AppConfig:
-    config = AppConfig()
-    config.processing.conversion_options.generate_page_images = True
-    return config
+    return AppConfig()
 
 
 def _raster(page) -> Image.Image:

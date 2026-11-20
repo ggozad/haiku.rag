@@ -21,7 +21,7 @@ from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
 from haiku.rag.hooks import ConvertedDocument, HookError, overrides
-from haiku.rag.store.compression import compress_docling_split
+from haiku.rag.store.compression import compress_docling
 from haiku.rag.store.engine import REBUILD_COMMANDS
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
@@ -51,7 +51,6 @@ _STAGING_COPY_BATCH_SIZE = 1000
 _DESCRIPTION_COLUMNS = ("docling_document", "docling_version")
 _FULL_FALLBACK_COLUMNS = (
     "docling_document",
-    "docling_pages",
     "docling_version",
     "original",
     "original_md5",
@@ -763,7 +762,7 @@ async def _flush_rebuild_batch(
             await session.chunk_repository.create(chunks)
 
         # Repopulate document items from stored docling data. The stored docling
-        # blob has had its picture URIs stripped (compress_docling_split), so
+        # blob has had its picture URIs stripped (compress_docling), so
         # re-extracting from it would lose picture_data — snapshot the existing
         # bytes per document and merge them back.
         # Lance holds about an add's pictures past the write, so items are added
@@ -860,12 +859,7 @@ def _apply_descriptions_sync(
 ) -> int:
     """Patch picture descriptions into the docling document and re-compress.
 
-    Updates only docling_document — set_docling would also overwrite
-    docling_pages by routing through compress_docling_split, which
-    extracts pages from the in-memory JSON and finds none (the pages
-    blob is stored separately and is not loaded by get_docling_document).
-    That would silently destroy page rasters for every doc with at
-    least one undescribed picture.
+    Keeps the stored original, which ``set_docling`` would clear.
     """
     for pic in docling_doc.pictures:
         text = descriptions.get(pic.self_ref)
@@ -875,8 +869,7 @@ def _apply_descriptions_sync(
             pic.meta = PictureMeta()
         pic.meta.description = DescriptionMetaField(text=text)
 
-    structure_bytes, _ = compress_docling_split(docling_doc.model_dump(mode="json"))
-    doc.docling_document = structure_bytes
+    doc.docling_document = compress_docling(docling_doc.model_dump(mode="json"))
     doc.docling_version = docling_doc.version
     return len(descriptions)
 

@@ -78,10 +78,7 @@ Vacuum compacts small data files into larger ones. The `documents` and `document
 
     So peak memory is the larger of `compaction_target_bytes` and the biggest existing fragment. Lower the first by reducing it, and the second by ingesting in smaller batches.
 
-A row larger than the target costs roughly its own size. A 300-page PDF at `images_scale: 2.0` makes a row of about 445 MB. To make rows smaller:
-
-- Reduce `images_scale` (see [Image settings](processing.md#image-settings)). Page images dominate `documents`, and their size falls with the square of the scale.
-- Set `generate_page_images: false` when visual grounding is not needed. This removes page images entirely.
+A row larger than the target costs roughly its own size. A `documents` row holds the text, the compressed docling structure without images, and the original PDF or image file, so it is about the size of the file. `store_originals: false` leaves the file out.
 
 Vacuum also adds new rows to the full-text index. Search stays correct without it but scans the uncovered rows on every query. `haiku-rag doctor` reports the coverage.
 

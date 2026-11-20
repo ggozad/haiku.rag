@@ -1,5 +1,6 @@
 from importlib import metadata
 
+from haiku.rag.store import upgrades
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Chunk
 from haiku.rag.store.repositories.chunk import ChunkRepository
@@ -86,16 +87,18 @@ async def test_a_new_database_has_no_pending_migration(temp_db_path):
         assert get_pending_upgrades(await store.get_haiku_version()) == []
 
 
-async def test_migrating_a_v2_database_writes_only_the_version(temp_db_path):
+async def test_migrating_a_v2_database_writes_only_the_version(
+    temp_db_path, monkeypatch
+):
+    monkeypatch.setattr(
+        upgrades, "upgrades", [u for u in upgrades.upgrades if u.version != "0.113.0"]
+    )
     async with Store(temp_db_path, create=True) as store:
         await _add_chunks(store)
         await store.set_haiku_version("0.90.0")
 
     async with Store(temp_db_path, skip_migration_check=True) as store:
-        assert [u.version for u in get_pending_upgrades("0.90.0")] == [
-            "0.91.0",
-            "0.113.0",
-        ]
+        assert [u.version for u in get_pending_upgrades("0.90.0")] == ["0.91.0"]
         versions = await store.current_table_versions()
 
         await store.migrate()

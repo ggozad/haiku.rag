@@ -49,7 +49,7 @@ def convert_options(config: AppConfig) -> dict[str, str | list[str]]:
         # docling-serve turns off both include_* flags under "placeholder", its default
         "image_export_mode": "referenced",
         "include_images": str(pictures != "none").lower(),
-        "include_page_images": str(opts.generate_page_images).lower(),
+        "include_page_images": "false",
         "do_picture_description": str(runs_vlm).lower(),
     }
 
@@ -194,18 +194,9 @@ class DoclingServeConverter(DocumentConverter):
             for picture in doc_json.get("pictures") or []:
                 _inline(picture.get("image"))
 
-            # Page rasters are bundled only when ``include_page_images`` is set
-            # on the request, which mirrors ``generate_page_images``. Strip any
-            # that slip through when the user didn't ask for whole-page images.
-            keep_page_images = (
-                self.config.processing.conversion_options.generate_page_images
-            )
+            # The request asks for no page rasters. Strip any that slip through.
             for page in (doc_json.get("pages") or {}).values():
-                if not isinstance(page, dict):
-                    continue
-                if keep_page_images:
-                    _inline(page.get("image"))
-                else:
+                if isinstance(page, dict):
                     page["image"] = None
 
         doc = DoclingDocument.model_validate(doc_json)
@@ -235,8 +226,8 @@ class DoclingServeConverter(DocumentConverter):
         )
         # Parse off the event loop: the zip decompress, per-image base64
         # re-encoding, and DoclingDocument.model_validate are all synchronous
-        # and CPU-heavy (full-resolution page rasters when generate_page_images
-        # is on), so running inline would stall every other worker's coroutine.
+        # and CPU-heavy, so running inline would stall every other worker's
+        # coroutine.
         return await asyncio.to_thread(self._parse_zip_to_docling, zip_bytes, name)
 
     async def convert_file(

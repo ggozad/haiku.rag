@@ -77,7 +77,6 @@ class DocumentRepository:
             title=meta.title if meta else None,
             metadata=json.loads(meta.metadata) if meta else {},
             docling_document=doc.docling_document,
-            docling_pages=doc.docling_pages,
             docling_version=doc.docling_version,
             original=doc.original,
             original_md5=doc.original_md5,
@@ -94,7 +93,6 @@ class DocumentRepository:
             id=doc_id,
             content=entity.content,
             docling_document=entity.docling_document,
-            docling_pages=entity.docling_pages,
             docling_version=entity.docling_version,
             original=entity.original,
             original_md5=entity.original_md5,
@@ -197,7 +195,6 @@ class DocumentRepository:
         "id",
         "content",
         "docling_document",
-        "docling_pages",
         "docling_version",
     ]
     _ORIGINAL_COLUMNS = ["original", "original_md5"]
@@ -276,27 +273,6 @@ class DocumentRepository:
             .to_list()
         )
         return results[0]["original"] if results else None
-
-    async def get_pages_data(self, entity_id: str) -> Document | None:
-        """Get a document with only page image data loaded."""
-        safe_id = escape_sql_string(entity_id)
-        results = await (
-            self.store.documents_table.query()
-            .select(["id", "docling_pages"])
-            .where(f"id = '{safe_id}'")
-            .limit(1)
-            .to_list()
-        )
-
-        if not results:
-            return None
-
-        row = results[0]
-        return Document(
-            id=row["id"],
-            content="",
-            docling_pages=row.get("docling_pages"),
-        )
 
     async def update_meta(self, entity: Document) -> Document:
         """Update only the mutable attributes (uri/title/metadata/updated_at) in
@@ -398,9 +374,9 @@ class DocumentRepository:
         Listing reads `document_meta` (uri/title/metadata/timestamps); the
         SQL `filter` is evaluated against those columns. When `include_content`
         is set, `content` is projected out of `documents` and merged in. The
-        docling blobs are left out: a single document's page rasters run to
+        docling blob and the original are left out: an original runs to
         hundreds of MB, so reading whole rows stalls a listing. Load them per
-        document with `get_docling_data` / `get_pages_data`.
+        document with `get_docling_data` / `get_original`.
 
         Args:
             limit: Maximum number of documents to return.

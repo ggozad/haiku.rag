@@ -2,11 +2,10 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 from haiku.rag.store.compression import (
-    compress_docling_split,
+    compress_docling,
     compress_json,
     decompress_json,
     recompress_png,
-    recompress_png_data_uri,
 )
 
 
@@ -49,54 +48,53 @@ class TestJsonCompression:
         assert results == (payloads * 8)
 
 
-class TestDoclingCompressionSplit:
-    def test_split_with_pages(self):
+class TestDoclingCompression:
+    def test_keeps_pages_without_their_images(self):
         data = {
             "name": "test_doc",
             "texts": [{"text": "hello"}],
-            "pages": {"1": {"image": "base64data"}, "2": {"image": "more"}},
+            "pages": {
+                "1": {
+                    "page_no": 1,
+                    "size": {"width": 612.0, "height": 792.0},
+                    "image": {"uri": "data:image/png;base64,AAAA"},
+                },
+                "2": {"page_no": 2, "size": {"width": 792.0, "height": 612.0}},
+            },
         }
-        structure_bytes, pages_bytes = compress_docling_split(data)
 
-        assert structure_bytes is not None
-        assert pages_bytes is not None
+        structure = json.loads(decompress_json(compress_docling(data)))
 
-        # Structure should not contain pages
-        structure = json.loads(decompress_json(structure_bytes))
-        assert "pages" not in structure
-        assert structure["name"] == "test_doc"
-        assert structure["texts"] == [{"text": "hello"}]
+        assert structure == {
+            "name": "test_doc",
+            "texts": [{"text": "hello"}],
+            "pages": {
+                "1": {
+                    "page_no": 1,
+                    "size": {"width": 612.0, "height": 792.0},
+                    "image": None,
+                },
+                "2": {
+                    "page_no": 2,
+                    "size": {"width": 792.0, "height": 612.0},
+                    "image": None,
+                },
+            },
+        }
 
-        # Pages should contain only pages
-        pages = json.loads(decompress_json(pages_bytes))
-        assert "1" in pages
-        assert "2" in pages
-
-    def test_split_without_pages(self):
+    def test_without_pages(self):
         data = {"name": "test_doc", "texts": []}
-        structure_bytes, pages_bytes = compress_docling_split(data)
 
-        assert structure_bytes is not None
-        assert pages_bytes is None
+        assert json.loads(decompress_json(compress_docling(data))) == data
 
-        structure = json.loads(decompress_json(structure_bytes))
-        assert structure["name"] == "test_doc"
-
-    def test_split_with_empty_pages(self):
-        data = {"name": "test_doc", "texts": [], "pages": {}}
-        structure_bytes, pages_bytes = compress_docling_split(data)
-
-        assert structure_bytes is not None
-        assert pages_bytes is None
-
-    def test_split_drops_picture_images_and_keeps_other_entries(self):
+    def test_drops_picture_images_and_keeps_other_entries(self):
         data = {
             "name": "test_doc",
             "pictures": [{"image": {"uri": "data:image/png;base64,AAAA"}}, None],
         }
-        structure_bytes, _ = compress_docling_split(data)
 
-        structure = json.loads(decompress_json(structure_bytes))
+        structure = json.loads(decompress_json(compress_docling(data)))
+
         assert structure["pictures"] == [{"image": None}, None]
 
 
@@ -148,53 +146,3 @@ class TestPngRecompression:
         Image.new("RGB", (8, 8), "white").save(buffer, format="JPEG")
         jpeg = buffer.getvalue()
         assert recompress_png(jpeg) == jpeg
-
-    def test_data_uri_payload_shrinks_and_prefix_survives(self):
-        import base64
-
-        raw = _cv2_page_png()
-        uri = "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
-        out = recompress_png_data_uri(uri)
-
-        assert out.startswith("data:image/png;base64,")
-        assert len(base64.b64decode(out.partition(",")[2])) < len(raw)
-
-    def test_data_uri_with_undecodable_payload_is_untouched(self):
-        """A malformed payload is left alone."""
-        uri = "data:image/png;base64,A"
-        assert recompress_png_data_uri(uri) == uri
-
-    def test_data_uri_that_cannot_shrink_is_returned_unchanged(self):
-        """A payload PIL cannot read keeps its original base64 exactly."""
-        import base64
-
-        uri = "data:image/png;base64," + base64.b64encode(b"not a png").decode("ascii")
-        assert recompress_png_data_uri(uri) == uri
-
-    def test_data_uri_of_another_type_is_untouched(self):
-        uri = "data:image/jpeg;base64,AAAA"
-        assert recompress_png_data_uri(uri) == uri
-
-    def test_file_uri_is_untouched(self):
-        assert recompress_png_data_uri("file:///tmp/page.png") == "file:///tmp/page.png"
-
-    def test_split_recompresses_page_images(self):
-        """`compress_docling_split` shrinks the page blob it stores."""
-        import base64
-
-        raw = _cv2_page_png()
-        uri = "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
-        data = {
-            "name": "doc",
-            "pages": {"1": {"page_no": 1, "size": {}, "image": {"uri": uri}}},
-        }
-        _, pages_bytes = compress_docling_split(data)
-
-        assert pages_bytes is not None
-        stored = json.loads(decompress_json(pages_bytes))["1"]["image"]["uri"]
-        assert len(base64.b64decode(stored.partition(",")[2])) < len(raw)
-
-    def test_split_tolerates_a_page_without_an_image(self):
-        data = {"name": "doc", "pages": {"1": {"page_no": 1, "size": {}}}}
-        _, pages_bytes = compress_docling_split(data)
-        assert pages_bytes is not None

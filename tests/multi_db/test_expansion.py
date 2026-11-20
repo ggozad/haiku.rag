@@ -9,6 +9,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.store.exceptions import AmbiguousDatabaseError
 from haiku.rag.store.models import Chunk, Document, DocumentItem, SearchResult
+from tests.conftest import build_pdf
 from tests.multi_db.helpers import (
     _config,
     _seed,
@@ -245,18 +246,11 @@ class TestVisualizationRouting:
     def _visualizable(name):
         """A one-page document whose only item has a bounding box to draw."""
         from docling_core.types.doc.base import BoundingBox, Size
-        from docling_core.types.doc.document import ImageRef, ProvenanceItem
+        from docling_core.types.doc.document import ProvenanceItem
         from docling_core.types.doc.labels import DocItemLabel
-        from PIL import Image as PilImageModule
 
         doc = DoclingDocument(name=name)
-        doc.add_page(
-            page_no=1,
-            size=Size(width=612.0, height=792.0),
-            image=ImageRef.from_pil(
-                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
-            ),
-        )
+        doc.add_page(page_no=1, size=Size(width=612.0, height=792.0))
         doc.add_text(
             label=DocItemLabel.PARAGRAPH,
             text=f"{name} content",
@@ -286,6 +280,7 @@ class TestVisualizationRouting:
                     )
                 ],
                 uri="test://beta/visualizable",
+                original=build_pdf([]),
             )
             [chunk] = await beta.chunk_repository.get_by_document_id(document.id)
 

@@ -66,7 +66,7 @@ The `format` parameter controls how text content is parsed:
 - `"plain"` - Plain text, no parsing (creates a simple text document)
 
 !!! note
-    The document's `content` field stores the markdown export of the parsed document for consistent display. The original DoclingDocument structure is preserved in the `docling_document` field (zstd-compressed, without page images). Page images are stored separately in `docling_pages`. A PDF or image ingested from a source is stored as the document's original file, see `storage.store_originals`.
+    The document's `content` field stores the markdown export of the parsed document for consistent display. The original DoclingDocument structure is preserved in the `docling_document` field (zstd-compressed, without page or picture images). A PDF or image ingested from a source is stored as the document's original file, see `storage.store_originals`.
 
 From file:
 ```python
@@ -98,12 +98,12 @@ By URI:
 doc = await client.get_document_by_uri("file:///path/to/document.pdf")
 ```
 
-Both return content, uri, title and metadata. The multi-MB docling blobs are
-loaded separately:
+Both return content, uri, title and metadata. The docling structure and the
+original file are loaded separately:
 
 ```python
 docling = await client.document_repository.get_docling_data(doc.id)
-pages = await client.document_repository.get_pages_data(doc.id)
+original = await client.document_repository.get_original(doc.id)  # bytes or None
 ```
 
 By ID, title or URI, tried in that order:
@@ -361,7 +361,7 @@ Expansion is section-aware and capped by `search.max_context_chars`, see [Search
 
 ### Visual grounding
 
-`visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It renders the pages from the document's stored original, a PDF or an image, and otherwise from its page images (`generate_page_images`, on by default for PDFs):
+`visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It renders the pages from the document's stored original, a PDF or an image, and returns nothing for a document without one:
 
 ```python
 chunk = await client.get_chunk_by_id(result.chunk_id, result.source)

@@ -336,15 +336,12 @@ async def _plain_page(
     from haiku.rag.utils.images import render_original_pages
 
     original = await owner.document_repository.get_original(document_id)
-    if original is not None:
-        rendered = await asyncio.to_thread(
-            render_original_pages, original, [page], scale
-        )
-        image = rendered.get(page)
-    else:
-        stored = await owner.document_repository.get_pages_data(document_id)
-        item = stored.get_page_images([page]).get(page) if stored else None
-        image = item.image.pil_image if item and item.image else None
+    rendered = (
+        await asyncio.to_thread(render_original_pages, original, [page], scale)
+        if original is not None
+        else {}
+    )
+    image = rendered.get(page)
     if image is None:
         raise HTTPException(404, f"page {page} has no image")
     buffer = BytesIO()

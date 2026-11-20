@@ -19,6 +19,18 @@ def image_bytes(fmt: str, width: int = 8, height: int = 8) -> bytes:
     return buffer.getvalue()
 
 
+def letter_pdf(pages: int) -> bytes:
+    """A PDF of blank letter-size pages, the original of a seeded document."""
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument.new()
+    for _ in range(pages):
+        pdf.new_page(612, 792)
+    buffer = BytesIO()
+    pdf.save(buffer)
+    return buffer.getvalue()
+
+
 def png(width: int = 8, height: int = 8) -> str:
     """A base64 PNG, as the page sends an image."""
     return base64.b64encode(image_bytes("PNG", width, height)).decode()

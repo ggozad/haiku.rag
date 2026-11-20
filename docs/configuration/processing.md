@@ -48,7 +48,6 @@ processing:
 
     # Image settings
     images_scale: 2.0                        # Image scale factor
-    generate_page_images: true               # Include rendered page images (for visualize_chunk)
 
     # VLM settings used when processing.pictures == "description" (see "Picture Handling" below)
     picture_description:
@@ -151,13 +150,11 @@ processing:
 processing:
   conversion_options:
     images_scale: 2.0               # Image resolution scale factor
-    generate_page_images: true      # Include rendered page images
     fetch_remote_images: true       # Fetch external <img src> URLs in HTML/MD
     infer_furniture: false          # Keep HTML content before the first heading
 ```
 
-- **images_scale**: Scale factor for extracted images. Higher values = better quality but larger size. Typical range: 1.0-3.0.
-- **generate_page_images**: When `true` (default), rendered images of each PDF page are included in the document. Required for `visualize_chunk()` to show visual grounding. When `false`, page images are excluded to reduce document size.
+- **images_scale**: Scale factor for extracted pictures and for PDF pages rendered for visual grounding. Higher values = better quality but larger size. Typical range: 1.0-3.0. Visual grounding renders pages from the stored original file, see `storage.store_originals`.
 - **fetch_remote_images**: When `true` (default), HTML image tags and native Markdown images (`![alt](url)`) have their URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
 - **fetch_headers**: HTTP headers sent with HTML image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only. Headers go only to the source document's origin unless `fetch_headers_allowed_origins` is configured.
 - **fetch_headers_allowed_origins**: Origins permitted to receive `fetch_headers` during HTML image fetching, including redirects. Default: `[]`, meaning only the source document's origin; local files without an HTTP source URI send no configured headers. A non-empty list replaces that default: include the source origin too if it should receive headers. Each entry must be an HTTP(S) origin (scheme, host and optional port), without credentials, a path, query or fragment. This controls header forwarding, not which image hosts can be fetched. `docling-local` only; Markdown and `docling-serve` do not support these headers.
@@ -192,7 +189,7 @@ Every configured header is sent to allowed origins. Only list hosts trusted to r
 
 **Scope of conversion options across formats:**
 
-| Input | OCR / table options | `images_scale` / `generate_page_images` | `pictures` | `fetch_remote_images` | `infer_furniture` |
+| Input | OCR / table options | `images_scale` | `pictures` | `fetch_remote_images` | `infer_furniture` |
 |---|---|---|---|---|---|
 | `.pdf` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a | n/a |

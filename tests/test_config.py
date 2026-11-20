@@ -1365,3 +1365,15 @@ def test_a_fragment_ingesting_an_unplaced_database_fails_validation(tmp_path):
 
     with pytest.raises(ValidationError, match="notes"):
         AppConfig.model_validate(load_yaml_config(tmp_path / "haiku.rag.yaml"))
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_generate_page_images_is_refused_as_removed(value):
+    with pytest.raises(ValidationError) as raised:
+        AppConfig.model_validate(
+            {"processing": {"conversion_options": {"generate_page_images": value}}}
+        )
+
+    message = str(raised.value)
+    assert "generate_page_images was removed" in message
+    assert "store_originals" in message
