@@ -833,9 +833,12 @@ class TestSandboxWorkerCrash:
 
     async def test_crashed_worker_is_replaced(self, temp_db_path):
         """The crash fails one call. The next call gets a fresh session."""
+        import contextlib
         import os
         import signal
         import sys
+
+        import psutil
 
         config = AppConfig()
         async with HaikuRAG(temp_db_path, create=True):
@@ -851,6 +854,12 @@ class TestSandboxWorkerCrash:
 
             # On Windows os.kill terminates the process for any signal.
             os.kill(pid, signal.SIGTERM if sys.platform == "win32" else signal.SIGKILL)
+            # The kill is asynchronous: a loaded worker can still answer a request.
+            worker = psutil.Process(pid)
+            async with asyncio.timeout(10):
+                with contextlib.suppress(psutil.NoSuchProcess):
+                    while worker.status() != psutil.STATUS_ZOMBIE:
+                        await asyncio.sleep(0.01)
 
             crashed = await sb.execute("print(2)")
             assert crashed.success is False
