@@ -25,6 +25,7 @@ from haiku.rag.ingester.queue.models import Job, JobOp
 from haiku.rag.sources.base import FileTooLargeError
 from haiku.rag.sources.http import HTTPSource, is_failure_marker
 from haiku.rag.sources.registry import resolve_configured_source
+from haiku.rag.store.exceptions import UnsupportedRecordingStorageError
 from haiku.rag.telemetry import attach_context, logfire
 from haiku.rag.utils.errors import causes
 from haiku.rag.utils.http import is_transient_status
@@ -76,7 +77,10 @@ def _classify(exc: BaseException) -> Exception:
     # UnsupportedSourceError is the typed signal from client/* that the
     # source will never ingest successfully on a retry (bad URI scheme,
     # missing file, unsupported extension, etc.).
-    if isinstance(exc, UnsupportedSourceError | FileTooLargeError):
+    if isinstance(
+        exc,
+        UnsupportedSourceError | FileTooLargeError | UnsupportedRecordingStorageError,
+    ):
         return PermanentError(str(exc))
 
     if isinstance(exc, DocumentRejected):

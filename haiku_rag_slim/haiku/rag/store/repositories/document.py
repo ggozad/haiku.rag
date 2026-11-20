@@ -10,6 +10,7 @@ import pyarrow as pa
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
+from haiku.rag.store.repositories.recording import RecordingRepository
 from haiku.rag.store.schema import (
     DocumentMetaRecord,
     DocumentRecord,
@@ -477,9 +478,10 @@ class DocumentRepository:
         if doc is None:
             return False
 
-        # Delete associated chunks and items first
+        # Delete associated chunks, items and recording first
         await self.chunk_repository.delete_by_document_id(entity_id)
         await self.document_item_repository.delete_by_document_id(entity_id)
+        await RecordingRepository(self.store).delete(entity_id)
 
         # Delete the document row, its mutable attributes
         safe_id = escape_sql_string(entity_id)
@@ -573,8 +575,9 @@ class DocumentRepository:
         """Delete all documents from the database."""
         self.store._assert_writable()
 
-        # Delete all chunks and items first
+        # Delete all chunks, items and recordings first
         await self.chunk_repository.delete_all()
+        await RecordingRepository(self.store).delete_all()
         await self.store.db.drop_table("document_items")
         self.store.document_items_table = await self.store.db.create_table(
             "document_items", schema=get_document_items_arrow_schema()

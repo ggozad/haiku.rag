@@ -203,3 +203,20 @@ async def test_migrate_of_a_missing_path_creates_nothing(temp_db_path):
         await _app(temp_db_path).migrate()
 
     assert not temp_db_path.exists()
+
+
+async def test_restoring_on_a_database_from_before_the_recordings_table_asks_to_migrate(
+    temp_db_path,
+):
+    """The missing table is not what stops the restore: an older live database
+    is migrated first, as it is for any tag needing a migration."""
+    async with Store(temp_db_path, config=AppConfig(), create=True) as store:
+        await DocumentRepository(store).create(Document(content="First"))
+        await store.set_haiku_version("0.112.0")
+        await store.create_tag("old")
+    db = await lancedb.connect_async(temp_db_path)
+    await db.drop_table("recordings")
+    db.close()
+
+    with pytest.raises(MigrationRequiredError, match="haiku-rag migrate"):
+        await _app(temp_db_path).restore_tag("old")

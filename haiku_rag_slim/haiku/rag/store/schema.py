@@ -323,10 +323,31 @@ class IncompleteRebuildRecord(LanceModel):
     vector_index: bool
 
 
+def get_recordings_arrow_schema() -> pa.Schema:
+    """One row per stored recording, the file in a lance blob column read by range."""
+    from lance.blob import blob_field
+
+    return pa.schema(
+        [
+            pa.field("document_id", pa.string(), nullable=False),
+            pa.field("suffix", pa.string(), nullable=False),
+            pa.field("sha256", pa.string(), nullable=False),
+            pa.field("duration", pa.float64(), nullable=False),
+            pa.field("subtitles", pa.string()),
+            blob_field("content", nullable=False),
+        ]
+    )
+
+
 REQUIRED_TABLES: tuple[str, ...] = (
     "documents",
     "document_meta",
     "chunks",
     "document_items",
+    "recordings",
     "settings",
 )
+
+# The release whose databases first have the table. A tag recorded by an older
+# release is complete without it.
+TABLE_INTRODUCED_IN: dict[str, str] = {"recordings": "0.115.0"}

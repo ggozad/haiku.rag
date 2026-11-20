@@ -402,8 +402,8 @@ async def test_restore_failure_rollback_survives_cancellation(
             await task
 
         monkeypatch.undo()
-        # 3 forward calls (2 ok, 1 failed) + all 5 rollback calls ran.
-        assert calls["n"] == 8
+        # 3 forward calls (2 ok, 1 failed) + all 6 rollback calls ran.
+        assert calls["n"] == 9
         assert await _doc_contents(store) == {"First document", "Second document"}
 
 

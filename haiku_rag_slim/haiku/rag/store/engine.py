@@ -28,6 +28,7 @@ from haiku.rag.store.exceptions import (
 from haiku.rag.store.schema import (
     INCOMPLETE_REBUILD_TABLE,
     REQUIRED_TABLES,
+    TABLE_INTRODUCED_IN,
     ChunkRecordBase,
     DocumentMetaRecord,
     SettingsRecord,
@@ -35,6 +36,7 @@ from haiku.rag.store.schema import (
     ensure_indexes,
     get_document_items_arrow_schema,
     get_documents_arrow_schema,
+    get_recordings_arrow_schema,
     has_payload_columns,
     is_blob,
     query_to_pydantic,
@@ -341,17 +343,39 @@ class TagInfo:
         return not self.missing_tables
 
 
-async def _aggregate_tags(tables: dict[str, lancedb.AsyncTable]) -> dict[str, TagInfo]:
+async def _aggregate_tags(
+    db: lancedb.AsyncConnection, tables: dict[str, lancedb.AsyncTable]
+) -> dict[str, TagInfo]:
     """Per-table tags as database-level tags, missing tables counted against
-    every required table."""
+    every table the release that took the tag had."""
     tags: dict[str, TagInfo] = {}
     for table_name, table in tables.items():
         for tag_name, tag in (await table.tags.list()).items():
             info = tags.setdefault(tag_name, TagInfo(tables={}, missing_tables=[]))
             info.tables[table_name] = tag["version"]
     for info in tags.values():
-        info.missing_tables = [t for t in REQUIRED_TABLES if t not in info.tables]
+        missing = [t for t in REQUIRED_TABLES if t not in info.tables]
+        if "settings" in info.tables and set(missing) & set(TABLE_INTRODUCED_IN):
+            taken_at = parse(
+                (await _settings_at(db, info.tables["settings"])).get(
+                    "version", "0.0.0"
+                )
+            )
+            missing = [
+                t
+                for t in missing
+                if t not in TABLE_INTRODUCED_IN
+                or parse(TABLE_INTRODUCED_IN[t]) <= taken_at
+            ]
+        info.missing_tables = missing
     return tags
+
+
+async def _settings_at(db: lancedb.AsyncConnection, version: int) -> dict:
+    """The settings blob at a `settings` table version, read through its own handle."""
+    settings = await db.open_table("settings")
+    await settings.checkout(version)
+    return await read_settings(settings)
 
 
 def too_old_message(db_version: str) -> str:
@@ -472,10 +496,10 @@ def _restorable_tag(tags: dict[str, TagInfo], name: str) -> TagInfo:
 
 
 async def require_complete_tag(
-    tables: dict[str, lancedb.AsyncTable], name: str
+    db: lancedb.AsyncConnection, tables: dict[str, lancedb.AsyncTable], name: str
 ) -> None:
     """Raise `TagError` unless the tag exists on every required table."""
-    info = (await _aggregate_tags(tables)).get(name)
+    info = (await _aggregate_tags(db, tables)).get(name)
     if info is None:
         raise TagError(f"Tag '{name}' does not exist")
     if not info.complete:
@@ -632,7 +656,7 @@ class Store:
             for table_name in REQUIRED_TABLES
             if table_name in existing_tables
         }
-        await require_complete_tag(tables, name)
+        await require_complete_tag(self.db, tables, name)
 
     async def __aenter__(self):
         # If _initialize connects to LanceDB but then fails (e.g. migration
@@ -728,14 +752,11 @@ class Store:
                 if retention_seconds is None:
                     retention_seconds = self._config.storage.vacuum_retention_seconds
                 retention = timedelta(seconds=retention_seconds)
-                for table in self._tables().values():
-                    if has_payload_columns(await table.schema()):
-                        await self._compact_to_target(table)
-                    else:
-                        await self._run_lance_maintenance(
-                            table, lambda ds: ds.optimize.compact_files()
-                        )
-                        await self._run_lance_maintenance(table, _optimize_indices)
+                for table_name, table in self._tables().items():
+                    # Compaction would rewrite every stored file, so recordings
+                    # are only cleaned up, one fragment per recording.
+                    if table_name != "recordings":
+                        await self._compact(table)
                     # Tagged versions are kept and every other version older
                     # than the retention is removed with its files.
                     await self._run_lance_maintenance(
@@ -751,6 +772,15 @@ class Store:
                 logger.warning(f"Vacuum skipped due to resource constraints: {e}")
                 return False
         return True
+
+    async def _compact(self, table: lancedb.AsyncTable) -> None:
+        if has_payload_columns(await table.schema()):
+            await self._compact_to_target(table)
+        else:
+            await self._run_lance_maintenance(
+                table, lambda ds: ds.optimize.compact_files()
+            )
+            await self._run_lance_maintenance(table, _optimize_indices)
 
     async def _run_lance_maintenance(
         self, table: lancedb.AsyncTable, step: "Callable[[lance.LanceDataset], Any]"
@@ -952,7 +982,10 @@ class Store:
         ):
             await self._check_migrations(stored_settings.get("version", "0.0.0"))
 
-        missing_tables = set(REQUIRED_TABLES) - set(existing_tables)
+        # A database a release before the table wrote is read without it.
+        missing_tables = (
+            set(REQUIRED_TABLES) - set(existing_tables) - set(TABLE_INTRODUCED_IN)
+        )
 
         if missing_tables and self._read_only:
             raise ReadOnlyError(
@@ -1007,6 +1040,14 @@ class Store:
                 self.document_items_table,
                 "document_items",
                 self._config.search.fts_language,
+            )
+
+        self.recordings_table: lancedb.AsyncTable | None = None
+        if "recordings" in existing_tables:
+            self.recordings_table = await self.db.open_table("recordings")
+        elif not self._read_only:
+            self.recordings_table = await self.db.create_table(
+                "recordings", schema=get_recordings_arrow_schema()
             )
 
         # _initialize opened the settings table when the database had one.
@@ -1164,14 +1205,16 @@ class Store:
             self.db.close()
 
     def _tables(self) -> dict[str, lancedb.AsyncTable]:
-        """Map every haiku.rag table name to its open AsyncTable."""
-        return {
+        """Map every open haiku.rag table name to its AsyncTable."""
+        tables = {
             "documents": self.documents_table,
             "document_meta": self.document_meta_table,
             "chunks": self.chunks_table,
             "document_items": self.document_items_table,
+            "recordings": self.recordings_table,
             "settings": self.settings_table,
         }
+        return {name: table for name, table in tables.items() if table is not None}
 
     async def current_table_versions(self) -> dict[str, int]:
         """Capture current versions of key tables for rollback using LanceDB's API."""
@@ -1302,7 +1345,7 @@ class Store:
             Tag name mapped to a TagInfo with the tagged version per table
             and the tables the tag is missing from (empty when complete).
         """
-        return await _aggregate_tags(self._tables())
+        return await _aggregate_tags(self.db, self._tables())
 
     async def tag_haiku_version(self, name: str) -> str:
         """The haiku.rag version recorded at a complete tag.
@@ -1314,9 +1357,7 @@ class Store:
 
     async def _tag_settings(self, info: TagInfo) -> dict:
         """The settings blob at a tag, read through its own handle."""
-        settings = await self.db.open_table("settings")
-        await settings.checkout(info.tables["settings"])
-        return await read_settings(settings)
+        return await _settings_at(self.db, info.tables["settings"])
 
     async def delete_tag(self, name: str) -> None:
         """Delete the tag from every table that has it.
@@ -1355,7 +1396,11 @@ class Store:
         failures: list[tuple[str, Exception]] = []
         for table_name in RESTORE_TABLE_ORDER:
             try:
-                await tables[table_name].restore(int(versions[table_name]))
+                if table_name in versions:
+                    await tables[table_name].restore(int(versions[table_name]))
+                else:
+                    # A tag taken before the table existed held none of its rows.
+                    await tables[table_name].delete("true")
             except Exception as exc:
                 failures.append((table_name, exc))
                 if not best_effort:

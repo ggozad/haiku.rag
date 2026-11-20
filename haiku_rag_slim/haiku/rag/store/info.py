@@ -37,9 +37,10 @@ async def get_database_stats(
         name: await db.open_table(name) for name in REQUIRED_TABLES if name in existing
     }
     if tag is not None:
-        await require_complete_tag(tables, tag)
+        await require_complete_tag(db, tables, tag)
         for tbl in tables.values():
-            await tbl.checkout(tag)
+            if tag in await tbl.tags.list():
+                await tbl.checkout(tag)
 
     for name in REQUIRED_TABLES:
         if name not in tables:
@@ -64,6 +65,11 @@ async def get_database_stats(
             ),
         }
 
+    if stats["recordings"]["exists"]:
+        stats["recordings"]["total_bytes"] += await _blob_file_bytes(
+            tables["recordings"]
+        )
+
     if stats["chunks"]["exists"]:
         chunks_tbl = tables["chunks"]
         vector_index = await vector_index_name(chunks_tbl)
@@ -75,6 +81,17 @@ async def get_database_stats(
                 stats["chunks"]["num_unindexed_rows"] = index_stats.num_unindexed_rows
 
     return stats
+
+
+_INLINE_BLOB = 0
+
+
+async def _blob_file_bytes(table: lancedb.AsyncTable) -> int:
+    """Bytes of the recordings lance keeps in blob files, which table stats omit."""
+    rows = await table.query().select(["content"]).to_list()
+    return sum(
+        r["content"]["size"] for r in rows if r["content"]["kind"] != _INLINE_BLOB
+    )
 
 
 class EmbeddingsInfo(BaseModel):
@@ -168,7 +185,13 @@ async def gather_database_info(
             num_versions=stats[name].get("num_versions", 0),
             latest_version_at=stats[name].get("latest_version_at"),
         )
-        for name in ("documents", "document_meta", "chunks", "document_items")
+        for name in (
+            "documents",
+            "document_meta",
+            "chunks",
+            "document_items",
+            "recordings",
+        )
     ]
 
     vector_index = VectorIndexInfo()

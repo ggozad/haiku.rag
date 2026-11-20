@@ -29,6 +29,7 @@ from haiku.rag.converters.exceptions import (
     ConversionFailedError,
     ConversionTimeoutError,
 )
+from haiku.rag.store.models.recording import RecordingFile
 from haiku.rag.utils.dependencies import raise_missing_extra
 from haiku.rag.utils.http import pooled_client, post_retrying_dropped_connection
 
@@ -445,6 +446,23 @@ def sentences(utterances: list[Utterance]) -> list[Utterance]:
             close()
     close()
     return result
+
+
+async def recording_file(
+    path: Path, content: bytes | None = None
+) -> tuple[RecordingFile, float]:
+    """`path` as it is stored: its bytes (`content` when the caller holds them),
+    suffix and sidecar subtitles, with its duration."""
+    sidecar = subtitles(path)
+    duration, _ = await probe(path)
+    return (
+        RecordingFile(
+            content=path.read_bytes() if content is None else content,
+            suffix=path.suffix.lower(),
+            subtitles=sidecar.read_text(encoding="utf-8") if sidecar else None,
+        ),
+        duration,
+    )
 
 
 def subtitles(path: Path) -> Path | None:

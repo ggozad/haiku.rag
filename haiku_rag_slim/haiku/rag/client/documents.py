@@ -42,6 +42,8 @@ from haiku.rag.hooks import (
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
+from haiku.rag.store.models.recording import RecordingFile, names_file
+from haiku.rag.store.repositories.recording import RecordingRepository
 from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
 from haiku.rag.utils.images import ORIGINAL_EXTENSIONS, render_original_pages
@@ -216,6 +218,25 @@ async def _extract_items_observed(
         return items
 
 
+async def _settle_recording(
+    session: SingleDatabaseSession,
+    document_id: str,
+    docling_document: "DoclingDocument | None",
+    recording: tuple[RecordingFile, float] | None,
+) -> None:
+    """Store the recording a write carries. Without one, a stored recording
+    stays only while the document's docling document still names its file."""
+    recordings = RecordingRepository(session.store)
+    if recording is not None:
+        await recordings.put(document_id, *recording)
+        return
+    if docling_document is None:
+        return
+    digest = await recordings.digest(document_id)
+    if digest is not None and not names_file(docling_document, digest):
+        await recordings.delete(document_id)
+
+
 async def _store_document_with_chunks(
     session: SingleDatabaseSession,
     client: "HaikuRAG | None",
@@ -225,6 +246,7 @@ async def _store_document_with_chunks(
     observed_uri: str | None = None,
     notify_hooks: bool = True,
     events: list[IngestEvent] | None = None,
+    recording: tuple[RecordingFile, float] | None = None,
 ) -> Document:
     """Store a document with chunks, embedding any that lack embeddings.
 
@@ -291,6 +313,7 @@ async def _store_document_with_chunks(
                 await session.document_item_repository.create_items(
                     stored_doc.id, items
                 )
+            await _settle_recording(session, stored_doc.id, docling_document, recording)
 
         # The under-lock re-check decides create vs update.
         store_span.set_attribute("op", "update" if existing is not None else "create")
@@ -323,6 +346,7 @@ async def _update_document_with_chunks(
     notify_hooks: bool = True,
     stored_meta: Callable[[], Awaitable[Document]] | None = None,
     events: list[IngestEvent] | None = None,
+    recording: tuple[RecordingFile, float] | None = None,
 ) -> Document:
     """Update a document and replace its chunks, embedding any that lack embeddings.
 
@@ -385,6 +409,9 @@ async def _update_document_with_chunks(
                 await session.document_item_repository.replace_for_document(
                     updated_doc.id, items
                 )
+            await _settle_recording(
+                session, updated_doc.id, docling_document, recording
+            )
 
     session.record_write()
 
@@ -836,11 +863,26 @@ async def _ingest_fetch_result(
         cleanup_path = target_path
     original = result.body if has_original else None
 
+    recording: tuple[RecordingFile, float] | None = None
     try:
         with logfire.span("document.convert", uri=result.uri):
+            if file_extension in MEDIA_EXTENSIONS:
+                from haiku.rag.converters.media import recording_file
+
+                recording = await recording_file(target_path, result.body)
             docling_document = await convert(
                 session.config, target_path, source_uri=result.uri
             )
+            # Conversion reads the file and its subtitles again, so the
+            # recording stored is the one converted only if neither changed.
+            if recording is not None and (
+                not names_file(
+                    docling_document,
+                    hashlib.sha256(recording[0].content).hexdigest(),
+                )
+                or await recording_file(target_path, result.body) != recording
+            ):
+                raise ValueError(f"{result.uri} changed while it was converted")
         docling_document = await _after_convert(
             client,
             ConvertedDocument(
@@ -895,6 +937,7 @@ async def _ingest_fetch_result(
             notify_hooks=notify_hooks,
             stored_meta=stored_meta,
             events=held,
+            recording=recording,
         )
     else:
         document = Document(
@@ -913,6 +956,7 @@ async def _ingest_fetch_result(
             observed_uri=result.uri,
             notify_hooks=notify_hooks,
             events=held,
+            recording=recording,
         )
 
     if written_ids is not None:

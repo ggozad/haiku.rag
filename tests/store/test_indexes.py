@@ -438,6 +438,7 @@ async def test_store_rebuild_indexes_covers_every_table(temp_db_path):
             "document_meta": ["id", "uri"],
             "chunks": ["content_fts", "id", "document_id", "media"],
             "document_items": ["document_id", "position", "self_ref", "label"],
+            "recordings": [],
             "settings": [],
         }
 

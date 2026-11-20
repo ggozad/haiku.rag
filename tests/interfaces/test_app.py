@@ -922,6 +922,7 @@ def _database_info(vector_index, chunk_rows=300):
                 "document_meta",
                 "chunks",
                 "document_items",
+                "recordings",
                 "settings",
             )
         ],
