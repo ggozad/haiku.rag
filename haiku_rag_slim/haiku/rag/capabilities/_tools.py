@@ -259,7 +259,8 @@ async def view_recording(
         result.document_title = recording.title
         result.document_uri = recording.uri
         lines, pictures, spans = [], {}, []
-        for item in chunk_items:
+        # A decoded frame joins its chunk after the sentences shown.
+        for item in sorted(chunk_items, key=lambda item: item.start_time or 0.0):
             assert item.start_time is not None and item.end_time is not None
             spans.append((item.start_time, item.end_time))
             clock = format_time_range((item.start_time, item.start_time))

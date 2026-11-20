@@ -316,3 +316,17 @@ async def test_an_uppercase_video_suffix_is_decoded(tmp_path, film_file):
 
     assert len(_frames(state)) == 8
     assert all(ref.startswith("#/frames/") for ref in _frames(state))
+
+
+async def test_a_result_lists_its_lines_and_decoded_frames_in_time_order(stored_film):
+    path, film_id = stored_film
+
+    # The frame at 9.938 s falls before the sentence starting at 10 s, whose
+    # chunk is the nearest to it.
+    result, _ = await view(path, [{"recording": film_id, "start": 9.8, "end": 12}])
+
+    content = str(returns(result, "view")[0].content)
+    assert "[00:00:09] (frame)" in content
+    for block in content.split("\n---\n"):
+        clocks = re.findall(r"^\[(\d\d:\d\d:\d\d)\]", block, re.M)
+        assert clocks == sorted(clocks)
