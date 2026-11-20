@@ -130,6 +130,17 @@ def reasoning_effort_settings(
     return OpenAIChatModelSettings(openai_reasoning_effort=effort)
 
 
+def _self_hosted_settings(model_config: "ModelConfig") -> Any:
+    """Settings for the ollama and vllm chat routes."""
+    from pydantic_ai.models.openai import OpenAIChatModelSettings
+
+    settings = reasoning_effort_settings(model_config) or OpenAIChatModelSettings()
+    # Muse-Glimmer writes malformed tool calls on a system prompt without
+    # pydantic-ai's `<system>` framing announcement.
+    settings["framing_announcement"] = "always"
+    return apply_common_settings(settings, model_config, map_thinking=False)
+
+
 def get_model(
     model_config: "ModelConfig",
     app_config: "AppConfig | None" = None,
@@ -150,10 +161,6 @@ def get_model(
     check_api_key_supported(model_config, {"openai", "ollama", "openrouter", "vllm"})
 
     if provider == "ollama":
-        model_settings = apply_common_settings(
-            reasoning_effort_settings(model_config), model_config, map_thinking=False
-        )
-
         # Ollama's OpenAI-compatible API lives under /v1. Append it if the
         # configured base_url doesn't already include it.
         base_url = model_config.base_url or app_config.providers.ollama.base_url
@@ -163,7 +170,7 @@ def get_model(
         return OpenAIChatModel(
             model_name=model,
             provider=OllamaProvider(base_url=base_url, api_key=model_config.api_key),
-            settings=model_settings,
+            settings=_self_hosted_settings(model_config),
             profile=_OPENAI_COMPAT_PROFILE,
         )
 
@@ -178,11 +185,7 @@ def get_model(
                 base_url=vllm_base_url(model_config.base_url),
                 api_key=model_config.api_key,
             ),
-            settings=apply_common_settings(
-                reasoning_effort_settings(model_config),
-                model_config,
-                map_thinking=False,
-            ),
+            settings=_self_hosted_settings(model_config),
         )
 
     elif provider == "openai":

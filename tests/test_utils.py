@@ -145,22 +145,22 @@ Emoji test: 🚀 ✅ 📝"""
 @pytest.mark.parametrize(
     "kwargs,expected_settings",
     [
-        ({"provider": "ollama", "name": "llama3"}, None),
+        ({"provider": "ollama", "name": "llama3"}, {"framing_announcement": "always"}),
         (
             {"provider": "ollama", "name": "gpt-oss", "thinking": False},
-            {"openai_reasoning_effort": "none"},
+            {"openai_reasoning_effort": "none", "framing_announcement": "always"},
         ),
         (
             {"provider": "ollama", "name": "gpt-oss", "thinking": True},
-            {"openai_reasoning_effort": "medium"},
+            {"openai_reasoning_effort": "medium", "framing_announcement": "always"},
         ),
         (
             {"provider": "ollama", "name": "qwen3.8", "thinking": False},
-            {"openai_reasoning_effort": "none"},
+            {"openai_reasoning_effort": "none", "framing_announcement": "always"},
         ),
         (
             {"provider": "ollama", "name": "qwen3.8", "thinking": True},
-            {"openai_reasoning_effort": "medium"},
+            {"openai_reasoning_effort": "medium", "framing_announcement": "always"},
         ),
         (
             {
@@ -169,7 +169,7 @@ Emoji test: 🚀 ✅ 📝"""
                 "temperature": 0.5,
                 "max_tokens": 100,
             },
-            {"temperature": 0.5, "max_tokens": 100},
+            {"temperature": 0.5, "max_tokens": 100, "framing_announcement": "always"},
         ),
         ({"provider": "openai", "name": "gpt-4o"}, None),
         (
@@ -194,7 +194,7 @@ Emoji test: 🚀 ✅ 📝"""
         ),
         (
             {"provider": "ollama", "name": "qwen3.8", "thinking": "low"},
-            {"openai_reasoning_effort": "low"},
+            {"openai_reasoning_effort": "low", "framing_announcement": "always"},
         ),
         (
             {"provider": "openai", "name": "o1", "thinking": "xhigh"},
@@ -682,10 +682,10 @@ def test_get_model_vllm_forwards_settings():
 @pytest.mark.parametrize(
     "thinking,expected",
     [
-        (True, {"openai_reasoning_effort": "medium"}),
-        (False, {"openai_reasoning_effort": "none"}),
-        ("low", {"openai_reasoning_effort": "low"}),
-        (None, None),
+        (True, {"openai_reasoning_effort": "medium", "framing_announcement": "always"}),
+        (False, {"openai_reasoning_effort": "none", "framing_announcement": "always"}),
+        ("low", {"openai_reasoning_effort": "low", "framing_announcement": "always"}),
+        (None, {"framing_announcement": "always"}),
     ],
     ids=["on", "off", "level", "unset"],
 )
