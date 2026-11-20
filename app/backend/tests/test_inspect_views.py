@@ -136,6 +136,39 @@ async def test_an_unchunked_page_is_shown_plain_and_without_its_image_is_not_fou
     assert (await client.get(f"{base}/2")).status_code == 404
 
 
+async def test_an_unchunked_page_renders_from_the_original(client, seeded):
+    from io import BytesIO
+
+    import pypdfium2 as pdfium
+    from docling_core.types.doc.base import BoundingBox, Size
+    from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
+    from docling_core.types.doc.labels import DocItemLabel
+
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(300, 200)
+    buffer = BytesIO()
+    pdf.save(buffer)
+    doc = DoclingDocument(name="original only")
+    doc.add_page(page_no=1, size=Size(width=300.0, height=200.0))
+    doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text="unchunked",
+        prov=ProvenanceItem(
+            page_no=1, bbox=BoundingBox(l=10, t=190, r=290, b=170), charspan=(0, 9)
+        ),
+    )
+
+    config, _ = seeded
+    async with HaikuRAG(config=config, sources=["alpha"]) as rag:
+        document = await rag.import_document(
+            doc, [], uri="test://alpha/original-only", original=buffer.getvalue()
+        )
+
+    response = await client.get(f"/api/inspect/alpha/documents/{document.id}/pages/1")
+    assert response.headers["content-type"] == "image/png"
+    assert Image.open(BytesIO(response.content)).size == (600, 400)
+
+
 async def test_pictures_carry_caption_description_and_chunk(client, two_pages):
     document_id, (_, picture) = two_pages
     body = (

@@ -315,7 +315,8 @@ async def page_image(request: Request) -> Response:
         raise HTTPException(404, f"no chunk is drawn on page {page}")
     entry = pages[page]
     if not entry["chunk_ids"]:
-        return await _plain_page(owner, document_id, page)
+        scale = request.state.databases.config.processing.conversion_options
+        return await _plain_page(owner, document_id, page, scale.images_scale)
     chunks = [await _chunk(owner, chunk_id) for chunk_id in entry["chunk_ids"]]
     images = await owner.visualize_chunk(chunks, entry["refs"])
     # One image per page the drawn items touch, in page order.
@@ -327,15 +328,27 @@ async def page_image(request: Request) -> Response:
     return Response(buffer.getvalue(), media_type="image/png")
 
 
-async def _plain_page(owner: HaikuRAG, document_id: str, page: int) -> Response:
+async def _plain_page(
+    owner: HaikuRAG, document_id: str, page: int, scale: float
+) -> Response:
     from io import BytesIO
 
-    stored = await owner.document_repository.get_pages_data(document_id)
-    item = stored.get_page_images([page]).get(page) if stored else None
-    if item is None or item.image is None or item.image.pil_image is None:
+    from haiku.rag.utils.images import render_original_pages
+
+    original = await owner.document_repository.get_original(document_id)
+    if original is not None:
+        rendered = await asyncio.to_thread(
+            render_original_pages, original, [page], scale
+        )
+        image = rendered.get(page)
+    else:
+        stored = await owner.document_repository.get_pages_data(document_id)
+        item = stored.get_page_images([page]).get(page) if stored else None
+        image = item.image.pil_image if item and item.image else None
+    if image is None:
         raise HTTPException(404, f"page {page} has no image")
     buffer = BytesIO()
-    item.image.pil_image.save(buffer, format="PNG")
+    image.save(buffer, format="PNG")
     return Response(buffer.getvalue(), media_type="image/png")
 
 

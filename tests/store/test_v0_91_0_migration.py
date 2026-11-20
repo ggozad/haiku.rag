@@ -92,7 +92,10 @@ async def test_migrating_a_v2_database_writes_only_the_version(temp_db_path):
         await store.set_haiku_version("0.90.0")
 
     async with Store(temp_db_path, skip_migration_check=True) as store:
-        assert [u.version for u in get_pending_upgrades("0.90.0")] == ["0.91.0"]
+        assert [u.version for u in get_pending_upgrades("0.90.0")] == [
+            "0.91.0",
+            "0.113.0",
+        ]
         versions = await store.current_table_versions()
 
         await store.migrate()

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `storage.store_originals` (default `true`): a PDF or an image ingested from a source is stored in `documents.original`, and visual grounding renders its pages from it. Needs `haiku-rag migrate`.
+- `original` on `import_document`, `DocumentImport` and `update_document`. Bytes that open neither as an image nor as a PDF raise `ValueError`.
+
 ### Changed
 
 - `pydantic-ai-slim` raised to 2.71. With `provider: vllm` or `ollama`, every system prompt carries pydantic-ai 2.71's `<system>` framing announcement (`framing_announcement: always`), and chat-template special tokens in content are sent with a zero-width joiner. Ollama receives `max_tokens` instead of `max_completion_tokens`.

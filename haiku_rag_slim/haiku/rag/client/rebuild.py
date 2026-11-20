@@ -49,7 +49,13 @@ _STAGING_TABLE_NAME = "chunks_rebuild_staging"
 _STAGING_MARKER_TABLE_NAME = "chunks_rebuild_marker"
 _STAGING_COPY_BATCH_SIZE = 1000
 _DESCRIPTION_COLUMNS = ("docling_document", "docling_version")
-_FULL_FALLBACK_COLUMNS = ("docling_document", "docling_pages", "docling_version")
+_FULL_FALLBACK_COLUMNS = (
+    "docling_document",
+    "docling_pages",
+    "docling_version",
+    "original",
+    "original_md5",
+)
 
 
 class _StagingChunkRecord(LanceModel):

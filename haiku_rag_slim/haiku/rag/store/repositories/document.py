@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 from typing import overload
 from uuid import uuid4
 
+import pyarrow as pa
+
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.schema import (
@@ -77,6 +79,8 @@ class DocumentRepository:
             docling_document=doc.docling_document,
             docling_pages=doc.docling_pages,
             docling_version=doc.docling_version,
+            original=doc.original,
+            original_md5=doc.original_md5,
             created_at=datetime.fromisoformat(created)
             if created
             else datetime.now(UTC),
@@ -92,6 +96,8 @@ class DocumentRepository:
             docling_document=entity.docling_document,
             docling_pages=entity.docling_pages,
             docling_version=entity.docling_version,
+            original=entity.original,
+            original_md5=entity.original_md5,
         )
 
     def _to_meta_record(
@@ -187,21 +193,33 @@ class DocumentRepository:
         return documents
 
     _LIGHT_COLUMNS = ["id", "content"]
+    _BLOB_COLUMNS = [
+        "id",
+        "content",
+        "docling_document",
+        "docling_pages",
+        "docling_version",
+    ]
+    _ORIGINAL_COLUMNS = ["original", "original_md5"]
 
     async def _record_by_id(
         self, doc_id: str, include_blobs: bool
     ) -> DocumentRecord | None:
         safe_id = escape_sql_string(doc_id)
-        query = self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1)
-        if not include_blobs:
-            query = query.select(self._LIGHT_COLUMNS)
+        query = (
+            self.store.documents_table.query()
+            .where(f"id = '{safe_id}'")
+            .limit(1)
+            .select(self._BLOB_COLUMNS if include_blobs else self._LIGHT_COLUMNS)
+        )
         results = await query_to_pydantic(query, DocumentRecord)
         return results[0] if results else None
 
     async def get_by_id(
         self, entity_id: str, include_blobs: bool = False
     ) -> Document | None:
-        """Get a document by its ID. `include_blobs` adds the docling blobs."""
+        """Get a document by its ID. `include_blobs` adds the docling blobs,
+        never the original."""
         record = await self._record_by_id(entity_id, include_blobs)
         if record is None:
             return None
@@ -246,6 +264,18 @@ class DocumentRepository:
             docling_document=row.get("docling_document"),
             docling_version=row.get("docling_version"),
         )
+
+    async def get_original(self, entity_id: str) -> bytes | None:
+        """The file the document's structure was converted from, if stored."""
+        safe_id = escape_sql_string(entity_id)
+        results = await (
+            self.store.documents_table.query()
+            .select(["original"])
+            .where(f"id = '{safe_id}'")
+            .limit(1)
+            .to_list()
+        )
+        return results[0]["original"] if results else None
 
     async def get_pages_data(self, entity_id: str) -> Document | None:
         """Get a document with only page image data loaded."""
@@ -310,21 +340,30 @@ class DocumentRepository:
         )
         return entities
 
-    async def update(self, entity: Document) -> Document:
+    async def update(
+        self, entity: Document, *, with_original: bool = False
+    ) -> Document:
         """Update a document's content+blobs (genuine re-conversion) and its
         mutable attributes. Rewrites the `documents` row, so use only when the
         docling content actually changed; for metadata/title-only changes use
-        `update_meta`."""
+        `update_meta`. The stored original is written only `with_original`."""
         self.store._assert_writable()
         assert entity.id, "Document ID is required for update"
 
         doc_record = self._to_documents_record(entity, entity.id)
+        columns = self._BLOB_COLUMNS + (self._ORIGINAL_COLUMNS if with_original else [])
+        schema = await self.store.documents_table.schema()
+        source = pa.Table.from_pylist(
+            [{c: getattr(doc_record, c) for c in columns}],
+            schema=pa.schema([schema.field(c) for c in columns]),
+        )
+        # Update-only: a partial source with an insert branch is rejected.
         # The indexed plan holds the blobs in lance's query memory pool, unspillable.
         await (
             self.store.documents_table.merge_insert("id")
             .when_matched_update_all()
             .use_index(False)
-            .execute([doc_record])
+            .execute(source)
         )
         await self.update_meta(entity)
         return entity

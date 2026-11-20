@@ -2,10 +2,67 @@ import base64
 from collections.abc import Set as AbstractSet
 from io import BytesIO
 
-from PIL import Image
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic_ai.messages import BinaryContent
 
 from haiku.rag.store.models import SearchResult
+
+# Formats whose converted pages are the file's own pages, so the file renders them.
+ORIGINAL_EXTENSIONS = frozenset(
+    {".pdf", ".bmp", ".jpeg", ".jpg", ".png", ".tiff", ".webp"}
+)
+
+
+def render_original_pages(
+    data: bytes, page_numbers: list[int], scale: float
+) -> dict[int, Image.Image]:
+    """Render the requested 1-based pages of an original file.
+
+    An image's frames are its pages, returned at their own size and oriented
+    and flattened as docling reads them. Anything else renders as a PDF at
+    ``scale`` pixels per point. Pages past the end are left out.
+    """
+    try:
+        image = Image.open(BytesIO(data))
+    except UnidentifiedImageError:
+        return _render_pdf_pages(data, page_numbers, scale)
+    with image:
+        frames = getattr(image, "n_frames", 1)
+        pages = {}
+        for n in page_numbers:
+            if 0 < n <= frames:
+                image.seek(n - 1)
+                pages[n] = _as_docling_reads(image)
+        return pages
+
+
+def _as_docling_reads(frame: Image.Image) -> Image.Image:
+    """The frame with its EXIF orientation applied and transparency on white."""
+    frame = ImageOps.exif_transpose(frame)
+    if frame.mode in ("RGBA", "LA", "PA") or "transparency" in frame.info:
+        rgba = frame.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        return Image.alpha_composite(background, rgba).convert("RGB")
+    return frame.convert("RGB")
+
+
+def _render_pdf_pages(
+    data: bytes, page_numbers: list[int], scale: float
+) -> dict[int, Image.Image]:
+    import pypdfium2 as pdfium
+
+    from haiku.rag.converters.pdf_split import PDFIUM_LOCK
+
+    with PDFIUM_LOCK:
+        pdf = pdfium.PdfDocument(data)
+        try:
+            return {
+                n: pdf[n - 1].render(scale=scale).to_pil().convert("RGB")
+                for n in page_numbers
+                if 0 < n <= len(pdf)
+            }
+        finally:
+            pdf.close()
 
 
 def image_media_type(data: bytes) -> str:

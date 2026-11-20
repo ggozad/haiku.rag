@@ -99,6 +99,7 @@ class StorageConfig(ConfigModel):
     auto_vacuum: bool = True
     vacuum_retention_seconds: int = Field(default=86400, ge=0)
     compaction_target_bytes: int = Field(default=2 * 1024**3, gt=0)
+    store_originals: bool = True
 
     @field_validator("data_dir", mode="before")
     @classmethod

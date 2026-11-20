@@ -1,3 +1,4 @@
+import asyncio
 import base64
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -571,6 +572,23 @@ async def expand_context(
     return expanded_results
 
 
+async def _render_original(
+    session: "SingleDatabaseSession", document_id: str, page_numbers: list[int]
+) -> "dict[int, PILImage.Image]":
+    """Render pages of the document's stored original, none when it has none."""
+    from haiku.rag.utils.images import render_original_pages
+
+    original = await session.document_repository.get_original(document_id)
+    if original is None:
+        return {}
+    return await asyncio.to_thread(
+        render_original_pages,
+        original,
+        page_numbers,
+        session.config.processing.conversion_options.images_scale,
+    )
+
+
 async def visualize_chunk(
     session: "SingleDatabaseSession",
     chunk: "Chunk | Sequence[Chunk]",
@@ -672,6 +690,7 @@ async def visualize_chunk(
     if not pages_doc:
         return []
     page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))
+    rendered = await _render_original(session, document_id, list(boxes_by_page))
 
     images = []
     for page_no in sorted(boxes_by_page.keys()):
@@ -679,10 +698,12 @@ async def visualize_chunk(
             continue
 
         page = page_images[page_no]
-        if page.image is None or page.image.pil_image is None:
+        pil_image = rendered.get(page_no) or (
+            page.image.pil_image if page.image else None
+        )
+        if pil_image is None:
             continue
 
-        pil_image = page.image.pil_image
         page_height = page.size.height
 
         # Scale factor: image pixels vs document coordinates

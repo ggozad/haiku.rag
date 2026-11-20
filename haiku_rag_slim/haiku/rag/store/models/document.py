@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -29,6 +30,8 @@ class Document(BaseModel):
     docling_document: bytes | None = Field(default=None, exclude=True)
     docling_pages: bytes | None = Field(default=None, exclude=True)
     docling_version: str | None = Field(default=None, exclude=True)
+    original: bytes | None = Field(default=None, exclude=True)
+    original_md5: str | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -37,16 +40,26 @@ class Document(BaseModel):
     def _to_utc(cls, value: datetime) -> datetime:
         return value if value.tzinfo else value.astimezone(UTC)
 
-    def set_docling(self, docling_doc: "DoclingDocument") -> None:
+    def set_docling(
+        self, docling_doc: "DoclingDocument", original: bytes | None = None
+    ) -> None:
         """Serialize and store a DoclingDocument, splitting structure and pages.
 
         Sets docling_document (zstd-compressed structure without pages),
         docling_pages (zstd-compressed page images), and docling_version.
+        ``original`` is the file the structure was converted from: it replaces
+        any stored one, and None clears it.
         """
         structure, pages = compress_docling_split(docling_doc.model_dump(mode="json"))
         self.docling_document = structure
         self.docling_pages = pages
         self.docling_version = docling_doc.version
+        self.original = original
+        self.original_md5 = (
+            hashlib.md5(original, usedforsecurity=False).hexdigest()
+            if original is not None
+            else None
+        )
 
     def get_docling_document(self) -> "DoclingDocument | None":
         """Parse and return the stored DoclingDocument (without page images).

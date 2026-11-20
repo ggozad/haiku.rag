@@ -93,7 +93,11 @@ from haiku.rag.store.upgrades.v0_89_0 import (
 from haiku.rag.store.upgrades.v0_91_0 import (
     upgrade_fts_format_v2 as upgrade_0_91_0_fts_format_v2,
 )
+from haiku.rag.store.upgrades.v0_113_0 import (
+    upgrade_original_columns as upgrade_0_113_0_original_columns,
+)
 
 upgrades.append(upgrade_0_75_0_index_hot_lookup_keys)
 upgrades.append(upgrade_0_89_0_record_embedder_only)
 upgrades.append(upgrade_0_91_0_fts_format_v2)
+upgrades.append(upgrade_0_113_0_original_columns)

@@ -26,6 +26,9 @@ async def test_client_visualize_chunk_with_pdf(temp_db_path, doclaynet_first_pag
         assert isinstance(doc, Document)
         assert doc.id is not None
         assert doc.docling_document is not None
+        assert await client.document_repository.get_original(doc.id) == (
+            pdf_path.read_bytes()
+        )
 
         chunks = await client.chunk_repository.get_by_document_id(doc.id)
         assert len(chunks) > 0

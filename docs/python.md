@@ -66,7 +66,7 @@ The `format` parameter controls how text content is parsed:
 - `"plain"` - Plain text, no parsing (creates a simple text document)
 
 !!! note
-    The document's `content` field stores the markdown export of the parsed document for consistent display. The original DoclingDocument structure is preserved in the `docling_document` field (zstd-compressed, without page images). Page images are stored separately in `docling_pages`.
+    The document's `content` field stores the markdown export of the parsed document for consistent display. The original DoclingDocument structure is preserved in the `docling_document` field (zstd-compressed, without page images). Page images are stored separately in `docling_pages`. A PDF or image ingested from a source is stored as the document's original file, see `storage.store_originals`.
 
 From file:
 ```python
@@ -361,7 +361,7 @@ Expansion is section-aware and capped by `search.max_context_chars`, see [Search
 
 ### Visual grounding
 
-`visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It needs the document's page images (`generate_page_images`, on by default for PDFs):
+`visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It renders the pages from the document's stored original, a PDF or an image, and otherwise from its page images (`generate_page_images`, on by default for PDFs):
 
 ```python
 chunk = await client.get_chunk_by_id(result.chunk_id, result.source)
@@ -441,10 +441,11 @@ doc = await client.import_document(
     uri="doc://custom",
     title="Custom Document",
     metadata={"source": "external-pipeline"},
+    original=Path("path/to/document.pdf").read_bytes(),
 )
 ```
 
-The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
+The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument. `original` is the PDF or image file the document was converted from, which visual grounding renders. Bytes that open neither as an image nor as a PDF raise `ValueError`. haiku.rag does not check that the file matches the document. `DocumentImport` and `update_document(docling_document=...)` take it too. Without it the document has no stored original. A new `docling_document`, or new `content` without `chunks`, replaces the structure and clears a stored one.
 
 ### Batch import
 

@@ -651,13 +651,14 @@ class HaikuRAG:
         uri: str | None = None,
         title: str | None = None,
         metadata: dict | None = None,
+        original: bytes | None = None,
     ) -> Document:
         from haiku.rag.client.documents import import_document
 
         session = self._single_session("import_document")
 
         return await import_document(
-            session, self, docling_document, chunks, uri, title, metadata
+            session, self, docling_document, chunks, uri, title, metadata, original
         )
 
     async def import_documents(
@@ -748,6 +749,7 @@ class HaikuRAG:
         title: str | None = None,
         docling_document: "DoclingDocument | None" = None,
         uri: str | None = None,
+        original: bytes | None = None,
     ) -> Document:
         from haiku.rag.client.documents import update_document
 
@@ -763,6 +765,7 @@ class HaikuRAG:
             title,
             docling_document,
             uri,
+            original,
         )
 
     async def edit_document(

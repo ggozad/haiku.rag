@@ -62,9 +62,9 @@ async def test_prepare_document_from_docling_runs_off_event_loop_thread(monkeypa
     document = Document(content="")
     original = documents._prepare_document_from_docling_sync
 
-    def spy(doc, docling):
+    def spy(doc, docling, kept):
         called_from.append(threading.current_thread())
-        return original(doc, docling)
+        return original(doc, docling, kept)
 
     monkeypatch.setattr(documents, "_prepare_document_from_docling_sync", spy)
 
