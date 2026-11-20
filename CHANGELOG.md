@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.112.3] - 2026-11-20
+
 ### Changed
 
 - `pydantic-monty` raised to 1.6.
@@ -3363,7 +3365,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.2...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.3...HEAD
+[0.112.3]: https://github.com/ggozad/haiku.rag/compare/0.112.2...0.112.3
 [0.112.2]: https://github.com/ggozad/haiku.rag/compare/0.112.1...0.112.2
 [0.112.1]: https://github.com/ggozad/haiku.rag/compare/0.112.0...0.112.1
 [0.112.0]: https://github.com/ggozad/haiku.rag/compare/0.111.1...0.112.0

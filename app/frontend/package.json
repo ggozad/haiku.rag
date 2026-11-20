@@ -1,6 +1,6 @@
 {
 	"name": "haiku-rag-app",
-	"version": "0.112.2",
+	"version": "0.112.3",
 	"private": true,
 	"packageManager": "pnpm@12.18.0",
 	"scripts": {
