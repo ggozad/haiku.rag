@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from haiku.rag.reranking.base import RerankerBase
     from haiku.rag.sources.base import Source
     from haiku.rag.store.models.citation import Citation
+    from haiku.rag.store.models.recording import RecordingFile
 
 logger = logging.getLogger(__name__)
 
@@ -661,13 +662,22 @@ class HaikuRAG:
         title: str | None = None,
         metadata: dict | None = None,
         original: bytes | None = None,
+        recording: "RecordingFile | None" = None,
     ) -> Document:
         from haiku.rag.client.documents import import_document
 
         session = self._single_session("import_document")
 
         return await import_document(
-            session, self, docling_document, chunks, uri, title, metadata, original
+            session,
+            self,
+            docling_document,
+            chunks,
+            uri,
+            title,
+            metadata,
+            original,
+            recording,
         )
 
     async def import_documents(

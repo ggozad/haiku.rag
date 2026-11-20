@@ -465,6 +465,15 @@ async def recording_file(
     )
 
 
+async def recording_duration(recording: RecordingFile) -> float:
+    """The duration of a recording held in memory."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / f"recording{recording.suffix}"
+        path.write_bytes(recording.content)
+        duration, _ = await probe(path)
+    return duration
+
+
 def subtitles(path: Path) -> Path | None:
     """The WebVTT or SRT file beside `path` with its stem, if there is one."""
     for suffix in SUBTITLE_EXTENSIONS:

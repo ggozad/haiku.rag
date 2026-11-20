@@ -2,10 +2,11 @@ import asyncio
 import hashlib
 import json
 import logging
+import tempfile
 from collections import Counter
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
@@ -17,11 +18,15 @@ from haiku.rag.client.documents import (
     _after_convert,
     _extract_pdf_attachments,
     _prepare_document_from_docling,
+    _update_document_with_chunks,
     check_source_accessible,
     chunk_document,
     create_document_from_source,
 )
-from haiku.rag.client.processing import get_extension_from_content_type_or_url
+from haiku.rag.client.processing import (
+    convert,
+    get_extension_from_content_type_or_url,
+)
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
@@ -32,6 +37,8 @@ from haiku.rag.store.engine import REBUILD_COMMANDS
 from haiku.rag.store.models.chunk import Chunk, chunk_media
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
+from haiku.rag.store.models.recording import StoredRecording
+from haiku.rag.store.repositories.recording import RecordingRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.store.schema import (
     INCOMPLETE_REBUILD_TABLE,
@@ -1171,6 +1178,63 @@ async def _is_recording(session: SingleDatabaseSession, document: Document) -> b
     return is_recording(stored.get_docling_document() if stored else None)
 
 
+async def _rebuild_from_stored_file(
+    session: SingleDatabaseSession,
+    client: "HaikuRAG",
+    document: Document,
+    stored: StoredRecording,
+) -> None:
+    """Convert a recording again from its stored file, with its stored
+    subtitles beside it, under the name it was ingested with."""
+    assert document.id is not None
+    name = PurePosixPath(document.uri or "").stem or "recording"
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / f"{name}{stored.suffix}"
+        await asyncio.to_thread(_write_stored_file, stored, path)
+        if stored.subtitles is not None:
+            path.with_suffix(".vtt").write_text(stored.subtitles, encoding="utf-8")
+        converted = await convert(session.config, path, source_uri=document.uri)
+    docling_document = await _after_convert(
+        client,
+        ConvertedDocument(
+            uri=document.uri,
+            source_id=document.metadata.get("source_id"),
+            content_type=None,
+            docling_document=converted,
+        ),
+    )
+    await _prepare_document_from_docling(document, docling_document)
+    document_id = document.id
+
+    async def stored_meta() -> Document:
+        # A rebuild changes no uri, title or metadata, and its copy of them
+        # can be older than the stored record.
+        current = await session.document_repository.get_by_id(document_id)
+        if current is None:
+            raise ValueError(f"Document with ID {document_id} not found")
+        return current
+
+    await _update_document_with_chunks(
+        session,
+        client,
+        document,
+        await chunk_document(session, docling_document),
+        docling_document,
+        notify_hooks=False,
+        stored_meta=stored_meta,
+    )
+
+
+_STORED_FILE_READ_BYTES = 8 * 2**20
+
+
+def _write_stored_file(stored: StoredRecording, path: Path) -> None:
+    with path.open("wb") as out:
+        for offset in range(0, stored.size, _STORED_FILE_READ_BYTES):
+            length = min(_STORED_FILE_READ_BYTES, stored.size - offset)
+            out.write(stored.read_range(offset, length))
+
+
 async def _rebuild_full(
     session: SingleDatabaseSession, client: "HaikuRAG", documents: list[Document]
 ) -> AsyncGenerator[str, None]:
@@ -1179,16 +1243,26 @@ async def _rebuild_full(
     fallback from stored content ``after_convert`` only. A hook failure ends
     the rebuild. No post-commit hooks run.
 
-    A recording is never re-converted: it is re-chunked from its stored
-    docling document, as RECHUNK does, so its transcript and frames stay.
+    A recording is converted again from its stored file and subtitles. One
+    without a stored file is re-chunked from its stored docling document, as
+    RECHUNK does, so its transcript and frames stay.
     """
     from haiku.rag.embeddings import embed_chunks
 
     recordings = [d for d in documents if await _is_recording(session, d)]
-    async for doc_id in _rebuild_rechunk(session, recordings):
+    unstored = []
+    for recording in recordings:
+        assert recording.id is not None
+        stored = await RecordingRepository(session.store).open(recording.id)
+        if stored is None:
+            unstored.append(recording)
+        else:
+            await _rebuild_from_stored_file(session, client, recording, stored)
+            yield recording.id
+    async for doc_id in _rebuild_rechunk(session, unstored):
         yield doc_id
-    rechunked = {d.id for d in recordings}
-    documents = [d for d in documents if d.id not in rechunked]
+    rebuilt = {d.id for d in recordings}
+    documents = [d for d in documents if d.id not in rebuilt]
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []

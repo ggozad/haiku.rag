@@ -21,7 +21,7 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
-from haiku.rag.converters.base import MEDIA_EXTENSIONS
+from haiku.rag.converters.base import MEDIA_EXTENSIONS, is_recording
 from haiku.rag.converters.exceptions import (
     ConversionFailedError,
     ConversionTimeoutError,
@@ -65,7 +65,8 @@ class DocumentImport:
 
     Carries the same inputs as ``import_document``: a converted
     ``DoclingDocument``, its chunks (embeddings filled in if missing), and
-    optional uri/title/metadata/original.
+    optional uri/title/metadata, the original PDF or image, and the audio or
+    video file it was converted from.
     """
 
     docling_document: "DoclingDocument"
@@ -74,6 +75,7 @@ class DocumentImport:
     title: str | None = None
     metadata: dict | None = field(default=None)
     original: bytes | None = None
+    recording: RecordingFile | None = None
 
 
 # Maximum length of an attachment chain rooted at a top-level ingest. With
@@ -463,6 +465,24 @@ async def create_document(
     )
 
 
+async def _imported_recording(
+    docling_document: "DoclingDocument", recording: RecordingFile | None
+) -> tuple[RecordingFile, float] | None:
+    """`recording` with its duration, once it is known to be the file
+    `docling_document` was converted from."""
+    if recording is None:
+        return None
+    if recording.suffix.lower() not in MEDIA_EXTENSIONS:
+        raise ValueError(f"{recording.suffix} is not an audio or video format")
+    if not is_recording(docling_document):
+        raise ValueError("The document is not a recording")
+    if not names_file(docling_document, hashlib.sha256(recording.content).hexdigest()):
+        raise ValueError("The document was not converted from this recording")
+    from haiku.rag.converters.media import recording_duration
+
+    return recording, await recording_duration(recording)
+
+
 async def import_document(
     session: SingleDatabaseSession,
     client: "HaikuRAG | None",
@@ -472,6 +492,7 @@ async def import_document(
     title: str | None = None,
     metadata: dict | None = None,
     original: bytes | None = None,
+    recording: RecordingFile | None = None,
 ) -> Document:
     """Import a pre-processed document with chunks.
 
@@ -482,7 +503,9 @@ async def import_document(
     index into it. Convert through :meth:`HaikuRAG.convert` to get one whose
     inline groups are flattened. ``original`` is the PDF or image file the
     document was converted from, which visual grounding renders.
+    `recording`, the file a recording was converted from, is stored with it.
     """
+    stored_recording = await _imported_recording(docling_document, recording)
     document = Document(
         content="",
         uri=uri,
@@ -493,7 +516,12 @@ async def import_document(
     await _prepare_and_title(session, document, docling_document, original)
 
     return await _store_document_with_chunks(
-        session, client, document, chunks, docling_document
+        session,
+        client,
+        document,
+        chunks,
+        docling_document,
+        recording=stored_recording,
     )
 
 
@@ -501,6 +529,7 @@ async def _store_documents_with_chunks(
     session: SingleDatabaseSession,
     client: "HaikuRAG",
     prepared: list[tuple[Document, list[Chunk], "DoclingDocument"]],
+    recordings: list[tuple[RecordingFile, float] | None],
 ) -> list[Document]:
     """Store many documents with their chunks in a single table version each.
 
@@ -554,6 +583,10 @@ async def _store_documents_with_chunks(
 
             await session.chunk_repository.create(all_chunks)
             await session.document_item_repository.create_all(all_items)
+            for doc, recording in zip(created, recordings):
+                if recording is not None:
+                    assert doc.id is not None
+                    await RecordingRepository(session.store).put(doc.id, *recording)
 
     session.record_write()
 
@@ -582,6 +615,10 @@ async def import_documents(
     for item in imports:
         await _check_original(item.original)
     prepared: list[tuple[Document, list[Chunk], DoclingDocument]] = []
+    recordings = [
+        await _imported_recording(item.docling_document, item.recording)
+        for item in imports
+    ]
     for item in imports:
         document = Document(
             content="",
@@ -594,7 +631,7 @@ async def import_documents(
         )
         prepared.append((document, item.chunks, item.docling_document))
 
-    return await _store_documents_with_chunks(session, client, prepared)
+    return await _store_documents_with_chunks(session, client, prepared, recordings)
 
 
 async def _refresh_doc_metadata(
