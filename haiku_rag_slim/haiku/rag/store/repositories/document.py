@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import UTC, datetime
 from typing import overload
@@ -15,7 +16,7 @@ from haiku.rag.store.schema import (
     get_documents_arrow_schema,
     query_to_pydantic,
 )
-from haiku.rag.utils.sql import escape_sql_string
+from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
 
 # Ids per `id IN (...)` content lookup. Keeps the filter string bounded on an
 # unpaginated listing of a large database.
@@ -273,6 +274,50 @@ class DocumentRepository:
             .to_list()
         )
         return results[0]["original"] if results else None
+
+    async def ids_without_original(self, ids: list[str] | None = None) -> set[str]:
+        """The documents, of `ids` when given, that have no stored original."""
+        predicate = "original_md5 IS NULL"
+        if ids is not None:
+            id_filter = build_document_id_filter(ids)
+            if id_filter is None:
+                return set()
+            predicate += f" AND {id_filter}"
+        rows = (
+            await self.store.documents_table.query()
+            .where(predicate)
+            .select(["id"])
+            .to_list()
+        )
+        return {row["id"] for row in rows}
+
+    async def store_originals(self, originals: dict[str, bytes]) -> None:
+        """Write the original file of each document id, and its MD5."""
+        self.store._assert_writable()
+        if not originals:
+            return
+        schema = await self.store.documents_table.schema()
+        source = pa.Table.from_pylist(
+            [
+                {
+                    "id": i,
+                    "original": data,
+                    "original_md5": hashlib.md5(
+                        data, usedforsecurity=False
+                    ).hexdigest(),
+                }
+                for i, data in originals.items()
+            ],
+            schema=pa.schema(
+                [schema.field(c) for c in ("id", *self._ORIGINAL_COLUMNS)]
+            ),
+        )
+        await (
+            self.store.documents_table.merge_insert("id")
+            .when_matched_update_all()
+            .use_index(False)
+            .execute(source)
+        )
 
     async def update_meta(self, entity: Document) -> Document:
         """Update only the mutable attributes (uri/title/metadata/updated_at) in

@@ -584,16 +584,32 @@ def rebuild(
             "rewriting any rows"
         ),
     ),
+    originals: bool = typer.Option(
+        False,
+        "--originals",
+        help=(
+            "Store the original PDF or image of documents that have none, "
+            "fetched from their source when it is unchanged since ingest"
+        ),
+    ),
 ):
     from haiku.rag.client import RebuildMode
 
     exclusive = sum(
-        [embed_only, rechunk, title_only, descriptions, set_embedder, reindex]
+        [
+            embed_only,
+            rechunk,
+            title_only,
+            descriptions,
+            set_embedder,
+            reindex,
+            originals,
+        ]
     )
     if exclusive > 1:
         typer.echo(
             "Error: --embed-only, --rechunk, --title-only, --descriptions, "
-            "--set-embedder and --reindex are mutually exclusive"
+            "--set-embedder, --reindex and --originals are mutually exclusive"
         )
         raise typer.Exit(1)
 
@@ -609,6 +625,8 @@ def rebuild(
         mode = RebuildMode.SET_EMBEDDER
     elif reindex:
         mode = RebuildMode.REINDEX
+    elif originals:
+        mode = RebuildMode.ORIGINALS
     else:
         mode = RebuildMode.FULL
 

@@ -156,9 +156,12 @@ def _assert_renders_like(docling_doc, original: bytes, scale: float) -> None:
     rendered = render_original_pages(original, sorted(docling_doc.pages), scale)
     assert sorted(rendered) == sorted(docling_doc.pages)
     for page_no, page in docling_doc.pages.items():
-        raster = _raster(page)
-        assert rendered[page_no].size == raster.size, page_no
-        assert _best_shift(raster, rendered[page_no]) == (0, 0), page_no
+        raster, original_page = _raster(page), rendered[page_no]
+        assert (original_page.width, original_page.height) == pytest.approx(
+            (page.size.width, page.size.height), abs=0.01
+        ), page_no
+        assert original_page.image.size == raster.size, page_no
+        assert _best_shift(raster, original_page.image) == (0, 0), page_no
 
 
 @pytest.mark.parametrize("slice_size", [None, 2])
@@ -200,19 +203,28 @@ async def test_annotations_render_as_docling_draws_them(tmp_path, widget):
     raster = _raster(docling_doc.pages[1])
     difference = np.abs(
         np.asarray(raster.convert("L"), dtype=np.float32)
-        - np.asarray(rendered.convert("L"), dtype=np.float32)
+        - np.asarray(rendered.image.convert("L"), dtype=np.float32)
     ).mean()
     assert difference < 1.0
 
 
-@pytest.mark.parametrize("fmt", ["PNG", "TIFF"])
-async def test_image_pages_render_in_docling_frame(tmp_path, fmt):
+@pytest.mark.parametrize(
+    ("fmt", "dpi"),
+    [("PNG", None), ("PNG", (300, 300)), ("TIFF", None), ("TIFF", (150, 300))],
+)
+async def test_image_pages_render_in_docling_frame(tmp_path, fmt, dpi):
     from haiku.rag.converters.docling_local import DoclingLocalConverter
 
     source = pdfium.PdfDocument(str(DOCLAYNET))
     frames = [source[i].render(scale=1.0).to_pil() for i in range(2)]
     buffer = BytesIO()
-    frames[0].save(buffer, format=fmt, save_all=fmt == "TIFF", append_images=frames[1:])
+    frames[0].save(
+        buffer,
+        format=fmt,
+        save_all=fmt == "TIFF",
+        append_images=frames[1:],
+        **({"dpi": dpi} if dpi else {}),
+    )
     original = buffer.getvalue()
     path = tmp_path / f"scan.{fmt.lower()}"
     path.write_bytes(original)
@@ -222,26 +234,35 @@ async def test_image_pages_render_in_docling_frame(tmp_path, fmt):
     assert len(docling_doc.pages) == (len(frames) if fmt == "TIFF" else 1)
     rendered = render_original_pages(original, sorted(docling_doc.pages), 2.0)
     for page_no, page in docling_doc.pages.items():
-        image, raster = rendered[page_no], _raster(page)
-        assert (page.size.width, page.size.height) == image.size
-        assert _best_shift(raster, image.resize(raster.size)) == (0, 0)
+        original_page, raster = rendered[page_no], _raster(page)
+        assert (original_page.width, original_page.height) == pytest.approx(
+            (page.size.width, page.size.height), abs=0.01
+        )
+        assert _best_shift(raster, original_page.image.resize(raster.size)) == (0, 0)
 
 
-async def test_an_exif_rotated_image_renders_in_docling_frame(tmp_path):
+@pytest.mark.parametrize("square", [False, True], ids=["page", "square"])
+async def test_an_exif_rotated_image_renders_in_docling_frame(tmp_path, square):
     from haiku.rag.converters.docling_local import DoclingLocalConverter
 
     scan = pdfium.PdfDocument(str(DOCLAYNET))[0].render(scale=1.0).to_pil()
+    if square:
+        scan = scan.crop((0, 0, scan.width, scan.width))
     exif = scan.getexif()
     exif[0x0112] = 6
     buffer = BytesIO()
-    scan.save(buffer, format="JPEG", exif=exif)
+    scan.save(buffer, format="JPEG", exif=exif, dpi=(150, 300))
     original = buffer.getvalue()
     path = tmp_path / "rotated.jpg"
     path.write_bytes(original)
 
     docling_doc = await DoclingLocalConverter(_config()).convert_file(path)
 
-    [image] = render_original_pages(original, [1], 2.0).values()
-    raster = _raster(docling_doc.pages[1])
-    assert image.size == (scan.height, scan.width)
-    assert _best_shift(raster, image.resize(raster.size)) == (0, 0)
+    [rendered] = render_original_pages(original, [1], 2.0).values()
+    page = docling_doc.pages[1]
+    raster = _raster(page)
+    assert rendered.image.size == (scan.height, scan.width)
+    assert (rendered.width, rendered.height) == pytest.approx(
+        (page.size.width, page.size.height), abs=0.01
+    )
+    assert _best_shift(raster, rendered.image.resize(raster.size)) == (0, 0)

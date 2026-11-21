@@ -884,6 +884,7 @@ def test_add_src_exits_1_when_files_failed(app_stub, failed, exit_code):
         ("--descriptions", "DESCRIPTIONS"),
         ("--set-embedder", "SET_EMBEDDER"),
         ("--reindex", "REINDEX"),
+        ("--originals", "ORIGINALS"),
     ],
 )
 def test_rebuild_flag_selects_the_mode(app_stub, flag, mode_name):

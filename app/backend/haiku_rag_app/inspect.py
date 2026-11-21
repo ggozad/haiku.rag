@@ -341,11 +341,11 @@ async def _plain_page(
         if original is not None
         else {}
     )
-    image = rendered.get(page)
-    if image is None:
+    original_page = rendered.get(page)
+    if original_page is None:
         raise HTTPException(404, f"page {page} has no image")
     buffer = BytesIO()
-    image.save(buffer, format="PNG")
+    original_page.image.save(buffer, format="PNG")
     return Response(buffer.getvalue(), media_type="image/png")
 
 

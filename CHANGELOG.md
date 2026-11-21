@@ -6,10 +6,11 @@
 
 - `storage.store_originals` (default `true`): a PDF or an image ingested from a source is stored in `documents.original`, and visual grounding renders its pages from it. Needs `haiku-rag migrate`.
 - `original` on `import_document`, `DocumentImport` and `update_document`. Bytes that open neither as an image nor as a PDF raise `ValueError`.
+- `haiku-rag rebuild --originals` (`RebuildMode.ORIGINALS`): stores the original of documents that have none, fetched from their source when its MD5 equals the ingested one.
 
 ### Changed
 
-- **Breaking:** page images are no longer stored. Visual grounding renders the stored original, so a document has none until it is re-ingested. The 0.113.0 migration drops `documents.docling_pages`, rewrites every `documents` row and vacuums at zero retention: stop every other process before `haiku-rag migrate`.
+- **Breaking:** page images are no longer stored. Visual grounding renders the stored original, so a document has none until `haiku-rag rebuild --originals` stores it or the document is re-ingested. The 0.113.0 migration drops `documents.docling_pages`, rewrites every `documents` row and vacuums at zero retention: stop every other process before `haiku-rag migrate`.
 - **Breaking:** `processing.conversion_options.generate_page_images` removed. A config carrying it fails to load.
 - **Breaking:** `Document.docling_pages`, `Document.get_page_images` and `DocumentRepository.get_pages_data` removed. `DocumentRepository.get_original` returns the original file.
 - `pydantic-ai-slim` raised to 2.71. With `provider: vllm` or `ollama`, every system prompt carries pydantic-ai 2.71's `<system>` framing announcement (`framing_announcement: always`), and chat-template special tokens in content are sent with a zero-width joiner. Ollama receives `max_tokens` instead of `max_completion_tokens`.

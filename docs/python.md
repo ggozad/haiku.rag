@@ -556,6 +556,10 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 # Rebuild the full-text and scalar indexes, rewriting no rows. Yields no document ids.
 async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
     pass
+
+# Store the original of documents that have none, fetched from their source.
+async for doc_id in client.rebuild_database(mode=RebuildMode.ORIGINALS):
+    print(f"Stored the original of {doc_id}")
 ```
 
 **Rebuild modes:**
@@ -566,9 +570,10 @@ async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
 - `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider and name without re-embedding, when the vector dimension is unchanged
 - `RebuildMode.REINDEX` - Rebuild the full-text and scalar indexes from scratch, rewriting no rows. Leaves the vector index alone
+- `RebuildMode.ORIGINALS` - Store the original PDF or image of every document that has none, fetched from its source when its MD5 equals the one recorded at ingest. An attachment's bytes come from its parent PDF. Writes `original` and `original_md5` only. Yields the id of each document whose original it stored. Raises `ValueError` while `storage.store_originals` is off
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
 
-Every mode except `TITLE_ONLY` and `SET_EMBEDDER` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. `FULL`, `RECHUNK`, `EMBED_ONLY` and `DESCRIPTIONS` also retrain the vector index if the database had one.
+Every mode except `TITLE_ONLY`, `SET_EMBEDDER` and `ORIGINALS` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. `FULL`, `RECHUNK`, `EMBED_ONLY` and `DESCRIPTIONS` also retrain the vector index if the database had one.
 
 ### Generating titles
 

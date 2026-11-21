@@ -1,6 +1,7 @@
 import base64
 from collections.abc import Set as AbstractSet
 from io import BytesIO
+from typing import NamedTuple
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic_ai.messages import BinaryContent
@@ -13,9 +14,17 @@ ORIGINAL_EXTENSIONS = frozenset(
 )
 
 
+class OriginalPage(NamedTuple):
+    """A rendered page and its size in the structure's coordinates."""
+
+    image: Image.Image
+    width: float
+    height: float
+
+
 def render_original_pages(
     data: bytes, page_numbers: list[int], scale: float
-) -> dict[int, Image.Image]:
+) -> dict[int, OriginalPage]:
     """Render the requested 1-based pages of an original file.
 
     An image's frames are its pages, returned at their own size and oriented
@@ -36,19 +45,28 @@ def render_original_pages(
         return pages
 
 
-def _as_docling_reads(frame: Image.Image) -> Image.Image:
-    """The frame with its EXIF orientation applied and transparency on white."""
-    frame = ImageOps.exif_transpose(frame)
-    if frame.mode in ("RGBA", "LA", "PA") or "transparency" in frame.info:
-        rgba = frame.convert("RGBA")
+def _as_docling_reads(frame: Image.Image) -> OriginalPage:
+    """The frame oriented and flattened on white, sized in points from its DPI
+    with the axes swapped when orienting it turned it, as docling sizes it."""
+    dpi = frame.info.get("dpi")
+    dpi_x, dpi_y = (72.0, 72.0) if dpi in (None, (1, 1)) else map(float, dpi)
+    oriented = ImageOps.exif_transpose(frame)
+    if oriented.size != frame.size:
+        dpi_x, dpi_y = dpi_y, dpi_x
+    if oriented.mode in ("RGBA", "LA", "PA") or "transparency" in oriented.info:
+        rgba = oriented.convert("RGBA")
         background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-        return Image.alpha_composite(background, rgba).convert("RGB")
-    return frame.convert("RGB")
+        oriented = Image.alpha_composite(background, rgba)
+    return OriginalPage(
+        oriented.convert("RGB"),
+        oriented.width * 72 / dpi_x,
+        oriented.height * 72 / dpi_y,
+    )
 
 
 def _render_pdf_pages(
     data: bytes, page_numbers: list[int], scale: float
-) -> dict[int, Image.Image]:
+) -> dict[int, OriginalPage]:
     import pypdfium2 as pdfium
 
     from haiku.rag.converters.pdf_split import PDFIUM_LOCK
@@ -57,7 +75,10 @@ def _render_pdf_pages(
         pdf = pdfium.PdfDocument(data)
         try:
             return {
-                n: pdf[n - 1].render(scale=scale).to_pil().convert("RGB")
+                n: OriginalPage(
+                    pdf[n - 1].render(scale=scale).to_pil().convert("RGB"),
+                    *pdf[n - 1].get_size(),
+                )
                 for n in page_numbers
                 if 0 < n <= len(pdf)
             }

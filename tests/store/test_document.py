@@ -374,6 +374,21 @@ async def test_get_original_loads_only_the_original(temp_db_path):
         assert await doc_repo.get_original("nonexistent-id") is None
 
 
+async def test_stored_originals_leave_the_documents_without_one(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        docs = await doc_repo.create([Document(content=c) for c in "abc"])
+        a, b, c = (d.id for d in docs)
+        assert a is not None and b is not None and c is not None
+
+        await doc_repo.store_originals({a: b"%PDF-a"})
+
+        assert await doc_repo.ids_without_original() == {b, c}
+        assert await doc_repo.ids_without_original([a, b]) == {b}
+        assert await doc_repo.ids_without_original([]) == set()
+        assert await doc_repo.get_original(a) == b"%PDF-a"
+
+
 @pytest.mark.parametrize("include_blobs", [False, True])
 async def test_document_get_by_id_docling_blobs(temp_db_path, include_blobs):
     """get_by_id leaves the docling blob out unless asked for it, and never

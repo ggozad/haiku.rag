@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
     from haiku.rag.client import HaikuRAG
     from haiku.rag.client.session import FederatedSession, SingleDatabaseSession
+    from haiku.rag.utils.images import OriginalPage
 
 
 async def search(
@@ -574,7 +575,7 @@ async def expand_context(
 
 async def _render_original(
     session: "SingleDatabaseSession", document_id: str, page_numbers: list[int]
-) -> "dict[int, PILImage.Image]":
+) -> "dict[int, OriginalPage]":
     """Render pages of the document's stored original, none when it has none."""
     from haiku.rag.utils.images import render_original_pages
 
@@ -688,16 +689,15 @@ async def visualize_chunk(
 
     images = []
     for page_no in sorted(boxes_by_page.keys()):
-        page = docling_doc.pages.get(page_no)
-        image = rendered.get(page_no)
-        if page is None or image is None:
+        page = rendered.get(page_no)
+        if page is None:
             continue
-
-        page_height = page.size.height
+        image = page.image
+        page_height = page.height
 
         # Scale factor: image pixels vs document coordinates
-        scale_x = image.width / page.size.width
-        scale_y = image.height / page.size.height
+        scale_x = image.width / page.width
+        scale_y = image.height / page.height
 
         draw = ImageDraw.Draw(image, "RGBA")
 

@@ -1,9 +1,13 @@
 import asyncio
+import hashlib
 import json
 import logging
+from collections import Counter
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import unquote
 
 import pyarrow as pa
 from docling_core.types.doc.document import DescriptionMetaField, PictureMeta
@@ -12,11 +16,13 @@ from lancedb.pydantic import LanceModel
 
 from haiku.rag.client.documents import (
     _after_convert,
+    _extract_pdf_attachments,
     _prepare_document_from_docling,
     check_source_accessible,
     chunk_document,
     create_document_from_source,
 )
+from haiku.rag.client.processing import get_extension_from_content_type_or_url
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import generate_title
 from haiku.rag.converters import get_converter
@@ -44,6 +50,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _REBUILD_BATCH_SIZE = 50
+# Original bytes per write while storing originals.
+_ORIGINALS_WRITE_BYTES = 64 << 20
+_ATTACHMENT = "#attachment="
 _ITEMS_WRITE_BYTES = 16 << 20
 _STAGING_TABLE_NAME = "chunks_rebuild_staging"
 _STAGING_MARKER_TABLE_NAME = "chunks_rebuild_marker"
@@ -115,6 +124,10 @@ async def rebuild_database(
             return
         if mode == RebuildMode.REINDEX:
             await session.store.rebuild_indexes()
+            return
+        if mode == RebuildMode.ORIGINALS:
+            async for doc_id in _rebuild_originals(session):
+                yield doc_id
             return
 
         async for doc_id in _rebuild_locked(session, client, mode):
@@ -237,6 +250,156 @@ async def _rebuild_locked(
             await session.store.vacuum()
         except Exception:
             logger.warning("Post-rebuild vacuum failed", exc_info=True)
+
+
+async def _rebuild_originals(
+    session: SingleDatabaseSession,
+) -> AsyncGenerator[str, None]:
+    """Store the original of every document of a grounded format that has
+    none, fetched from its source, when it hashes to the MD5 recorded at
+    ingest. Yields the id of each document whose original it wrote."""
+    from haiku.rag.utils.images import ORIGINAL_EXTENSIONS
+
+    if not session.config.storage.store_originals:
+        raise ValueError(
+            "storage.store_originals is off, so no original can be stored. "
+            "Turn it on to store originals."
+        )
+    missing = await session.document_repository.ids_without_original()
+    candidates = [
+        doc
+        for doc in await session.list_documents()
+        if doc.id in missing and doc.uri and _extension(doc) in ORIGINAL_EXTENSIONS
+    ]
+    # An attachment's URI is its parent's plus a fragment, so ordering by the
+    # URI's segments puts each parent right before its attachments.
+    candidates.sort(key=lambda doc: (doc.uri or "").split(_ATTACHMENT))
+
+    parents: dict[str, bytes] = {}
+    pending: dict[str, tuple[Document, bytes]] = {}
+    pending_bytes = 0
+    stored = 0
+    skipped: Counter[str] = Counter()
+    for doc in candidates:
+        assert doc.id is not None and doc.uri is not None
+        parents = {
+            uri: body
+            for uri, body in parents.items()
+            if doc.uri.startswith(uri + _ATTACHMENT)
+        }
+        body = await _source_bytes(session, doc, parents)
+        if body is None:
+            reason = "source unavailable"
+        else:
+            parents[doc.uri] = body
+            matches = hashlib.md5(
+                body, usedforsecurity=False
+            ).hexdigest() == doc.metadata.get("md5")
+            reason = None if matches else "MD5 differs"
+        if reason is not None:
+            skipped[reason] += 1
+            logger.warning("No original stored for %s: %s", doc.uri, reason)
+            continue
+        assert body is not None
+        pending[doc.id] = (doc, body)
+        pending_bytes += len(body)
+        if pending_bytes >= _ORIGINALS_WRITE_BYTES:
+            for doc_id in await _write_originals(session, pending):
+                stored += 1
+                yield doc_id
+            pending, pending_bytes = {}, 0
+    for doc_id in await _write_originals(session, pending):
+        stored += 1
+        yield doc_id
+    logger.info(
+        "Originals stored: %d. Skipped: %s",
+        stored,
+        ", ".join(f"{reason} {n}" for reason, n in sorted(skipped.items())) or "none",
+    )
+
+
+def _extension(doc: Document) -> str:
+    """The extension a document was converted as."""
+    if doc.metadata.get("parent_uri"):
+        name = unquote((doc.uri or "").rsplit(_ATTACHMENT, 1)[-1])
+        return Path(name).suffix.lower()
+    return get_extension_from_content_type_or_url(
+        doc.uri or "", doc.metadata.get("content_type") or ""
+    )
+
+
+async def _source_bytes(
+    session: SingleDatabaseSession, doc: Document, parents: dict[str, bytes]
+) -> bytes | None:
+    """The document's source bytes: fetched for a top-level document, taken
+    from the parent's bytes for an attachment. None when they are unavailable."""
+    from haiku.rag.sources import resolve_adhoc_fetcher
+
+    assert doc.uri is not None
+    parent_uri = doc.metadata.get("parent_uri")
+    if parent_uri is None:
+        if not check_source_accessible(doc.uri):
+            return None
+        try:
+            fetcher = resolve_adhoc_fetcher(doc.uri)
+        except Exception as e:
+            logger.warning("No adapter fetches %s: %s", doc.uri, e)
+            return None
+        try:
+            return (await fetcher.fetch(doc.uri)).body
+        except Exception as e:
+            logger.warning("Fetching %s failed: %s", doc.uri, e)
+            return None
+        finally:
+            await fetcher.aclose()
+
+    parent_body = parents.get(parent_uri)
+    if parent_body is None:
+        parent = await session.get_document_by_uri(parent_uri)
+        if parent is None or parent.id is None:
+            return None
+        parent_body = await session.document_repository.get_original(parent.id)
+        if parent_body is None:
+            return None
+        parents[parent_uri] = parent_body
+    attachments = await asyncio.to_thread(
+        _extract_pdf_attachments,
+        parent_body,
+        parent_uri,
+        depth=parent_uri.count(_ATTACHMENT),
+    )
+    found = (attachments or {}).get(doc.uri)
+    return found[1] if found else None
+
+
+async def _write_originals(
+    session: SingleDatabaseSession, pending: dict[str, tuple[Document, bytes]]
+) -> list[str]:
+    """Store the pending originals of documents still without one and unchanged
+    since they were listed. Returns the ids written."""
+    from haiku.rag.utils.sql import build_document_id_filter
+
+    if not pending:
+        return []
+    repository = session.document_repository
+    async with session.store.write_transaction():
+        ids = list(pending)
+        still_missing = await repository.ids_without_original(ids)
+        listed = {
+            doc.id: doc.updated_at
+            for doc in await session.list_documents(
+                filter=build_document_id_filter(ids)
+            )
+        }
+        originals = {
+            doc_id: body
+            for doc_id, (doc, body) in pending.items()
+            if doc_id in still_missing and listed.get(doc_id) == doc.updated_at
+        }
+        await repository.store_originals(originals)
+    if originals:
+        session.record_write()
+    return list(originals)
 
 
 async def _set_embedder(session: SingleDatabaseSession) -> None:

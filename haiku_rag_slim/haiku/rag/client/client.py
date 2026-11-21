@@ -114,6 +114,8 @@ class RebuildMode(Enum):
     SET_EMBEDDER = "set_embedder"  # Adopt the current embedder identity without
     # re-embedding, when the vector dimension is unchanged.
     REINDEX = "reindex"  # Rebuild every declared index, rewriting no rows.
+    ORIGINALS = "originals"  # Store the original file of documents that lack one,
+    # fetched from their source when it still hashes to the ingested MD5.
 
 
 class HaikuRAG:

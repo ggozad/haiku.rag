@@ -396,6 +396,18 @@ async def test_rebuild_reindex_runs_on_an_empty_database(app, client):
     assert "Indexes rebuilt" in out(app)
 
 
+async def test_rebuild_originals_reports_how_many_it_stored(app, client):
+    async def two_documents(mode):
+        yield "doc-1"
+        yield "doc-2"
+
+    client.rebuild_database = two_documents
+
+    await app.rebuild(mode=RebuildMode.ORIGINALS)
+
+    assert "Stored the original of 2 documents" in out(app)
+
+
 async def test_rebuild_reports_an_empty_database(app, client):
     client.list_documents.return_value = []
 

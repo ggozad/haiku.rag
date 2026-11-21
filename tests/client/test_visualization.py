@@ -351,8 +351,10 @@ async def test_visualize_chunk_skips_pages_the_original_lacks(temp_db_path):
     assert len(images) == 1
 
 
-async def test_visualize_chunk_skips_box_on_unstored_page(temp_db_path):
-    """Bounding boxes on unregistered pages are ignored."""
+async def test_visualize_chunk_draws_on_a_page_the_structure_does_not_list(
+    temp_db_path,
+):
+    """The original's pages, not the structure's, decide what renders."""
     from docling_core.types.doc.base import BoundingBox, Size
     from docling_core.types.doc.document import ProvenanceItem
 
@@ -387,7 +389,37 @@ async def test_visualize_chunk_skips_box_on_unstored_page(temp_db_path):
         )
         stored = await client.chunk_repository.get_by_document_id(doc.id)
 
-        assert await client.visualize_chunk(stored[0]) == []
+        assert len(await client.visualize_chunk(stored[0])) == 1
+
+
+async def test_visualize_chunk_sizes_pages_from_the_original(temp_db_path):
+    """A structure without pages, as migrated, grounds on its original."""
+    docling_doc = _bbox_doc()
+    docling_doc.pages = {}
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={
+                "doc_item_refs": ["#/texts/0"],
+                "page_numbers": [1],
+                "labels": ["paragraph"],
+            },
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            docling_doc, chunks, uri="test://no-pages", original=_blank_pdf(1)
+        )
+        stored = await client.chunk_repository.get_by_document_id(doc.id)
+
+        [image] = await client.visualize_chunk(stored[0])
+
+    # 2 px per point, top-left origin: the box spans y = 184 .. 284.
+    assert image.size == (1224, 1584)
+    assert image.getpixel((600, 234)) != image.getpixel((600, 60))
 
 
 def _doc_without_provenance():

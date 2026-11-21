@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
@@ -11,12 +12,21 @@ from PIL import Image
 from pydantic_ai.embeddings import TestEmbeddingModel
 
 from haiku.rag.client import DocumentImport, HaikuRAG, RebuildMode, documents
+from haiku.rag.client.rebuild import (
+    _STAGING_MARKER_TABLE_NAME,
+    _STAGING_TABLE_NAME,
+    IncompleteRebuildRecord,
+    _incomplete_rebuild,
+    _mark_phase1_complete,
+    _populate_staging_table,
+    _record_incomplete_rebuild,
+)
 from haiku.rag.config import AppConfig
 from haiku.rag.hooks import Hook, IngestRequest
 from haiku.rag.sources.base import FetchResult
 from haiku.rag.sources.fs import FSSource
 from haiku.rag.store.models.chunk import Chunk
-from tests.conftest import build_pdf, writing
+from tests.conftest import build_pdf, capture_logs, serving_url, writing
 
 
 def _md5(data: bytes) -> str:
@@ -408,3 +418,334 @@ async def test_an_original_without_a_new_structure_is_refused(temp_db_path):
             await client.update_document(document_id, original=_png())
 
         assert await _stored(client, document_id) == kept
+
+
+def _config(store: bool) -> AppConfig:
+    config = AppConfig()
+    config.storage.store_originals = store
+    return config
+
+
+async def _ingest(db: Path, *paths: Path) -> list[str]:
+    """Ingest without storing originals, as a database from before them."""
+    async with _client(db, _config(False)) as client:
+        ids = []
+        for path in paths:
+            doc = await client.create_document_from_source(path)
+            assert not isinstance(doc, list) and doc.id is not None
+            ids.append(doc.id)
+        return ids
+
+
+async def _backfill(client: HaikuRAG) -> list[str]:
+    return [i async for i in client.rebuild_database(mode=RebuildMode.ORIGINALS)]
+
+
+async def _by_uri(client: HaikuRAG) -> dict[str, str]:
+    return {d.uri: d.id for d in await client.list_documents() if d.uri and d.id}
+
+
+@pytest.mark.parametrize(
+    ("name", "body"), [("scan.pdf", build_pdf([])), ("scan.png", _png())]
+)
+async def test_a_document_regains_its_original_and_renders(
+    temp_db_path, tmp_path, converted, name, body
+):
+    path = tmp_path / name
+    path.write_bytes(body)
+    [doc_id] = await _ingest(temp_db_path, path)
+
+    async with _client(temp_db_path) as client:
+        assert await _backfill(client) == [doc_id]
+
+        assert await _stored(client, doc_id) == (body, _md5(body))
+        [chunk] = await client.chunk_repository.get_by_document_id(doc_id)
+        assert len(await client.visualize_chunk(chunk)) == 1
+
+
+async def test_a_structure_without_pages_renders_with_its_original(
+    temp_db_path, tmp_path, monkeypatch
+):
+    from haiku.rag.client import documents
+
+    async def without_pages(config, source, *, format="md", source_uri=None):
+        doc = _paged_doc()
+        doc.pages = {}
+        return doc
+
+    monkeypatch.setattr(documents, "convert", without_pages)
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(build_pdf([]))
+    [doc_id] = await _ingest(temp_db_path, path)
+
+    async with _client(temp_db_path) as client:
+        await _backfill(client)
+
+        [chunk] = await client.chunk_repository.get_by_document_id(doc_id)
+        assert len(await client.visualize_chunk(chunk)) == 1
+
+
+async def test_attachments_two_levels_deep_regain_their_originals(
+    temp_db_path, tmp_path, converted
+):
+    leaf = _png()
+    inner = build_pdf([("leaf.png", leaf)])
+    path = tmp_path / "outer.pdf"
+    path.write_bytes(build_pdf([("inner.pdf", inner)]))
+    await _ingest(temp_db_path, path)
+
+    async with _client(temp_db_path) as client:
+        ids = await _by_uri(client)
+        assert len(ids) == 3
+        stored = set(await _backfill(client))
+
+        assert stored == set(ids.values())
+        inner_uri = f"{path.as_uri()}#attachment=inner.pdf"
+        leaf_uri = f"{inner_uri}#attachment=leaf.png"
+        assert await _stored(client, ids[inner_uri]) == (inner, _md5(inner))
+        assert await _stored(client, ids[leaf_uri]) == (leaf, _md5(leaf))
+
+
+async def test_a_sibling_sorting_between_a_parent_and_its_attachment(
+    temp_db_path, converted
+):
+    """`!` sorts before `#`, so in plain URI order the sibling comes between."""
+    body = build_pdf([("leaf.png", _png())])
+    parent, sibling = "https://example.com/a.pdf", "https://example.com/a.pdf!b.pdf"
+    with serving_url(body, "application/pdf"):
+        async with _client(temp_db_path, _config(False)) as client:
+            await client.create_document_from_source(parent)
+            await client.create_document_from_source(sibling)
+            ids = await _by_uri(client)
+        assert f"{parent}#attachment=leaf.png" in ids
+
+        async with _client(temp_db_path) as client:
+            assert set(await _backfill(client)) == set(ids.values())
+
+
+async def test_an_attachment_is_filled_from_its_parents_stored_original(
+    temp_db_path, tmp_path, converted
+):
+    leaf = _png()
+    path = tmp_path / "outer.pdf"
+    path.write_bytes(build_pdf([("leaf.png", leaf)]))
+    async with _client(temp_db_path) as client:
+        await client.create_document_from_source(path)
+        leaf_id = (await _by_uri(client))[f"{path.as_uri()}#attachment=leaf.png"]
+        await client.store.documents_table.update(
+            {"original": None, "original_md5": None}, where=f"id = '{leaf_id}'"
+        )
+    path.unlink()
+
+    async with _client(temp_db_path) as client:
+        assert await _backfill(client) == [leaf_id]
+
+        assert await _stored(client, leaf_id) == (leaf, _md5(leaf))
+
+
+@pytest.mark.parametrize("change", ["edited", "deleted"])
+async def test_a_source_that_is_not_the_ingested_file_is_skipped(
+    temp_db_path, tmp_path, converted, change
+):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(build_pdf([]))
+    [doc_id] = await _ingest(temp_db_path, path)
+    if change == "edited":
+        path.write_bytes(build_pdf([("note.png", _png())]))
+    else:
+        path.unlink()
+
+    logger = logging.getLogger("haiku.rag")
+    level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        with capture_logs(logger, logging.INFO) as records:
+            async with _client(temp_db_path) as client:
+                assert await _backfill(client) == []
+                assert await _stored(client, doc_id) == (None, None)
+    finally:
+        logger.setLevel(level)
+
+    reason = "MD5 differs" if change == "edited" else "source unavailable"
+    messages = [r.getMessage() for r in records]
+    assert any(path.as_uri() in m and reason in m for m in messages)
+    assert any(f"{reason} 1" in m for m in messages)
+
+
+async def test_only_documents_without_an_original_of_a_grounded_format_are_fetched(
+    temp_db_path, tmp_path, converted, monkeypatch
+):
+    pdf = tmp_path / "kept.pdf"
+    pdf.write_bytes(build_pdf([]))
+    slides = tmp_path / "slides.pptx"
+    slides.write_bytes(b"not really a deck")
+    async with _client(temp_db_path) as client:
+        await client.create_document_from_source(pdf)
+    await _ingest(temp_db_path, slides)
+    fetched = []
+    fetch = FSSource.fetch
+
+    async def spy(self, uri):
+        fetched.append(uri)
+        return await fetch(self, uri)
+
+    monkeypatch.setattr(FSSource, "fetch", spy)
+
+    async with _client(temp_db_path) as client:
+        assert await _backfill(client) == []
+
+    assert fetched == []
+
+
+async def test_a_document_updated_during_the_fetch_is_left_alone(
+    temp_db_path, tmp_path, converted, monkeypatch
+):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(build_pdf([]))
+    [doc_id] = await _ingest(temp_db_path, path)
+
+    async with _client(temp_db_path) as client:
+        fetch = FSSource.fetch
+
+        async def update_meanwhile(self, uri):
+            doc = await client.get_document_by_id(doc_id)
+            assert doc is not None
+            await writing(client).document_repository.update_meta(doc)
+            return await fetch(self, uri)
+
+        monkeypatch.setattr(FSSource, "fetch", update_meanwhile)
+
+        assert await _backfill(client) == []
+        assert await _stored(client, doc_id) == (None, None)
+
+
+async def test_a_rerun_stores_nothing_more(temp_db_path, tmp_path, converted):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(build_pdf([]))
+    [doc_id] = await _ingest(temp_db_path, path)
+
+    async with _client(temp_db_path) as client:
+        assert await _backfill(client) == [doc_id]
+        assert await _backfill(client) == []
+
+
+async def test_the_backfill_leaves_an_interrupted_rebuild_alone(
+    temp_db_path, tmp_path, converted
+):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(build_pdf([]))
+    await _ingest(temp_db_path, path)
+    record = IncompleteRebuildRecord(mode="embed_only", vector_index=False)
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+
+    async with _client(temp_db_path, config) as client:
+        session = writing(client)
+        await _record_incomplete_rebuild(session, record)
+        await _populate_staging_table(session)
+        await _mark_phase1_complete(session)
+        staging = await session.store.db.open_table(_STAGING_TABLE_NAME)
+        staged = await staging.count_rows()
+        settings = session.store.stored_settings
+        versions = await session.store.current_table_versions()
+
+        await _backfill(client)
+
+        assert await _incomplete_rebuild(session) == record
+        tables = (await session.store.db.list_tables()).tables
+        assert {_STAGING_TABLE_NAME, _STAGING_MARKER_TABLE_NAME} <= set(tables)
+        assert await staging.count_rows() == staged > 0
+        assert session.store.stored_settings == settings
+        after = await session.store.current_table_versions()
+        assert {n: v for n, v in after.items() if n != "documents"} == {
+            n: v for n, v in versions.items() if n != "documents"
+        }
+
+
+@pytest.mark.parametrize("failing_step", ["adapter", "fetch"])
+async def test_a_source_that_fails_is_skipped(
+    temp_db_path, tmp_path, converted, monkeypatch, failing_step
+):
+    from haiku.rag import sources
+
+    failing, working = tmp_path / "a.pdf", tmp_path / "b.pdf"
+    failing.write_bytes(build_pdf([]))
+    working.write_bytes(build_pdf([("x.png", _png())]))
+    failing_id, working_id = await _ingest(temp_db_path, failing, working)
+    resolve, fetch = sources.resolve_adhoc_fetcher, FSSource.fetch
+
+    def resolve_or_fail(uri, **kwargs):
+        if failing_step == "adapter" and uri == failing.as_uri():
+            raise ImportError("no adapter")
+        return resolve(uri, **kwargs)
+
+    async def fetch_or_fail(self, uri):
+        if failing_step == "fetch" and uri == failing.as_uri():
+            raise OSError("unreadable")
+        return await fetch(self, uri)
+
+    monkeypatch.setattr(sources, "resolve_adhoc_fetcher", resolve_or_fail)
+    monkeypatch.setattr(FSSource, "fetch", fetch_or_fail)
+
+    async with _client(temp_db_path) as client:
+        stored = await _backfill(client)
+
+    assert working_id in stored and failing_id not in stored
+
+
+async def test_an_attachment_of_an_unavailable_parent_is_skipped(
+    temp_db_path, tmp_path, converted
+):
+    path = tmp_path / "outer.pdf"
+    path.write_bytes(build_pdf([("leaf.png", _png())]))
+    await _ingest(temp_db_path, path)
+    path.unlink()
+
+    async with _client(temp_db_path) as client:
+        assert await _backfill(client) == []
+
+
+async def test_an_attachment_whose_parent_is_not_stored_is_skipped(
+    temp_db_path, tmp_path, converted
+):
+    path, other = tmp_path / "outer.pdf", tmp_path / "other.png"
+    path.write_bytes(build_pdf([("leaf.png", _png())]))
+    other.write_bytes(_png())
+    parent_id, other_id = await _ingest(temp_db_path, path, other)
+    async with _client(temp_db_path) as client:
+        await client.store.documents_table.delete(f"id = '{parent_id}'")
+        await client.store.document_meta_table.delete(f"id = '{parent_id}'")
+
+        assert await _backfill(client) == [other_id]
+
+
+async def test_originals_are_written_in_batches(
+    temp_db_path, tmp_path, converted, monkeypatch
+):
+    from haiku.rag.client import rebuild
+    from haiku.rag.store.repositories.document import DocumentRepository
+
+    paths = [tmp_path / "a.pdf", tmp_path / "b.png"]
+    paths[0].write_bytes(build_pdf([]))
+    paths[1].write_bytes(_png())
+    ids = await _ingest(temp_db_path, *paths)
+    monkeypatch.setattr(rebuild, "_ORIGINALS_WRITE_BYTES", 1)
+    writes: list[list[str]] = []
+    store_originals = DocumentRepository.store_originals
+
+    async def record(self, originals):
+        writes.append(list(originals))
+        await store_originals(self, originals)
+
+    monkeypatch.setattr(DocumentRepository, "store_originals", record)
+
+    async with _client(temp_db_path) as client:
+        assert await _backfill(client) == ids
+
+    assert writes == [[ids[0]], [ids[1]]]
+
+
+async def test_the_backfill_refuses_when_originals_are_not_stored(temp_db_path):
+    async with _client(temp_db_path, _config(False)) as client:
+        with pytest.raises(ValueError, match="store_originals"):
+            await _backfill(client)
