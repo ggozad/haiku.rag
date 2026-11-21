@@ -287,12 +287,16 @@ class TestVisualizationRouting:
         async with HaikuRAG(config=config) as rag:
             assert len(await rag.visualize_chunk(chunk, source="beta")) == 1
             assert await rag.visualize_chunk(chunk, source="alpha") == []
+            grounding = await rag.chunk_grounding(chunk, source="beta")
+            assert grounding is not None and grounding.document_id == document.id
+            assert await rag.chunk_grounding(chunk, source="alpha") is None
 
-    async def test_visualizing_without_a_source_is_refused(self, tmp_path):
+    @pytest.mark.parametrize("method", ["visualize_chunk", "chunk_grounding"])
+    async def test_visualizing_without_a_source_is_refused(self, tmp_path, method):
         """Federating, nothing in a chunk says which database drew it."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(AmbiguousDatabaseError, match="source"):
-                await rag.visualize_chunk(Chunk(content="x", document_id="doc-1"))
+            with pytest.raises(AmbiguousDatabaseError, match=f"{method} needs"):
+                await getattr(rag, method)(Chunk(content="x", document_id="doc-1"))

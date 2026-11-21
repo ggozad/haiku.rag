@@ -5,6 +5,11 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DocumentView, { type DocumentState, OPENING } from "./DocumentView";
 
+const openPdf = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/pdf", () => ({ openPdf }));
+
+const letter = (page: number) => ({ page, width: 612, height: 792 });
+
 // Holds the view's state as the page's URL does.
 function Stateful({
 	source,
@@ -50,11 +55,29 @@ const chunk = (n: number) => ({
 let requested: string[];
 let scrolled: string[];
 
-function serve(documentId: string, metadata: Record<string, unknown> = {}) {
+function serve(
+	documentId: string,
+	metadata: Record<string, unknown> = {},
+	original: { md5: string; pdf: boolean } | null = { md5: "m", pdf: true },
+) {
 	return vi.fn(async (url: string) => {
 		requested.push(url);
 		const { pathname, searchParams } = new URL(url, "http://app");
+		if (pathname.endsWith("/boxes"))
+			return Response.json({
+				source: "alpha",
+				document_id: documentId,
+				original,
+				pages: [
+					{
+						...letter(3),
+						boxes: [{ l: 61.2, t: 712.8, r: 306, b: 633.6, matched: true }],
+					},
+				],
+				message: null,
+			});
 		const path = pathname.replace(/^.*\/documents\/[^/]+/, "");
+		if (path === "/original") return new Response(new Uint8Array([1]));
 		const answers: Record<string, unknown> = {
 			"": {
 				id: documentId,
@@ -63,6 +86,8 @@ function serve(documentId: string, metadata: Record<string, unknown> = {}) {
 				metadata,
 				created_at: "t",
 				updated_at: "t",
+				original,
+				pages: original ? [letter(1), letter(2), letter(3)] : [],
 			},
 			"/items": {
 				items: [item(0, "section_header"), item(1), item(2, "text", "")],
@@ -86,7 +111,9 @@ function serve(documentId: string, metadata: Record<string, unknown> = {}) {
 					chunk(n + Number(searchParams.get("offset"))),
 				),
 			},
-			"/pages": { pages: [{ page: 3, chunk_ids: ["c7"] }] },
+			"/pages": {
+				pages: [{ page: 3, chunk_ids: ["c7"] }],
+			},
 			"/pictures": {
 				pictures: [
 					{
@@ -107,8 +134,15 @@ beforeEach(() => {
 	requested = [];
 	scrolled = [];
 	Element.prototype.scrollIntoView = function (this: Element) {
-		scrolled.push(this.id);
+		scrolled.push(this.id || (this.getAttribute("aria-label") ?? ""));
 	};
+	openPdf.mockReset().mockImplementation(async () => ({
+		getPage: async () => ({
+			getViewport: () => ({ width: 612, height: 792 }),
+			render: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+		}),
+		loadingTask: { destroy: () => {} },
+	}));
 	vi.stubGlobal("fetch", serve("d1"));
 });
 
@@ -162,16 +196,63 @@ describe("DocumentView", () => {
 		expect(opened).toHaveBeenCalledWith("c50");
 	});
 
-	it("draws a page with the chunks on it", async () => {
+	it("shows the original's pages and draws a page's chunks on it", async () => {
 		const opened = vi.fn();
 		const user = userEvent.setup();
 		render(<Stateful source="alpha" documentId="d1" onOpenChunk={opened} />);
-		await user.click(screen.getByRole("tab", { name: "Pages" }));
-		await user.click(await screen.findByRole("button", { name: "3" }));
-		const page = screen.getByAltText("Page 3 with its chunks drawn");
-		expect(page.getAttribute("src")).toContain("/documents/d1/pages/3");
+		await user.click(screen.getByRole("tab", { name: "Original document" }));
+		await screen.findByRole("img", { name: "Page 1" });
+		expect(document.querySelectorAll("[data-matched]")).toHaveLength(0);
+
+		await user.click(screen.getByRole("button", { name: "3" }));
+		const page = screen.getByRole("img", { name: "Page 3" });
+		await waitFor(() =>
+			expect(page.querySelectorAll("[data-matched=true]")).toHaveLength(1),
+		);
+		expect(requested).toContain(
+			"/api/backend/api/inspect/alpha/documents/d1/pages/3/boxes",
+		);
+		expect(scrolled).toContain("Page 3");
 		await user.click(screen.getByText("c7"));
 		expect(opened).toHaveBeenCalledWith("c7");
+	});
+
+	it("reads the document again when the boxes are drawn on a newer original", async () => {
+		const served = serve("d1");
+		let documentReads = 0;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				const answer = await served(url);
+				if (!new URL(url, "http://app").pathname.endsWith("/documents/d1"))
+					return answer;
+				const read = await answer.json();
+				return Response.json(
+					documentReads++
+						? read
+						: { ...read, original: { md5: "old", pdf: true } },
+				);
+			}),
+		);
+		const user = userEvent.setup();
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
+		await user.click(screen.getByRole("tab", { name: "Original document" }));
+		await user.click(await screen.findByRole("button", { name: "3" }));
+		const page = screen.getByRole("img", { name: "Page 3" });
+		await waitFor(() =>
+			expect(page.querySelectorAll("[data-matched=true]")).toHaveLength(1),
+		);
+		expect(documentReads).toBe(2);
+	});
+
+	it("says when a document has no original to show its pages from", async () => {
+		vi.stubGlobal("fetch", serve("d1", {}, null));
+		const user = userEvent.setup();
+		render(<Stateful source="alpha" documentId="d1" onOpenChunk={() => {}} />);
+		await user.click(screen.getByRole("tab", { name: "Original document" }));
+		await screen.findByText(
+			"This document has no stored original to show its pages from.",
+		);
 	});
 
 	it("lists the pictures, saying when one has no caption", async () => {
@@ -201,7 +282,9 @@ describe("DocumentView", () => {
 		shown.unmount();
 
 		shown = view({ tab: "pages", page: 3 });
-		await screen.findByAltText("Page 3 with its chunks drawn");
+		await screen.findByRole("img", { name: "Page 3" });
+		await waitFor(() => expect(scrolled).toEqual(["Page 3"]));
+		scrolled = [];
 		shown.unmount();
 
 		view({ tab: "content", item: 2 });

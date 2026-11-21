@@ -4,6 +4,7 @@ import { Globe } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { publicUrl, readableUri } from "@/lib/format";
+import type { Original, PageSize } from "@/lib/grounding";
 import {
 	blocksOf,
 	editorRows,
@@ -61,7 +62,11 @@ export default function DocumentView({
 	// The ingester's answer to a save: the backend's read can show the old
 	// document for up to read_consistency_interval_seconds.
 	const [saved, setSaved] = useState<EditableDocument | null>(null);
-	const read = useJson<EditableDocument>(base);
+	// Bumped when the original changed after the document was read.
+	const [reads, setReads] = useState(0);
+	const read = useJson<
+		EditableDocument & { original: Original | null; pages: PageSize[] }
+	>(base, reads);
 	const doc = { data: saved ?? read.data, error: read.error };
 	const items = useJson<{ items: Item[] }>(`${base}/items`);
 	const outline = useJson<{ outline: OutlineNode[] }>(`${base}/outline`);
@@ -70,6 +75,7 @@ export default function DocumentView({
 	);
 	const pages = useJson<{ pages: PageEntry[] }>(
 		tab === "pages" ? `${base}/pages` : null,
+		reads,
 	);
 	const pictureList = useJson<{ pictures: Picture[] }>(
 		tab === "pictures" ? `${base}/pictures` : null,
@@ -179,7 +185,7 @@ export default function DocumentView({
 					<TabsTrigger value="content">Content</TabsTrigger>
 					<TabsTrigger value="outline">Outline</TabsTrigger>
 					<TabsTrigger value="chunks">Chunks</TabsTrigger>
-					<TabsTrigger value="pages">Pages</TabsTrigger>
+					<TabsTrigger value="pages">Original document</TabsTrigger>
 					<TabsTrigger value="pictures">Pictures</TabsTrigger>
 				</TabsList>
 				<TabsContent
@@ -223,12 +229,17 @@ export default function DocumentView({
 					className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
 				>
 					<PagesTab
-						pages={pages.data?.pages}
+						source={source}
+						documentId={documentId}
+						original={read.data?.original}
+						pages={read.data?.pages ?? []}
+						entries={pages.data?.pages}
 						error={pages.error}
 						page={page}
-						pageUrl={(n) => `${base}/pages/${n}`}
+						reads={reads}
 						onPage={(next) => onState({ page: next })}
 						onOpenChunk={onOpenChunk}
+						onStale={() => setReads((n) => n + 1)}
 					/>
 				</TabsContent>
 				<TabsContent

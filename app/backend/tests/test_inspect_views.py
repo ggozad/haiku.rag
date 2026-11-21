@@ -2,7 +2,6 @@ import base64
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from PIL import Image
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.store.models import Chunk
@@ -97,7 +96,7 @@ async def two_pages(seeded):
     return document.id, [c.id for c in chunks]
 
 
-async def test_pages_list_their_chunks_and_draw_them(client, two_pages):
+async def test_pages_list_their_chunks_and_the_items_they_hold(client, two_pages):
     document_id, (first, picture) = two_pages
     base = f"/api/inspect/alpha/documents/{document_id}/pages"
     pages = (await client.get(base)).json()["pages"]
@@ -105,68 +104,20 @@ async def test_pages_list_their_chunks_and_draw_them(client, two_pages):
         {"page": 1, "chunk_ids": [first]},
         {"page": 2, "chunk_ids": [picture]},
     ]
-    for page in (1, 2):
-        image = await client.get(f"{base}/{page}")
-        assert image.headers["content-type"] == "image/png"
-        assert image.content.startswith(b"\x89PNG")
-    assert (await client.get(f"{base}/3")).status_code == 404
-    assert (await client.get(f"{base}/one")).status_code == 400
 
 
-async def test_an_unchunked_page_is_shown_plain_and_without_its_image_is_not_found(
-    client, two_pages, seeded, monkeypatch
-):
-    from haiku.rag.store.repositories.document import DocumentRepository
-
+async def test_a_page_draws_the_boxes_of_every_chunk_on_it(client, two_pages):
     document_id, (first, picture) = two_pages
-    config, _ = seeded
-    async with HaikuRAG(config=config, sources=["alpha"]) as rag:
-        await rag.store.chunks_table.delete(f"id = '{picture}'")
     base = f"/api/inspect/alpha/documents/{document_id}/pages"
-    pages = (await client.get(base)).json()["pages"]
-    assert pages == [{"page": 1, "chunk_ids": [first]}, {"page": 2, "chunk_ids": []}]
-    image = await client.get(f"{base}/2")
-    assert image.headers["content-type"] == "image/png"
-    assert image.content.startswith(b"\x89PNG")
 
-    async def no_original(self, document_id):
-        return None
+    second = (await client.get(f"{base}/2/boxes")).json()
+    assert second["document_id"] == document_id
+    assert [page["page"] for page in second["pages"]] == [2]
+    assert all(box["matched"] for box in second["pages"][0]["boxes"])
 
-    monkeypatch.setattr(DocumentRepository, "get_original", no_original)
-    assert (await client.get(f"{base}/2")).status_code == 404
-
-
-async def test_an_unchunked_page_renders_from_the_original(client, seeded):
-    from io import BytesIO
-
-    import pypdfium2 as pdfium
-    from docling_core.types.doc.base import BoundingBox, Size
-    from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
-    from docling_core.types.doc.labels import DocItemLabel
-
-    pdf = pdfium.PdfDocument.new()
-    pdf.new_page(300, 200)
-    buffer = BytesIO()
-    pdf.save(buffer)
-    doc = DoclingDocument(name="original only")
-    doc.add_page(page_no=1, size=Size(width=300.0, height=200.0))
-    doc.add_text(
-        label=DocItemLabel.PARAGRAPH,
-        text="unchunked",
-        prov=ProvenanceItem(
-            page_no=1, bbox=BoundingBox(l=10, t=190, r=290, b=170), charspan=(0, 9)
-        ),
-    )
-
-    config, _ = seeded
-    async with HaikuRAG(config=config, sources=["alpha"]) as rag:
-        document = await rag.import_document(
-            doc, [], uri="test://alpha/original-only", original=buffer.getvalue()
-        )
-
-    response = await client.get(f"/api/inspect/alpha/documents/{document.id}/pages/1")
-    assert response.headers["content-type"] == "image/png"
-    assert Image.open(BytesIO(response.content)).size == (600, 400)
+    empty = (await client.get(f"{base}/3/boxes")).json()
+    assert (empty["pages"], empty["message"]) == ([], "No visual grounding available")
+    assert (await client.get(f"{base}/two/boxes")).status_code == 400
 
 
 async def test_pictures_carry_caption_description_and_chunk(client, two_pages):
@@ -219,19 +170,6 @@ async def test_similar_chunks_leave_the_chunk_out(
     assert all(row["source"] == "alpha" for row in body["results"])
     missing = await client.get("/api/inspect/alpha/chunks/nope/similar")
     assert missing.status_code == 404
-
-
-async def test_a_page_without_an_image_says_so(client, seeded, monkeypatch):
-    _, ids = seeded
-
-    async def no_images(self, *args, **kwargs):
-        return []
-
-    monkeypatch.setattr(HaikuRAG, "visualize_chunk", no_images)
-    response = await client.get(
-        f"/api/inspect/beta/documents/{ids['beta']['document_id']}/pages/1"
-    )
-    assert response.status_code == 404
 
 
 async def test_search_spans_the_selected_databases(client, query_embedding):

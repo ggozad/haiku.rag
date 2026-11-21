@@ -2,10 +2,14 @@ import asyncio
 import base64
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from functools import cache
 from io import BytesIO
 from pathlib import Path
 
 import httpx
+from docling_core.types.doc.base import BoundingBox, Size
+from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
+from docling_core.types.doc.labels import DocItemLabel
 from PIL import Image
 from starlette.applications import Starlette
 
@@ -19,8 +23,12 @@ def image_bytes(fmt: str, width: int = 8, height: int = 8) -> bytes:
     return buffer.getvalue()
 
 
+@cache
 def letter_pdf(pages: int) -> bytes:
-    """A PDF of blank letter-size pages, the original of a seeded document."""
+    """A PDF of blank letter-size pages, the original of a seeded document.
+
+    Cached: pdfium writes a new file ID on every save, and tests compare MD5s.
+    """
     import pypdfium2 as pdfium
 
     pdf = pdfium.PdfDocument.new()
@@ -61,3 +69,19 @@ async def settled(client: httpx.AsyncClient, source: str, path: str = "") -> dic
             return run
         await asyncio.sleep(0.02)
     raise AssertionError("the job did not settle")
+
+
+def paged_document(text: str) -> DoclingDocument:
+    """A one-page document whose only item has a bounding box to draw."""
+    doc = DoclingDocument(name=text)
+    doc.add_page(page_no=1, size=Size(width=612.0, height=792.0))
+    doc.add_text(
+        label=DocItemLabel.PARAGRAPH,
+        text=text,
+        prov=ProvenanceItem(
+            page_no=1,
+            bbox=BoundingBox(l=50, t=700, r=550, b=650),
+            charspan=(0, len(text)),
+        ),
+    )
+    return doc

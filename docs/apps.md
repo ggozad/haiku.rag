@@ -137,11 +137,26 @@ The backend runs as uid 1001. A `sessions` volume created by a backend that ran 
 docker compose run --rm --user root backend chown -R 1001:1001 /sessions
 ```
 
+### Database maintenance
+
+`haiku-rag` maintenance commands, such as `migrate`, `rebuild --originals`, `vacuum` and `create-index`, run in the ingester container. It is the one service that mounts `DATA_DIR` writable, and it mounts the sources at `/docs`, the paths the stored URIs name, which `rebuild --originals` fetches again. Stop the backend and the ingester first: `migrate` needs every other process using the database stopped. With the database `haiku.rag` of the example configuration:
+
+```bash
+docker compose stop backend ingester
+docker compose run --rm --no-deps ingester \
+  haiku-rag --config /app/config/haiku.rag.yaml --db-name haiku.rag migrate
+docker compose run --rm --no-deps ingester \
+  haiku-rag --config /app/config/haiku.rag.yaml --db-name haiku.rag rebuild --originals
+docker compose start ingester backend
+```
+
+With the development compose file, add `-f docker-compose.dev.yml` to each command.
+
 ## Ask questions
 
 Type a question in Chat and press Enter. Shift+Enter starts a new line, and the stop button ends an answer early. The agent's steps show while it works: its searches, and any program it wrote to count or compare across documents. Once the answer starts, they fold into one line that counts them. Click the line to open them, or its source count to reach the sources. Below the answer, a badge says whether the answer is grounded in its sources, and the sources follow.
 
-Open a source to read the cited passage. For a document with page images, such as a PDF, "View in document" shows the passage highlighted on its pages, scanned pages included. "Open in the inspector" opens the passage's chunk in a new tab. A document whose metadata carries an http(s) `url` gets a link to it, named by its host.
+Open a source to read the cited passage. For a document with a stored original, a PDF or an image, "View in document" shows the passage highlighted on its pages. "Open in the inspector" opens the passage's chunk in a new tab. A document whose metadata carries an http(s) `url` gets a link to it, named by its host.
 
 To ask about particular documents, choose them with the "All documents" filter above the conversation. With a vision model (`qa.model.vision: true`), a question can carry images: pick, paste or drop them into the box.
 
@@ -157,7 +172,7 @@ The chip at the top right shows the ingester's state: idle, ingesting, holding f
 
 ## Inspect documents and chunks
 
-The Inspector lists the documents of a database, filtered by title or URI, or by a SQL filter on the documents. Open one to read its converted text, and to see its outline, chunks, pages and pictures. Its header shows the short fields of its metadata and links its `url` when that is an http(s) address. All metadata is one click away.
+The Inspector lists the documents of a database, filtered by title or URI, or by a SQL filter on the documents. Open one to read its converted text, and to see its outline, chunks, original document and pictures. Original document shows every page of the stored original, and selecting a page highlights the chunks on it. The browser renders a PDF with pdf.js, and the backend renders an image's pages. Its header shows the short fields of its metadata and links its `url` when that is an http(s) address. All metadata is one click away.
 
 The agent searches and cites chunks, short passages of a document. A chunk's page shows its text, what the agent receives when a search returns it, its place on the original page, and the most similar chunks. It is the place to look when an answer cites the wrong passage or misses one.
 

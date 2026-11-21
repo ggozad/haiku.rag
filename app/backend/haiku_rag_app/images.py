@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from io import BytesIO
@@ -8,6 +9,9 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
+
+from haiku.rag.client import HaikuRAG
+from haiku.rag.store.models.chunk import Chunk
 
 MAX_IMAGE_EDGE = 2048
 MAX_IMAGE_BYTES = 16 * 1024**2
@@ -66,11 +70,12 @@ async def picture(request: Request) -> Response:
 
 
 async def visualize(request: Request) -> JSONResponse:
-    """Page images highlighting chunks, as base64 PNGs.
+    """The boxes highlighting chunks, by page, with the original to draw them on.
 
     `chunk_ids` is comma-separated, the constituents of a merged citation, and
     `refs` the JSON list of the items the model saw, drawn instead of
-    re-expanding.
+    re-expanding. Box coordinates have a bottom-left origin, in the page size
+    given beside them.
     """
     owner = await request.state.databases.reader(request.query_params.get("source"))
     refs: list[str] | None = None
@@ -90,16 +95,54 @@ async def visualize(request: Request) -> JSONResponse:
             chunks.append(chunk)
     if not chunks:
         raise HTTPException(404, "chunk not found")
+    return await grounding_response(owner, chunks, refs)
 
-    images = []
-    for image in await owner.visualize_chunk(chunks, refs):
-        buffer = BytesIO()
-        image.save(buffer, format="PNG")
-        images.append(base64.b64encode(buffer.getvalue()).decode("ascii"))
+
+async def grounding_response(
+    owner: HaikuRAG, chunks: list[Chunk], refs: list[str] | None
+) -> JSONResponse:
+    """The chunks' boxes by page with their original, or why there are none."""
+    from haiku.rag.utils.images import original_layout
+
+    grounding = await owner.chunk_grounding(chunks, refs) if chunks else None
+    if grounding is not None:
+        layout = await asyncio.to_thread(original_layout, grounding.original)
+        pages = [
+            {
+                "page": n,
+                "width": layout.sizes[n][0],
+                "height": layout.sizes[n][1],
+                "boxes": [
+                    {
+                        "l": box.left,
+                        "t": box.top,
+                        "r": box.right,
+                        "b": box.bottom,
+                        "matched": matched,
+                    }
+                    for box, matched in grounding.pages[n]
+                ],
+            }
+            for n in sorted(grounding.pages)
+            if n in layout.sizes
+        ]
+        if pages:
+            return JSONResponse(
+                {
+                    "source": owner.source,
+                    "document_id": grounding.document_id,
+                    "original": {"md5": grounding.original_md5, "pdf": layout.pdf},
+                    "pages": pages,
+                    "message": None,
+                }
+            )
     return JSONResponse(
         {
-            "images": images,
-            "message": None if images else "No visual grounding available",
+            "source": owner.source,
+            "document_id": None,
+            "original": None,
+            "pages": [],
+            "message": "No visual grounding available",
         }
     )
 

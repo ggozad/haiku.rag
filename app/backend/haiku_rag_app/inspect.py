@@ -12,7 +12,7 @@ from haiku.rag.context import build_toc
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.schema import REQUIRED_TABLES
 from haiku.rag.utils.sql import escape_sql_string, title_or_uri_filter
-from haiku_rag_app.images import MAX_IMAGE_BYTES, checked_image
+from haiku_rag_app.images import MAX_IMAGE_BYTES, checked_image, grounding_response
 
 
 async def _reader(request: Request) -> HaikuRAG:
@@ -93,9 +93,41 @@ async def list_documents(request: Request) -> JSONResponse:
     )
 
 
+IMMUTABLE = "private, max-age=31536000, immutable"
+
+
+async def _checked_original(request: Request, owner: HaikuRAG) -> bytes:
+    """The stored original, checked against the request's `md5`: 400 without it,
+    404 without an original, 409 when it has changed."""
+    md5 = request.query_params.get("md5")
+    if not md5:
+        raise HTTPException(400, "md5 is required")
+    stored = await owner.document_repository.get_original_and_md5(
+        request.path_params["document_id"]
+    )
+    if stored is None:
+        raise HTTPException(404, "the document has no stored original")
+    if stored[1] != md5:
+        raise HTTPException(409, "the original has changed")
+    return stored[0]
+
+
 async def get_document(request: Request) -> JSONResponse:
+    """The document, and its original's MD5 and pages when one is stored."""
+    from haiku.rag.utils.images import original_layout
+
     owner = await _reader(request)
     document = await _document(owner, request.path_params["document_id"])
+    assert document.id is not None
+    stored = await owner.document_repository.get_original_and_md5(document.id)
+    original, pages = None, []
+    if stored is not None:
+        layout = await asyncio.to_thread(original_layout, stored[0])
+        original = {"md5": stored[1], "pdf": layout.pdf}
+        pages = [
+            {"page": n, "width": width, "height": height}
+            for n, (width, height) in sorted(layout.sizes.items())
+        ]
     return JSONResponse(
         {
             "id": document.id,
@@ -104,7 +136,22 @@ async def get_document(request: Request) -> JSONResponse:
             "metadata": document.metadata,
             "created_at": document.created_at.isoformat(),
             "updated_at": document.updated_at.isoformat(),
+            "original": original,
+            "pages": pages,
         }
+    )
+
+
+async def document_original(request: Request) -> Response:
+    """The stored original PDF, checked against the request's `md5`."""
+    from haiku.rag.utils.images import original_layout
+
+    owner = await _reader(request)
+    original = await _checked_original(request, owner)
+    if not (await asyncio.to_thread(original_layout, original)).pdf:
+        raise HTTPException(404, "the original is not a PDF")
+    return Response(
+        original, media_type="application/pdf", headers={"Cache-Control": IMMUTABLE}
     )
 
 
@@ -276,11 +323,10 @@ async def _page_chunks(owner: HaikuRAG, document_id: str):
     for item in items:
         held_by = chunk_index.get(item.self_ref, [])
         for page in item.page_numbers:
-            entry = pages.setdefault(page, {"refs": [], "chunk_ids": [], "items": {}})
+            entry = pages.setdefault(page, {"refs": [], "chunk_ids": []})
             if not held_by:
                 continue
             entry["refs"].append(item.self_ref)
-            entry["items"][item.self_ref] = item.page_numbers
             for chunk_id in held_by:
                 if chunk_id not in entry["chunk_ids"]:
                     entry["chunk_ids"].append(chunk_id)
@@ -300,53 +346,45 @@ async def document_pages(request: Request) -> JSONResponse:
     )
 
 
-async def page_image(request: Request) -> Response:
-    """A page with every chunk on it drawn, as PNG."""
-    from io import BytesIO
-
-    owner = await _reader(request)
-    document_id = request.path_params["document_id"]
+def _page_number(request: Request) -> int:
     try:
-        page = int(request.path_params["page"])
+        return int(request.path_params["page"])
     except ValueError as error:
         raise HTTPException(400, "the page must be a whole number") from error
-    pages = await _page_chunks(owner, document_id)
-    if page not in pages:
-        raise HTTPException(404, f"no chunk is drawn on page {page}")
-    entry = pages[page]
-    if not entry["chunk_ids"]:
-        scale = request.state.databases.config.processing.conversion_options
-        return await _plain_page(owner, document_id, page, scale.images_scale)
+
+
+async def page_boxes(request: Request) -> JSONResponse:
+    """The boxes of every chunk-held item on a page, as `/api/visualize` gives
+    them."""
+    owner = await _reader(request)
+    page = _page_number(request)
+    entry = (await _page_chunks(owner, request.path_params["document_id"])).get(
+        page, {"refs": [], "chunk_ids": []}
+    )
     chunks = [await _chunk(owner, chunk_id) for chunk_id in entry["chunk_ids"]]
-    images = await owner.visualize_chunk(chunks, entry["refs"])
-    # One image per page the drawn items touch, in page order.
-    touched = sorted({p for numbers in entry["items"].values() for p in numbers})
-    if len(images) != len(touched):
-        raise HTTPException(404, f"page {page} has no image")
-    buffer = BytesIO()
-    images[touched.index(page)].save(buffer, format="PNG")
-    return Response(buffer.getvalue(), media_type="image/png")
+    return await grounding_response(owner, chunks, entry["refs"])
 
 
-async def _plain_page(
-    owner: HaikuRAG, document_id: str, page: int, scale: float
-) -> Response:
+async def page_image(request: Request) -> Response:
+    """A page of a stored image original as PNG, checked against the request's
+    `md5`. The browser renders a PDF original itself."""
     from io import BytesIO
 
-    from haiku.rag.utils.images import render_original_pages
+    from haiku.rag.utils.images import original_layout, render_original_pages
 
-    original = await owner.document_repository.get_original(document_id)
-    rendered = (
-        await asyncio.to_thread(render_original_pages, original, [page], scale)
-        if original is not None
-        else {}
-    )
-    original_page = rendered.get(page)
-    if original_page is None:
-        raise HTTPException(404, f"page {page} has no image")
+    owner = await _reader(request)
+    page = _page_number(request)
+    original = await _checked_original(request, owner)
+    if (await asyncio.to_thread(original_layout, original)).pdf:
+        raise HTTPException(404, "the original is a PDF")
+    rendered = await asyncio.to_thread(render_original_pages, original, [page], 1.0)
+    if page not in rendered:
+        raise HTTPException(404, f"the original has no page {page}")
     buffer = BytesIO()
-    original_page.image.save(buffer, format="PNG")
-    return Response(buffer.getvalue(), media_type="image/png")
+    rendered[page].image.save(buffer, format="PNG")
+    return Response(
+        buffer.getvalue(), media_type="image/png", headers={"Cache-Control": IMMUTABLE}
+    )
 
 
 async def document_pictures(request: Request) -> JSONResponse:
@@ -495,6 +533,16 @@ routes += [
     Route(
         f"{PREFIX}/documents/{{document_id}}/pages/{{page}}",
         page_image,
+        methods=["GET"],
+    ),
+    Route(
+        f"{PREFIX}/documents/{{document_id}}/pages/{{page}}/boxes",
+        page_boxes,
+        methods=["GET"],
+    ),
+    Route(
+        f"{PREFIX}/documents/{{document_id}}/original",
+        document_original,
         methods=["GET"],
     ),
     Route(f"{PREFIX}/info", database_info, methods=["GET"]),

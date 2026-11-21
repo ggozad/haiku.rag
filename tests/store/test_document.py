@@ -362,6 +362,20 @@ async def test_get_docling_data_loads_only_docling_columns(
         assert await doc_repo.get_docling_data("nonexistent-id") is None
 
 
+async def test_get_original_and_md5_reads_the_pair(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        stored = await doc_repo.create(
+            Document(content="a", original=b"%PDF-", original_md5="m")
+        )
+        bare = await doc_repo.create(Document(content="b"))
+        assert stored.id is not None and bare.id is not None
+
+        assert await doc_repo.get_original_and_md5(stored.id) == (b"%PDF-", "m")
+        assert await doc_repo.get_original_and_md5(bare.id) is None
+        assert await doc_repo.get_original_and_md5("nonexistent-id") is None
+
+
 async def test_get_original_loads_only_the_original(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         doc_repo = DocumentRepository(store)

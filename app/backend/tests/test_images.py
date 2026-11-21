@@ -54,7 +54,7 @@ async def test_a_chunk_is_drawn_on_its_page(client, seeded, refs):
             f"/api/visualize/{chunk_id}", params={"source": "beta", **refs}
         )
     ).json()
-    assert len(body["images"]) == 1
+    assert [page["page"] for page in body["pages"]] == [1]
     assert body["message"] is None
 
 
@@ -67,7 +67,7 @@ async def test_refs_that_draw_nothing_say_so(client, seeded):
             params={"source": "beta", "refs": json.dumps(["#/texts/99"])},
         )
     ).json()
-    assert body["images"] == []
+    assert body["pages"] == []
     assert body["message"] == "No visual grounding available"
 
 

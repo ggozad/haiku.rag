@@ -526,3 +526,59 @@ async def test_visualize_command_omits_the_document_line_without_a_uri(
     printed = app.console.export_text()
     assert "Page 1/1" in printed
     assert "document:" not in printed
+
+
+async def test_chunk_grounding_gives_the_boxes_by_page_with_the_original(
+    temp_db_path,
+):
+    import hashlib
+
+    from haiku.rag.client.search import GroundingBox
+    from haiku.rag.store.models.chunk import BoundingBox
+
+    chunks = [
+        Chunk(
+            content="Content on page 2.",
+            metadata={"doc_item_refs": ["#/texts/1"], "page_numbers": [2]},
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+    original = _blank_pdf(2)
+
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(
+            _bbox_doc(pages=(1, 2)), chunks, uri="test://grounding", original=original
+        )
+        [chunk] = await client.chunk_repository.get_by_document_id(doc.id)
+
+        grounding = await client.chunk_grounding(chunk)
+
+    assert grounding is not None
+    assert grounding.document_id == doc.id
+    assert grounding.original == original
+    assert grounding.original_md5 == hashlib.md5(original).hexdigest()
+
+    def box(page_no: int) -> BoundingBox:
+        return BoundingBox(page_no=page_no, left=50, top=700, right=550, bottom=650)
+
+    assert grounding.pages == {
+        1: [GroundingBox(box(1), matched=False)],
+        2: [GroundingBox(box(2), matched=True)],
+    }
+
+
+async def test_chunk_grounding_is_none_without_an_original(temp_db_path):
+    chunks = [
+        Chunk(
+            content="Content on page 1.",
+            metadata={"doc_item_refs": ["#/texts/0"], "page_numbers": [1]},
+            order=0,
+            embedding=[0.1] * 2560,
+        )
+    ]
+    async with HaikuRAG(temp_db_path, create=True) as client:
+        doc = await client.import_document(_bbox_doc(), chunks, uri="test://bare")
+        [chunk] = await client.chunk_repository.get_by_document_id(doc.id)
+
+        assert await client.chunk_grounding(chunk) is None

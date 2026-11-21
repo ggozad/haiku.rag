@@ -241,12 +241,20 @@ class DocumentRepository:
 
     _DOCLING_COLUMNS = ["id", "docling_document", "docling_version"]
 
-    async def get_docling_data(self, entity_id: str) -> Document | None:
-        """Get a document with only docling data loaded (skips content blob)."""
+    async def get_docling_data(
+        self, entity_id: str, with_original: bool = False
+    ) -> Document | None:
+        """Get a document with only docling data loaded (skips content blob).
+
+        `with_original` adds the original and its MD5 from the same row version.
+        """
         safe_id = escape_sql_string(entity_id)
+        columns = self._DOCLING_COLUMNS + (
+            self._ORIGINAL_COLUMNS if with_original else []
+        )
         results = await (
             self.store.documents_table.query()
-            .select(self._DOCLING_COLUMNS)
+            .select(columns)
             .where(f"id = '{safe_id}'")
             .limit(1)
             .to_list()
@@ -261,19 +269,32 @@ class DocumentRepository:
             content="",
             docling_document=row.get("docling_document"),
             docling_version=row.get("docling_version"),
+            original=row.get("original"),
+            original_md5=row.get("original_md5"),
         )
 
     async def get_original(self, entity_id: str) -> bytes | None:
         """The file the document's structure was converted from, if stored."""
+        row = await self._original_row(entity_id, ["original"])
+        return row["original"] if row else None
+
+    async def get_original_and_md5(self, entity_id: str) -> tuple[bytes, str] | None:
+        """The stored original and its MD5, from the same row version."""
+        row = await self._original_row(entity_id, self._ORIGINAL_COLUMNS)
+        if row is None or row["original"] is None or row["original_md5"] is None:
+            return None
+        return row["original"], row["original_md5"]
+
+    async def _original_row(self, entity_id: str, columns: list[str]) -> dict | None:
         safe_id = escape_sql_string(entity_id)
         results = await (
             self.store.documents_table.query()
-            .select(["original"])
+            .select(columns)
             .where(f"id = '{safe_id}'")
             .limit(1)
             .to_list()
         )
-        return results[0]["original"] if results else None
+        return results[0] if results else None
 
     async def ids_without_original(self, ids: list[str] | None = None) -> set[str]:
         """The documents, of `ids` when given, that have no stored original."""

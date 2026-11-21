@@ -4,7 +4,7 @@ import pypdfium2 as pdfium
 import pytest
 from PIL import Image
 
-from haiku.rag.utils.images import render_original_pages
+from haiku.rag.utils.images import original_layout, render_original_pages
 
 
 def _pdf(*sizes: tuple[float, float]) -> bytes:
@@ -110,3 +110,42 @@ def test_transparency_renders_on_white():
     [page] = render_original_pages(buffer.getvalue(), [1], 2.0).values()
 
     assert (page.image.mode, page.image.getpixel((0, 0))) == ("RGB", (255, 255, 255))
+
+
+def _rotated_pdf() -> bytes:
+    pdf = pdfium.PdfDocument.new()
+    pdf.new_page(200, 100)
+    pdf.new_page(300, 400).set_rotation(90)
+    cropped = pdf.new_page(300, 400)
+    cropped.set_cropbox(10, 20, 210, 320)
+    buffer = BytesIO()
+    pdf.save(buffer)
+    return buffer.getvalue()
+
+
+def _exif_jpeg() -> bytes:
+    image = Image.new("RGB", (120, 80), "red")
+    exif = image.getexif()
+    exif[0x0112] = 6
+    buffer = BytesIO()
+    image.save(buffer, format="JPEG", exif=exif, dpi=(144, 72))
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("original", "pdf"),
+    [
+        (_rotated_pdf(), True),
+        (_image("TIFF", "red", "blue", dpi=(150, 300)), False),
+        (_exif_jpeg(), False),
+    ],
+    ids=["pdf", "tiff", "exif"],
+)
+def test_the_layout_gives_every_page_the_size_rendering_gives(original, pdf):
+    layout = original_layout(original)
+
+    rendered = render_original_pages(original, list(range(1, 10)), 1.0)
+    assert layout.pdf is pdf
+    assert layout.sizes == {
+        n: pytest.approx((page.width, page.height)) for n, page in rendered.items()
+    }

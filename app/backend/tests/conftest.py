@@ -1,32 +1,13 @@
 import pytest
-from docling_core.types.doc.base import BoundingBox, Size
-from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
-from docling_core.types.doc.labels import DocItemLabel
 from pydantic_ai import models
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.models import Chunk
 from haiku.rag.store.models.document_item import DocumentItem
-from tests.support import image_bytes, letter_pdf, served
+from tests.support import image_bytes, letter_pdf, paged_document, served
 
 models.ALLOW_MODEL_REQUESTS = False
-
-
-def paged_document(text: str) -> DoclingDocument:
-    """A one-page document whose only item has a bounding box to draw."""
-    doc = DoclingDocument(name=text)
-    doc.add_page(page_no=1, size=Size(width=612.0, height=792.0))
-    doc.add_text(
-        label=DocItemLabel.PARAGRAPH,
-        text=text,
-        prov=ProvenanceItem(
-            page_no=1,
-            bbox=BoundingBox(l=50, t=700, r=550, b=650),
-            charspan=(0, len(text)),
-        ),
-    )
-    return doc
 
 
 async def seed(config: AppConfig, name: str) -> dict[str, str]:

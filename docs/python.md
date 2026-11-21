@@ -104,6 +104,7 @@ original file are loaded separately:
 ```python
 docling = await client.document_repository.get_docling_data(doc.id)
 original = await client.document_repository.get_original(doc.id)  # bytes or None
+stored = await client.document_repository.get_original_and_md5(doc.id)  # (bytes, md5) or None
 ```
 
 By ID, title or URI, tried in that order:
@@ -371,6 +372,8 @@ for page_number, image in enumerate(images, start=1):
 ```
 
 `source` is required when the client covers several databases. `expand=False` draws only the chunk, without its expanded context.
+
+`chunk_grounding` takes the same arguments and returns the boxes without drawing them: a `Grounding` with the document id, the original and its MD5, and the boxes by page in the original's coordinates, origin at the bottom left. A box's `matched` is true for the chunk's own items and false for its context. It returns `None` when `visualize_chunk` returns nothing.
 
 ## Question answering
 

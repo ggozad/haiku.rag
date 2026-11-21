@@ -266,3 +266,83 @@ async def test_an_exif_rotated_image_renders_in_docling_frame(tmp_path, square):
         (page.size.width, page.size.height), abs=0.01
     )
     assert _best_shift(raster, rendered.image.resize(raster.size)) == (0, 0)
+
+
+def _scan(fmt: str) -> bytes:
+    """A scan of the DocLayNet paper's first page, whose figure docling finds
+    without OCR: two TIFF frames at unequal DPI, the second wider with the page
+    to its right, a PNG at 300 DPI, or a JPEG whose EXIF orientation turns it."""
+    first = pdfium.PdfDocument(str(DOCLAYNET))[0].render(scale=1.0).to_pil()
+    widened = Image.new("RGB", (first.width + 120, first.height), "white")
+    widened.paste(first, (120, 0))
+    frames = [first, widened]
+    buffer = BytesIO()
+    if fmt == "TIFF":
+        frames[0].save(
+            buffer,
+            format="TIFF",
+            save_all=True,
+            append_images=frames[1:],
+            dpi=(150, 300),
+            compression="tiff_deflate",
+        )
+    elif fmt == "PNG":
+        frames[0].save(buffer, format="PNG", dpi=(300, 300))
+    else:
+        exif = frames[0].getexif()
+        exif[0x0112] = 6
+        frames[0].save(buffer, format="JPEG", exif=exif, dpi=(150, 300))
+    return buffer.getvalue()
+
+
+def _boxes(doc) -> dict[int, list[tuple[float, ...]]]:
+    """Every item's box, by page."""
+    boxes: dict[int, list[tuple[float, ...]]] = {}
+    for item, _ in doc.iterate_items():
+        for prov in item.prov:
+            boxes.setdefault(prov.page_no, []).append(prov.bbox.as_tuple())
+    return boxes
+
+
+@pytest.mark.vcr()
+@pytest.mark.parametrize("suffix", [".pdf", ".tiff", ".png", ".jpg"])
+async def test_docling_serve_places_items_where_docling_local_does(tmp_path, suffix):
+    """docling-local is pinned to the original above. A page in another frame
+    would move every box on it by tens of points, so equal page sizes and a
+    box on each page within a point of docling-local's put docling-serve's on
+    the original too. Layout grouping, labels and picture outlines vary
+    between platforms, by under a point for an outline."""
+    from haiku.rag.converters.docling_local import DoclingLocalConverter
+    from haiku.rag.converters.docling_serve import DoclingServeConverter
+    from haiku.rag.utils.images import original_layout
+
+    original = (
+        _geometry_variants()
+        if suffix == ".pdf"
+        else _scan({".tiff": "TIFF", ".png": "PNG", ".jpg": "JPEG"}[suffix])
+    )
+    path = tmp_path / f"original{suffix}"
+    path.write_bytes(original)
+    config = _config()
+    config.processing.conversion_options.do_ocr = False
+
+    local_doc = await DoclingLocalConverter(config).convert_file(path)
+    serve_doc = await DoclingServeConverter(config).convert_file(path)
+
+    sizes = original_layout(original).sizes
+    assert sorted(serve_doc.pages) == sorted(local_doc.pages) == sorted(sizes)
+    for page_no, (width, height) in sizes.items():
+        for doc in (local_doc, serve_doc):
+            page = doc.pages[page_no].size
+            assert (page.width, page.height) == pytest.approx(
+                (width, height), abs=0.01
+            ), page_no
+    local_boxes, serve_boxes = _boxes(local_doc), _boxes(serve_doc)
+    assert sorted(serve_boxes) == sorted(local_boxes) == sorted(sizes)
+    for page_no, boxes in serve_boxes.items():
+        closest = min(
+            max(abs(a - b) for a, b in zip(serve, local, strict=True))
+            for serve in boxes
+            for local in local_boxes[page_no]
+        )
+        assert closest <= 1.0, (page_no, closest)

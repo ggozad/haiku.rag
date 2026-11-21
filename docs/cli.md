@@ -184,7 +184,7 @@ haiku-rag migrate --db /path/to/your.lancedb
 
 Back up the database first. `migrate` exits 1 on failure.
 
-The 0.113.0 migration deletes the stored page images and reclaims their space at once: it rewrites every row of `documents`, then vacuums the database at zero retention. Stop every other process using the database before running it. A tag taken before it keeps its page images on disk, and `migrate` names such tags. Visual grounding then renders from a document's original file, which an existing document gets from [`rebuild --originals`](#rebuild), or when it is re-ingested, a full rebuild included.
+The 0.113.0 migration deletes the stored page images and reclaims their space at once: it rewrites every row of `documents`, then vacuums the database at zero retention. Stop every other process using the database before running it. Its memory grows with the size of the `documents` table without the page images: it peaked at 10.4 GB on 2.9 GB of text and structures. A tag taken before it keeps its page images on disk, and `migrate` names such tags. Visual grounding then renders from a document's original file, which an existing document gets from [`rebuild --originals`](#rebuild), or when it is re-ingested, a full rebuild included. In the web app's compose stack, run both in the ingester container, as [Database maintenance](apps.md#database-maintenance) shows.
 
 `init` and `migrate` record the schema the release writes as `schema_version`. A release refuses to write to a database whose `schema_version` is newer than its own schema, and a read-only open warns:
 
