@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `pydantic-ai-slim` raised to 2.71. With `provider: vllm` or `ollama`, every system prompt carries pydantic-ai 2.71's `<system>` framing announcement (`framing_announcement: always`), and chat-template special tokens in content are sent with a zero-width joiner. Ollama receives `max_tokens` instead of `max_completion_tokens`.
+
 ## [0.112.3] - 2026-11-20
 
 ### Changed
