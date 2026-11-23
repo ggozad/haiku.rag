@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.113.0] - 2026-11-23
+
 ### Added
 
 - `storage.store_originals` (default `true`): a PDF or an image ingested from a source is stored in `documents.original`, and visual grounding renders its pages from it. Needs `haiku-rag migrate`.
@@ -3381,7 +3383,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.112.3...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.113.0...HEAD
+[0.113.0]: https://github.com/ggozad/haiku.rag/compare/0.112.3...0.113.0
 [0.112.3]: https://github.com/ggozad/haiku.rag/compare/0.112.2...0.112.3
 [0.112.2]: https://github.com/ggozad/haiku.rag/compare/0.112.1...0.112.2
 [0.112.1]: https://github.com/ggozad/haiku.rag/compare/0.112.0...0.112.1
