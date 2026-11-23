@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
     from PIL import Image as PILImage
 
+    from haiku.rag.client.search import Grounding
     from haiku.rag.embeddings import EmbedderWrapper
     from haiku.rag.ingester.metadata import MetadataProvider
     from haiku.rag.reranking.base import RerankerBase
@@ -114,6 +115,8 @@ class RebuildMode(Enum):
     SET_EMBEDDER = "set_embedder"  # Adopt the current embedder identity without
     # re-embedding, when the vector dimension is unchanged.
     REINDEX = "reindex"  # Rebuild every declared index, rewriting no rows.
+    ORIGINALS = "originals"  # Store the original file of documents that lack one,
+    # fetched from their source when it still hashes to the ingested MD5.
 
 
 class HaikuRAG:
@@ -651,13 +654,14 @@ class HaikuRAG:
         uri: str | None = None,
         title: str | None = None,
         metadata: dict | None = None,
+        original: bytes | None = None,
     ) -> Document:
         from haiku.rag.client.documents import import_document
 
         session = self._single_session("import_document")
 
         return await import_document(
-            session, self, docling_document, chunks, uri, title, metadata
+            session, self, docling_document, chunks, uri, title, metadata, original
         )
 
     async def import_documents(
@@ -748,6 +752,7 @@ class HaikuRAG:
         title: str | None = None,
         docling_document: "DoclingDocument | None" = None,
         uri: str | None = None,
+        original: bytes | None = None,
     ) -> Document:
         from haiku.rag.client.documents import update_document
 
@@ -763,6 +768,7 @@ class HaikuRAG:
             title,
             docling_document,
             uri,
+            original,
         )
 
     async def edit_document(
@@ -1154,17 +1160,38 @@ class HaikuRAG:
         """
         from haiku.rag.client.search import visualize_chunk
 
+        session = await self._chunk_session(source, "visualize_chunk")
+        return await visualize_chunk(session, chunk, refs, expand)
+
+    async def chunk_grounding(
+        self,
+        chunk: Chunk | Sequence[Chunk],
+        refs: list[str] | None = None,
+        expand: bool = True,
+        source: str | None = None,
+    ) -> "Grounding | None":
+        """The boxes drawn by `visualize_chunk`, by page, with the original.
+
+        Takes the arguments of `visualize_chunk` and raises as it does.
+        """
+        from haiku.rag.client.search import chunk_grounding
+
+        session = await self._chunk_session(source, "chunk_grounding")
+        return await chunk_grounding(session, chunk, refs, expand)
+
+    async def _chunk_session(
+        self, source: str | None, operation: str
+    ) -> SingleDatabaseSession:
+        """The session of the database a chunk came from."""
         if source is not None:
             (owner,) = await self.clients_covering([source])
-            return await owner.visualize_chunk(chunk, refs, expand)
+            return owner._single_session(operation)
         if self.covers_multiple:
             raise AmbiguousDatabaseError(
-                "visualizing a chunk needs the source it came from; this "
+                f"{operation} needs the source the chunk came from; this "
                 f"client covers {', '.join(sorted(self.source_names))}"
             )
-        return await visualize_chunk(
-            self._single_session("visualize_chunk"), chunk, refs, expand
-        )
+        return self._single_session(operation)
 
     async def rebuild_database(
         self, mode: RebuildMode = RebuildMode.FULL

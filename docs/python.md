@@ -66,7 +66,7 @@ The `format` parameter controls how text content is parsed:
 - `"plain"` - Plain text, no parsing (creates a simple text document)
 
 !!! note
-    The document's `content` field stores the markdown export of the parsed document for consistent display. The original DoclingDocument structure is preserved in the `docling_document` field (zstd-compressed, without page images). Page images are stored separately in `docling_pages`.
+    The document's `content` field stores the markdown export of the parsed document for consistent display. The original DoclingDocument structure is preserved in the `docling_document` field (zstd-compressed, without page or picture images). A PDF or image ingested from a source is stored as the document's original file, see `storage.store_originals`.
 
 From file:
 ```python
@@ -98,12 +98,13 @@ By URI:
 doc = await client.get_document_by_uri("file:///path/to/document.pdf")
 ```
 
-Both return content, uri, title and metadata. The multi-MB docling blobs are
-loaded separately:
+Both return content, uri, title and metadata. The docling structure and the
+original file are loaded separately:
 
 ```python
 docling = await client.document_repository.get_docling_data(doc.id)
-pages = await client.document_repository.get_pages_data(doc.id)
+original = await client.document_repository.get_original(doc.id)  # bytes or None
+stored = await client.document_repository.get_original_and_md5(doc.id)  # (bytes, md5) or None
 ```
 
 By ID, title or URI, tried in that order:
@@ -361,7 +362,7 @@ Expansion is section-aware and capped by `search.max_context_chars`, see [Search
 
 ### Visual grounding
 
-`visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It needs the document's page images (`generate_page_images`, on by default for PDFs):
+`visualize_chunk` returns one PIL image per page, with the chunk's bounding boxes drawn on it. It renders the pages from the document's stored original, a PDF or an image, and returns nothing for a document without one:
 
 ```python
 chunk = await client.get_chunk_by_id(result.chunk_id, result.source)
@@ -371,6 +372,8 @@ for page_number, image in enumerate(images, start=1):
 ```
 
 `source` is required when the client covers several databases. `expand=False` draws only the chunk, without its expanded context.
+
+`chunk_grounding` takes the same arguments and returns the boxes without drawing them: a `Grounding` with the document id, the original and its MD5, and the boxes by page in the original's coordinates, origin at the bottom left. A box's `matched` is true for the chunk's own items and false for its context. It returns `None` when `visualize_chunk` returns nothing.
 
 ## Question answering
 
@@ -441,10 +444,11 @@ doc = await client.import_document(
     uri="doc://custom",
     title="Custom Document",
     metadata={"source": "external-pipeline"},
+    original=Path("path/to/document.pdf").read_bytes(),
 )
 ```
 
-The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument.
+The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument. `original` is the PDF or image file the document was converted from, which visual grounding renders. Bytes that open neither as an image nor as a PDF raise `ValueError`. haiku.rag does not check that the file matches the document. `DocumentImport` and `update_document(docling_document=...)` take it too. Without it the document has no stored original. A new `docling_document`, or new `content` without `chunks`, replaces the structure and clears a stored one.
 
 ### Batch import
 
@@ -555,6 +559,10 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.DESCRIPTIONS):
 # Rebuild the full-text and scalar indexes, rewriting no rows. Yields no document ids.
 async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
     pass
+
+# Store the original of documents that have none, fetched from their source.
+async for doc_id in client.rebuild_database(mode=RebuildMode.ORIGINALS):
+    print(f"Stored the original of {doc_id}")
 ```
 
 **Rebuild modes:**
@@ -565,9 +573,10 @@ async for _ in client.rebuild_database(mode=RebuildMode.REINDEX):
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
 - `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider and name without re-embedding, when the vector dimension is unchanged
 - `RebuildMode.REINDEX` - Rebuild the full-text and scalar indexes from scratch, rewriting no rows. Leaves the vector index alone
+- `RebuildMode.ORIGINALS` - Store the original PDF or image of every document that has none, fetched from its source when its MD5 equals the one recorded at ingest. An attachment's bytes come from its parent PDF. Writes `original` and `original_md5` only. Yields the id of each document whose original it stored. Raises `ValueError` while `storage.store_originals` is off
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
 
-Every mode except `TITLE_ONLY` and `SET_EMBEDDER` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. `FULL`, `RECHUNK`, `EMBED_ONLY` and `DESCRIPTIONS` also retrain the vector index if the database had one.
+Every mode except `TITLE_ONLY`, `SET_EMBEDDER` and `ORIGINALS` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. `FULL`, `RECHUNK`, `EMBED_ONLY` and `DESCRIPTIONS` also retrain the vector index if the database had one.
 
 ### Generating titles
 

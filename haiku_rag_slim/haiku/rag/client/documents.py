@@ -43,6 +43,7 @@ from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
 from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
+from haiku.rag.utils.images import ORIGINAL_EXTENSIONS, render_original_pages
 from haiku.rag.utils.sql import escape_like_pattern, escape_sql_string
 
 if TYPE_CHECKING:
@@ -61,7 +62,7 @@ class DocumentImport:
 
     Carries the same inputs as ``import_document``: a converted
     ``DoclingDocument``, its chunks (embeddings filled in if missing), and
-    optional uri/title/metadata.
+    optional uri/title/metadata/original.
     """
 
     docling_document: "DoclingDocument"
@@ -69,6 +70,7 @@ class DocumentImport:
     uri: str | None = None
     title: str | None = None
     metadata: dict | None = field(default=None)
+    original: bytes | None = None
 
 
 # Maximum length of an attachment chain rooted at a top-level ingest. With
@@ -103,7 +105,9 @@ _FRESHNESS_KEYS = ("md5", "source_revision")
 
 
 def _prepare_document_from_docling_sync(
-    document: Document, docling_document: "DoclingDocument"
+    document: Document,
+    docling_document: "DoclingDocument",
+    original: bytes | None = None,
 ) -> str:
     """Populate content/docling blobs from a DoclingDocument.
 
@@ -114,22 +118,42 @@ def _prepare_document_from_docling_sync(
     """
     content = docling_document.export_to_markdown()
     document.content = content
-    document.set_docling(docling_document)
+    document.set_docling(docling_document, original)
     return content
 
 
 async def _prepare_document_from_docling(
-    document: Document, docling_document: "DoclingDocument"
+    document: Document,
+    docling_document: "DoclingDocument",
+    original: bytes | None = None,
 ) -> str:
     return await asyncio.to_thread(
-        _prepare_document_from_docling_sync, document, docling_document
+        _prepare_document_from_docling_sync, document, docling_document, original
     )
+
+
+def _kept_original(
+    session: SingleDatabaseSession, original: bytes | None
+) -> bytes | None:
+    """The original to store, or None when the database stores none."""
+    return original if session.config.storage.store_originals else None
+
+
+async def _check_original(original: bytes | None) -> None:
+    """Refuse a caller's original that renders neither as an image nor as a PDF."""
+    if original is None:
+        return
+    try:
+        await asyncio.to_thread(render_original_pages, original, [], 1.0)
+    except Exception as error:
+        raise ValueError("original is neither a PDF nor an image.") from error
 
 
 async def _prepare_and_title(
     session: SingleDatabaseSession,
     document: Document,
     docling_document: "DoclingDocument",
+    original: bytes | None = None,
 ) -> None:
     """Fill the document from its converted form and title it if it has none.
 
@@ -137,7 +161,9 @@ async def _prepare_and_title(
     Update paths that must keep an existing empty title call
     ``_prepare_document_from_docling`` directly instead.
     """
-    stored_content = await _prepare_document_from_docling(document, docling_document)
+    stored_content = await _prepare_document_from_docling(
+        document, docling_document, _kept_original(session, original)
+    )
     if document.title is None:
         document.title = await resolve_title(
             session.config, docling_document, stored_content
@@ -237,7 +263,9 @@ async def _store_document_with_chunks(
                 document.id = existing.id
                 document.created_at = existing.created_at
                 replaced_owner = (existing.metadata or {}).get("source_id")
-                stored_doc = await session.document_repository.update(document)
+                stored_doc = await session.document_repository.update(
+                    document, with_original=True
+                )
             else:
                 stored_doc = await session.document_repository.create(document)
 
@@ -341,7 +369,9 @@ async def _update_document_with_chunks(
                 current = await stored_meta()
                 document.uri, document.title = current.uri, current.title
                 document.metadata = current.metadata
-            updated_doc = await session.document_repository.update(document)
+            updated_doc = await session.document_repository.update(
+                document, with_original=docling_document is not None
+            )
 
             assert updated_doc.id is not None
             for order, chunk in enumerate(chunks):
@@ -413,6 +443,7 @@ async def import_document(
     uri: str | None = None,
     title: str | None = None,
     metadata: dict | None = None,
+    original: bytes | None = None,
 ) -> Document:
     """Import a pre-processed document with chunks.
 
@@ -421,7 +452,8 @@ async def import_document(
 
     The document is stored as given, since the chunks' ``doc_item_refs``
     index into it. Convert through :meth:`HaikuRAG.convert` to get one whose
-    inline groups are flattened.
+    inline groups are flattened. ``original`` is the PDF or image file the
+    document was converted from, which visual grounding renders.
     """
     document = Document(
         content="",
@@ -429,7 +461,8 @@ async def import_document(
         title=title,
         metadata=_caller_metadata(metadata),
     )
-    await _prepare_and_title(session, document, docling_document)
+    await _check_original(original)
+    await _prepare_and_title(session, document, docling_document, original)
 
     return await _store_document_with_chunks(
         session, client, document, chunks, docling_document
@@ -518,6 +551,8 @@ async def import_documents(
     if not imports:
         return []
 
+    for item in imports:
+        await _check_original(item.original)
     prepared: list[tuple[Document, list[Chunk], DoclingDocument]] = []
     for item in imports:
         document = Document(
@@ -526,7 +561,9 @@ async def import_documents(
             title=item.title,
             metadata=_caller_metadata(item.metadata),
         )
-        await _prepare_and_title(session, document, item.docling_document)
+        await _prepare_and_title(
+            session, document, item.docling_document, item.original
+        )
         prepared.append((document, item.chunks, item.docling_document))
 
     return await _store_documents_with_chunks(session, client, prepared)
@@ -786,12 +823,17 @@ async def _ingest_fetch_result(
     if source_id is not None and depth == 0:
         source_metadata["source_id"] = source_id
 
-    if result.disk_path is not None:
+    # A stored original must be the bytes converted, so it never reads the live file.
+    has_original = (
+        session.config.storage.store_originals and file_extension in ORIGINAL_EXTENSIONS
+    )
+    if result.disk_path is not None and not has_original:
         target_path = result.disk_path
         cleanup_path: Path | None = None
     else:
         target_path = await _write_fetch_body(result.body, file_extension)
         cleanup_path = target_path
+    original = result.body if has_original else None
 
     try:
         with logfire.span("document.convert", uri=result.uri):
@@ -831,7 +873,7 @@ async def _ingest_fetch_result(
         document_id = existing_doc.id
         if title is not None:
             existing_doc.title = title
-        await _prepare_and_title(session, existing_doc, docling_document)
+        await _prepare_and_title(session, existing_doc, docling_document, original)
 
         async def stored_meta() -> Document:
             current = await session.document_repository.get_by_id(document_id)
@@ -860,7 +902,7 @@ async def _ingest_fetch_result(
             title=title,
             metadata=final_metadata,
         )
-        await _prepare_and_title(session, document, docling_document)
+        await _prepare_and_title(session, document, docling_document, original)
         stored = await _store_document_with_chunks(
             session,
             client,
@@ -1371,16 +1413,19 @@ async def update_document(
     title: str | None = None,
     docling_document: "DoclingDocument | None" = None,
     uri: str | None = None,
+    original: bytes | None = None,
 ) -> Document:
     """Update a document by ID.
 
     Updates specified fields. When content or docling_document is provided, the
     document is rechunked and re-embedded. Updates to only metadata or title
-    skip rechunking for efficiency.
+    skip rechunking for efficiency. A new docling_document replaces the stored
+    original with ``original``, and new content without chunks clears it.
 
     Raises:
-        ValueError: If document not found, or if both content and
-            docling_document are provided.
+        ValueError: If document not found, if both content and
+            docling_document are provided, or if original is neither a PDF
+            nor an image.
     """
 
     if content is not None and docling_document is not None:
@@ -1388,6 +1433,9 @@ async def update_document(
             "content and docling_document are mutually exclusive. "
             "Provide one or the other, not both."
         )
+    if original is not None and docling_document is None:
+        raise ValueError("original needs the docling_document converted from it.")
+    await _check_original(original)
 
     async def read_and_apply(include_blobs: bool = False) -> Document:
         doc = await session.document_repository.get_by_id(
@@ -1423,7 +1471,9 @@ async def update_document(
 
     if chunks is not None:
         if docling_document is not None:
-            await _prepare_document_from_docling(existing_doc, docling_document)
+            await _prepare_document_from_docling(
+                existing_doc, docling_document, _kept_original(session, original)
+            )
         elif content is not None:
             existing_doc.content = content
 
@@ -1437,7 +1487,9 @@ async def update_document(
         )
 
     if docling_document is not None:
-        await _prepare_document_from_docling(existing_doc, docling_document)
+        await _prepare_document_from_docling(
+            existing_doc, docling_document, _kept_original(session, original)
+        )
 
         new_chunks = await chunk_document(session, docling_document)
         return await _update_document_with_chunks(

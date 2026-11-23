@@ -750,6 +750,13 @@ class HaikuRAGApp:
                     pass
                 self.console.print(f"[bold green]{done[mode]}[/bold green]")
                 return
+            if mode == RebuildMode.ORIGINALS:
+                stored = [i async for i in client.rebuild_database(mode=mode)]
+                self.console.print(
+                    f"[bold green]Stored the original of {len(stored)} "
+                    "documents.[/bold green]"
+                )
+                return
 
             documents = await client.list_documents()
             total_docs = len(documents)

@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { GroundingPages } from "@/components/PageViewer";
 import { Loading } from "@/components/Status";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -127,13 +128,6 @@ export default function ChunkView({
 		chunk.data?.order,
 	);
 	const context = useJson<Context>(tab === "agent" ? `${base}/context` : null);
-	const grounding = useJson<{ images: string[]; message: string | null }>(
-		tab === "grounding"
-			? withBasePath(
-					`/api/backend/api/visualize/${encodeURIComponent(ref.chunkId)}?source=${encodeURIComponent(ref.source)}`,
-				)
-			: null,
-	);
 	const similar = useJson<Similar>(
 		tab === "similar" ? `${base}/similar` : null,
 	);
@@ -265,22 +259,13 @@ export default function ChunkView({
 					value="grounding"
 					className="space-y-3 min-h-0 flex-1 overflow-y-auto px-4 py-3"
 				>
-					{!grounding.data && <Pending error={grounding.error} />}
-					{grounding.data?.message && (
-						<p className="text-sm text-muted-foreground">
-							{grounding.data.message}
-						</p>
-					)}
-					{grounding.data?.images.map((image, n) => (
-						// biome-ignore lint/performance/noImgElement: base64 page renders
-						<img
-							// biome-ignore lint/suspicious/noArrayIndexKey: pages have no id
-							key={n}
-							src={`data:image/png;base64,${image}`}
-							alt={`Page ${n + 1} of the chunk`}
-							className="w-full rounded border"
+					{tab === "grounding" && (
+						<GroundingPages
+							url={withBasePath(
+								`/api/backend/api/visualize/${encodeURIComponent(ref.chunkId)}?source=${encodeURIComponent(ref.source)}`,
+							)}
 						/>
-					))}
+					)}
 				</TabsContent>
 				<TabsContent
 					value="similar"

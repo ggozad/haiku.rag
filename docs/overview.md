@@ -69,7 +69,7 @@ The **RAG capability** sits on top, a native Pydantic AI
 searches, cites, and runs a sandboxed Python interpreter with the documents
 mounted as a filesystem, for questions that need computation across documents
 rather than retrieval. Its citations carry page numbers and headings, and
-`haiku-rag visualize` draws the cited chunk on the page image.
+`haiku-rag visualize` draws the cited chunk on its page.
 
 Two optional capabilities compose with it: evidence compaction replaces older
 turns' evidence with what was actually cited, and citation policy requires every

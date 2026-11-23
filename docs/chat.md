@@ -41,7 +41,7 @@ Each answer cites the chunks it used, with source document, page numbers and sec
 
 ![Expanded citation with an inline figure](img/chat-citation-figure.png)
 
-To see a cited text chunk highlighted on its page, select the citation and run "Show visual grounding". It needs a terminal with inline images (iTerm2, WezTerm, Kitty) and a document converted by Docling with page images, which PDFs have by default. Text added with `haiku-rag add` has none. `haiku-rag visualize CHUNK_ID` does the same from the CLI.
+To see a cited text chunk highlighted on its page, select the citation and run "Show visual grounding". It needs a terminal with inline images (iTerm2, WezTerm, Kitty) and a document with a stored original, which a PDF or an image ingested from a source has by default. Text added with `haiku-rag add` has none. `haiku-rag visualize CHUNK_ID` does the same from the CLI.
 
 ### Code
 
@@ -80,6 +80,6 @@ The inspector runs the same hybrid search and context expansion the RAG capabili
 
 **Context expansion** (`c`) shows the chunk as [context expansion](configuration/qa.md#search-settings) returns it, with its source document, content type and score. It is where `chunk_size`, `chunker_type` and `max_context_chars` show their effect. With `qa.model.vision: true` it also renders the pictures attached to the chunk.
 
-**Visual grounding** (`v`) highlights the chunk on its page image, with `←` / `→` to move between pages. It has the same requirements as in the chat.
+**Visual grounding** (`v`) highlights the chunk on its page, with `←` / `→` to move between pages. It has the same requirements as in the chat.
 
 ![Visual grounding modal](img/tui-visual-grounding.png)

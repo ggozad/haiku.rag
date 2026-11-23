@@ -1,6 +1,6 @@
 "use client";
 
-import { Loading } from "@/components/Status";
+import { GroundingPages } from "@/components/PageViewer";
 import {
 	Dialog,
 	DialogContent,
@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import type { Citation } from "@/lib/chat";
 import { withBasePath } from "@/lib/paths";
-import { useJson } from "@/lib/useJson";
 
 export function visualizeUrl(citation: Citation): string {
 	const chunkIds = citation.chunk_ids?.length
@@ -33,13 +32,6 @@ export default function VisualGroundingDialog({
 	citation: Citation | null;
 	onClose: () => void;
 }) {
-	const grounding = useJson<{ images?: string[]; message?: string | null }>(
-		citation ? visualizeUrl(citation) : null,
-	);
-	const images = grounding.data?.images ?? [];
-	const message = grounding.error ?? grounding.data?.message ?? null;
-	const loading = grounding.loading;
-
 	return (
 		<Dialog
 			open={citation !== null}
@@ -54,20 +46,7 @@ export default function VisualGroundingDialog({
 						The cited passage highlighted on its pages.
 					</DialogDescription>
 				</DialogHeader>
-				{loading && <Loading />}
-				{message && <p className="text-sm text-muted-foreground">{message}</p>}
-				<div className="space-y-4">
-					{images.map((image, n) => (
-						// biome-ignore lint/performance/noImgElement: base64 page renders
-						<img
-							// biome-ignore lint/suspicious/noArrayIndexKey: pages have no id
-							key={n}
-							src={`data:image/png;base64,${image}`}
-							alt={`Page ${n + 1} of the cited passage`}
-							className="w-full rounded border"
-						/>
-					))}
-				</div>
+				{citation && <GroundingPages url={visualizeUrl(citation)} />}
 			</DialogContent>
 		</Dialog>
 	);

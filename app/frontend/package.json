@@ -1,11 +1,12 @@
 {
 	"name": "haiku-rag-app",
-	"version": "0.112.3",
+	"version": "0.113.0",
 	"private": true,
 	"packageManager": "pnpm@12.18.0",
 	"scripts": {
-		"dev": "next dev",
-		"build": "next build",
+		"dev": "pnpm pdfjs && next dev",
+		"build": "pnpm pdfjs && next build",
+		"pdfjs": "node -e \"require('node:fs').cpSync('node_modules/pdfjs-dist/wasm', 'public/pdfjs', { recursive: true })\"",
 		"start": "next start",
 		"lint": "next lint",
 		"check": "biome check app components lib vitest.config.mts",
@@ -19,6 +20,7 @@
 		"cn": "^0.5.2",
 		"lucide-react": "1.69.0",
 		"next": "^16.4.5",
+		"pdfjs-dist": "6.5.438",
 		"prism-react-renderer": "2.4.1",
 		"radix-ui": "^1.8.1",
 		"react": "^19.3.1",

@@ -41,7 +41,8 @@ from haiku.rag.embeddings import embed_chunks
 
 async with HaikuRAG("database.lancedb", create=True) as client:
     # 1. Convert source to DoclingDocument
-    docling_doc = await client.convert(Path("path/to/document.pdf"))
+    source = Path("path/to/document.pdf")
+    docling_doc = await client.convert(source)
 
     # 2. Chunk the document
     chunks = await client.chunk(docling_doc)
@@ -55,8 +56,11 @@ async with HaikuRAG("database.lancedb", create=True) as client:
         chunks=embedded_chunks,
         uri="file:///path/to/document.pdf",
         title="My Document",
+        original=source.read_bytes(),
     )
 ```
+
+`original` is the converted PDF or image file, which visual grounding renders. Without it the document has no visual grounding.
 
 ## Convert
 

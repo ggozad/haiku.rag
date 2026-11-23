@@ -2,8 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- `storage.store_originals` (default `true`): a PDF or an image ingested from a source is stored in `documents.original`, and visual grounding renders its pages from it. Needs `haiku-rag migrate`.
+- `original` on `import_document`, `DocumentImport` and `update_document`. Bytes that open neither as an image nor as a PDF raise `ValueError`.
+- `haiku-rag rebuild --originals` (`RebuildMode.ORIGINALS`): stores the original of documents that have none, fetched from their source when its MD5 equals the ingested one.
+- `HaikuRAG.chunk_grounding`: a chunk's boxes by page, with the stored original and its MD5. `DocumentRepository.get_docling_data(with_original=True)` reads the original with the structure.
+- Web app: the inspector's Original document tab shows every page of the stored original, rendered in the browser with pdf.js for a PDF, from `GET /api/inspect/{database}/documents/{id}/original?md5=`. `…/pages/{n}/boxes` gives the boxes of every chunk on a page.
+
 ### Changed
 
+- **Breaking:** page images are no longer stored. Visual grounding renders the stored original, so a document has none until `haiku-rag rebuild --originals` stores it or the document is re-ingested. The 0.113.0 migration drops `documents.docling_pages`, rewrites every `documents` row and vacuums at zero retention: stop every other process before `haiku-rag migrate`.
+- **Breaking:** `processing.conversion_options.generate_page_images` removed. A config carrying it fails to load.
+- **Breaking:** `Document.docling_pages`, `Document.get_page_images` and `DocumentRepository.get_pages_data` removed. `DocumentRepository.get_original` returns the original file, `get_original_and_md5` the file and its MD5.
+- Web app: `/api/visualize` returns the boxes by page as JSON instead of PNG pages. A document read gains `original` and `pages`. `/api/inspect/{database}/documents/{id}/pages/{n}` renders a plain page of an image original only and needs `md5`. Both answer 409 when the original changed.
 - `pydantic-ai-slim` raised to 2.71. With `provider: vllm` or `ollama`, every system prompt carries pydantic-ai 2.71's `<system>` framing announcement (`framing_announcement: always`), and chat-template special tokens in content are sent with a zero-width joiner. Ollama receives `max_tokens` instead of `max_completion_tokens`.
 
 ## [0.112.3] - 2026-11-20

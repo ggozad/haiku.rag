@@ -3,6 +3,7 @@ import json
 import pytest
 
 from haiku.rag.config import AppConfig, get_config
+from haiku.rag.store import upgrades
 from haiku.rag.store.engine import Store
 from haiku.rag.store.exceptions import MigrationRequiredError
 from haiku.rag.store.repositories.settings import SettingsRepository
@@ -67,10 +68,14 @@ def _files_holding(root, marker: bytes) -> int:
 
 @pytest.mark.parametrize(("retention", "left"), [(0, 0), (None, 1)])
 async def test_vacuum_at_zero_retention_removes_the_old_settings_from_disk(
-    temp_db_path, retention, left
+    temp_db_path, retention, left, monkeypatch
 ):
     from haiku.rag.client import HaikuRAG
 
+    # The 0.113.0 step vacuums at zero retention itself.
+    monkeypatch.setattr(
+        upgrades, "upgrades", [u for u in upgrades.upgrades if u.version != "0.113.0"]
+    )
     async with Store(temp_db_path, create=True) as store:
         await _write_row(store, _full_settings("0.88.2"))
     async with Store(temp_db_path, skip_migration_check=True) as store:

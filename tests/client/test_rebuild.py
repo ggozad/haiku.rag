@@ -898,13 +898,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
 
     - the docling blob has the description in meta;
     - the chunk text picks it up;
-    - the docling_pages blob is preserved untouched.
-
-    The pages assertion guards against a foot-gun in compress_docling_split:
-    the docling document loaded via get_docling_document() never carries
-    pages (they live in a separate column), so calling set_docling() after
-    patching would write pages_bytes=None and silently destroy page rasters
-    on disk — breaking visualize_chunk for the affected docs."""
+    - the stored original is untouched, which set_docling would clear."""
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
     from haiku.rag.store.models.document import Document
@@ -923,12 +917,9 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         )
         assert created.id is not None
 
-        # docling_doc_with_picture has no PageItems, so set_docling leaves
-        # docling_pages as None. Inject sentinel bytes to stand in for what
-        # a real ingest with generate_page_images=True would store.
-        sentinel_pages = b"\x80SENTINEL_PAGE_BYTES"
+        sentinel_original = b"%PDF-SENTINEL"
         await rag.store.documents_table.update(
-            {"docling_pages": sentinel_pages}, where=f"id = '{created.id}'"
+            {"original": sentinel_original}, where=f"id = '{created.id}'"
         )
 
         from_blob = (
@@ -976,8 +967,9 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         chunks = await rag.chunk_repository.get_by_document_id(created.id)
         assert any("A red square (mocked)." in (c.content or "") for c in chunks)
 
-        # docling_pages must survive untouched — see docstring.
-        assert after.docling_pages == sentinel_pages
+        assert await rag.document_repository.get_original(created.id) == (
+            sentinel_original
+        )
 
 
 @pytest.mark.vcr()
@@ -1667,8 +1659,8 @@ async def test_rebuild_rechunk_rewrites_no_document_rows(temp_db_path):
 @pytest.mark.parametrize(
     "mode", [RebuildMode.RECHUNK, RebuildMode.DESCRIPTIONS], ids=lambda m: m.name
 )
-async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
-    """Batched documents carry no page images, and the stored ones survive."""
+async def test_rebuild_holds_no_original(temp_db_path, monkeypatch, mode):
+    """Batched documents carry no original, and the stored one survives."""
     from haiku.rag.client import rebuild as rebuild_module
     from haiku.rag.client.documents import _store_document_with_chunks
     from haiku.rag.config import AppConfig
@@ -1702,20 +1694,20 @@ async def test_rebuild_holds_no_page_images(temp_db_path, monkeypatch, mode):
             writing(rag), None, document, [], docling_doc
         )
         assert created.id is not None
-        pages = b"\x80SENTINEL_PAGE_BYTES"
+        original = b"%PDF-SENTINEL"
         await rag.store.documents_table.update(
-            {"docling_pages": pages}, where=f"id = '{created.id}'"
+            {"original": original}, where=f"id = '{created.id}'"
         )
 
         async for _ in rag.rebuild_database(mode=mode):
             pass
 
         assert [d.id for d in flushed] == [created.id]
-        assert flushed[0].docling_pages is None
+        assert flushed[0].original is None
         after = await rag.document_repository.get_by_id(created.id, include_blobs=True)
         assert after is not None
         assert after.content == "picture doc"
-        assert after.docling_pages == pages
+        assert await rag.document_repository.get_original(created.id) == original
 
 
 @pytest.mark.vcr()
@@ -2943,7 +2935,7 @@ async def main():
     async with HaikuRAG(Path(sys.argv[1]), config=config, create=True) as rag:
         repo = rag.document_repository
         target = await repo.create(
-            Document(content="target", uri="test://target", docling_pages=b"pages")
+            Document(content="target", uri="test://target", original=b"pages")
         )
         other = await repo.create(
             Document(content="other", uri="test://other", docling_document=b"kept")
@@ -2959,7 +2951,7 @@ async def main():
         target.set_docling(docling)
         blob = target.docling_document
         assert blob is not None and len(blob) > int(sys.argv[2]) // 2
-        target.docling_pages = b"not written"
+        target.original = b"not written"
 
         await _flush_rebuild_batch(
             writing(rag), [target], [], document_columns=_DESCRIPTION_COLUMNS
@@ -2970,7 +2962,7 @@ async def main():
         assert stored is not None
         assert stored.docling_document == blob
         assert stored.content == "target"
-        assert stored.docling_pages == b"pages"
+        assert await repo.get_original(target.id) == b"pages"
         untouched = await repo.get_by_id(other.id, include_blobs=True)
         assert untouched is not None
         assert untouched.content == "other"

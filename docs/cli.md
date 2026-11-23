@@ -101,9 +101,9 @@ haiku-rag ask "What are the main findings?" --full-citations
 |---|---|
 | `haiku-rag chat [--model PROVIDER:NAME]` | Conversational RAG in the terminal. See [Chat](chat.md) |
 | `haiku-rag inspect` | Browse documents and chunks, search, preview expanded context. See [Inspector](chat.md#inspector) |
-| `haiku-rag visualize CHUNK_ID [--no-expand]` | Draw a chunk on its page images, its expanded context fainter. `--no-expand` draws the chunk alone |
+| `haiku-rag visualize CHUNK_ID [--no-expand]` | Draw a chunk on its pages, its expanded context fainter. `--no-expand` draws the chunk alone |
 
-`chat` and `inspect` need the `tui` extra, which the full package includes. `visualize` needs a terminal with inline images (iTerm2, Kitty, WezTerm) and documents converted with page images.
+`chat` and `inspect` need the `tui` extra, which the full package includes. `visualize` needs a terminal with inline images (iTerm2, Kitty, WezTerm) and documents with a stored original.
 
 ## Database lifecycle
 
@@ -184,6 +184,8 @@ haiku-rag migrate --db /path/to/your.lancedb
 
 Back up the database first. `migrate` exits 1 on failure.
 
+The 0.113.0 migration deletes the stored page images and reclaims their space at once: it rewrites every row of `documents`, then vacuums the database at zero retention. Stop every other process using the database before running it. Its memory grows with the size of the `documents` table without the page images: it peaked at 10.4 GB on 2.9 GB of text and structures. A tag taken before it keeps its page images on disk, and `migrate` names such tags. Visual grounding then renders from a document's original file, which an existing document gets from [`rebuild --originals`](#rebuild), or when it is re-ingested, a full rebuild included. In the web app's compose stack, run both in the ingester container, as [Database maintenance](apps.md#database-maintenance) shows.
+
 `init` and `migrate` record the schema the release writes as `schema_version`. A release refuses to write to a database whose `schema_version` is newer than its own schema, and a read-only open warns:
 
 ```
@@ -205,7 +207,7 @@ Fetches the models the configuration needs, see [Installation](installation.md#p
 ### rebuild
 
 ```bash
-haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --set-embedder | --reindex]
+haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --set-embedder | --reindex | --originals]
 ```
 
 | Mode | Flag | Use it when |
@@ -217,14 +219,17 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Descriptions | `--descriptions` | Adding VLM picture descriptions to an existing database |
 | Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
 | Reindex | `--reindex` | `doctor` reports rows outside the full-text index, an index is missing, or `search.fts_language` changed |
+| Originals | `--originals` | Documents ingested before originals were stored need visual grounding |
 
 A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment its PDF did not rebuild, are re-chunked and re-embedded from their stored content.
 
-Every mode except `--title-only` and `--set-embedder` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
+Every mode except `--title-only`, `--set-embedder` and `--originals` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
 A full rebuild, `--rechunk` and `--descriptions` replace the chunks of 50 documents at a time, each batch in one transaction, and leave the other documents' chunks as they were. A run that fails or is cancelled rolls its batch back and keeps every document searchable and the vector index in place. Run it again to finish. A process killed outright, by SIGKILL or the out-of-memory killer, can leave the batch it was writing without chunks until you run the rebuild again. When the vector dimension changed, they drop the chunks table before processing any document, so an interrupted run leaves the documents it did not reach without chunks.
 
-`--embed-only` always drops the chunks table, after copying it aside, and an interrupted run resumes from that copy. A rebuild that dropped the chunks table and did not finish marks the database incomplete: opening it warns, naming the rebuild to run again, and that run retrains the vector index if the database had one. `--embed-only` refuses to finish a full rebuild, `--rechunk` or `--descriptions`, since it cannot write chunks for the documents left without them. `--title-only`, `--set-embedder` and `--reindex` leave the mark in place.
+`--embed-only` always drops the chunks table, after copying it aside, and an interrupted run resumes from that copy. A rebuild that dropped the chunks table and did not finish marks the database incomplete: opening it warns, naming the rebuild to run again, and that run retrains the vector index if the database had one. `--embed-only` refuses to finish a full rebuild, `--rechunk` or `--descriptions`, since it cannot write chunks for the documents left without them. `--title-only`, `--set-embedder`, `--reindex` and `--originals` leave the mark in place.
+
+`--originals` stores the original PDF or image of every document that has none. It fetches the document's source again and stores the bytes only when their MD5 equals the one recorded at ingest. An attachment's bytes come from its parent PDF. It converts, chunks and embeds nothing, and logs each document it skips with the reason: the source is unavailable or its MD5 differs. It refuses to run while `storage.store_originals` is off. Stop other processes writing the database first: a document they update during the run is left without an original.
 
 The database records the embedder whose vectors the chunks table holds. A rebuild that keeps the table records the configured embedder once it has finished. An interrupted one to another embedder at the same dimension keeps the old one recorded while some documents already have the new one's vectors, so opening the database fails when writable and warns when read-only, until you run the rebuild again. A rebuild that empties the table, `--embed-only` or a dimension change, records the configured embedder as soon as the table is recreated. `--title-only` embeds nothing and records nothing.
 

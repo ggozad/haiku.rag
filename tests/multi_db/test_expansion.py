@@ -9,6 +9,7 @@ from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
 from haiku.rag.store.exceptions import AmbiguousDatabaseError
 from haiku.rag.store.models import Chunk, Document, DocumentItem, SearchResult
+from tests.conftest import build_pdf
 from tests.multi_db.helpers import (
     _config,
     _seed,
@@ -245,18 +246,11 @@ class TestVisualizationRouting:
     def _visualizable(name):
         """A one-page document whose only item has a bounding box to draw."""
         from docling_core.types.doc.base import BoundingBox, Size
-        from docling_core.types.doc.document import ImageRef, ProvenanceItem
+        from docling_core.types.doc.document import ProvenanceItem
         from docling_core.types.doc.labels import DocItemLabel
-        from PIL import Image as PilImageModule
 
         doc = DoclingDocument(name=name)
-        doc.add_page(
-            page_no=1,
-            size=Size(width=612.0, height=792.0),
-            image=ImageRef.from_pil(
-                PilImageModule.new("RGB", (612, 792), color="white"), dpi=72
-            ),
-        )
+        doc.add_page(page_no=1, size=Size(width=612.0, height=792.0))
         doc.add_text(
             label=DocItemLabel.PARAGRAPH,
             text=f"{name} content",
@@ -286,18 +280,23 @@ class TestVisualizationRouting:
                     )
                 ],
                 uri="test://beta/visualizable",
+                original=build_pdf([]),
             )
             [chunk] = await beta.chunk_repository.get_by_document_id(document.id)
 
         async with HaikuRAG(config=config) as rag:
             assert len(await rag.visualize_chunk(chunk, source="beta")) == 1
             assert await rag.visualize_chunk(chunk, source="alpha") == []
+            grounding = await rag.chunk_grounding(chunk, source="beta")
+            assert grounding is not None and grounding.document_id == document.id
+            assert await rag.chunk_grounding(chunk, source="alpha") is None
 
-    async def test_visualizing_without_a_source_is_refused(self, tmp_path):
+    @pytest.mark.parametrize("method", ["visualize_chunk", "chunk_grounding"])
+    async def test_visualizing_without_a_source_is_refused(self, tmp_path, method):
         """Federating, nothing in a chunk says which database drew it."""
         config = _config(tmp_path, ["alpha", "beta"])
         await _seed(config, "alpha", ["alpha document about cats"])
 
         async with HaikuRAG(config=config) as rag:
-            with pytest.raises(AmbiguousDatabaseError, match="source"):
-                await rag.visualize_chunk(Chunk(content="x", document_id="doc-1"))
+            with pytest.raises(AmbiguousDatabaseError, match=f"{method} needs"):
+                await getattr(rag, method)(Chunk(content="x", document_id="doc-1"))

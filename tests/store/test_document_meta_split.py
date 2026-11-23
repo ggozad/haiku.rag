@@ -60,7 +60,7 @@ async def test_repository_empty_and_missing_id_paths(temp_db_path):
         assert await repo.create([]) == []
         assert await repo.get_content("nope") is None
         assert await repo.get_docling_data("nope") is None
-        assert await repo.get_pages_data("nope") is None
+        assert await repo.get_original("nope") is None
         assert await repo.delete("nope") is False
 
         doc = await repo.create(Document(content="hello body", uri="u1"))

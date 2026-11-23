@@ -57,12 +57,14 @@ storage:
   auto_vacuum: true  # Enable automatic vacuuming after operations
   vacuum_retention_seconds: 86400  # Cleanup threshold in seconds
   compaction_target_bytes: 2147483648  # Target size for a compacted fragment
+  store_originals: true  # Store PDF and image files for visual grounding
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
 - **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`. Vacuum is also what adds newly written rows to the indexes, so with `false` they stay outside them until `haiku-rag vacuum`, or `haiku-rag rebuild --reindex` for the full-text and scalar indexes. With the ingester's [maintenance](../ingester.md#maintenance) enabled, the ingester's clients ignore it and the maintenance pass vacuums
 - **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
 - **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum memory](#vacuum-memory) below
+- **store_originals**: When enabled (default), ingesting a PDF or an image stores the file in the `documents` table, and visual grounding renders its pages from it. When disabled, no file is stored and documents ingested meanwhile have no visual grounding until `haiku-rag rebuild --originals` stores their files. The setting governs writes only: a stored file renders either way
 
 !!! warning "Vacuum retention"
     Keep `vacuum_retention_seconds` above the time a document takes to process and write. A lower value lets vacuum remove table versions an in-flight operation still needs.
@@ -76,10 +78,7 @@ Vacuum compacts small data files into larger ones. The `documents` and `document
 
     So peak memory is the larger of `compaction_target_bytes` and the biggest existing fragment. Lower the first by reducing it, and the second by ingesting in smaller batches.
 
-A row larger than the target costs roughly its own size. A 300-page PDF at `images_scale: 2.0` makes a row of about 445 MB. To make rows smaller:
-
-- Reduce `images_scale` (see [Image settings](processing.md#image-settings)). Page images dominate `documents`, and their size falls with the square of the scale.
-- Set `generate_page_images: false` when visual grounding is not needed. This removes page images entirely.
+A row larger than the target costs roughly its own size. A `documents` row holds the text, the compressed docling structure without images, and the original PDF or image file, so it is about the size of the file. `store_originals: false` leaves the file out.
 
 Vacuum also adds new rows to the full-text index. Search stays correct without it but scans the uncovered rows on every query. `haiku-rag doctor` reports the coverage.
 

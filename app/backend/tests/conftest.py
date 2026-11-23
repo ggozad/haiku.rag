@@ -1,37 +1,13 @@
 import pytest
-from docling_core.types.doc.base import BoundingBox, Size
-from docling_core.types.doc.document import DoclingDocument, ImageRef, ProvenanceItem
-from docling_core.types.doc.labels import DocItemLabel
-from PIL import Image
 from pydantic_ai import models
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.store.models import Chunk
 from haiku.rag.store.models.document_item import DocumentItem
-from tests.support import image_bytes, served
+from tests.support import image_bytes, letter_pdf, paged_document, served
 
 models.ALLOW_MODEL_REQUESTS = False
-
-
-def paged_document(text: str) -> DoclingDocument:
-    """A one-page document whose only item has a bounding box to draw."""
-    doc = DoclingDocument(name=text)
-    doc.add_page(
-        page_no=1,
-        size=Size(width=612.0, height=792.0),
-        image=ImageRef.from_pil(Image.new("RGB", (612, 792), "white"), dpi=72),
-    )
-    doc.add_text(
-        label=DocItemLabel.PARAGRAPH,
-        text=text,
-        prov=ProvenanceItem(
-            page_no=1,
-            bbox=BoundingBox(l=50, t=700, r=550, b=650),
-            charspan=(0, len(text)),
-        ),
-    )
-    return doc
 
 
 async def seed(config: AppConfig, name: str) -> dict[str, str]:
@@ -52,6 +28,7 @@ async def seed(config: AppConfig, name: str) -> dict[str, str]:
             uri=f"test://{name}/doc",
             title=f"{name} doc",
             metadata={"team": name},
+            original=letter_pdf(1),
         )
         assert document.id is not None
         [chunk] = await rag.chunk_repository.get_by_document_id(document.id)

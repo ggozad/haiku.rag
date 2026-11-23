@@ -4,6 +4,9 @@ node_modules/
 
 # Next.js build
 .next/
+
+# pdf.js image decoders, copied from node_modules by `pnpm pdfjs`
+/public/pdfjs/
 out/
 
 # Production

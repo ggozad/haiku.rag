@@ -1,8 +1,10 @@
+import asyncio
 import base64
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from haiku.rag.store.models.chunk import (
+    BoundingBox,
     Chunk,
     SearchResult,
     SearchType,
@@ -571,49 +573,52 @@ async def expand_context(
     return expanded_results
 
 
-async def visualize_chunk(
+class GroundingBox(NamedTuple):
+    """A box to draw, and whether it holds the chunks' own content."""
+
+    box: BoundingBox
+    matched: bool
+
+
+class Grounding(NamedTuple):
+    """The boxes to draw by page, and the original they are drawn on."""
+
+    document_id: str
+    original: bytes
+    original_md5: str
+    pages: dict[int, list[GroundingBox]]
+
+
+async def chunk_grounding(
     session: "SingleDatabaseSession",
     chunk: "Chunk | Sequence[Chunk]",
     refs: list[str] | None = None,
     expand: bool = True,
-) -> list:
-    """Render page images with bounding box highlights for one or more chunks.
+) -> Grounding | None:
+    """The boxes drawn by `visualize_chunk`, by page, context boxes first.
 
-    When ``refs`` is given (the ``doc_item_refs`` of the citation, i.e. the
-    exact items the model saw), bounding boxes are resolved from them directly
-    so the visualization matches the cited context precisely. Otherwise, with
-    ``expand=True`` (default) the chunks' context is re-expanded to recover the
-    surrounding section; with ``expand=False`` only the chunks' own items are
-    drawn, so the visualization shows just the retrieved chunk with no context.
-
-    The chunks' own items draw in a strong highlight; the remaining items draw
-    fainter, so the matched content stands out from its surrounding context.
-    Chunks from a different document than the first are ignored.
-
-    Returns a list of PIL Image objects, one per page with bounding boxes.
-    Empty list if no bounding boxes or page images available.
+    None without boxes or a stored original. See `visualize_chunk` for `refs`
+    and `expand`.
     """
-    from copy import deepcopy
-
-    from PIL import ImageDraw
-
     from haiku.rag.store.models.chunk import ChunkMetadata
 
     chunks = [chunk] if isinstance(chunk, Chunk) else list(chunk)
     if not chunks:
-        return []
+        return None
     document_id = chunks[0].document_id
     if not document_id:
-        return []
+        return None
     chunks = [c for c in chunks if c.document_id == document_id]
 
-    doc = await session.document_repository.get_docling_data(document_id)
+    doc = await session.document_repository.get_docling_data(
+        document_id, with_original=True
+    )
     if not doc:
-        return []
+        return None
 
     docling_doc = doc.get_docling_document()
     if not docling_doc:
-        return []
+        return None
 
     matched_refs = {r for c in chunks for r in c.get_chunk_metadata().doc_item_refs}
 
@@ -655,44 +660,73 @@ async def visualize_chunk(
     swept_boxes = ChunkMetadata(doc_item_refs=swept_refs).resolve_bounding_boxes(
         docling_doc
     )
-    if not matched_boxes and not swept_boxes:
-        return []
+    if (
+        (not matched_boxes and not swept_boxes)
+        or doc.original is None
+        or doc.original_md5 is None
+    ):
+        return None
 
-    # Group bounding boxes by page; swept boxes first so matched draw on top
-    boxes_by_page: dict[int, list] = {}
-    for bbox, is_matched in [(b, False) for b in swept_boxes] + [
-        (b, True) for b in matched_boxes
+    pages: dict[int, list[GroundingBox]] = {}
+    for box in [GroundingBox(b, False) for b in swept_boxes] + [
+        GroundingBox(b, True) for b in matched_boxes
     ]:
-        if bbox.page_no not in boxes_by_page:
-            boxes_by_page[bbox.page_no] = []
-        boxes_by_page[bbox.page_no].append((bbox, is_matched))
+        pages.setdefault(box.box.page_no, []).append(box)
+    return Grounding(document_id, doc.original, doc.original_md5, pages)
 
-    # Load only the needed page images
-    pages_doc = await session.document_repository.get_pages_data(document_id)
-    if not pages_doc:
+
+async def visualize_chunk(
+    session: "SingleDatabaseSession",
+    chunk: "Chunk | Sequence[Chunk]",
+    refs: list[str] | None = None,
+    expand: bool = True,
+) -> list:
+    """Render page images with bounding box highlights for one or more chunks.
+
+    When ``refs`` is given (the ``doc_item_refs`` of the citation, i.e. the
+    exact items the model saw), bounding boxes are resolved from them directly
+    so the visualization matches the cited context precisely. Otherwise, with
+    ``expand=True`` (default) the chunks' context is re-expanded to recover the
+    surrounding section; with ``expand=False`` only the chunks' own items are
+    drawn, so the visualization shows just the retrieved chunk with no context.
+
+    The chunks' own items draw in a strong highlight; the remaining items draw
+    fainter, so the matched content stands out from its surrounding context.
+    Chunks from a different document than the first are ignored.
+
+    Returns a list of PIL Image objects, one per page with bounding boxes,
+    rendered from the document's stored original. Empty list without bounding
+    boxes or an original.
+    """
+    from PIL import ImageDraw
+
+    from haiku.rag.utils.images import render_original_pages
+
+    grounding = await chunk_grounding(session, chunk, refs, expand)
+    if grounding is None:
         return []
-    page_images = pages_doc.get_page_images(list(boxes_by_page.keys()))
+    rendered = await asyncio.to_thread(
+        render_original_pages,
+        grounding.original,
+        sorted(grounding.pages),
+        session.config.processing.conversion_options.images_scale,
+    )
 
     images = []
-    for page_no in sorted(boxes_by_page.keys()):
-        if page_no not in page_images:
+    for page_no in sorted(grounding.pages):
+        page = rendered.get(page_no)
+        if page is None:
             continue
-
-        page = page_images[page_no]
-        if page.image is None or page.image.pil_image is None:
-            continue
-
-        pil_image = page.image.pil_image
-        page_height = page.size.height
+        image = page.image
+        page_height = page.height
 
         # Scale factor: image pixels vs document coordinates
-        scale_x = pil_image.width / page.size.width
-        scale_y = pil_image.height / page.size.height
+        scale_x = image.width / page.width
+        scale_y = image.height / page.height
 
-        image = deepcopy(pil_image)
         draw = ImageDraw.Draw(image, "RGBA")
 
-        for bbox, is_matched in boxes_by_page[page_no]:
+        for bbox, is_matched in grounding.pages[page_no]:
             # Document coords are bottom-left origin; PIL uses top-left
             x0 = bbox.left * scale_x
             y0 = (page_height - bbox.top) * scale_y
