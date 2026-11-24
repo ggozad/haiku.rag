@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.113.1] - 2026-11-24
+
 ### Changed
 
 - docling 2.152.0, docling-core 2.108.0 and docling-parse 7.27.1. Tested against docling-serve v1.39.0. An HTML block in Markdown converts, an `<img>` block yielding a picture, a soft line break inside a Markdown paragraph becomes a space, and a Markdown paragraph keeps its trailing whitespace.
@@ -3387,7 +3389,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.113.0...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.113.1...HEAD
+[0.113.1]: https://github.com/ggozad/haiku.rag/compare/0.113.0...0.113.1
 [0.113.0]: https://github.com/ggozad/haiku.rag/compare/0.112.3...0.113.0
 [0.112.3]: https://github.com/ggozad/haiku.rag/compare/0.112.2...0.112.3
 [0.112.2]: https://github.com/ggozad/haiku.rag/compare/0.112.1...0.112.2
