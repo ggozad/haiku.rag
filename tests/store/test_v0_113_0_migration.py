@@ -100,7 +100,7 @@ async def test_a_new_database_needs_no_migration(temp_db_path):
     async with Store(temp_db_path, create=True) as store:
         recorded = await SettingsRepository(store).get_current_settings()
 
-    assert recorded["version"] == metadata.version("haiku.rag-slim") == "0.113.0"
+    assert recorded["version"] == metadata.version("haiku.rag-slim")
     assert get_pending_upgrades(recorded["version"]) == []
 
 
