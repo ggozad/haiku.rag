@@ -65,7 +65,7 @@ def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     record, or that another item refers into, is left as it is. Returns
     whether the document changed.
     """
-    # docling-core #769 and #770: the chunkers do not read text from an InlineGroup.
+    # docling-core #770: HybridChunker serializes each run of an InlineGroup separately.
     from docling_core.transforms.serializer.markdown import (
         MarkdownDocSerializer,
         MarkdownParams,
