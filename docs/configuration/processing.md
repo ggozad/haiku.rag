@@ -192,7 +192,7 @@ Every configured header is sent to allowed origins. Only list hosts trusted to r
 | `.pdf` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.png` / `.jpg` / `.jpeg` / `.bmp` / `.tiff` / `.webp` | ✅ | ✅ | ✅ | n/a | n/a |
 | `.html` / `.xhtml` | n/a (markup-based) | n/a | ✅ on embedded pictures | ✅ | ✅ |
-| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`![alt](url)`; HTML blocks have the limitation above) | n/a |
+| `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`![alt](url)` and `<img>` HTML blocks) | n/a |
 | `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a | n/a |
 | `.epub` | n/a | n/a | n/a (pictures carry no image data) | n/a | n/a |
 | Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |

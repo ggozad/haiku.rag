@@ -1,0 +1,155 @@
+interactions:
+- request:
+    body: "--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data; name=\"to_formats\"\r\n\r\njson\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition:
+      form-data; name=\"target_type\"\r\n\r\nzip\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data;
+      name=\"do_ocr\"\r\n\r\ntrue\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data; name=\"force_ocr\"\r\n\r\nfalse\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition:
+      form-data; name=\"ocr_engine\"\r\n\r\nauto\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data;
+      name=\"do_table_structure\"\r\n\r\ntrue\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data; name=\"pdf_backend\"\r\n\r\ndocling_parse\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition:
+      form-data; name=\"table_mode\"\r\n\r\naccurate\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data;
+      name=\"table_cell_matching\"\r\n\r\ntrue\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data; name=\"images_scale\"\r\n\r\n2.0\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition:
+      form-data; name=\"image_export_mode\"\r\n\r\nreferenced\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition:
+      form-data; name=\"include_images\"\r\n\r\ntrue\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data;
+      name=\"include_page_images\"\r\n\r\nfalse\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition: form-data; name=\"do_picture_description\"\r\n\r\nfalse\r\n--34d73f89d2707bdeddda2022ab120277\r\nContent-Disposition:
+      form-data; name=\"files\"; filename=\"content.md\"\r\nContent-Type: text/markdown\r\n\r\n# Title\n\nIntro paragraph.\n\n<img
+      src=\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==\"
+      alt=\"dot\"/>\n\nTrailing paragraph.\n\r\n--34d73f89d2707bdeddda2022ab120277--\r\n"
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      content-length:
+      - '1764'
+      content-type:
+      - multipart/form-data; boundary=34d73f89d2707bdeddda2022ab120277
+      host:
+      - localhost:5001
+    method: POST
+    uri: http://localhost:5001/v1/convert/file/async
+  response:
+    headers:
+      content-length:
+      - '167'
+      content-type:
+      - application/json
+      vary:
+      - Origin
+    parsed_body:
+      error_message: null
+      failure: null
+      task_id: 953c2e86-aaad-4145-9b1d-ac037527f259
+      task_meta: null
+      task_position: 1
+      task_status: pending
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/953c2e86-aaad-4145-9b1d-ac037527f259
+  response:
+    headers:
+      content-length:
+      - '170'
+      content-type:
+      - application/json
+      vary:
+      - Origin
+    parsed_body:
+      error_message: null
+      failure: null
+      task_id: 953c2e86-aaad-4145-9b1d-ac037527f259
+      task_meta: null
+      task_position: null
+      task_status: started
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/status/poll/953c2e86-aaad-4145-9b1d-ac037527f259
+  response:
+    headers:
+      content-length:
+      - '170'
+      content-type:
+      - application/json
+      vary:
+      - Origin
+    parsed_body:
+      error_message: null
+      failure: null
+      task_id: 953c2e86-aaad-4145-9b1d-ac037527f259
+      task_meta: null
+      task_position: null
+      task_status: success
+      task_type: convert
+    status:
+      code: 200
+      message: OK
+- request:
+    body: ''
+    headers:
+      accept:
+      - '*/*'
+      accept-encoding:
+      - gzip, deflate, zstd
+      connection:
+      - keep-alive
+      host:
+      - localhost:5001
+    method: GET
+    uri: http://localhost:5001/v1/result/953c2e86-aaad-4145-9b1d-ac037527f259
+  response:
+    body:
+      string: !!binary |
+        UEsDBBQAAAAAADJgeF0AAAAAAAAAAAAAAAAKAAAAYXJ0aWZhY3RzL1BLAwQUAAAACAAyYHhd4KOi
+        WvcBAADECAAADAAAAGNvbnRlbnQuanNvbtVVTY+bMBC951cgb4+rJCTZdHfPvfS+typCDhnAqj+Q
+        baKiKP+9tmMTL5AUrXLpCZh5z/PmjbFPsyRBKq+A4YxjBug9QT9ETgkvzaNhwDV6tpgjSEUEt/l0
+        nq7my0s4cHLBdYcVkpTEQk/my3wzwkC3tQNq+KMXlWbUQU1yTziWbVZhVZn89m37ffOyed2sX9J0
+        +7pJl1uPKwiFXrU5OyCTPLuiRSM50Y2Ea10FtMgkFJbytLgC/Ip5RehBghX6axdil5UziluQljdg
+        BQ2ZFEJnIUrxHqgNN1zVkJOCQKRtLw7tLVkuN6LIRRLPcdlvHceaqBZL5HNn97zZQlzhK+pLKZpa
+        dS65EapOYhDYaytIfA7pGku7Qd7HO3IaQzsdZ8SP2JERT1LUZbtlblJqktvJRk5OYV0KrSOKf9td
+        dd8ZQWy3JppCZJEUx2gz+j/JAj8+A62Ea3gW6b47jXTqNPr7a3QgX2jXyp7Q7U+upUiMRFxKXFfz
+        YeMDxGQPVlM9GG6OR9mQ41rbo3SCEwehh83b4OR+1//JzD8kJvbWuTv2MdDFiZn//VAY27/Op2i8
+        jzRo2uGxesTh4Tu4Z67faepBygwWTJ85qM9lCnOXcKH7YcxNEHcCdr1JabynEQX9hjY7YtpARjSw
+        KFEIyfqxGpeOezrPzn8BUEsBAhQDFAAAAAAAMmB4XQAAAAAAAAAAAAAAAAoAAAAAAAAAAAAQAO1B
+        AAAAAGFydGlmYWN0cy9QSwECFAMUAAAACAAyYHhd4KOiWvcBAADECAAADAAAAAAAAAAAAAAApIEo
+        AAAAY29udGVudC5qc29uUEsFBgAAAAACAAIAcgAAAEkCAAAAAA==
+    headers:
+      content-disposition:
+      - attachment; filename="content.zip"
+      content-length:
+      - '721'
+      content-type:
+      - application/zip
+      vary:
+      - Origin
+    status:
+      code: 200
+      message: OK
+version: 1

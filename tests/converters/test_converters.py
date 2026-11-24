@@ -2354,6 +2354,24 @@ class TestDoclingServeConverterIntegration:
         assert JAPANESE in markdown
 
     @pytest.mark.vcr()
+    async def test_convert_md_html_block_image_real_service(self, converter):
+        """A Markdown HTML image block becomes a picture, not literal text."""
+        png_b64 = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+            "+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        md = (
+            f"# Title\n\nIntro paragraph.\n\n"
+            f'<img src="data:image/png;base64,{png_b64}" alt="dot"/>\n\n'
+            f"Trailing paragraph.\n"
+        )
+
+        doc = await converter.convert_text(md, format="md")
+
+        assert len(doc.pictures) == 1
+        assert png_b64 not in doc.export_to_markdown()
+
+    @pytest.mark.vcr()
     async def test_convert_epub_real_service(self, converter, tmp_path):
         doc = await converter.convert_file(write_epub(tmp_path / "lunar.epub"))
 
