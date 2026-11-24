@@ -1,6 +1,6 @@
 # Prompt customization
 
-Customize the prompts used by haiku.rag's capabilities to match your domain.
+Two prompts are configurable: domain context for the RAG capability and the MCP server, and the prompt for picture descriptions.
 
 ## Configuration
 
@@ -26,17 +26,7 @@ The `domain_preamble` field provides **domain context** prepended to the RAG cap
 - Clarify domain-specific terminology
 - Provide context that helps the model interpret ambiguous queries
 
-`domain_preamble` is for domain context, not behavioral instructions. Descriptions of subject matter, terminology, and content scope belong here. Applications can add behavioral guidance through normal Pydantic AI agent instructions.
-
-**Example:**
-
-```yaml
-prompts:
-  domain_preamble: |
-    This knowledge base contains product documentation, API references,
-    and troubleshooting guides for Acme Corp's cloud platform.
-    "Deployment" refers to Acme's managed deployment service, not general CI/CD.
-```
+Behavioral guidance belongs in the agent's own Pydantic AI instructions, not here.
 
 ## Picture description prompt
 
@@ -49,17 +39,7 @@ Describe this image for a blind user. State the image type (screenshot, chart, p
 what it depicts, any visible text, and key visual details. Be concise and accurate.
 ```
 
-**Custom example:**
-
-```yaml
-prompts:
-  picture_description: |
-    Describe this image for a document search system.
-    Focus on: image type, main content, any text, key visual elements.
-    Be concise and factual.
-```
-
-The prompt is used when `processing.pictures` is `"description"`. See [Picture Handling](processing.md#picture-handling) for full configuration.
+The prompt is used when `processing.pictures` is `"description"`, and by `haiku-rag rebuild --descriptions`. See [Picture Handling](processing.md#picture-handling) for full configuration.
 
 ## Programmatic configuration
 

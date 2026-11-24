@@ -36,8 +36,8 @@ The leaderboard scores answers with Onyx's scorer (`metrics_based_eval`) judged 
 
 ```bash
 cd evaluations
-evaluations download enterprise_rag
-evaluations run enterprise_rag --skip-db --config configs/enterprise_rag.yaml
+uv run evaluations download enterprise_rag
+uv run evaluations run enterprise_rag --skip-db --config configs/enterprise_rag.yaml
 uv run python scripts/build_erb_submission.py \
     ~/.local/share/haiku.rag/evaluations/results/<name>.<trace>.jsonl \
     ../EnterpriseRAG-Bench/answers.jsonl \
@@ -71,7 +71,7 @@ Two approaches are measured:
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | none                                                 |  3045 | 0.9798 |
 | `nvidia/llama-nemotron-embed-vl-1b-v2`   | `nvidia/llama-nemotron-rerank-vl-1b-v2` (multimodal) |  3045 | 0.9899 |
 
-*The reranked row: v0.88.0, `reranking.multimodal: true`, the stack of the QA rows below. The Qwen3-VL row: v0.52.0. The Nemotron row without a reranker was measured earlier.*
+*The reranked row: v0.88.0, `reranking.multimodal: true`, the stack of the QA rows below. The Qwen3-VL row: v0.52.0.*
 
 #### QA accuracy and citation retrieval
 
@@ -106,7 +106,7 @@ Two approaches are measured:
 
 ## T²-RAGBench (FinQA)
 
-[T²-RAGBench](https://huggingface.co/datasets/G4KMU/t2-ragbench) turns financial-report QA into context-independent questions with short numeric answers and one gold document each. The FinQA subset is 2,789 single-page PDFs and 8,281 questions. QA is scored by exact numeric match (`NumberMatchEvaluator`, relative tolerance 0.01), not by a judge.
+[T²-RAGBench](https://huggingface.co/datasets/G4KMU/t2-ragbench) turns financial-report QA into context-independent questions with short numeric answers and one gold document each. The FinQA subset is 2,789 single-page PDFs and 8,281 questions. QA is scored by numeric match, not by a judge: `NumberMatchEvaluator` compares the numbers on the answer's `ANSWER:` line with the gold value within relative tolerance 0.01, ignoring sign and accepting ×100 and ×1000 scale differences in either direction.
 
 #### QA accuracy and citation retrieval
 
@@ -171,8 +171,8 @@ Four dataset keys share one database:
 
 - `mtrag_clapnq` retrieves with the last user turn as written, and answers each turn after replaying the reference conversation before it.
 - `mtrag_clapnq_rewrite` retrieves with the human standalone rewrites.
-- `mtrag_clapnq_live` replays whole conversations through one capability session, carrying the model's own answers, tools and state, with `EvidenceCompactionCapability` registered.
-- `mtrag_clapnq_live_uncompacted` is the same replay without compaction. It is the only evaluation where compaction acts.
+- `mtrag_clapnq_live` replays whole conversations through one capability session, carrying the model's own answers, tools and state, with `EvidenceCompactionCapability` registered. It is the only evaluation where compaction acts.
+- `mtrag_clapnq_live_uncompacted` is the same replay without compaction.
 
 #### Retrieval (Recall@k / nDCG@k)
 
@@ -210,7 +210,7 @@ Compaction cut input tokens per request by 44.9%. Of the 18 turns where the arms
 
 ### Retrieval metrics
 
-The retrieval benchmark runs one search per question through the configured search stack, with the reranker when one is configured and without context expansion. It keeps the top 5 chunks, 10 for MTRAG, and scores the distinct documents they come from, in rank order.
+The retrieval benchmark runs one search per question through the configured search stack, with the reranker when one is configured and without context expansion. It keeps the top 5 chunks, 10 for EnterpriseRAG-Bench and MTRAG, and scores the distinct documents they come from, in rank order.
 
 **Mean Average Precision (MAP)** scores those documents against the gold `expected_uris`:
 
@@ -218,11 +218,11 @@ The retrieval benchmark runs one search per question through the configured sear
 - Average precision (AP) is the sum of those precisions divided by the number of relevant documents.
 - MAP is the mean AP over queries, from 0 to 1. For a single-document query it is `1/rank`.
 
-MTRAG also reports Recall@k and nDCG@k.
+EnterpriseRAG-Bench reports Recall@10 instead of MAP. MTRAG also reports Recall@k and nDCG@k.
 
 ### QA accuracy
 
-A `pydantic-evals` LLM judge decides whether each answer is correct, and accuracy is the fraction judged correct. The default judge is `ollama:qwen3.8`, pinned so that changing the capability model does not change the judge. `evaluations.judge` in `haiku.rag.yaml` overrides it, including any OpenAI-compatible endpoint. Against the previous judge on 120 ORB cases, `qwen3.8` agreed on 95% (Cohen's κ 0.90).
+A `pydantic-evals` LLM judge decides whether each answer is correct, and accuracy is the fraction judged correct. The default judge is `ollama:qwen3.8`, pinned so that changing the capability model does not change the judge. `evaluations.judge` in `haiku.rag.yaml` overrides it, including any OpenAI-compatible endpoint.
 
 A dataset with its own deterministic evaluator is scored by it, and no judge runs. T²-RAGBench is the only one, with `NumberMatchEvaluator`.
 
@@ -263,7 +263,7 @@ uv run evaluations download all
 
 The hosted `frames` and `orb_multimodal_nemotron` databases are the corpora behind the current FRAMES and ORB rows.
 
-A database opens only against the embedder recorded in it, so run a downloaded one with `--skip-db` and its reference config from `evaluations/configs/`:
+A database searched with an embedder other than the recorded one fails to open on a different vector dimension, and at the same dimension it opens with a warning and returns meaningless results. Run a downloaded one with `--skip-db` and its reference config from `evaluations/configs/`:
 
 ```bash
 uv run evaluations run orb_multimodal_nemotron --skip-db --config evaluations/configs/orb_multimodal_nemotron.yaml

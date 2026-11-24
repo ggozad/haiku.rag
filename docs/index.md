@@ -1,9 +1,9 @@
 ---
 title: haiku.rag
-description: Local-first agentic RAG. Index PDFs, web pages, and whole directories, then ask questions and get answers cited to page numbers and section headings. Hybrid search, reranking, and multimodal retrieval on embedded LanceDB.
+description: Open-source agentic RAG. Index PDFs, web pages, and whole directories, then ask questions and get answers cited to page numbers and section headings. Hybrid search, reranking, and multimodal retrieval on embedded LanceDB.
 ---
 
-haiku.rag indexes PDFs, web pages, and whole directories, retrieves with hybrid search, and answers with citations down to the page number and section heading. It runs on an embedded database with open models, so your documents stay on your machine and there is no server to operate.
+haiku.rag is an open-source agentic RAG. It indexes PDFs, web pages, and whole directories, retrieves with hybrid search, and answers with citations down to the page number and section heading. It runs on an embedded database with open models, so your documents stay on your machine and there is no server to operate.
 
 ```bash
 uv pip install haiku.rag
@@ -17,9 +17,9 @@ haiku-rag ask "what does it conclude?"
 
 ## Why haiku.rag
 
-**Answers you can check.** Every answer carries citations with page numbers and section headings. Visual grounding shows the cited chunk highlighted on the original page. An optional capability requires every answer to declare what grounds it, including declaring that nothing does.
+**Answers you can check.** Answers cite the chunks they rest on, with page numbers and section headings where the document has them. Visual grounding shows the cited chunk highlighted on the original page. An optional capability requires every answer to declare what grounds it, including declaring that nothing does.
 
-**Local-first, no server.** Embedded [LanceDB](https://lancedb.com/) and open models through [Ollama](https://ollama.com/) by default. No database to run and no API keys required. The same code runs against S3, GCS, Azure, LanceDB Cloud, or any provider Pydantic AI supports.
+**Open models, no server.** Embedded [LanceDB](https://lancedb.com/) and open models through [Ollama](https://ollama.com/) by default. No database to run and no API keys required. The same code runs against S3, GCS, Azure, LanceDB Cloud, or any provider Pydantic AI supports.
 
 **Built for agents.** Native [Pydantic AI](https://ai.pydantic.dev/) capabilities compose into your own agents. An [MCP server](mcp.md) exposes the same database to Claude Desktop and other assistants. The capability runs sandboxed Python across documents for questions that need computation rather than retrieval.
 
@@ -30,7 +30,7 @@ haiku-rag ask "what does it conclude?"
 - **Ingest.** PDFs, office documents, HTML, Markdown and images, converted by [Docling](configuration/processing.md) in-process or on [docling-serve](remote-processing.md). One-shot from the CLI, or continuously from filesystem, S3, HTTP and WebDAV sources with the [ingester](ingester.md).
 - **Search.** Hybrid vector and full-text search, optional [reranking](configuration/providers.md#reranking-providers), section-aware context expansion, and image search with a multimodal embedder. Across [several databases](configuration/multiple-databases.md) at once.
 - **Answer.** The [RAG capability](capabilities/rag.md) searches, runs sandboxed Python over the documents, and cites what it used. [Evidence compaction](capabilities/compaction.md) and a [citation policy](capabilities/policy.md) are optional.
-- **Integrate.** A [Python API](python.md), Pydantic AI [capabilities](capabilities/index.md) for your own agents, and an [MCP server](mcp.md).
+- **Integrate.** A [Python API](python.md), Pydantic AI [capabilities](capabilities/index.md) for your own agents, [hooks](hooks.md) on ingestion and search, and an [MCP server](mcp.md).
 - **Use it in the browser.** A [web app](apps.md) for chat with cited answers, the ingester's queue, an inspector, and the doctor.
 - **Operate.** [Storage](configuration/storage.md) on local disk, S3, GCS, Azure or LanceDB Cloud, tags and rollback, vacuum, `haiku-rag doctor` health checks, and an ingester with a job queue, retries and a dashboard.
 

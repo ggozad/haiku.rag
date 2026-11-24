@@ -82,7 +82,7 @@ doc = await client.create_document_from_source(
 )
 ```
 
-PDFs that carry attachments via the `/EmbeddedFiles` table are split into one Document per attachment, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
+Each file in a PDF's `/EmbeddedFiles` table is ingested as its own Document, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
 
 ### Retrieving documents
 
@@ -102,7 +102,8 @@ Both return content, uri, title and metadata. The docling structure and the
 original file are loaded separately:
 
 ```python
-docling = await client.document_repository.get_docling_data(doc.id)
+loaded = await client.document_repository.get_docling_data(doc.id)  # Document or None
+docling = loaded.get_docling_document() if loaded else None
 original = await client.document_repository.get_original(doc.id)  # bytes or None
 stored = await client.document_repository.get_original_and_md5(doc.id)  # (bytes, md5) or None
 ```
@@ -210,7 +211,7 @@ await client.edit_document(
 await client.delete_document(doc.id)
 ```
 
-Deleting a document also removes any child Documents linked to it via `metadata.parent_uri` (PDF attachment children, primarily). The cascade is transitive.
+Deleting a document also removes the PDF attachments linked to it via `metadata.parent_uri`. The cascade is transitive.
 
 A PDF attachment cannot be deleted on its own while its parent is stored: `delete_document` raises `AttachmentDeletionError` (from `haiku.rag.client.exceptions`) naming the parent. Delete the parent, or remove the file from the PDF and re-ingest it. An attachment whose parent is gone can be deleted.
 
@@ -220,7 +221,7 @@ A PDF attachment cannot be deleted on its own while its parent is stored: `delet
 
 ## Searching documents
 
-The search method performs native hybrid search (vector + full-text) using LanceDB with optional reranking for improved relevance:
+`search` runs LanceDB hybrid search (vector + full-text), reranked when a reranker is configured.
 
 Basic hybrid search (default):
 ```python
@@ -275,7 +276,7 @@ for result in results:
     print(f"{result.source}: {result.content}")
 ```
 
-`client.is_read_only` reports the mode every covered database is opened with. Selection rules, the client's coverage properties and ranking across databases are under [Multiple databases](configuration/multiple-databases.md#python).
+`client.is_read_only` is true when the client was opened read-only or covers a tagged database. Selection rules, the client's coverage properties and ranking across databases are under [Multiple databases](configuration/multiple-databases.md#python).
 
 ### Filtering search results
 
@@ -358,7 +359,7 @@ for result in expanded_results:
     print(f"Expanded content: {result.content}")
 ```
 
-Expansion is section-aware and capped by `search.max_context_chars`, see [Search settings](configuration/qa.md#search-settings). Results whose expanded ranges overlap within a document are merged into one result with the highest score.
+Expansion is section-aware and capped by `search.max_context_chars`, see [Search settings](configuration/qa.md#search-settings). Results whose expanded ranges overlap within a document are merged into one result with the highest score, unless the merged result cannot keep every match within `search.max_context_chars`.
 
 ### Visual grounding
 
@@ -432,7 +433,7 @@ chunks = [
     Chunk(
         content="This is the second chunk",
         metadata={"section": "body"},
-        embedding=[0.1] * 1024,  # Optional: pre-computed embedding
+        embedding=[0.1] * client.embedder.vector_dim,  # Optional: pre-computed embedding
         order=1,
     ),
 ]
@@ -487,7 +488,7 @@ Run maintenance to optimize storage and prune old table versions:
 await client.vacuum()
 ```
 
-This compacts tables and removes historical versions to reduce disk usage. It’s safe to run anytime, for example after bulk imports or periodically in long‑running apps.
+This compacts tables and removes historical versions to reduce disk usage. Run it after bulk imports or periodically in long‑running apps. Keep `storage.vacuum_retention_seconds` above the time a document takes to process and write. See [Vacuum retention](configuration/storage.md#local-storage).
 
 Build or retrain the IVF_PQ vector index, as `haiku-rag create-index` does:
 
@@ -515,7 +516,7 @@ for name, info in tags.items():
 safety_tag = await client.store.restore_tag("release-1")
 ```
 
-Restore is a maintenance operation: stop all other writers first. A tag present on only some tables is partial; `list_tags` reports it via `missing_tables`, and partial tags can be deleted but never restored.
+Restore is a maintenance operation: stop all other writers first. A tag present on only some tables is partial. `list_tags` reports it via `missing_tables`, and partial tags can be deleted but never restored.
 
 Read the database as it was at a tag, without changing it:
 
@@ -567,11 +568,11 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.ORIGINALS):
 
 **Rebuild modes:**
 
-- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default). PDF attachments are re-converted from the bytes in their parent PDF. A document whose source is gone or fails to convert, and an attachment its parent did not rebuild, are rebuilt from stored content. Yields the id of each document rebuilt, which includes an attachment added to its PDF since ingestion. Re-converts documents stored by a version before inline groups were flattened
+- `RebuildMode.FULL` - Re-convert from source files, re-chunk, re-embed (default). PDF attachments are re-converted from the bytes in their parent PDF. A document whose source is gone or fails to convert, and an attachment not rebuilt with its parent, are rebuilt from stored content. Yields the id of each document rebuilt, which includes an attachment added to its PDF since ingestion
 - `RebuildMode.RECHUNK` - Re-chunk from the stored docling document, re-embed, recreate document items
 - `RebuildMode.EMBED_ONLY` - Keep existing chunks, only regenerate embeddings
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
-- `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider and name without re-embedding, when the vector dimension is unchanged
+- `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider, name and `query_prefix` without re-embedding. Raises `ConfigMismatchError` when the vector dimension or `document_prefix` differs
 - `RebuildMode.REINDEX` - Rebuild the full-text and scalar indexes from scratch, rewriting no rows. Leaves the vector index alone
 - `RebuildMode.ORIGINALS` - Store the original PDF or image of every document that has none, fetched from its source when its MD5 equals the one recorded at ingest. An attachment's bytes come from its parent PDF. Writes `original` and `original_md5` only. Yields the id of each document whose original it stored. Raises `ValueError` while `storage.store_originals` is off
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
@@ -601,7 +602,7 @@ See [Automatic Title Generation](configuration/processing.md#automatic-title-gen
 
 ### Atomic writes and rollback
 
-Document create, update, and delete operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores the `documents`, `document_meta`, `chunks`, and `document_items` tables to their pre‑operation state using LanceDB’s table versioning. These writes are serialized under a single lock, so the rollback is safe under concurrent ingester workers.
+Document create, update, and delete operations take a snapshot of table versions before any write and automatically roll back to that snapshot if something fails (for example, during chunking or embedding). This restores the `documents`, `document_meta`, `chunks`, and `document_items` tables to their pre‑operation state using LanceDB’s table versioning. These writes are serialized under a single lock, so the rollback is safe under concurrent ingester workers. `create_document_from_source(...)` writes a PDF and each of its attachments in separate transactions, so a failed attachment leaves the PDF and the attachments written before it.
 
 - Applies to: `create_document(...)`, `create_document_from_source(...)`, `update_document(...)`, `delete_document(...)` (including the `parent_uri` cascade), and internal rebuild/update flows.
 - Scope: Document rows, their mutable attributes, and all associated chunks and items are rolled back together.

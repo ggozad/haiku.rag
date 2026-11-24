@@ -7,7 +7,7 @@
 [![Tests](https://github.com/ggozad/haiku.rag/actions/workflows/test.yml/badge.svg)](https://github.com/ggozad/haiku.rag/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/ggozad/haiku.rag/graph/badge.svg)](https://codecov.io/gh/ggozad/haiku.rag)
 
-Agentic RAG that answers questions about your own documents with citations to page numbers and section headings. It runs on an embedded LanceDB database with open models through Ollama by default, so no server or API key is needed. Any provider Pydantic AI supports works in their place, and the same database can live on S3, GCS, Azure or LanceDB Cloud.
+Open-source agentic RAG that answers questions about your own documents with citations to page numbers and section headings. It runs on an embedded LanceDB database with open models through Ollama by default, so no server or API key is needed. Any provider Pydantic AI supports works in their place, and the same database can live on S3, GCS, Azure or LanceDB Cloud.
 
 Built on [LanceDB](https://lancedb.com/), [Pydantic AI](https://ai.pydantic.dev/) and [Docling](https://docling-project.github.io/docling/). Documentation: [ggozad.github.io/haiku.rag](https://ggozad.github.io/haiku.rag/).
 

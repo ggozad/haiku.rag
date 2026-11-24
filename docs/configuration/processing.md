@@ -6,7 +6,7 @@ in the [ingester](../ingester.md) service.
 
 ## Settings
 
-The processing settings, with their defaults:
+The main processing settings, with their defaults:
 
 ```yaml
 processing:
@@ -32,6 +32,8 @@ processing:
     provider: ollama
     name: qwen3.8
     thinking: false
+    temperature: 0.3
+    max_tokens: 100
 
   # Conversion options (works with both local and remote converters)
   conversion_options:
@@ -54,7 +56,12 @@ processing:
       model:
         provider: ollama
         name: qwen3.8
+        thinking: false
+        temperature: 0.0
+      timeout: 90
+      max_tokens: 200
   pictures: image                            # none | description | image
+  min_picture_size: 64                       # Smaller side in pixels for a picture chunk, 0 keeps all
 ```
 
 ### Local and remote conversion
@@ -81,7 +88,7 @@ processing:
   split_pages: 10                  # 0 disables (default)
 ```
 
-With `split_pages > 0`, PDFs are split into N-page slices, each converted on its own, then merged with `DoclingDocument.concatenate`, which keeps page numbers and re-indexes `self_ref` values. Peak memory is one slice's working set. Under docling-serve each slice is a separate task.
+With `split_pages > 0`, PDFs are split into N-page slices, each converted on its own, then merged with `DoclingDocument.concatenate`, which keeps page numbers and re-indexes `self_ref` values. Docling works on one slice at a time, and the converted slices are held until the merge. Under docling-serve each slice is a separate task.
 
 A slice sees only its own pages, so the result differs from single-pass conversion near each boundary: a paragraph spanning one stays two items, and a caption near one can order differently. On a 9-page document that is about one text item and one chunk per boundary. No text is lost or duplicated. Cross-page references (named destinations, multi-page link annotations) are dropped at the split. Changing the setting re-chunks the boundary regions on the next ingest.
 
@@ -91,7 +98,7 @@ The leak is not bounded by slicing. Under `docling-local` it grows inside the `h
 
 ### Conversion options
 
-The `conversion_options` section allows fine-grained control over document conversion. Both converters read these options, except `fetch_remote_images`, `fetch_headers`, `fetch_headers_allowed_origins` and `infer_furniture`, which apply to `docling-local` only.
+The `conversion_options` section controls document conversion.
 
 #### PDF parsing
 
@@ -102,8 +109,8 @@ processing:
 ```
 
 - **pdf_backend**: The parser docling uses to read a PDF. Both converters receive it. The parsers segment a document differently, so a change brings different items, chunk boundaries and chunk ids on the next ingest.
-  - `threaded_docling_parse` (default): concurrent page parsing with docling-parse. Both local conversion and docling-serve use this implementation; the serve API calls it `docling_parse`.
-  - `docling_parse`: deprecated alias for the same threaded parser; it does not select serialized page parsing.
+  - `threaded_docling_parse` (default): concurrent page parsing with docling-parse. Both local conversion and docling-serve use this implementation. The serve API calls it `docling_parse`.
+  - `docling_parse`: deprecated alias for the same threaded parser. It does not select serialized page parsing.
   - `pypdfium2`: PDFium-based parsing with different text extraction and segmentation.
 
 #### OCR settings
@@ -157,8 +164,8 @@ processing:
 - **images_scale**: Scale factor for extracted pictures and for PDF pages rendered for visual grounding. Higher values = better quality but larger size. Typical range: 1.0-3.0. Visual grounding renders pages from the stored original file, see `storage.store_originals`.
 - **fetch_remote_images**: When `true` (default), HTML image tags and native Markdown images (`![alt](url)`) have their URLs fetched and stored as picture bytes. Set `false` for air-gapped ingest. Applies only to `docling-local`. docling-serve has no such option and does not fetch external images, so HTML it converts has picture items without bytes (`picture_data=NULL`).
 - **fetch_headers**: HTTP headers sent with HTML image fetches. Default: a `User-Agent` naming haiku.rag. `docling-local` only. Headers go only to the source document's origin unless `fetch_headers_allowed_origins` is configured.
-- **fetch_headers_allowed_origins**: Origins permitted to receive `fetch_headers` during HTML image fetching, including redirects. Default: `[]`, meaning only the source document's origin; local files without an HTTP source URI send no configured headers. A non-empty list replaces that default: include the source origin too if it should receive headers. Each entry must be an HTTP(S) origin (scheme, host and optional port), without credentials, a path, query or fragment. This controls header forwarding, not which image hosts can be fetched. `docling-local` only; Markdown and `docling-serve` do not support these headers.
-- **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`; docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
+- **fetch_headers_allowed_origins**: Origins permitted to receive `fetch_headers` during HTML image fetching, including redirects. Default: `[]`, meaning only the source document's origin. Local files without an HTTP source URI send no configured headers. A non-empty list replaces that default: include the source origin too if it should receive headers. Each entry must be an HTTP(S) origin (scheme, host and optional port), without credentials, a path, query or fragment. This controls header forwarding, not which image hosts can be fetched. `docling-local` only. Markdown and `docling-serve` do not support these headers.
+- **infer_furniture**: When `false` (default), everything in an HTML page is document content. When `true`, docling files whatever precedes the first heading as page furniture and leaves it out of the document, which removes site banners and navigation on web pages but also removes an article's lead paragraph and infobox. Applies only to `docling-local`. docling-serve keeps docling's rule, so HTML converted there loses the content before its first heading.
 
 #### External image fetching
 
@@ -169,7 +176,7 @@ For HTML and Markdown inputs, docling fetches images referenced by URL when `fet
 - **Timeouts**: 5 s connect, 30 s read.
 - **SVGs are skipped** (PIL cannot rasterize them).
 - **`data:` URIs** are decoded inline (no network).
-- **`file://` URIs** are *not* fetched. `enable_local_fetch` stays off to keep the SSRF surface narrow for arbitrary HTML/MD content.
+- **`file://` URIs** are *not* fetched.
 
 Per-image failures (404, timeout, oversized, unreadable) leave that picture as a placeholder with `picture_data=NULL`. The rest of the document still ingests.
 
@@ -183,7 +190,7 @@ processing:
       - https://thumb.wikimedia.org
 ```
 
-Every configured header is sent to allowed origins. Only list hosts trusted to receive all of `fetch_headers`; redirects to unlisted origins receive none of those headers. Without this setting, a Wikipedia article can ingest successfully with no image bytes.
+Every configured header is sent to allowed origins. Only list hosts trusted to receive all of `fetch_headers`. Redirects to unlisted origins receive none of those headers. Without this setting, a Wikipedia article can ingest successfully with no image bytes.
 
 **Scope of conversion options across formats:**
 
@@ -195,7 +202,7 @@ Every configured header is sent to allowed origins. Only list hosts trusted to r
 | `.md` / `.qmd` / `.rmd` | n/a | n/a | ✅ on embedded pictures | ✅ (`![alt](url)` and `<img>` HTML blocks) | n/a |
 | `.docx` / `.pptx` | n/a | n/a | ✅ on embedded pictures | n/a | n/a |
 | `.epub` | n/a | n/a | n/a (pictures carry no image data) | n/a | n/a |
-| Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |
+| Other (`.csv`, `.xlsx`, `.adoc`, `.tex`, `.latex`, `.xml`, `.eml`, `.msg`) | n/a | n/a | n/a | n/a | n/a |
 
 #### Picture handling
 
@@ -209,7 +216,7 @@ Every configured header is sent to allowed origins. Only list hosts trusted to r
 
 Not every picture becomes a picture chunk. Identical picture bytes within a document produce a single chunk, so a watermark or logo repeated on every page embeds once. Pictures smaller than `processing.min_picture_size` pixels on their smaller side (default 64, `0` disables) are skipped entirely. Filtered pictures keep their bytes in `document_items`, so context expansion and vision QA still see them.
 
-A picture's text is its description or caption, followed by any text docling found inside it, such as a screenshot's words, a chart's labels or the picture's footnotes. Full-text search finds that text only through a picture chunk, so only under a multimodal embedder and only for pictures that get one. Every picture's `document_items` row carries it, so context expansion shows it around a retrieved passage, but a search cannot retrieve a filtered picture by its words. Existing databases pick the text up with `haiku-rag rebuild --rechunk`.
+A picture's text is its description or caption, followed by any text docling found inside it, such as a screenshot's words, a chart's labels or the picture's footnotes. Full-text search matches that text as a whole only through a picture chunk, so only under a multimodal embedder and only for pictures that get one. Under `pictures: description` the description is also part of the ordinary text chunks, under any embedder. Every picture's `document_items` row carries it, so context expansion shows it around a retrieved passage, but a search cannot retrieve a filtered picture by its words. Existing databases pick the text up with `haiku-rag rebuild --rechunk`.
 
 Use `none` when you don't need picture content (e.g. very large reference manuals where RAM is tight). Use `description` to include VLM-generated text in chunk content and keep bytes for later. Use `image` (default) to keep bytes without paying the VLM cost. The prompt is configurable under `prompts.picture_description`. See [Prompts](prompts.md).
 
@@ -231,7 +238,7 @@ The model is called at `/v1/chat/completions` under its `base_url`, which may be
 **Switching modes on an existing database** doesn't require reingesting when the bytes are already stored:
 
 - `image` → `description`: `haiku-rag rebuild --descriptions` runs the VLM over stored bytes and re-chunks. Skips the docling parse entirely.
-- `description` → `image`: `haiku-rag rebuild --rechunk` recomposes chunk text from the stripped docling blob without descriptions.
+- `description` → `image`: existing descriptions stay. `haiku-rag rebuild --rechunk` re-chunks the stored docling document, which keeps them. A full `haiku-rag rebuild` removes them.
 - Switching to/from `none`: a full reingest is needed since the bytes either weren't stored or need to be discarded.
 
 When using `converter: docling-serve`, the VLM is invoked from docling-serve rather than haiku.rag. See [Remote processing](../remote-processing.md#picture-descriptions).
@@ -260,7 +267,7 @@ The Embedder column below is driven by `embeddings.model.multimodal`, not the pr
 
 **What QA receives** at search time:
 
-- `qa.model.vision: false`: text chunks only (descriptions, when present, answer figure questions in prose).
+- `qa.model.vision: false`: text only. Picture chunks still appear, as their text (descriptions, when present, answer figure questions in prose).
 - `qa.model.vision: true`: text chunks and raw picture bytes via `BinaryContent`. The model reads figures directly. Requires `pictures != none` so the bytes exist.
 
 `qa.model.vision` is independent of ingestion. Flipping it never requires reingesting. It declares what the model can read: the default `qwen3.8` is vision-capable, so the default is `true`. Set it `false` when pointing `qa.model` at a text-only model, where `true` causes silent acceptance and confabulation on Ollama and a 400 on OpenAI.
@@ -286,10 +293,12 @@ processing:
 Only `docling-local` reads this. A docling-serve conversion is bounded by
 `providers.docling_serve.timeout` per HTTP call instead.
 
-- **conversion_timeout**: How long one document may spend in conversion before
+- **conversion_timeout**: How long one conversion may run before
   it is abandoned with `ConversionTimeoutError`. It bounds the wait, not the
   work: the abandoned conversion keeps running in the background, holding a
-  thread and its memory, and does not block process exit.
+  thread and its memory, and does not block process exit. The clock starts once
+  the conversion holds the converter, so time spent queued behind another
+  conversion does not count. With `split_pages`, each slice is one conversion.
 
   PDFs and office formats share one docling converter, which an abandoned
   conversion keeps, so later conversions in that process raise

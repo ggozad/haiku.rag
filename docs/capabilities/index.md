@@ -56,8 +56,8 @@ print(result.output)
     state, so the host must expose a `state` dict on its agent dependencies and
     hand the same dict back on every run of a conversation, alongside the message
     history. With only the message history, every run starts from an empty record:
-    compaction refuses rather than replacing evidence it cannot retain, and the
-    citation policy cannot enforce a follow-up about evidence cited earlier.
+    compaction raises `RuntimeError` when earlier evidence has no record to replace
+    it, and the citation policy cannot enforce a follow-up about evidence cited earlier.
 
 Neither optional capability exposes tools or takes configuration.
 
@@ -98,7 +98,7 @@ agent = Agent.from_file(
 
 `deps_type` stays a Python argument, since the capabilities read and write their state
 through `deps.state` (see [State](#state)). `Agent.from_file` reads YAML, which needs
-`pydantic-ai-slim[spec]`; `Agent.from_spec` takes a dict and needs no YAML parser.
+`pydantic-ai-slim[spec]`. `Agent.from_spec` takes a dict and needs no YAML parser.
 
 A `config:` block accepts a whole `AppConfig`, for agents in one process that need
 different databases or embedding models:

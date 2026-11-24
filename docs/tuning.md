@@ -45,7 +45,9 @@ Model and temperature selection affect answer quality directly. See [Providers](
 | `processing.pictures` | See [switching modes](configuration/processing.md#picture-handling) |
 | Embedding model or `vector_dim` | `haiku-rag rebuild --embed-only` |
 | `search.vector_index_metric` | `haiku-rag create-index`, when an index exists |
-| Other search settings, reranking, prompts | Nothing |
+| `search.fts_language` | `haiku-rag rebuild --reindex` |
+| `prompts.picture_description` | `haiku-rag rebuild`. `--descriptions` skips pictures that already have one |
+| Other search settings, reranking, `prompts.domain_preamble` | Nothing |
 
 ## Inspector
 
@@ -53,17 +55,19 @@ Model and temperature selection affect answer quality directly. See [Providers](
 
 ## Measuring changes
 
-For systematic measurement, use the `evaluations/` workspace which provides retrieval metrics (MAP, Recall, nDCG) and LLM-judged QA accuracy via `pydantic-evals`:
+The `evaluations/` workspace in the repository measures retrieval (MAP, Recall, nDCG) and LLM-judged QA accuracy with `pydantic-evals`:
 
 ```bash
 # Run retrieval + QA benchmarks
-evaluations run <dataset>
+uv run evaluations run <dataset>
 
 # Skip database rebuild when only changing search/reranking/prompt settings
-evaluations run <dataset> --skip-db
+uv run evaluations run <dataset> --skip-db
 
 # Limit test cases for faster iteration
-evaluations run <dataset> --limit 50
+uv run evaluations run <dataset> --limit 50
 ```
+
+A run needs a Logfire token, or `--no-telemetry`.
 
 See [Benchmarks](benchmarks.md) for dataset details, methodology, and baseline results.

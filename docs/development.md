@@ -44,12 +44,13 @@ Tests use pytest markers to categorize them:
 
 Async tests are detected automatically through pytest-asyncio's auto mode.
 
-CI runs the fast, slow and evaluations suites as separate jobs. Live integration
-tests are exercised locally against the services in `tests/docker/`.
+The core suite enforces 100% coverage, branches included. CI runs the fast suite
+(on Linux, Windows and Python 3.14), the slow suite, the evaluations suite and the
+web app's suites as separate jobs.
 
 ## HTTP recording with VCR
 
-Tests use [pytest-recording](https://github.com/kiwicom/pytest-recording) (VCR.py) to record and replay HTTP calls. This allows tests to run without external services like Ollama or API providers.
+Tests use [pytest-recording](https://github.com/kiwicom/pytest-recording) (VCR.py) to record and replay HTTP calls. Tests replay without Ollama or API providers running.
 
 ### How it works
 
@@ -114,9 +115,6 @@ async def test_pdf_visualization(temp_db_path):
     # Test code that needs local PDF processing
     pass
 ```
-
-Integration tests are skipped in CI. Start the required services and they run as
-part of the core suite, and skip when a service is unreachable.
 
 ## Linting and formatting
 

@@ -61,7 +61,7 @@ fetches, ahead of first use:
 - Docling models for document processing
 - The HuggingFace tokenizer for chunking
 - A sentence-transformers embedder, and a cross-encoder or local Jina reranker, when configured
-- Every Ollama model the configuration references: embeddings, QA, reranking, title generation and picture description
+- Every Ollama model the configuration uses: embeddings, QA and reranking, the title model when `processing.auto_title` is on, and the picture-description model when `processing.pictures` is `description`
 
 ## Docker
 
@@ -85,4 +85,4 @@ docker run -p 127.0.0.1:8001:8001 \
 
 Both images run the read-only MCP server on port 8001 by default. The MCP server has no authentication: anyone who can reach port 8001 can search and read every document and run `execute_code`. `-p 127.0.0.1:8001:8001` publishes it to the host only. Put an authenticating proxy in front of it before publishing it beyond the host.
 
-The mounted `haiku.rag.yaml` must set `storage.data_dir: /data`, or the database is written inside the container rather than to the volume. `docker/README.md` covers running the [ingester](ingester.md) from the same image.
+The mounted `haiku.rag.yaml` must place the database under `/data`, through `storage.data_dir: /data` or `lancedb.databases` locations there, or the database is written inside the container rather than to the volume. `docker/README.md` covers running the [ingester](ingester.md) from the same image.

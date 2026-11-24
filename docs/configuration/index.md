@@ -1,6 +1,6 @@
 # Configuration
 
-haiku.rag reads its configuration from a YAML file. Every setting has a default, so a file sets only what differs.
+haiku.rag reads its configuration from a YAML file. Every setting has a default, so a file sets only what differs. An unknown or misspelled key fails validation at load.
 
 !!! note
     The embedding model in the configuration must match the one a database was built with. See [Operational constraints](storage.md#operational-constraints) for what a mismatch does and how to reconcile it.
@@ -95,11 +95,11 @@ Interpolation does not URL-encode values. A password embedded in a connection UR
 
 ## Environment
 
-`environment` defaults to `production`. In the CLI, any value other than `development` silences Python warnings and Logfire console output.
+`environment` defaults to `production`. In the CLI, any value other than `development` silences Logfire console output. The CLI silences Python warnings in every environment.
 
 ## Minimal configuration
 
-A minimal configuration file with defaults. These `qa.model` values are the defaults only when the `qa` section is omitted. Once you write a `qa.model` block, each field you leave out takes the `ModelConfig` default: `vision: false`, and no `thinking`, `temperature` or `max_tokens`. The same holds for `processing.title_model` and `processing.conversion_options.picture_description.model`.
+A minimal configuration file with defaults. These `qa.model` values are the defaults only when `qa.model` is omitted. Once you write a `qa.model` block, each field you leave out takes the `ModelConfig` default: `vision: false`, and no `thinking`, `temperature` or `max_tokens`. The same holds for `processing.title_model` and `processing.conversion_options.picture_description.model`.
 
 
 ```yaml

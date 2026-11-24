@@ -69,7 +69,7 @@ One process serves every database. A [reload](#reloading-databases) adds or remo
 
 Source ids are unique across every database: startup fails when two sources share an id, given or derived from their target. Two keys whose databases sit at one location fail startup too, a path and its `file://` URI included, and two names a case-insensitive filesystem treats as one directory, since a database has one writer. Each open database holds its own embedder client.
 
-Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document another source ingested last, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing and its deletes would remove stored documents owned by the source. The sweep fails instead, until those documents are deleted by hand. When none would be removed, the deletes run as usual. A `--dry-run` reads no document store, so it fails whenever a source with known URIs lists nothing. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format). Supported file extensions are matched case-insensitively (`.pdf`, `.PDF` and `.PdF` are equivalent); include and ignore patterns are case-sensitive.
+Every source takes `id`, `poll_interval_s`, `delete_orphans`, `max_file_size`, `retry`, `circuit_breaker` and `metadata_provider`. With `delete_orphans`, a document whose file disappears from the source is deleted. Without it, the document stays. A source deletes only the documents it owns: a document last ingested by another source, or one ingested without a source, is left in place. A sweep deletes nothing when an `fs` source has a directory it cannot list, the root included, or when a source lists nothing and its deletes would remove stored documents owned by the source. The sweep fails instead, until those documents are deleted by hand. When none would be removed, the deletes run as usual. A `--dry-run` reads no document store, so it fails whenever a source with known URIs lists nothing. `ignore_patterns` and `include_patterns` follow [gitignore syntax](https://git-scm.com/docs/gitignore#_pattern_format). Supported file extensions are matched case-insensitively (`.pdf`, `.PDF` and `.PdF` are equivalent). Include and ignore patterns are case-sensitive.
 
 An `fs`, `s3` or `webdav` source lists only the files that pass its patterns and carry one of these extensions:
 
@@ -182,7 +182,7 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
 
 ### File size limits
 
-`max_file_size` (bytes) rejects oversized files. An `http` or `webdav` download stops once it passes the limit. They go straight to the dead-letter queue.
+`max_file_size` (bytes) rejects oversized files. They go straight to the dead-letter queue.
 
 ```yaml
         - type: fs
@@ -190,11 +190,11 @@ Redirects are followed for both `PROPFIND` and `GET`, so servers that redirect f
           max_file_size: 104857600        # 100 MB
 ```
 
-FS sources check the file size before reading. S3 sources check the GET response's size before reading its body. HTTP and WebDAV rely on the `Content-Length` header, and a response without one, such as a chunked response, is fetched in full.
+FS sources check the file size before reading. S3 sources check the GET response's size before reading its body. HTTP and WebDAV sources check the `Content-Length` of a `HEAD` response first, and stop a download once it passes the limit, with or without `Content-Length`.
 
 ### Metadata providers
 
-A source can attach custom metadata to every document it ingests through a `metadata_provider`, a callable an external package registers under the `haiku.rag.metadata_providers` entry-point group:
+A source can attach custom metadata to every document it ingests through a `metadata_provider`, a callable registered by an external package under the `haiku.rag.metadata_providers` entry-point group:
 
 ```yaml
         - type: webdav
@@ -245,9 +245,9 @@ example-provider = "example_pkg:Provider"
 
 A metadata provider is metadata for one source: the source's configuration names it, and a reload changes it. Behaviour that applies to every ingested document, such as transforming, rejecting or observing it, belongs in a [hook](hooks.md), and [Metadata lifetime](hooks.md#metadata-lifetime) says how long provider and hook metadata last.
 
-The provider is built once per source when its database starts, so it can hold a client or a cache. When a source's provider has no installed entry point, fails to import, or raises from its factory, the source's database does not start, and the error names the source and the provider (see [Configure sources](#configure-sources)). Options are part of the source, so a [reload](#reloading-databases) that changes them removes and adds the database, which builds the provider again with the new options. The provider runs when a document is fetched for a new or changed revision. An unchanged document is skipped without a fetch and keeps its stored provider metadata, so changed options reach a document at its next change, and the others keep their stored provider metadata until they are re-ingested. The keys `md5`, `source_revision`, `content_type`, `source_id` and `parent_uri` are removed from provider output. A provider exception is handled like any ingestion error: network and timeout errors retry, others go to the dead-letter queue.
+The provider is built once per source when its database starts, so it can hold a client or a cache. When a source's provider has no installed entry point, fails to import, or raises from its factory, the source's database does not start, and the error names the source and the provider (see [Configure sources](#configure-sources)). Options are part of the source, so a [reload](#reloading-databases) that changes them removes and adds the database, which builds the provider again with the new options. The provider runs when a document is fetched for a new or changed revision. An unchanged document is skipped without a fetch and keeps its stored provider metadata, so changed options reach a document only when it changes or is re-ingested. The keys `md5`, `source_revision`, `content_type`, `source_id` and `parent_uri` are removed from provider output. A provider exception is handled like any ingestion error: network and timeout errors retry, others go to the dead-letter queue.
 
-The provider is also called for each [PDF attachment](configuration/processing.md#pdf-embedded-attachments) the ingester stores, new or with changed bytes, at any nesting depth. It receives the source id of the document the attachment came from, the attachment's URI (`<parent uri>#attachment=<percent-encoded name>`; nested attachments chain fragments), and a `FetchResult` holding the attachment's bytes and guessed content type, with `result.extra_metadata["parent_uri"]` set and `disk_path` and `revision` unset. A provider that should treat attachments differently can test `"parent_uri" in result.extra_metadata`. It is not called for an attachment the converter does not support, or for one whose bytes are unchanged, which keeps its stored provider metadata. A provider exception for an attachment is handled like one for the document it came from. Attachments carry no `source_id` (see [Which source a document came from](#which-source-a-document-came-from)).
+The provider is also called for each [PDF attachment](configuration/processing.md#pdf-embedded-attachments) the ingester stores, new or with changed bytes, at any nesting depth. It receives the source id of the attachment's parent document, the attachment's URI (`<parent uri>#attachment=<percent-encoded name>`, with one fragment per nesting level), and a `FetchResult` holding the attachment's bytes and guessed content type, with `result.extra_metadata["parent_uri"]` set and `disk_path` and `revision` unset. A provider that should treat attachments differently can test `"parent_uri" in result.extra_metadata`. It is not called for an unsupported attachment, or for one whose bytes are unchanged, which keeps its stored provider metadata. A provider exception for an attachment is handled like one for its parent document. Attachments carry no `source_id` (see [Which source a document came from](#which-source-a-document-came-from)).
 
 ### Custom sources
 
@@ -463,7 +463,7 @@ An HTML or Markdown stall is recorded the same way but does not end the process,
 
 ## HTTP control plane
 
-The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.auth_token` requires a bearer token on every route except `/` and `/health`. Without a token the API is open and the service logs a warning.
+The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.auth_token` requires a bearer token on every route except `/`, `/health` and the OpenAPI routes (`/docs`, `/redoc`, `/openapi.json`). Without a token the API is open and the service logs a warning.
 
 !!! warning "Non-loopback binds need a token"
     Loopback is local-only. On any other interface (`0.0.0.0`, a LAN address, behind a reverse proxy) set `auth_token`: the control plane can cancel jobs, retry dead ones, trigger sweeps, and edit and delete documents. The startup warning is the only sign that it is missing.
@@ -489,7 +489,7 @@ The ingester serves a FastAPI control plane on `127.0.0.1:8765`. `ingester.api.a
 | `POST` | `/reload` | Read the configuration file again and apply its changes to the databases. 500 when a database failed (see [Reloading databases](#reloading-databases)) |
 | `GET` | `/providers` | Reachability of each `providers.docling_serve.base_url` entry (`/health`, 2 s timeout) |
 
-OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds. A source whose last discovery failed is marked `sweep failed`, with the error on hover. Retry failed on a source re-queues its dead jobs, as `/sources/{id}/retry?status=dead` does. A configured database that is not running is marked `NOT RUNNING` beside the health detail, with its error on hover. With more than one database, the sources table names each source's database, and the database panel selects the database it reports on. Each source's bar shows its files by state from `/sources`, with the share ingested. A job shows its file name over its URI, and a click on it copies the URI. Active jobs show how long they have been running. In recent jobs, Duration runs from enqueue to finish and Processed in from the last attempt's claim to finish.
+OpenAPI docs are at `/docs`. The dashboard at `/` shows the same data and refreshes every few seconds. A source whose last discovery failed is marked `sweep failed`, with the error on hover. Retry failed on a source re-queues its dead jobs, as `/sources/{id}/retry?status=dead` does. A configured database that is not running is marked `NOT RUNNING` beside the health detail, with its error on hover. With more than one database, the sources table names each source's database, and the database panel selects the database it reports on. Each source's bar shows its files by state from `/sources`, with the share ingested. In recent jobs, Duration runs from enqueue to finish and Processed in from the last attempt's claim to finish.
 
 ![Ingester dashboard mid-ingest: queue depth, per-source health, active and recent jobs](img/ingester-dashboard.png)
 
@@ -557,7 +557,7 @@ haiku-ingester run-batch --dry-run --output manifest-20260622.yaml
 haiku-ingester run-batch --manifest manifest-20260622.yaml
 ```
 
-Replay refuses a source with queued or claimed jobs, and a change of a database that failed to start. An upsert with a revision is checked against the source before fetching, and one that changed since the dry run dead-letters, leaving the newer version to the next dry run. A source that reports no revisions cannot prove at replay that the bytes are the ones the dry run saw.
+Replay refuses a source with queued or claimed jobs, and a change of a database that failed to start. An upsert with a revision is checked against the source before fetching, and one that changed since the dry run dead-letters, leaving the newer version to the next dry run. A source that reports no revisions cannot prove at replay that its bytes match what the dry run saw.
 
 ### Which source a document came from
 
@@ -593,7 +593,7 @@ A permanently failed job also records a revision, which keeps an unchanged faili
 
 A document two sources both ingested stays unattributed, with a warning naming them. Documents of a `source_id` no longer configured are counted in a warning and left alone. Reconciliation reads the document metadata table once and no content.
 
-`run-batch --dry-run` opens no database, so a manifest written while the two disagreed misses the deletions reconciliation would find, and `--manifest` replay does not sweep. A normal sweep afterwards catches up.
+`run-batch --dry-run` opens no database, so a manifest written while the two disagreed misses deletions that reconciliation would find, and `--manifest` replay does not sweep. A normal sweep afterwards catches up.
 
 ### Documents with no source attribution
 
@@ -604,7 +604,7 @@ At startup, reconciliation reports documents that remain unattributed:
 intentionally unmanaged or have ambiguous or lost ownership.
 ```
 
-PDF attachments of a stored document are not counted. An unattributed document was added by hand, was ingested by a version that did not record `source_id` and whose queue record is gone, is claimed by two sources and named in its own warning, or is a PDF attachment whose parent document is gone. Claimed documents need the sources separated, not the document deleted. While a lost document's file is still at its source, the next sweep attributes it. Once the file is gone, nothing identifies it.
+PDF attachments of a stored document are not counted. An unattributed document was added by hand, was ingested by a version that did not record `source_id` and whose queue record is gone, is claimed by two sources and named in its own warning, or is a PDF attachment whose parent document is gone. A document claimed by two sources needs the sources separated, not the document deleted. While a lost document's file is still at its source, the next sweep attributes it. Once the file is gone, nothing identifies it.
 
 To clear them:
 
@@ -640,7 +640,7 @@ PDF attachments are listed with `-f "metadata LIKE '%\"parent_uri\"%'"`. An atta
 haiku-rag --config /etc/haiku/haiku.rag.yaml delete <id>
 ```
 
-Read the URIs first. A hand-added document whose file has since moved looks the same as one the ingester lost track of.
+Read the URIs first. A hand-added document whose file has since moved looks the same as a document lost by the ingester.
 
 ### The queue
 
@@ -736,7 +736,7 @@ Queue schema 6 adds an index over each source's queued jobs. Server queues migra
 The service logs to stderr:
 
 ```
-INFO     Ingester running: 4 worker(s), 1 source(s)
+INFO     Ingester running: 4 worker(s), 1 database(s), 1 source(s)
 INFO     API listening on 127.0.0.1:8765
 INFO     Swept local-docs: 142 upsert, 0 delete, 8 unchanged
 INFO     Processing upsert file:///.../a.md (job 5d9a...)
@@ -753,7 +753,7 @@ Each request to the control plane is a span, except `GET /health`, `/sources`, `
 
 A one-shot command (`run-batch`, or the `queue` commands) started with `TRACEPARENT` / `TRACESTATE` in its environment joins that trace. `serve` never joins. The parent's sampling decision applies, so a `TRACEPARENT` with the sampled flag `00` suppresses the command's spans.
 
-The span tree is `ingester.poller.sweep` → `ingester.job` (with `source_id` and `uri`) → one span per phase: `document.fetch`, `document.convert`, `document.chunk`, `document.embed`, `document.items` and `document.store`. The phase spans are siblings: each times one phase, so a slow `document.store` is a slow write. `document.embed` reports `chunks`, `chunks_embedded`, `images` and `batch_size`, and is emitted when no chunk needs embedding. `document.store` reports `op` (`create` / `update` / `create_batch`), `document_id`, `chunks`, `items` and `lock_wait_ms`, the time spent waiting on the write lock. That lock is in-process, so contention between two ingester processes on one database is not measured. `_prepare_and_title` and `get_all_picture_data` run outside any phase span, so the phases do not sum to the job. Each docling-serve request adds a `docling_serve.request` span with the instance `url` and `attempt`. A worker breaker opening emits an `ingester.worker breaker opened` event with `source_id`, `threshold` and `cooldown_s`. A [maintenance](#maintenance) pass is an `ingester.maintenance` span with `database`, `vacuumed` and `index_built`.
+The span tree is `ingester.poller.sweep` → `ingester.job` (with `source_id` and `uri`) → one span per phase: `document.fetch`, `document.convert`, `document.chunk`, `document.embed`, `document.items` and `document.store`. The phase spans are siblings: each times one phase, so a slow `document.store` is a slow write. `document.embed` reports `chunks`, `chunks_embedded`, `images` and `batch_size`, and is emitted even when no chunk needs embedding. `document.store` reports `op` (`create` / `update` / `create_batch`), `document_id`, `chunks`, `items` and `lock_wait_ms`, the time spent waiting on the write lock. That lock is in-process, so contention between two ingester processes on one database is not measured. Some work runs outside any phase span, so the phases do not sum to the job. Each docling-serve request adds a `docling_serve.request` span with the instance `url` and `attempt`. A worker breaker opening emits an `ingester.worker breaker opened` event with `source_id`, `threshold` and `cooldown_s`. A [maintenance](#maintenance) pass is an `ingester.maintenance` span with `database`, `vacuumed` and `index_built`.
 
 ### Operating against the API
 

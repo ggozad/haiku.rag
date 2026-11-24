@@ -8,7 +8,7 @@ Five things to know before deploying.
 one. A write that spans several tables is serialized by an in-process lock and
 rolled back by restoring each table to the version it had when the write started.
 Both are process-local: a second writing process can commit between that snapshot
-and the mutation, and a rollback would then revert its work along with ours. Run
+and the mutation, and a rollback would then revert its work too. Run
 a single writer, either the [`haiku-ingester`](../ingester.md) service or your own
 application. Read-only consumers are unrestricted.
 
@@ -39,8 +39,8 @@ changed query prefix and refuses a changed document prefix.
 **The database records only its version and embedder.** The `settings` table
 holds the haiku.rag version that last wrote or migrated the database, and the
 embedder's `provider`, `name` and `vector_dim`, plus `query_prefix` and
-`document_prefix` when set, which every open checks against the configuration. Nothing else from the configuration is stored, so a database
-can be copied or shared without the credentials of the process that wrote it.
+`document_prefix` when set. Every open checks these against the configuration.
+Nothing else from the configuration is stored, so a database can be copied or shared without the credentials of the process that wrote it.
 Databases written before 0.89.0 stored the whole configuration. `haiku-rag
 migrate` reduces it, and the older table versions still hold it. To remove them,
 stop every process using the database, run `haiku-rag migrate`, delete the tags
@@ -71,18 +71,18 @@ storage:
 
 ### Vacuum memory
 
-Vacuum compacts small data files into larger ones. The `documents` and `document_items` tables, which hold the docling blobs, are compacted to fragments of about `compaction_target_bytes`, sized from the widest fragment's bytes per row. The other tables use LanceDB's own optimize.
+Vacuum compacts small data files into larger ones. The `documents` and `document_items` tables, which hold the docling blobs, are compacted to fragments of about `compaction_target_bytes`, sized from the widest fragment's bytes per row. The other tables are compacted with LanceDB's default fragment size.
 
 !!! warning "The target is not a memory cap"
-    `compaction_target_bytes` sizes the fragments compaction **writes**. It cannot shrink a fragment that is already larger: LanceDB rewrites such a fragment in one piece, at roughly its own size, the first time deletions within it pass 10%, and splits it to the target. A single large ingest batch writes one large fragment.
+    `compaction_target_bytes` sizes the fragments that compaction **writes**. It cannot shrink a fragment that is already larger. LanceDB rewrites such a fragment in one piece, at roughly its own size, the first time deletions within it pass 10%, and splits it to the target. A single large ingest batch writes one large fragment.
 
-    So peak memory is the larger of `compaction_target_bytes` and the biggest existing fragment. Lower the first by reducing it, and the second by ingesting in smaller batches.
+    Peak memory is the larger of `compaction_target_bytes` and the biggest existing fragment. Lower the first by reducing it, and the second by ingesting in smaller batches.
 
 A row larger than the target costs roughly its own size. A `documents` row holds the text, the compressed docling structure without images, and the original PDF or image file, so it is about the size of the file. `store_originals: false` leaves the file out.
 
 Vacuum also adds new rows to the full-text index. Search stays correct without it but scans the uncovered rows on every query. `haiku-rag doctor` reports the coverage.
 
-When a table's metadata lacks fragment sizes, as in databases written by old versions, compaction skips that table with a warning. Old versions are still pruned.
+When a table's metadata has no fragment sizes, compaction skips that table with a warning. Old versions are still pruned.
 
 ### Placing the database
 
@@ -126,7 +126,7 @@ async with HaikuRAG(create=True) as client:
 
 The [default location](index.md#configuration-file-locations) is platform-specific (e.g., `~/Library/Application Support/haiku.rag/` on macOS).
 
-Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path. This prevents accidental database creation from typos or misconfigured paths. A configured or default database raises `SourceUnavailableError` instead, naming the database and not its location.
+Opening a nonexistent local database given as a path raises `FileNotFoundError`, naming the path. A configured or default database raises `SourceUnavailableError` instead, naming the database and not its location.
 
 ## Remote storage
 
@@ -186,7 +186,7 @@ lancedb:
 - **LanceDB Cloud** (`db://`): Requires `api_key` and `region`. LanceDB Cloud optimizes and indexes tables itself, so haiku.rag does not.
 - **Object storage** (`s3://`, `gs://`, `az://`, `hdfs://`): Uses `storage_options` for credentials and endpoint configuration. Authentication can also be provided via environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, etc.) or cloud provider SDK defaults (AWS CLI, Azure CLI, gcloud).
 - **S3-compatible stores** (MinIO, Tigris, etc.): Set `endpoint` in `storage_options`. When using `http://` endpoints, also set `allow_http: "true"`.
-- **Local path** (no scheme): a location without a scheme is a local path. See [Placing the Database](#placing-the-database).
+- **Local path** (no scheme): see [Placing the database](#placing-the-database).
 
 The `storage_options` keys are case-insensitive and passed directly to the underlying object store library. Available keys depend on the backend. See the [LanceDB storage docs](https://lancedb.com/docs/storage/) for details.
 
@@ -195,8 +195,8 @@ The `storage_options` keys are case-insensitive and passed directly to the under
 ```yaml
 lancedb:
   read_consistency_interval_seconds: 30   # null to never re-check
-  index_cache_size_bytes: 536870912       # null for the LanceDB default
-  metadata_cache_size_bytes: 268435456
+  index_cache_size_bytes: 536870912       # default null: the LanceDB default
+  metadata_cache_size_bytes: 268435456    # default null
 ```
 
 - **read_consistency_interval_seconds**: how often a connection checks for writes from another process. `null` never checks, so a long-lived reader never sees the ingester's writes. `0` checks on every read.
@@ -244,15 +244,7 @@ For search behavior settings (`limit`, `max_context_chars`), see [Search and Que
 !!! note
     Below about 100,000 chunks, brute-force kNN search is exact and fast enough. Create an index when search slows on a larger corpus.
 
-Retrieval MAP with and without an index, measured on copies of the benchmark databases with no reranker:
-
-| Dataset | Chunks | Dim | Exact | Indexed | Delta | Build | Peak RSS |
-|---------|-------:|----:|------:|--------:|------:|------:|---------:|
-| `hotpotqa` | 70,527 | 2560 | 0.6978 | 0.6979 | +0.0001 | 29.3 s | 3.19 GB |
-| `orb_multimodal_nemotron` | 121,168 | 2048 | 0.9799 | 0.9800 | +0.0001 | 25.8 s | 3.38 GB |
-| `frames` | 425,940 | 2560 | 0.5431 | 0.5387 | -0.0044 | 34.1 s | 4.02 GB |
-
-An index costs no accuracy at 70k and 121k chunks and 0.0044 MAP at 426k. A larger corpus holds more IVF partitions, so the default probes cover less of it, and `vector_refine_factor` only re-scores what the probes returned. Raise `vector_nprobes` to trade latency for recall on a large corpus. Build time depends more on vector dimension than on row count, since training samples the data.
+An index can cost recall on a large corpus. A larger corpus holds more IVF partitions, so the default probes cover less of it, and `vector_refine_factor` only re-scores what the probes returned. Raise `vector_nprobes` to trade latency for recall on a large corpus.
 
 Writing documents never creates a vector index. The ingester's [maintenance](../ingester.md#maintenance) builds one when it is enabled. Without it, once the database holds at least 256 chunks, build one:
 
@@ -264,4 +256,4 @@ It builds an IVF_PQ index, with LanceDB choosing the parameters from the row cou
 
 New chunks reach the index without a rebuild. Vacuum, which runs after writes while `auto_vacuum` is on, adds them as a delta part, and merges the parts into one once there are more than four. Every concurrent query opens files for each part. Between a write and the next vacuum, LanceDB serves ANN over the indexed rows and a brute-force scan over the remainder, then combines the results.
 
-Vacuum also splits the index's partitions as the table grows, which merges the delta parts too. An index built over 300 chunks and grown only by vacuum matched a fresh build's recall@10 over 200 held-out chunks, with the default `vector_nprobes` and `vector_refine_factor`: 0.999 against 0.999 on `hotpotqa`, 1.000 against 0.995 on `frames`. A grown index keeps more than one delta part, so its queries are slower: 21 ms against 15 ms on `frames`. `haiku-rag create-index` builds it again as one part. A full `rebuild`, `--rechunk`, `--embed-only` and `--descriptions` retrain an existing index, and no `rebuild` creates one.
+Vacuum also splits the index's partitions as the table grows, so a grown index needs no retraining and matches a fresh build's recall. A grown index keeps more than one delta part, so its queries are slower. `haiku-rag create-index` builds it again as one part. A full `rebuild`, `--rechunk`, `--embed-only` and `--descriptions` retrain an existing index, and no `rebuild` creates one.
