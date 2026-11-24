@@ -6,7 +6,7 @@
 #
 # Tests skip automatically when a service isn't reachable, so you only need to
 # bring up the ones you care about. The docling-serve picture-description test
-# also needs Ollama running on the host with the `ministral-3` model.
+# also needs Ollama running on the host with the `qwen3.8` model.
 services:
   postgres:
     image: postgres:16-alpine
@@ -20,7 +20,7 @@ services:
       - /var/lib/postgresql/data
 
   docling-serve:
-    image: quay.io/docling-project/docling-serve:v1.38.2
+    image: quay.io/docling-project/docling-serve:v1.39.0
     ports:
       - "5001:5001"
     environment:

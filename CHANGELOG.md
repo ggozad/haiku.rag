@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- docling 2.152.0, docling-core 2.108.0 and docling-parse 7.27.1. Tested against docling-serve v1.39.0. An HTML block in Markdown converts, an `<img>` block yielding a picture, a soft line break inside a Markdown paragraph becomes a space, and a Markdown paragraph keeps its trailing whitespace.
+
 ## [0.113.0] - 2026-11-23
 
 ### Added

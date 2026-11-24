@@ -23,6 +23,7 @@ from docling_core.transforms.serializer.markdown import (
     MarkdownParams,
 )
 from docling_core.types.doc.document import (
+    CURRENT_VERSION,
     BoundingBox,
     DoclingDocument,
     FloatingItem,
@@ -134,9 +135,7 @@ class TestVlmApiUrl:
     """URL construction for picture-description VLM models (shared by both converters)."""
 
     def test_ollama_uses_provider_base_url(self):
-        url = vlm_api_url(
-            AppConfig(), ModelConfig(provider="ollama", name="ministral-3")
-        )
+        url = vlm_api_url(AppConfig(), ModelConfig(provider="ollama", name="qwen3.8"))
         assert url == "http://localhost:11434/v1/chat/completions"
 
     def test_custom_base_url_takes_precedence(self):
@@ -201,7 +200,7 @@ class TestVlmApiHeaders:
     """Auth headers for picture-description VLM models."""
 
     def test_no_headers_without_api_key(self):
-        assert vlm_api_headers(ModelConfig(provider="ollama", name="ministral-3")) == {}
+        assert vlm_api_headers(ModelConfig(provider="ollama", name="qwen3.8")) == {}
 
     def test_public_openai_falls_back_to_environment(self, monkeypatch):
         """doctor accepts OPENAI_API_KEY for a keyless openai model, so the
@@ -940,11 +939,6 @@ class TestDoclingLocalConverter:
                 "fetch_remote_images=False must leave picture.image=None"
             )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason="docling-core 2.104 escapes Markdown HTML blocks as code (core PR #894)",
-    )
     async def test_convert_text_md_html_block_fetches_data_uri_image(self, config):
         """Markdown HTML image blocks produce picture bytes."""
         png_b64 = (
@@ -1444,9 +1438,7 @@ class TestDoclingLocalConverter:
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
-        config.processing.conversion_options.picture_description.model.name = (
-            "ministral-3"
-        )
+        config.processing.conversion_options.picture_description.model.name = "qwen3.8"
 
         converter = DoclingLocalConverter(config)
         doc = await converter.convert_file(pdf_path)
@@ -1652,7 +1644,7 @@ class TestInlineGroups:
         prov = ProvenanceItem(
             page_no=1, bbox=BoundingBox(l=0, t=10, r=50, b=0), charspan=(0, 4)
         )
-        doc.add_text(label=DocItemLabel.TEXT, text="left", prov=prov, parent=group)
+        doc.add_text(label=DocItemLabel.TEXT, text="left ", prov=prov, parent=group)
         doc.add_text(label=DocItemLabel.TEXT, text="right", parent=group)
 
         flatten_inline_groups(doc)
@@ -2149,7 +2141,7 @@ class TestDoclingServeConverter:
         doc = await converter.convert_text("# Test", name=".customrc.md")
 
         assert isinstance(doc, DoclingDocument)
-        assert doc.version == "1.10.0"
+        assert doc.version == CURRENT_VERSION
         serve_http.post.assert_called_once()
         uploaded_name = serve_http.post.call_args.kwargs["files"]["files"][0]
         assert uploaded_name == "customrc.md"
@@ -2264,9 +2256,7 @@ class TestDoclingServeConverterPictureDescription:
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
-        config.processing.conversion_options.picture_description.model.name = (
-            "ministral-3"
-        )
+        config.processing.conversion_options.picture_description.model.name = "qwen3.8"
         config.processing.conversion_options.picture_description.timeout = 120
         config.processing.conversion_options.picture_description.max_tokens = 300
         config.processing.conversion_options.picture_description.model.api_key = (
@@ -2289,7 +2279,7 @@ class TestDoclingServeConverterPictureDescription:
 
         api_config = json.loads(data["picture_description_api"])
         assert api_config["url"] == "http://localhost:11434/v1/chat/completions"
-        assert api_config["params"]["model"] == "ministral-3"
+        assert api_config["params"]["model"] == "qwen3.8"
         assert api_config["params"]["max_completion_tokens"] == 300
         assert api_config["prompt"] == "Test prompt for picture description"
         assert api_config["timeout"] == 120
@@ -2393,16 +2383,14 @@ class TestDoclingServeConverterIntegration:
 
         Note: Not using VCR because this test involves polling with changing task IDs.
         """
-        await _skip_without_ollama_model("ministral-3")
+        await _skip_without_ollama_model("qwen3.8")
         config.providers.docling_serve.base_url = docling_serve_url
         pdf_path = doclaynet_first_page_pdf
         config.processing.pictures = "description"
         config.processing.conversion_options.picture_description.model.provider = (
             "ollama"
         )
-        config.processing.conversion_options.picture_description.model.name = (
-            "ministral-3"
-        )
+        config.processing.conversion_options.picture_description.model.name = "qwen3.8"
         # Use host.docker.internal so docling-serve in Docker can reach host's Ollama
         config.processing.conversion_options.picture_description.model.base_url = (
             "http://host.docker.internal:11434"

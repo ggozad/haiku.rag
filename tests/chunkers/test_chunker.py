@@ -577,8 +577,11 @@ async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page
         doclaynet_first_page_pdf
     )
 
-    local_items = extract_items("d", local_doc)
-    serve_items = extract_items("d", serve_doc)
+    # docling labels this line text on macOS and page_footer on Linux, which
+    # leaves it out of the body: the page has 19 body items or 18.
+    doi = "https://doi.org/10.1145/3534678.3539043"
+    local_items = [i for i in extract_items("d", local_doc) if i.text != doi]
+    serve_items = [i for i in extract_items("d", serve_doc) if i.text != doi]
     assert len(local_items) == len(serve_items)
     assert [item.text for item in local_items] == [item.text for item in serve_items]
     assert [item.page_numbers for item in local_items] == [
@@ -591,8 +594,9 @@ async def test_local_and_serve_chunkers_produce_same_output(doclaynet_first_page
     local_serve_doc_chunks = await local_chunker.chunk(serve_doc)
     serve_chunks = await serve_chunker.chunk(serve_doc)
 
-    assert [chunk.content for chunk in local_chunks] == [
-        chunk.content for chunk in serve_chunks
+    doi_line = f"\n[{doi}]({doi})"
+    assert [chunk.content.replace(doi_line, "") for chunk in local_chunks] == [
+        chunk.content.replace(doi_line, "") for chunk in serve_chunks
     ]
     assert len(local_serve_doc_chunks) == len(serve_chunks)
 
