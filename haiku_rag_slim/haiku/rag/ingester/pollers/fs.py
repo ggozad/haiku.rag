@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_WATCH_RETRY_INITIAL_S = 1.0
+_WATCH_RETRY_MAX_S = 300.0
+
 
 class FSPoller(BasePoller):
     """Filesystem poller: initial discover() sweep plus a watchfiles-driven
@@ -76,29 +79,38 @@ class FSPoller(BasePoller):
                 pass
             await self._sweep_once()
 
-    async def _watch_loop(self) -> None:  # pragma: no cover - watchfiles glue
+    async def _watch_loop(self) -> None:
         """Push-event loop on top of watchfiles. Each change is translated
         into one queue job — no need to re-stat or re-snapshot.
 
-        Per-event handling is unit-tested through `_handle_watch_change`;
-        this method is the asyncio + watchfiles iterator scaffolding around
-        it, plus the defensive exception path that records a breaker
-        failure if the watcher itself goes sideways.
+        A failed watcher, such as one over a root that does not exist yet,
+        restarts after a doubling delay until the poller stops. Its failures
+        leave the breaker alone: the breaker gates the sweeps.
         """
-        try:
-            async for changes in awatch(
-                self._fs_source.root,
-                watch_filter=self._filter,
-                stop_event=self._stop,
-            ):
-                for change, path in changes:
-                    await self._handle_watch_change(change, Path(path))
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self._breaker.record_failure()
-            self._record_error(exc)
-            logger.exception("watchfiles loop failed for %s: %s", self.source_id, exc)
+        delay = _WATCH_RETRY_INITIAL_S
+        while not self._stop.is_set():
+            try:
+                async for changes in awatch(
+                    self._fs_source.root,
+                    watch_filter=self._filter,
+                    stop_event=self._stop,
+                ):
+                    delay = _WATCH_RETRY_INITIAL_S
+                    for change, path in changes:
+                        await self._handle_watch_change(change, Path(path))
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._record_error(exc)
+                logger.exception(
+                    "watchfiles loop failed for %s: %s", self.source_id, exc
+                )
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=delay)
+            except TimeoutError:
+                pass
+            delay = min(delay * 2, _WATCH_RETRY_MAX_S)
 
     async def _handle_watch_change(self, change: Change, path: Path) -> None:
         uri = path.as_uri()
