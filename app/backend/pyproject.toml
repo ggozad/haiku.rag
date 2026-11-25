@@ -1,6 +1,6 @@
 [project]
 name = "haiku-rag-app"
-version = "0.113.1"
+version = "0.113.2"
 description = "Conversational RAG application with haiku.rag"
 requires-python = ">=3.12"
 dependencies = [
@@ -8,7 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.40.0",
     "pydantic-ai-slim[ag-ui,anthropic,openai]>=2.71.0,<2.72.0",
     "python-dotenv>=1.2.1",
-    "haiku.rag-slim>=0.113.1",
+    "haiku.rag-slim>=0.113.2",
     "logfire[starlette]>=3.17.0",
     "aiosqlite>=0.20",
 ]

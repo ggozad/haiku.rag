@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.113.2] - 2026-11-25
+
 ### Fixed
 
 - `haiku-ingester serve`: a failed `fs` watcher, such as one over a missing `root`, restarts after a delay doubling from 1 second up to 5 minutes. Its failures no longer count toward the source's poller circuit breaker.
@@ -3394,7 +3396,8 @@ Existing documents without DoclingDocument data will work but won't have provena
 
 - Initial version tracking
 
-[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.113.1...HEAD
+[Unreleased]: https://github.com/ggozad/haiku.rag/compare/0.113.2...HEAD
+[0.113.2]: https://github.com/ggozad/haiku.rag/compare/0.113.1...0.113.2
 [0.113.1]: https://github.com/ggozad/haiku.rag/compare/0.113.0...0.113.1
 [0.113.0]: https://github.com/ggozad/haiku.rag/compare/0.112.3...0.113.0
 [0.112.3]: https://github.com/ggozad/haiku.rag/compare/0.112.2...0.112.3
