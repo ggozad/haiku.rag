@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `docling-serve` refuses a source-code or plain-text file with an undetectable encoding as `ConversionFailedError`, as `docling-local` does: a PDF skips such an attachment and the ingester dead-letters such a file without retrying.
+
 ## [0.113.1] - 2026-11-24
 
 ### Changed
