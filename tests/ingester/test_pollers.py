@@ -1287,20 +1287,18 @@ async def test_watch_loop_keeps_retrying_past_a_thousand_failures(
     monkeypatch.setattr(fs, "awatch", _failing_watch(calls))
     monkeypatch.setattr(fs, "_WATCH_RETRY_INITIAL_S", 0.0)
     monkeypatch.setattr(fs, "_WATCH_RETRY_MAX_S", 0.0)
+    # Rendering 1100 logged tracebacks takes longer than the loop itself.
+    monkeypatch.setattr(fs.logger, "disabled", True)
     poller = _fs_poller(tmp_path, jobs, sync)
+    task = asyncio.create_task(poller._watch_loop())
 
-    with capture_logs(
-        logging.getLogger("haiku.rag.ingester.pollers.fs"), logging.ERROR
-    ):
-        task = asyncio.create_task(poller._watch_loop())
+    async def failed_past_the_float_range():
+        assert not task.done(), task.exception()
+        return len(calls) > 1100
 
-        async def failed_past_the_float_range():
-            assert not task.done(), task.exception()
-            return len(calls) > 1100
-
-        await _wait_until(failed_past_the_float_range, timeout=30)
-        await poller.stop()
-        await asyncio.wait_for(task, 5)
+    await _wait_until(failed_past_the_float_range, timeout=30)
+    await poller.stop()
+    await asyncio.wait_for(task, 5)
 
 
 async def test_watch_loop_stops_while_waiting_to_retry(
