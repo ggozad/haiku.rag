@@ -4,7 +4,7 @@ Hooks let external packages transform or refuse documents before ingestion, obse
 
 A hook is a class registered under the `haiku.rag.hooks` entry-point group and activated by name in config. Hooks run everywhere the client runs: CLI, MCP server, RAG capability, and your own code.
 
-A hook is behaviour for the whole process. It can transform, reject or observe any document or search that passes through the client. Metadata for one source belongs in that source's [metadata provider](ingester.md#metadata-providers). The source's configuration names it, and an ingester reload changes it. The ingester's reload refuses a change to `hooks`, which needs a restart.
+A hook is behaviour for the whole process. It can transform, reject or observe any document or search that passes through the client. Metadata for one source belongs in that source's [metadata provider](ingester/index.md#metadata-providers). The source's configuration names it, and an ingester reload changes it. The ingester's reload refuses a change to `hooks`, which needs a restart.
 
 ## Hook points
 
@@ -231,7 +231,7 @@ async def ingester_lifespan(self, client):
 
 The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop running in one never returns and ingester shutdown hangs.
 
-`run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it. With [maintenance](ingester.md#maintenance) enabled, the batch's maintenance pass runs after the exit and covers those writes.
+`run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it. With [maintenance](ingester/running.md#maintenance) enabled, the batch's maintenance pass runs after the exit and covers those writes.
 
 Failures follow the `lifespan` rules. A failure on entry fails that database's start: the ingester logs it, skips the database and starts the others, and a reload reports the database failed. An exception on exit is logged and swallowed, and a cancellation propagates.
 

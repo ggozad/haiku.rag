@@ -27,7 +27,7 @@ Edit both files for your paths, token and models. Then start the app and open `h
 docker compose up -d
 ```
 
-Four services run: a backend that reads the databases, the [ingester](ingester.md), which writes them, docling-serve, which converts documents for the ingester, and the frontend.
+Four services run: a backend that reads the databases, the [ingester](ingester/index.md), which writes them, docling-serve, which converts documents for the ingester, and the frontend.
 
 The compose file names the images of its own release. `HAIKU_RAG_VERSION` in `.env` selects another release for all three. The backend opens a database only when its haiku.rag version supports the database's schema, so keep the backend and the ingester on one release.
 
@@ -62,7 +62,7 @@ curl -X POST -H "Authorization: Bearer $INGESTER_TOKEN" http://localhost:8765/re
 curl -X POST http://localhost:8001/reload
 ```
 
-Chat searches every database, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources) and [Multiple databases](configuration/multiple-databases.md)).
+Chat searches every database, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester/index.md#configure-sources) and [Multiple databases](configuration/multiple-databases.md)).
 
 The backend's reload applies `lancedb.databases` only. It answers 409 and names the sections when another one changed, since those need a restart, and ignores the `ingester` section. A chat turn whose session selects documents of a removed database fails and names that database.
 

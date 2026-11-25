@@ -27,7 +27,7 @@ haiku-rag ask "what does it conclude?"
 
 ## What it does
 
-- **Ingest.** PDFs, office documents, HTML, Markdown and images, converted by [Docling](configuration/processing.md) in-process or on [docling-serve](remote-processing.md). One-shot from the CLI, or continuously from filesystem, S3, HTTP and WebDAV sources with the [ingester](ingester.md).
+- **Ingest.** PDFs, office documents, HTML, Markdown and images, converted by [Docling](configuration/processing.md) in-process or on [docling-serve](remote-processing.md). One-shot from the CLI, or continuously from filesystem, S3, HTTP and WebDAV sources with the [ingester](ingester/index.md).
 - **Search.** Hybrid vector and full-text search, optional [reranking](configuration/providers.md#reranking-providers), section-aware context expansion, and image search with a multimodal embedder. Across [several databases](configuration/multiple-databases.md) at once.
 - **Answer.** The [RAG capability](capabilities/rag.md) searches, runs sandboxed Python over the documents, and cites what it used. [Evidence compaction](capabilities/compaction.md) and a [citation policy](capabilities/policy.md) are optional.
 - **Integrate.** A [Python API](python.md), Pydantic AI [capabilities](capabilities/index.md) for your own agents, [hooks](hooks.md) on ingestion and search, and an [MCP server](mcp.md).

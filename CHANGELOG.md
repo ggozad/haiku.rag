@@ -1778,7 +1778,7 @@
 
 ### Added
 
-- `haiku-ingester` service for continuous document ingestion. Persistent SQLite job queue, async worker pool with retries and dead-letter queue, FS/HTTP/S3/WebDAV source adapters, per-source and pool-wide circuit breakers, and a FastAPI control plane on `127.0.0.1:8765` exposing `/health`, `/sources`, `/jobs`, `/dlq`, `/stats`, and a browser dashboard at `/`. Configured under `ingester:` in `haiku.rag.yaml`; shipped behind the `[ingester]` extra. See [docs/ingester.md](docs/ingester.md).
+- `haiku-ingester` service for continuous document ingestion. Persistent SQLite job queue, async worker pool with retries and dead-letter queue, FS/HTTP/S3/WebDAV source adapters, per-source and pool-wide circuit breakers, and a FastAPI control plane on `127.0.0.1:8765` exposing `/health`, `/sources`, `/jobs`, `/dlq`, `/stats`, and a browser dashboard at `/`. Configured under `ingester:` in `haiku.rag.yaml`; shipped behind the `[ingester]` extra. See [docs/ingester/index.md](docs/ingester/index.md).
 - `processing.split_pages` (default `0`): split PDFs into N-page slices, convert each, merge via `DoclingDocument.concatenate()`. `0` disables.
 - Logfire spans for ingestion: `ingester.poller.sweep`, `ingester.poller.watch_event`, `ingester.job`, `document.{fetch,convert,chunk,embed,store}`, `document.convert_slice`.
 

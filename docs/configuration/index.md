@@ -71,7 +71,7 @@ ingester:
 - A fragment may set only `lancedb.databases` and `ingester.databases`. Any other key fails loading with an error naming the file.
 - A database name defined twice, in two fragments or in a fragment and the main file, fails loading with an error naming both files.
 - Environment variables and `${file:path}` expand in a fragment as in the main file, and `${HAIKU_RAG_CONFIG_DIR}` is the main file's directory.
-- The ingester's [reload](../ingester.md#reloading-databases) reads the directory again, so adding or deleting a fragment adds or removes its database.
+- The ingester's [reload](../ingester/running.md#reloading-databases) reads the directory again, so adding or deleting a fragment adds or removes its database.
 
 Only configuration loaded from a file reads fragments. A host that builds `AppConfig` itself places no fragment databases.
 
@@ -162,4 +162,4 @@ Without `config`, the client uses the configuration loaded from the YAML file, o
 - [Storage](storage.md): database placement, remote storage, vacuum, vector indexing
 - [Multiple databases](multiple-databases.md): searching several databases together
 - [Prompts](prompts.md): domain context and the picture-description prompt
-- [Ingester](../ingester.md): continuous ingestion sources, workers and queue
+- [Ingester](../ingester/index.md): continuous ingestion sources, workers and queue

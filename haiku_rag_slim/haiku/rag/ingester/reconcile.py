@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-ATTRIBUTION_DOCS = "https://ggozad.github.io/haiku.rag/ingester/"
+ATTRIBUTION_DOCS = "https://ggozad.github.io/haiku.rag/ingester/queue/#documents-with-no-source-attribution"
 
 
 @dataclass

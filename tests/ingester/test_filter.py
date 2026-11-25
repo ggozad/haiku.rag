@@ -74,7 +74,7 @@ def test_files_excluded_by_patterns_are_not_counted():
 
 
 def _documented_extensions(label: str) -> list[str]:
-    docs = Path(__file__).resolve().parents[2] / "docs" / "ingester.md"
+    docs = Path(__file__).resolve().parents[2] / "docs" / "ingester" / "index.md"
     [line] = [
         line
         for line in docs.read_text(encoding="utf-8").splitlines()

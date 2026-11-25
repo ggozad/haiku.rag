@@ -2,7 +2,7 @@
 
 This guide covers how haiku.rag converts and chunks documents. Continuous
 ingestion (watching directories, polling HTTP / S3 / WebDAV sources) lives
-in the [ingester](../ingester.md) service.
+in the [ingester](../ingester/index.md) service.
 
 ## Settings
 
@@ -303,7 +303,7 @@ Only `docling-local` reads this. A docling-serve conversion is bounded by
   PDFs and office formats share one docling converter, which an abandoned
   conversion keeps, so later conversions in that process raise
   `ConverterWedgedError`. Recovering needs a new process. The
-  [ingester](../ingester.md#run-it-under-a-supervisor) exits for that reason,
+  [ingester](../ingester/running.md#run-it-under-a-supervisor) exits for that reason,
   to be restarted. HTML and Markdown get a converter per call, so later
   conversions still run.
 
@@ -380,7 +380,7 @@ children = await client.list_documents(
 
 Behavior:
 
-- Children carry the standard ingest metadata (`content_type`, `md5`) plus `parent_uri`, and no `source_id`. Under the [ingester](../ingester.md#metadata-providers), a source's metadata provider adds its keys to each child too.
+- Children carry the standard ingest metadata (`content_type`, `md5`) plus `parent_uri`, and no `source_id`. Under the [ingester](../ingester/index.md#metadata-providers), a source's metadata provider adds its keys to each child too.
 - Re-ingesting the wrapper reconciles its current attachment set against existing children: new files are added, changed bytes update in place, and dropped names are deleted.
 - `delete_document(parent_id)` cascades through `parent_uri` and removes all children.
 - `delete_document(child_id)` raises `AttachmentDeletionError` while the parent is stored. Delete the parent, or remove the file from the PDF and re-ingest it.
@@ -395,4 +395,4 @@ Set `extract_pdf_attachments: false` to ingest only the wrapper.
 
 For automatic ingestion of local directories, S3 buckets, or HTTP
 sources (with filtering, retries, and a dead-letter queue), see the
-[Ingester](../ingester.md) page.
+[Ingester](../ingester/index.md) page.

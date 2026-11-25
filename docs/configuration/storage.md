@@ -9,7 +9,7 @@ one. A write that spans several tables is serialized by an in-process lock and
 rolled back by restoring each table to the version it had when the write started.
 Both are process-local: a second writing process can commit between that snapshot
 and the mutation, and a rollback would then revert its work too. Run
-a single writer, either the [`haiku-ingester`](../ingester.md) service or your own
+a single writer, either the [`haiku-ingester`](../ingester/index.md) service or your own
 application. Read-only consumers are unrestricted.
 
 **Readers lag by an interval.** A connection always sees its own writes. It sees
@@ -61,7 +61,7 @@ storage:
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
-- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`. Vacuum is also what adds newly written rows to the indexes, so with `false` they stay outside them until `haiku-rag vacuum`, or `haiku-rag rebuild --reindex` for the full-text and scalar indexes. With the ingester's [maintenance](../ingester.md#maintenance) enabled, the ingester's clients ignore it and the maintenance pass vacuums
+- **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`. Vacuum is also what adds newly written rows to the indexes, so with `false` they stay outside them until `haiku-rag vacuum`, or `haiku-rag rebuild --reindex` for the full-text and scalar indexes. With the ingester's [maintenance](../ingester/running.md#maintenance) enabled, the ingester's clients ignore it and the maintenance pass vacuums
 - **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
 - **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum memory](#vacuum-memory) below
 - **store_originals**: When enabled (default), ingesting a PDF or an image stores the file in the `documents` table, and visual grounding renders its pages from it. When disabled, no file is stored and documents ingested meanwhile have no visual grounding until `haiku-rag rebuild --originals` stores their files. The setting governs writes only: a stored file renders either way
@@ -246,7 +246,7 @@ For search behavior settings (`limit`, `max_context_chars`), see [Search and Que
 
 An index can cost recall on a large corpus. A larger corpus holds more IVF partitions, so the default probes cover less of it, and `vector_refine_factor` only re-scores what the probes returned. Raise `vector_nprobes` to trade latency for recall on a large corpus.
 
-Writing documents never creates a vector index. The ingester's [maintenance](../ingester.md#maintenance) builds one when it is enabled. Without it, once the database holds at least 256 chunks, build one:
+Writing documents never creates a vector index. The ingester's [maintenance](../ingester/running.md#maintenance) builds one when it is enabled. Without it, once the database holds at least 256 chunks, build one:
 
 ```bash
 haiku-rag create-index

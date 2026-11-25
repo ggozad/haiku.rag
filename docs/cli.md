@@ -45,7 +45,7 @@ haiku-rag add-src s3://my-bucket/path/to/document.pdf
 
 `--meta KEY=VALUE` is repeatable. Values are parsed as JSON where possible (numbers, booleans, null, arrays, objects) and kept as strings otherwise.
 
-A directory is walked recursively. Files are kept when docling-local or the text handler supports their extension, and `--title` is ignored. A file that fails to ingest is logged with its error and the walk continues. The last line counts the failures, and the command then exits 1. For include and ignore patterns, use the [ingester](ingester.md) with a filesystem source.
+A directory is walked recursively. Files are kept when docling-local or the text handler supports their extension, and `--title` is ignored. A file that fails to ingest is logged with its error and the walk continues. The last line counts the failures, and the command then exits 1. For include and ignore patterns, use the [ingester](ingester/index.md) with a filesystem source.
 
 `s3://` needs the `s3` extra. Credentials come from the default AWS chain. For an S3-compatible store, set `AWS_ENDPOINT_URL`:
 
@@ -309,7 +309,7 @@ haiku-rag mcp --stdio          # stdio, for Claude Desktop
 haiku-rag mcp --host 0.0.0.0 --port 9000
 ```
 
-See [MCP](mcp.md). Continuous ingestion runs in the separate [`haiku-ingester`](ingester.md) service.
+See [MCP](mcp.md). Continuous ingestion runs in the separate [`haiku-ingester`](ingester/index.md) service.
 
 ## Settings
 

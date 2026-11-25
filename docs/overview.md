@@ -14,7 +14,7 @@ A **source adapter** owns the I/O and the identity of a document: it fetches
 bytes, reports the backend's revision (mtime for a file, ETag for S3 or HTTP),
 and computes the content hash. The same adapters serve one-shot ingestion
 (`haiku-rag add-src`, `HaikuRAG.create_document_from_source`) and the continuous
-[`haiku-ingester`](ingester.md) service, so both agree on what a document is and
+[`haiku-ingester`](ingester/index.md) service, so both agree on what a document is and
 when it has changed.
 
 The **converter** turns those bytes into a `DoclingDocument`, the structured form
@@ -80,7 +80,7 @@ the [MCP server](mcp.md).
 ## Running it
 
 A local install needs only the package and Ollama. Production adds the
-[`haiku-ingester`](ingester.md) service, which polls its sources, queues work in
+[`haiku-ingester`](ingester/index.md) service, which polls its sources, queues work in
 SQLite or Postgres, and retries with a circuit breaker per source.
 
 Before deploying, read the operational constraints in
