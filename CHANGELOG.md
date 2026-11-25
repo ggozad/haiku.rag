@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `haiku-ingester serve`: a failed `fs` watcher, such as one over a missing `root`, restarts after a delay doubling from 1 second up to 5 minutes. Its failures no longer count toward the source's poller circuit breaker.
+- `docling-serve` refuses a source-code or plain-text file with an undetectable encoding as `ConversionFailedError`, as `docling-local` does: a PDF skips such an attachment and the ingester dead-letters such a file without retrying.
+
 ## [0.113.1] - 2026-11-24
 
 ### Changed

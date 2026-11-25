@@ -2202,16 +2202,19 @@ class TestDoclingServeConverter:
         files = converter._make_request.call_args.args[0]
         assert files["files"][1] == f"# Title\r\n\r\n{JAPANESE}\r\n".encode()
 
-    async def test_convert_file_rejects_undetectable_docling_text_format(
-        self, converter, tmp_path
+    @pytest.mark.parametrize("name", ["doc.md", "script.c"])
+    async def test_convert_file_refuses_undetectable_text(
+        self, converter, tmp_path, name
     ):
-        source = tmp_path / "doc.md"
+        source = tmp_path / name
         source.write_bytes(UNDETECTABLE)
         converter._make_request = AsyncMock(
             side_effect=AssertionError("must not call docling-serve")
         )
 
-        with pytest.raises(ValueError, match="No text encoding detected") as exc:
+        with pytest.raises(
+            ConversionFailedError, match="No text encoding detected"
+        ) as exc:
             await converter.convert_file(source)
 
         assert str(source) in str(exc.value)
@@ -2605,17 +2608,20 @@ class TestDoclingServeZipParsing:
 
 
 async def test_docling_serve_convert_file_wraps_text_read_failure(tmp_path):
-    """An undecodable text file surfaces as a ValueError naming the path."""
+    """A text file that cannot be read surfaces as a ValueError naming the path."""
     config = AppConfig()
     config.processing.converter = "docling-serve"
     converter = get_converter(config)
     assert isinstance(converter, DoclingServeConverter)
 
     source = tmp_path / "broken.txt"
-    source.write_bytes(UNDETECTABLE)
+    source.mkdir()
 
-    with pytest.raises(ValueError, match="Failed to read text file"):
+    with pytest.raises(ValueError, match="Failed to read text file") as exc:
         await converter.convert_file(source)
+
+    assert not isinstance(exc.value, ConversionFailedError)
+    assert isinstance(exc.value.__cause__, OSError)
 
 
 class TestConversionTimeout:

@@ -914,20 +914,21 @@ async def test_manager_restart_resumes_polling(tmp_path, jobs, sync):
 # --- FSPoller._handle_watch_change ---
 
 
-def _fs_poller(tmp_path, jobs, sync):
+def _fs_poller(tmp_path, jobs, sync, *, root: Path | None = None):
     """Construct an FSPoller for unit-testing the watch-change handler.
     Doesn't start the watch loop — tests call `_handle_watch_change` directly."""
     from haiku.rag.ingester.pollers.fs import FSPoller
     from haiku.rag.sources.fs import FSSource
 
+    root = root or tmp_path
     cfg = FSSourceConfig(
         type="fs",
         id="local",
-        root=tmp_path,
+        root=root,
         delete_orphans=True,
         poll_interval_s=60.0,
     )
-    source = FSSource(root=tmp_path, supported_extensions=[".md"], source_id="local")
+    source = FSSource(root=root, supported_extensions=[".md"], source_id="local")
     return FSPoller(
         source=source,
         config=cfg,
@@ -1212,23 +1213,155 @@ async def test_an_error_without_a_message_is_named_by_its_type(fs_config, jobs, 
     assert poller.last_error == "TimeoutError"
 
 
-async def test_a_failed_watch_loop_records_its_error(tmp_path, jobs, sync, monkeypatch):
-    async def _failing_watch(*_, **__):
+def _failing_watch(calls: list[int]):
+    async def watch(*_, **__):
+        calls.append(1)
         raise RuntimeError("inotify limit reached")
         yield  # pragma: no cover - makes this an async generator
 
-    monkeypatch.setattr("haiku.rag.ingester.pollers.fs.awatch", _failing_watch)
+    return watch
+
+
+async def _wait_until(predicate, timeout: float = 10.0) -> None:
+    async def poll():
+        while not await predicate():
+            await asyncio.sleep(0.05)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
+async def test_a_failed_watch_loop_records_its_error(tmp_path, jobs, sync, monkeypatch):
+    calls: list[int] = []
+    monkeypatch.setattr("haiku.rag.ingester.pollers.fs.awatch", _failing_watch(calls))
     poller = _fs_poller(tmp_path, jobs, sync)
 
     with capture_logs(
         logging.getLogger("haiku.rag.ingester.pollers.fs"), logging.ERROR
     ) as records:
-        await poller._watch_loop()
+        task = asyncio.create_task(poller._watch_loop())
+
+        async def failed():
+            return bool(calls)
+
+        await _wait_until(failed)
+        await poller.stop()
+        await asyncio.wait_for(task, 5)
 
     assert [r.getMessage() for r in records] == [
         "watchfiles loop failed for local: inotify limit reached"
     ]
     assert poller.last_error == "inotify limit reached"
+
+
+async def test_watch_loop_retries_without_opening_the_breaker(
+    tmp_path, jobs, sync, monkeypatch
+):
+    from haiku.rag.ingester.pollers import fs
+
+    calls: list[int] = []
+    monkeypatch.setattr(fs, "awatch", _failing_watch(calls))
+    monkeypatch.setattr(fs, "_WATCH_RETRY_INITIAL_S", 0.001)
+    poller = _fs_poller(tmp_path, jobs, sync)
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.ingester.pollers.fs"), logging.ERROR
+    ):
+        task = asyncio.create_task(poller._watch_loop())
+
+        async def failed_repeatedly():
+            return len(calls) >= 5
+
+        await _wait_until(failed_repeatedly)
+        assert not poller.is_circuit_open
+        assert await poller._sweep_once()
+        await poller.stop()
+        await asyncio.wait_for(task, 5)
+
+
+async def test_watch_loop_keeps_retrying_past_a_thousand_failures(
+    tmp_path, jobs, sync, monkeypatch
+):
+    from haiku.rag.ingester.pollers import fs
+
+    calls: list[int] = []
+    monkeypatch.setattr(fs, "awatch", _failing_watch(calls))
+    monkeypatch.setattr(fs, "_WATCH_RETRY_INITIAL_S", 0.0)
+    monkeypatch.setattr(fs, "_WATCH_RETRY_MAX_S", 0.0)
+    # Rendering 1100 logged tracebacks takes longer than the loop itself.
+    monkeypatch.setattr(fs.logger, "disabled", True)
+    poller = _fs_poller(tmp_path, jobs, sync)
+    task = asyncio.create_task(poller._watch_loop())
+
+    async def failed_past_the_float_range():
+        assert not task.done(), task.exception()
+        return len(calls) > 1100
+
+    await _wait_until(failed_past_the_float_range, timeout=30)
+    await poller.stop()
+    await asyncio.wait_for(task, 5)
+
+
+async def test_watch_loop_stops_while_waiting_to_retry(
+    tmp_path, jobs, sync, monkeypatch
+):
+    from haiku.rag.ingester.pollers import fs
+
+    calls: list[int] = []
+    monkeypatch.setattr(fs, "awatch", _failing_watch(calls))
+    monkeypatch.setattr(fs, "_WATCH_RETRY_INITIAL_S", 3600.0)
+    poller = _fs_poller(tmp_path, jobs, sync)
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.ingester.pollers.fs"), logging.ERROR
+    ):
+        task = asyncio.create_task(poller._watch_loop())
+
+        async def failed():
+            return bool(calls)
+
+        await _wait_until(failed)
+        await poller.stop()
+        await asyncio.wait_for(task, 5)
+
+    assert calls == [1]
+
+
+async def test_watch_loop_watches_a_root_created_after_it_started(
+    tmp_path, jobs, sync, monkeypatch
+):
+    from haiku.rag.ingester.pollers import fs
+
+    monkeypatch.setattr(fs, "_WATCH_RETRY_INITIAL_S", 0.05)
+    monkeypatch.setattr(fs, "_WATCH_RETRY_MAX_S", 0.05)
+    root = tmp_path / "later"
+    poller = _fs_poller(tmp_path, jobs, sync, root=root)
+
+    with capture_logs(
+        logging.getLogger("haiku.rag.ingester.pollers.fs"), logging.ERROR
+    ) as records:
+        task = asyncio.create_task(poller._watch_loop())
+
+        async def failed():
+            return bool(records)
+
+        await _wait_until(failed)
+        root.mkdir()
+        note = root / "note.md"
+
+        async def enqueued():
+            # The watcher may start after a write, so each poll writes again.
+            note.write_text(f"{datetime.now(UTC)}", encoding="utf-8")
+            await asyncio.sleep(0.2)
+            return bool(await jobs.list_jobs(source_id="local"))
+
+        try:
+            await _wait_until(enqueued)
+        finally:
+            await poller.stop()
+            await asyncio.wait_for(task, 5)
+
+    [job] = await jobs.list_jobs(source_id="local")
+    assert job.uri == note.as_uri()
 
 
 # --- stopping and removal ---

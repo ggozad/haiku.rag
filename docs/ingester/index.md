@@ -102,7 +102,7 @@ ingester:
           include_patterns: ["*.md", "*.pdf"]    # optional allow-list
 ```
 
-`watchfiles` delivers changes as they happen, and a periodic sweep catches anything missed while the service was down.
+`watchfiles` delivers changes as they happen, and a periodic sweep catches anything missed while the service was down. A watcher that fails, for example over a `root` that does not exist yet, logs the error, sets the source's `last_error` and starts again after a delay that doubles from 1 second up to 5 minutes. Its failures do not count toward the source's [circuit breaker](running.md#circuit-breaker), which pauses only the sweeps.
 
 With `converter: docling-local`, a LaTeX document is converted where it sits, and `\input`, `\include` and `\includegraphics` read the files they name from its directory and below, whatever their extension and whatever `ignore_patterns` says. The files they pull in become searchable text. Do not watch a directory where untrusted users can write `.tex` files next to files that must stay private.
 

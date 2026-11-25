@@ -13,6 +13,7 @@ from haiku.rag.converters.base import (
     vlm_api_params,
     vlm_api_url,
 )
+from haiku.rag.converters.exceptions import ConversionFailedError
 from haiku.rag.converters.text_utils import (
     DOCLING_TEXT_EXTENSIONS,
     TextFileHandler,
@@ -246,6 +247,7 @@ class DoclingServeConverter(DocumentConverter):
 
         Raises:
             UnsupportedSourceError: If the extension is not supported.
+            ConversionFailedError: If the text encoding is not detected.
             ValueError: If the file cannot be converted or service is unavailable.
         """
         self.require_supported(path)
@@ -258,6 +260,8 @@ class DoclingServeConverter(DocumentConverter):
                     content, file_extension
                 )
                 return await self.convert_text(prepared_content, name=f"{path.stem}.md")
+            except ConversionFailedError:
+                raise
             except Exception as e:
                 raise ValueError(f"Failed to read text file {path}: {e}") from e
 
