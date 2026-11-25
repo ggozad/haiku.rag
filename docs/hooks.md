@@ -4,7 +4,7 @@ Hooks let external packages transform or refuse documents before ingestion, obse
 
 A hook is a class registered under the `haiku.rag.hooks` entry-point group and activated by name in config. Hooks run everywhere the client runs: CLI, MCP server, RAG capability, and your own code.
 
-A hook is behaviour for the whole process. It can transform, reject or observe any document or search that passes through the client. Metadata for one source belongs in that source's [metadata provider](ingester.md#metadata-providers). The source's configuration names it, and an ingester reload changes it. The ingester's reload refuses a change to `hooks`, which needs a restart.
+A hook is behaviour for the whole process. It can transform, reject or observe any document or search that passes through the client. Metadata for one source belongs in that source's [metadata provider](ingester/index.md#metadata-providers). The source's configuration names it, and an ingester reload changes it. The ingester's reload refuses a change to `hooks`, which needs a restart.
 
 ## Hook points
 
@@ -82,7 +82,7 @@ class StripBoilerplateHook(Hook):
 
 ## Transforming converted documents
 
-`after_convert` runs each time haiku.rag converts a document, before it chunks and embeds it: a source ingest that converts (not one that stops at unchanged bytes or a rejection), PDF attachments, text given to `create_document` or `update_document(content=...)`, and a FULL rebuild, both when it re-fetches a source and when it falls back to the stored content. On that fallback the hook's output also replaces the stored content. It does not run where the caller supplies the converted document (`import_document`, `import_documents`, `update_document(docling_document=...)`), or for `rebuild --rechunk` and `--descriptions`, which chunk the stored document. `ConvertedDocument` carries `uri`, `source_id`, `content_type` and `docling_document`. `uri` and `source_id` are the ones `before_ingest` saw. For text, `content_type` is `None`, and `source_id` is the stored document's on `update_document` and the rebuild fallback, and `None` on `create_document`. A hook changes `docling_document` in place or replaces it, and returns the `ConvertedDocument`. The stored content, the docling document and the chunks all come from the returned document. Visual grounding draws the returned document's bounding boxes on the converted file's pages, so a hook keeps the pages and every item's provenance. haiku.rag does not check that it did.
+`after_convert` runs each time haiku.rag converts a document, before it chunks and embeds it: a source ingest that converts (not one that stops at unchanged bytes or a rejection), PDF attachments, text given to `create_document` or `update_document(content=...)`, and a FULL rebuild, both when it re-fetches a source and when it falls back to the stored content. On that fallback the hook's output also replaces the stored content. It does not run where the caller supplies the converted document (`import_document`, `import_documents`, `update_document(docling_document=...)`), or for `rebuild --rechunk` and `--descriptions`, which chunk the stored document. `ConvertedDocument` carries `uri`, `source_id`, `content_type` and `docling_document`. `uri` and `source_id` match the values passed to `before_ingest`. For text, `content_type` is `None`, and `source_id` is the stored document's on `update_document` and the rebuild fallback, and `None` on `create_document`. A hook changes `docling_document` in place or replaces it, and returns the `ConvertedDocument`. The stored content, the docling document and the chunks all come from the returned document. Visual grounding draws the returned document's bounding boxes on the converted file's pages, so a hook keeps the pages and every item's provenance. haiku.rag does not check that it did.
 
 ```python
 class FixLettersHook(Hook):
@@ -126,9 +126,9 @@ class LanguageHook(Hook):
             )
 ```
 
-`update_document(metadata=...)` replaces the stored metadata with the caller's and keeps the ingestion-owned keys and `user`.
+`update_document(metadata=...)` replaces the stored metadata with the caller's and keeps the ingestion-owned keys and `user`. Every hook receives the same event, and its documents lack keys written by an earlier hook.
 
-`metadata["user"]` belongs to the editor: only `edit_document` writes it. A provider, a source or a `before_ingest` hook that returns a `user` key has it dropped, and every write keeps the stored value. Every hook receives the same event, and its documents lack keys written by an earlier hook.
+`metadata["user"]` belongs to the editor: only `edit_document` writes it. A provider, a source or a `before_ingest` hook that returns a `user` key has it dropped, and every write keeps the stored value.
 
 ## Several databases
 
@@ -231,7 +231,7 @@ async def ingester_lifespan(self, client):
 
 The `task.cancel()` is not optional. A `TaskGroup` that exits cleanly waits for its children instead of cancelling them, so an endless loop running in one never returns and ingester shutdown hangs.
 
-`run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it. With [maintenance](ingester.md#maintenance) enabled, the batch's maintenance pass runs after the exit and covers those writes.
+`run-batch` exits the ingester lifespans once its queue drains. A hook owns the work it queued for itself. To finish that work before the batch ends, the hook waits for it in the exit instead of cancelling it. With [maintenance](ingester/running.md#maintenance) enabled, the batch's maintenance pass runs after the exit and covers those writes.
 
 Failures follow the `lifespan` rules. A failure on entry fails that database's start: the ingester logs it, skips the database and starts the others, and a reload reports the database failed. An exception on exit is logged and swallowed, and a cancellation propagates.
 

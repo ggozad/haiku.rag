@@ -37,7 +37,11 @@ nav = [
         { Tuning = "tuning.md" },
     ] },
     { Production = [
-        { Ingester = "ingester.md" },
+        { Ingester = [
+            "ingester/index.md",
+            { "Running the ingester" = "ingester/running.md" },
+            { "Queue and attribution" = "ingester/queue.md" },
+        ] },
         { MCP = "mcp.md" },
         { "Remote processing" = "remote-processing.md" },
     ] },

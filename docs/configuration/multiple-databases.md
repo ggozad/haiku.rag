@@ -43,8 +43,8 @@ haiku-rag --db-name sp800-2026-06-30 ask "What changed?"
 
 Embeddings are checked against two things:
 
-- **On open**, each database against the configuration. A dimension mismatch raises `ConfigMismatchError`. A provider or model-name mismatch at the same dimension warns in read-only mode and raises in writable mode.
-- **Across a selection**, the databases against each other. Vector and hybrid search embed the query once, so every database answering it must record the same provider, model and dimension, or the search raises `ConfigMismatchError`, read-only included. Only the databases searched together have to agree. Full-text search embeds nothing and is unaffected.
+- **On open**, each database against the configuration. A dimension mismatch raises `ConfigMismatchError`. A provider, model-name or prefix mismatch at the same dimension warns in read-only mode and raises in writable mode.
+- **Across a selection**, the databases against each other. Vector and hybrid search embed the query once, so every database answering it must record the same provider, model, dimension and prefixes, or the search raises `ConfigMismatchError`, read-only included. Only the databases searched together have to agree. Full-text search embeds nothing and is unaffected.
 
 ## CLI
 
@@ -137,13 +137,13 @@ The server covers the configured set. `sources` on the search tools, `list_docum
 
 ## Ingester
 
-`haiku-ingester` writes every database `ingester.databases` names, from one process, and leaves the other entries to readers. See [Ingester](../ingester.md#configure-sources).
+`haiku-ingester` writes every database `ingester.databases` names, from one process, and leaves the other entries to readers. See [Ingester](../ingester/index.md#configure-sources).
 
 ## Ranking
 
 Results from several databases are fused into one list:
 
-- **With a reranker**, the reranker scores the combined candidates directly. It is the strongest option, roughly 6 to 8 recall points above cosine fusion on the MTRAG retrieval benchmarks, and its cost grows with the number of databases.
+- **With a reranker**, the reranker scores the combined candidates directly. Its cost grows with the number of databases.
 - **Without one**, candidates are ordered by cosine similarity to the query vector. The databases share an embedder, so similarity in that space is comparable across them, where retrieval scores are not. Ties fall to rank within each database, then to configured order.
 - **Full-text-only searches** have no query vector and order by retrieval score.
 - **Image queries** are vector-only and skip the reranker, which takes a text query.

@@ -37,7 +37,7 @@ providers:
 
 ## Model settings
 
-These settings apply to the QA and title models. The picture-description model reads them only under `rebuild --descriptions`, see [Picture handling](processing.md#picture-handling):
+These settings apply to the QA and title models. The picture-description model reads `base_url`, `api_key` and `thinking` during conversion, and all of them under `rebuild --descriptions`. See [Picture handling](processing.md#picture-handling):
 
 ```yaml
 qa:
@@ -79,7 +79,7 @@ embeddings:
     api_key: ${VENDOR_B_KEY}
 ```
 
-`api_key` is honored on the `openai`, `ollama`, `openrouter` and `vllm` providers, on `vllm` and `openrouter` embedders and rerankers, and on the picture-description endpoint, which falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint. Other providers read their own environment variable, and setting `api_key` on them raises.
+`api_key` is honored on `openai`, `ollama`, `openrouter` and `vllm` models and embedders, on `vllm` and `openrouter` rerankers, and on the picture-description endpoint, which falls back to `OPENAI_API_KEY` only for the public OpenAI endpoint. Other providers read their own environment variable, and setting `api_key` on them raises.
 
 ### Thinking
 

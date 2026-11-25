@@ -13,7 +13,7 @@ Global options precede the command:
 | `--read-only` | Open the database read-only. `search`, `ask`, `list`, `get`, `visualize`, `chat` and `inspect` always do |
 | `--version`, `-v` | Show the version and exit |
 
-`--db PATH` follows the command and opens the database at that path, named by its stem, whatever the configuration places. `settings`, `init-config` and `download-models` take no `--db`.
+`--db PATH` follows the command and opens the database at that path, named by its stem, whatever the configuration places. It cannot be combined with `--db-name`. `settings`, `init-config` and `download-models` take no `--db`.
 
 ```bash
 haiku-rag --config /path/to/config.yaml list --db /path/to/custom.lancedb
@@ -45,7 +45,7 @@ haiku-rag add-src s3://my-bucket/path/to/document.pdf
 
 `--meta KEY=VALUE` is repeatable. Values are parsed as JSON where possible (numbers, booleans, null, arrays, objects) and kept as strings otherwise.
 
-A directory is walked recursively. Files are kept when docling-local or the text handler supports their extension, and `--title` is ignored. A file that fails to ingest is logged with its error and the walk continues. The last line counts the failures, and the command then exits 1. For include and ignore patterns, use the [ingester](ingester.md) with a filesystem source.
+A directory is walked recursively. Files are kept when docling-local or the text handler supports their extension, and `--title` is ignored. A file that fails to ingest is logged with its error and the walk continues. The last line counts the failures, and the command then exits 1. For include and ignore patterns, use the [ingester](ingester/index.md) with a filesystem source.
 
 `s3://` needs the `s3` extra. Credentials come from the default AWS chain. For an S3-compatible store, set `AWS_ENDPOINT_URL`:
 
@@ -55,7 +55,7 @@ AWS_ACCESS_KEY_ID=key AWS_SECRET_ACCESS_KEY=secret AWS_REGION=us-east-1 \
   haiku-rag add-src s3://my-bucket/path/to/document.pdf
 ```
 
-A failed add or update rolls the database back to its state before the operation.
+A failed add or update rolls the database back to its state before that document's write. Each file of a directory and each attachment of a PDF is a separate write, so a failure leaves the documents written before it stored.
 
 ### List, get, delete
 
@@ -162,16 +162,14 @@ haiku-rag migrate [--db /path/to/your.lancedb]
 A database written by an older haiku.rag may need a schema migration. Opening it then fails:
 
 ```
-Error: Database requires migration from 0.70.0 to 0.111.1. 3 migration(s) pending. Run 'haiku-rag migrate' to upgrade.
+Error: Database requires migration from <stored> to <installed>. <n> migration(s) pending. Run 'haiku-rag migrate' to upgrade.
 ```
 
 `migrate` applies the pending migrations and lists them:
 
 ```
-Applied 3 migration(s):
-  - 0.75.0: Index documents.id, chunks.id, chunks.document_id and document_items.label
-  - 0.89.0: Store only the version and embedder identity in settings
-  - 0.91.0: Rebuild v1-format full-text indexes as v2
+Applied <n> migration(s):
+  - <version>: <description>
 Migration completed successfully.
 ```
 
@@ -184,12 +182,12 @@ haiku-rag migrate --db /path/to/your.lancedb
 
 Back up the database first. `migrate` exits 1 on failure.
 
-The 0.113.0 migration deletes the stored page images and reclaims their space at once: it rewrites every row of `documents`, then vacuums the database at zero retention. Stop every other process using the database before running it. Its memory grows with the size of the `documents` table without the page images: it peaked at 10.4 GB on 2.9 GB of text and structures. A tag taken before it keeps its page images on disk, and `migrate` names such tags. Visual grounding then renders from a document's original file, which an existing document gets from [`rebuild --originals`](#rebuild), or when it is re-ingested, a full rebuild included. In the web app's compose stack, run both in the ingester container, as [Database maintenance](apps.md#database-maintenance) shows.
+The 0.113.0 migration deletes the stored page images and reclaims their space at once: it rewrites every row of `documents`, then vacuums the database at zero retention. Stop every other process using the database before running it. Its memory grows with the size of the `documents` table without the page images. A tag taken before it keeps its page images on disk, and `migrate` names such tags. Visual grounding renders from a document's original file. An existing document gets it from [`rebuild --originals`](#rebuild), or when it is re-ingested, a full rebuild included. In the web app's compose stack, run both in the ingester container, as [Database maintenance](apps.md#database-maintenance) shows.
 
 `init` and `migrate` record the schema the release writes as `schema_version`. A release refuses to write to a database whose `schema_version` is newer than its own schema, and a read-only open warns:
 
 ```
-Error: Database schema 0.95.0 was written by a newer haiku.rag release. haiku.rag 0.101.2 knows schemas up to 0.91.0. Upgrade haiku.rag.
+Error: Database schema <stored> was written by a newer haiku.rag release. haiku.rag <installed> knows schemas up to <schema>. Upgrade haiku.rag.
 ```
 
 `tag restore` of a tag that needs no migration and carries a supported `schema_version` works over such a database.
@@ -219,9 +217,9 @@ haiku-rag rebuild [--rechunk | --embed-only | --title-only | --descriptions | --
 | Descriptions | `--descriptions` | Adding VLM picture descriptions to an existing database |
 | Set embedder | `--set-embedder` | The same model is now served by another stack (e.g. Ollama to vLLM) |
 | Reindex | `--reindex` | `doctor` reports rows outside the full-text index, an index is missing, or `search.fts_language` changed |
-| Originals | `--originals` | Documents ingested before originals were stored need visual grounding |
+| Originals | `--originals` | Documents without a stored original need visual grounding |
 
-A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment its PDF did not rebuild, are re-chunked and re-embedded from their stored content.
+A full rebuild re-converts a PDF's attachments from the bytes in that PDF. A document whose source is gone or fails to convert, and an attachment that its PDF's rebuild did not write, are re-chunked and re-embedded from their stored content.
 
 Every mode except `--title-only`, `--set-embedder` and `--originals` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. A full rebuild, `--rechunk`, `--embed-only` and `--descriptions` also retrain the vector index if the database had one. `--reindex` rebuilds the full-text and scalar indexes from scratch and nothing else: it rewrites no rows and leaves the vector index alone.
 
@@ -231,7 +229,7 @@ A full rebuild, `--rechunk` and `--descriptions` replace the chunks of 50 docume
 
 `--originals` stores the original PDF or image of every document that has none. It fetches the document's source again and stores the bytes only when their MD5 equals the one recorded at ingest. An attachment's bytes come from its parent PDF. It converts, chunks and embeds nothing, and logs each document it skips with the reason: the source is unavailable or its MD5 differs. It refuses to run while `storage.store_originals` is off. Stop other processes writing the database first: a document they update during the run is left without an original.
 
-The database records the embedder whose vectors the chunks table holds. A rebuild that keeps the table records the configured embedder once it has finished. An interrupted one to another embedder at the same dimension keeps the old one recorded while some documents already have the new one's vectors, so opening the database fails when writable and warns when read-only, until you run the rebuild again. A rebuild that empties the table, `--embed-only` or a dimension change, records the configured embedder as soon as the table is recreated. `--title-only` embeds nothing and records nothing.
+The database records the embedder that produced the vectors in the chunks table. A rebuild that keeps the table records the configured embedder once it has finished. An interrupted one to another embedder at the same dimension keeps the old one recorded while some documents already have the new one's vectors, so opening the database fails when writable and warns when read-only, until you run the rebuild again. A rebuild that empties the table, `--embed-only` or a dimension change, records the configured embedder as soon as the table is recreated. `--title-only` embeds nothing and records nothing.
 
 `--set-embedder` records the configured embedding provider, name and query prefix without re-embedding, and is rejected when the vector dimension or the document prefix changed.
 
@@ -311,7 +309,7 @@ haiku-rag mcp --stdio          # stdio, for Claude Desktop
 haiku-rag mcp --host 0.0.0.0 --port 9000
 ```
 
-See [MCP](mcp.md). Continuous ingestion runs in the separate [`haiku-ingester`](ingester.md) service.
+See [MCP](mcp.md). Continuous ingestion runs in the separate [`haiku-ingester`](ingester/index.md) service.
 
 ## Settings
 

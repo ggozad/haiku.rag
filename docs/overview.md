@@ -14,7 +14,7 @@ A **source adapter** owns the I/O and the identity of a document: it fetches
 bytes, reports the backend's revision (mtime for a file, ETag for S3 or HTTP),
 and computes the content hash. The same adapters serve one-shot ingestion
 (`haiku-rag add-src`, `HaikuRAG.create_document_from_source`) and the continuous
-[`haiku-ingester`](ingester.md) service, so both agree on what a document is and
+[`haiku-ingester`](ingester/index.md) service, so both agree on what a document is and
 when it has changed.
 
 The **converter** turns those bytes into a `DoclingDocument`, the structured form
@@ -26,11 +26,10 @@ The **chunker** splits that structure into chunks, each keeping the headings it
 sits under, the page numbers it came from, and references to the document items
 it covers. With a multimodal embedder, pictures become chunks of their own.
 
-The **embedder** vectorizes them in batches. The document, its mutable metadata,
-its chunks and its structural items are written under one process-local
-transaction: it takes a version snapshot, and on failure restores each table to
-it. A rollback that cannot complete raises rather than reporting success, and the
-snapshot is only meaningful while this process is the only writer.
+The **embedder** vectorizes them in batches. The document, its metadata, its
+chunks and its structural items are written in one transaction, which restores
+every table to its prior version on failure. The rollback is reliable only while
+this process is the only writer.
 
 ## Storage
 
@@ -52,10 +51,10 @@ query -> vector + full-text search -> fusion -> rerank -> context expansion
 ```
 
 Search runs a vector query and a full-text query and fuses the rankings. With a
-reranker configured, it retrieves ten times the requested limit and reranks down
-to it.
+reranker configured, it retrieves `search.rerank_pool_factor` (default 10) times
+the requested limit and reranks down to it.
 
-Results then expand: a chunk is returned with the section it belongs to, bounded
+The RAG capability, the MCP search tools and in-code `search()` then expand each result. `HaikuRAG.search` returns results unexpanded, and `HaikuRAG.expand_context` expands them. A chunk is returned with the section it belongs to, bounded
 by `search.max_context_chars`. Sections that fit come back whole, larger ones
 grow outward from the match within the section, and small ones grow across
 boundaries. See [Search settings](configuration/qa.md#search-settings). Every
@@ -81,7 +80,7 @@ the [MCP server](mcp.md).
 ## Running it
 
 A local install needs only the package and Ollama. Production adds the
-[`haiku-ingester`](ingester.md) service, which polls its sources, queues work in
+[`haiku-ingester`](ingester/index.md) service, which polls its sources, queues work in
 SQLite or Postgres, and retries with a circuit breaker per source.
 
 Before deploying, read the operational constraints in

@@ -37,6 +37,5 @@ though it searched nothing.
 
 Once anything has been cited, later turns are enforced too, a greeting included. The
 model satisfies the policy by citing an empty list. After a plain-text answer this costs
-one extra request. A
-conversation with neither a current-question evidence outcome nor any earlier citation
-is not enforced.
+one extra request. A conversation with no evidence in the current question and no
+earlier citation is not enforced.

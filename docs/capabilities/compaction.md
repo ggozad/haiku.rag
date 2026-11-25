@@ -22,12 +22,12 @@ holds everything the run gathered.
 
 This reduces what a request carries. It does not bound it: retained evidence still
 grows with the conversation. A host that needs more aggressive pruning can compact its
-own requests further, on the wire only. `qa.max_images` bounds the
-number of images in a request. See [Image limit](../configuration/qa.md#image-limit).
+own requests further, on the wire only. `qa.max_images` drops retrieved
+pictures from a request that holds more images than the limit. See [Image limit](../configuration/qa.md#image-limit).
 
 ## Resuming a question
 
-Resuming a question (deferred tool results, an interruption, a suspension) requires the
+A resumed question (deferred tool results, an interruption, a suspension) needs the
 host to carry the capability state from the run being resumed, alongside the message
-history. Without it the identity of the question in progress is unknowable, and the run
-fails rather than silently treating it as a new question.
+history. Without it the run cannot identify the question in progress, and it fails
+rather than treating it as a new question.

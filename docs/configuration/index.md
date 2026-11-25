@@ -1,6 +1,6 @@
 # Configuration
 
-haiku.rag reads its configuration from a YAML file. Every setting has a default, so a file sets only what differs.
+haiku.rag reads its configuration from a YAML file. Every setting has a default, so a file sets only what differs. An unknown or misspelled key fails validation at load.
 
 !!! note
     The embedding model in the configuration must match the one a database was built with. See [Operational constraints](storage.md#operational-constraints) for what a mismatch does and how to reconcile it.
@@ -71,7 +71,7 @@ ingester:
 - A fragment may set only `lancedb.databases` and `ingester.databases`. Any other key fails loading with an error naming the file.
 - A database name defined twice, in two fragments or in a fragment and the main file, fails loading with an error naming both files.
 - Environment variables and `${file:path}` expand in a fragment as in the main file, and `${HAIKU_RAG_CONFIG_DIR}` is the main file's directory.
-- The ingester's [reload](../ingester.md#reloading-databases) reads the directory again, so adding or deleting a fragment adds or removes its database.
+- The ingester's [reload](../ingester/running.md#reloading-databases) reads the directory again, so adding or deleting a fragment adds or removes its database.
 
 Only configuration loaded from a file reads fragments. A host that builds `AppConfig` itself places no fragment databases.
 
@@ -95,11 +95,11 @@ Interpolation does not URL-encode values. A password embedded in a connection UR
 
 ## Environment
 
-`environment` defaults to `production`. In the CLI, any value other than `development` silences Python warnings and Logfire console output.
+`environment` defaults to `production`. In the CLI, any value other than `development` silences Logfire console output. The CLI silences Python warnings in every environment.
 
 ## Minimal configuration
 
-A minimal configuration file with defaults. These `qa.model` values are the defaults only when the `qa` section is omitted. Once you write a `qa.model` block, each field you leave out takes the `ModelConfig` default: `vision: false`, and no `thinking`, `temperature` or `max_tokens`. The same holds for `processing.title_model` and `processing.conversion_options.picture_description.model`.
+A minimal configuration file with defaults. These `qa.model` values are the defaults only when `qa.model` is omitted. Once you write a `qa.model` block, each field you leave out takes the `ModelConfig` default: `vision: false`, and no `thinking`, `temperature` or `max_tokens`. The same holds for `processing.title_model` and `processing.conversion_options.picture_description.model`.
 
 
 ```yaml
@@ -162,4 +162,4 @@ Without `config`, the client uses the configuration loaded from the YAML file, o
 - [Storage](storage.md): database placement, remote storage, vacuum, vector indexing
 - [Multiple databases](multiple-databases.md): searching several databases together
 - [Prompts](prompts.md): domain context and the picture-description prompt
-- [Ingester](../ingester.md): continuous ingestion sources, workers and queue
+- [Ingester](../ingester/index.md): continuous ingestion sources, workers and queue

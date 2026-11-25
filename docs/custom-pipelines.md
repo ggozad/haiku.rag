@@ -1,6 +1,6 @@
 # Custom processing pipelines
 
-haiku.rag provides processing primitives that let you build custom document pipelines. Use these when you need control over conversion, chunking, or embedding (for example, to preprocess content, use external services, or implement custom chunking logic).
+haiku.rag exposes its conversion, chunking and embedding steps as primitives for custom document pipelines.
 
 ## When to use custom pipelines
 
@@ -126,11 +126,11 @@ Chunks are returned with:
 - `embedding` - `None` (not yet embedded)
 - `document_id` - `None` (not yet stored)
 
-A custom `DocumentChunker` can provide other keys and values in `metadata`. They will be stored with the chunk and are accessible when it is returned in a search result or citation, within `SearchResult.chunk_meta` / `Citation.chunk_meta`.
+A custom `DocumentChunker` can provide other keys and values in `metadata`. They are stored with the chunk and returned in `SearchResult.chunk_meta` and `Citation.chunk_meta`.
 
 ## Embed
 
-`embed_chunks()` generates embeddings for chunks using the client's embedder. It automatically contextualizes chunks (prepends section headings) before embedding for better semantic search, without modifying the stored content:
+`embed_chunks()` generates embeddings for chunks using the client's embedder. It contextualizes each chunk (prepends its section headings) before embedding, without modifying the stored content:
 
 ```python
 from haiku.rag.embeddings import embed_chunks
@@ -145,11 +145,9 @@ assert chunks[0].embedding is None
 assert embedded_chunks[0].embedding is not None
 ```
 
-`embed_chunks()` returns **new** `Chunk` objects with embeddings set. The original chunks are not modified.
-
 ## Contextualize (for custom embedders)
 
-`contextualize()` is a lower-level utility that prepares chunk content for embedding by prepending section headings. You only need this when implementing custom embedding logic. `embed_chunks()` already calls it internally.
+`contextualize()` prepares chunk content for embedding by prepending section headings. `embed_chunks()` calls it, so you need it only for a custom embedder.
 
 ```python
 from haiku.rag.embeddings import contextualize

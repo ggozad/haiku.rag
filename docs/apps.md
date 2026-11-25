@@ -27,7 +27,7 @@ Edit both files for your paths, token and models. Then start the app and open `h
 docker compose up -d
 ```
 
-Four services run: a backend that reads the databases, the [ingester](ingester.md), which writes them, docling-serve, which converts documents for the ingester, and the frontend.
+Four services run: a backend that reads the databases, the [ingester](ingester/index.md), which writes them, docling-serve, which converts documents for the ingester, and the frontend.
 
 The compose file names the images of its own release. `HAIKU_RAG_VERSION` in `.env` selects another release for all three. The backend opens a database only when its haiku.rag version supports the database's schema, so keep the backend and the ingester on one release.
 
@@ -62,7 +62,7 @@ curl -X POST -H "Authorization: Bearer $INGESTER_TOKEN" http://localhost:8765/re
 curl -X POST http://localhost:8001/reload
 ```
 
-Chat searches every database, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester.md#configure-sources) and [Multiple databases](configuration/multiple-databases.md)).
+Chat searches every database, and the inspector and the doctor show one at a time. The ingester writes each database listed under `ingester.databases`, from the sources listed with it (see [Configure sources](ingester/index.md#configure-sources) and [Multiple databases](configuration/multiple-databases.md)).
 
 The backend's reload applies `lancedb.databases` only. It answers 409 and names the sections when another one changed, since those need a restart, and ignores the `ingester` section. A chat turn whose session selects documents of a removed database fails and names that database.
 
@@ -125,7 +125,7 @@ Before 0.105.0, the compose files built the images, mounted `app/haiku.rag.yaml`
 
 1. Move `app/haiku.rag.yaml` to `app/config/haiku.rag.yaml`.
 2. If you set `DB_VOLUME`, set `DATA_DIR` to its parent directory. The default `./data/haiku.rag.lancedb` needs nothing.
-3. In `haiku.rag.yaml`, place `haiku.rag` at `/data/` followed by the name of the directory `DB_VOLUME` named, instead of `/data`. With the default, that is `/data/haiku.rag.lancedb`.
+3. In `haiku.rag.yaml`, place `haiku.rag` at `/data/` followed by the name of the `DB_VOLUME` directory, instead of `/data`. With the default, that is `/data/haiku.rag.lancedb`.
 4. For the published images, set `processing.converter` and `processing.chunker` to `docling-serve` and `providers.docling_serve.base_url` to `http://docling-serve:5001`, as the example does. The published ingester image has no local docling.
 5. To add databases as fragments in `config/databases/`, add `databases_include: databases` to `haiku.rag.yaml`. Without it, the services ignore the fragments.
 
@@ -139,7 +139,7 @@ docker compose run --rm --user root backend chown -R 1001:1001 /sessions
 
 ### Database maintenance
 
-`haiku-rag` maintenance commands, such as `migrate`, `rebuild --originals`, `vacuum` and `create-index`, run in the ingester container. It is the one service that mounts `DATA_DIR` writable, and it mounts the sources at `/docs`, the paths the stored URIs name, which `rebuild --originals` fetches again. Stop the backend and the ingester first: `migrate` needs every other process using the database stopped. With the database `haiku.rag` of the example configuration:
+`haiku-rag` maintenance commands, such as `migrate`, `rebuild --originals`, `vacuum` and `create-index`, run in the ingester container. It is the one service that mounts `DATA_DIR` writable, and it mounts the sources at `/docs`, where the stored URIs point, so `rebuild --originals` can fetch them again. Stop the backend and the ingester first: `migrate` needs every other process using the database stopped. With the database `haiku.rag` of the example configuration:
 
 ```bash
 docker compose stop backend ingester

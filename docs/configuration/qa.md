@@ -14,13 +14,10 @@ search:
 
 - **limit**: Default number of search results to return when no limit is specified. Used by CLI, MCP server, and QA. Default: 5
 - **max_context_chars**: Hard limit on total characters in expanded content. Default: 5000.
-- **rerank_pool_factor**: With a reranker configured, a text search fetches `limit × rerank_pool_factor` candidates and reranks them down to `limit`. Default: 10.
-- **fts_language**: The language of the full-text index: its stemmer, and how it lowercases and folds accents. One of Arabic, Danish, Dutch, English, Finnish, French, German, Greek, Hungarian, Italian, Norwegian, Portuguese, Romanian, Russian, Spanish, Swedish, Tamil, Turkish. It applies when the index is built: on a new database, and on `haiku-rag rebuild` in any mode but `--title-only` and `--set-embedder`. A write rebuilds the index only when it covers no rows, so an existing database takes a new language on `haiku-rag rebuild --reindex`. Queries are tokenized by the index, so they always match it. One database has one language. Default: English.
+- **rerank_pool_factor**: With a reranker configured, a text search fetches `limit × rerank_pool_factor` candidates and reranks them down to `limit`. Image queries skip the reranker. Default: 10.
+- **fts_language**: The language of the full-text index: its stemmer, and how it lowercases and folds accents. One of Arabic, Danish, Dutch, English, Finnish, French, German, Greek, Hungarian, Italian, Norwegian, Portuguese, Romanian, Russian, Spanish, Swedish, Tamil, Turkish. It applies when the index is built: on a new database, and on `haiku-rag rebuild` in any mode but `--title-only`, `--set-embedder` and `--originals`. A write rebuilds the index only when it covers no rows, so an existing database takes a new language on `haiku-rag rebuild --reindex`. Queries are tokenized by the index, so they always match it. One database has one language. Default: English.
 
-Context expansion is section-aware. The capability's search tool, the MCP search tools and in-code `search()` expand every result. `HaikuRAG.search` returns chunks as matched, and `HaikuRAG.expand_context` expands them. For structured documents (with section headers), expansion includes the entire section containing the match when it fits the budget. A section larger than the budget grows outward item-by-item from the match, staying inside the section. A section under 20% of the budget (e.g., a title+authors area) grows across section boundaries until the budget is filled, except when the match is a picture or table, which returns its section as-is. Noise labels (page headers, page footers, table of contents) are skipped. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded. Results whose expanded ranges overlap within a document are merged into one.
-
-!!! note "Reranking behavior"
-    With a reranker configured, a text search retrieves `rerank_pool_factor` times the requested limit and reranks down to it. Image queries skip the reranker.
+Context expansion is section-aware. The capability's search tool, the MCP search tools and in-code `search()` expand every result. `HaikuRAG.search` returns chunks as matched, and `HaikuRAG.expand_context` expands them. For structured documents (with section headers), expansion includes the entire section containing the match when it fits the budget. A section larger than the budget grows outward item-by-item from the match, staying inside the section. A section under 20% of the budget (e.g., a title+authors area) grows across section boundaries until the budget is filled, except when the match is a picture or table, which returns its section as-is. Noise labels (page headers, page footers, table of contents) are skipped. For unstructured documents, expansion grows outward item-by-item. Results without `doc_item_refs` (e.g., custom chunks passed to `import_document`) pass through unexpanded. Results whose expanded ranges overlap within a document are merged into one, unless the merged result cannot keep every match within `max_context_chars`.
 
 ## Question answering configuration
 
@@ -32,7 +29,7 @@ qa:
     provider: ollama
     name: qwen3.8
     thinking: true
-    temperature: 0.3          # Default: 0.3
+    temperature: 0.3
     vision: true              # Set false for text-only models
   max_searches: 5       # Maximum search units per question
   max_executions: 15    # Maximum execute_code calls per question
@@ -40,7 +37,7 @@ qa:
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
-- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The capability's `search` tool only attaches picture bytes (`BinaryContent`) to its `ToolReturn` when this is `true`, otherwise picture bytes are withheld. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
+- **model.vision**: Set to `true` for vision-capable models (`qwen2.5vl`, `qwen3.6`, `gpt-4o`, `claude-sonnet`, …). The capability's `search` tool attaches picture bytes (`BinaryContent`) to its `ToolReturn` only when this is `true`. See [Pictures × embedder × QA model](processing.md#pictures-embedder-qa-model-how-the-pieces-compose) for the full matrix.
 - **max_searches**: Maximum number of search units a capability can spend per question (default: 5). Up to three searches emitted in the same model response share one unit, so a model that rephrases its query in one response spends one unit. A search in a later response starts a new unit, as does each further group of three within one response. Searches in one response also deduplicate their returns: evidence a sibling search already showed collapses to a reference line, and each picture attaches once per response.
 - **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 - **max_images**: Maximum number of images in one model request (default: unset, no limit). Set it at or below the limit of the model server, for example vLLM's `--limit-mm-per-prompt`. See [Image limit](#image-limit).
@@ -72,7 +69,7 @@ sandbox:
   max_output_chars: 50000 # Truncate output after this many chars
 ```
 
-- **code_timeout**: Seconds a single `execute_code` call has (default: 60). Past it the sandbox starts no further host call, a document read or an in-code `search()` / `list_documents()`; one already running finishes. Computation past the limit is stopped by the interpreter, which resets the session: variables from earlier calls are gone.
+- **code_timeout**: Seconds a single `execute_code` call has (default: 60). Past it the sandbox starts no further host call, a document read or an in-code `search()` / `list_documents()`. A host call already running finishes. Computation past the limit is stopped by the interpreter, which resets the session: variables from earlier calls are gone.
 - **max_output_chars**: Truncate code output after this many characters (default: 50000)
 
 See [RAG capability](../capabilities/rag.md) for usage details.

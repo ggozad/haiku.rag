@@ -31,7 +31,7 @@ to the host only (`-p 127.0.0.1:8001:8001`), and put an authenticating proxy
 in front of the server before exposing it further.
 
 The server opens the database read-only. Ingestion goes through the CLI
-(`haiku-rag add`, `add-src`, `delete`) or [`haiku-ingester`](ingester.md).
+(`haiku-rag add`, `add-src`, `delete`) or [`haiku-ingester`](ingester/index.md).
 
 ## Collections
 

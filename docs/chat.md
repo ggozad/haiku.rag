@@ -14,7 +14,7 @@ haiku-rag chat --model openai:gpt-4o
 
 The chat is a Pydantic AI agent with the [RAG capability](capabilities/rag.md). Each turn it searches, expands context around the hits, may search again or run code over the documents, and answers with citations. Text and tool events stream as they happen.
 
-The session lives in memory for the life of the app. History carries across turns, so follow-up questions reuse earlier context. "Clear chat" resets the history, citations and evidence.
+The session lives in memory for the life of the app. History carries across turns, so follow-up questions reuse earlier context, and [evidence compaction](capabilities/compaction.md) replaces earlier questions' evidence with what they cited. "Clear chat" resets the history, citations and evidence.
 
 ### Keys
 
