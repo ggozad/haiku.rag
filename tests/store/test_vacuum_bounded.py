@@ -11,6 +11,7 @@ from typing import cast
 import lance
 import pyarrow as pa
 import pytest
+from lance.blob import blob_field
 from lance.dataset import DatasetOptimizer
 from pydantic import ValidationError
 
@@ -23,6 +24,7 @@ from haiku.rag.store.engine import (
     kept_target,
     size_compaction,
 )
+from haiku.rag.store.schema import has_payload_columns
 from tests.conftest import capture_logs
 
 MB = 1024**2
@@ -101,6 +103,112 @@ def test_an_empty_table_has_nothing_to_merge(tmp_path):
     )
 
 
+def _blob(size):
+    if size is None:
+        return None
+    return {"data": os.urandom(size), "uri": None, "position": None, "size": None}
+
+
+def _write_blobs(path, fragments):
+    """One fragment per list of payload sizes, in a blob v2 column."""
+    schema = pa.schema([pa.field("id", pa.string()), blob_field("blob")])
+    dataset = None
+    for n, sizes in enumerate(fragments):
+        batch = pa.Table.from_pylist(
+            [{"id": f"f{n}r{i}", "blob": _blob(size)} for i, size in enumerate(sizes)],
+            schema=schema,
+        )
+        dataset = lance.write_dataset(
+            batch, path, schema=schema, mode="append" if dataset else "create"
+        )
+    assert dataset is not None
+    assert dataset.schema.field("blob").type == blob_field("blob").type
+    return dataset
+
+
+def test_blob_sidecar_bytes_count_toward_row_width(tmp_path):
+    dataset = _write_blobs(tmp_path / "wide.lance", [[1 * MB]] * 4)
+
+    assert _target(dataset, 8 * MB) == pytest.approx(8, abs=1)
+
+
+def test_inline_blobs_are_counted_once(tmp_path):
+    dataset = _write_blobs(tmp_path / "small.lance", [[32 * 1024] * 10] * 2)
+
+    assert _target(dataset, 8 * MB) == pytest.approx(256, rel=0.1)
+
+
+def test_a_wide_blob_row_is_oversized(tmp_path):
+    dataset = _write_blobs(tmp_path / "huge.lance", [[1 * MB], [5 * MB]])
+    wide = dataset.get_fragments()[1].fragment_id
+
+    sizing = size_compaction(dataset, 8 * MB)
+
+    assert sizing is not None
+    assert sizing.oversized == [wide]
+    assert sizing.target_rows == pytest.approx(8, abs=1)
+
+
+def test_deleted_blob_rows_do_not_narrow_the_fragment(tmp_path):
+    dataset = _write_blobs(tmp_path / "deleted.lance", [[1 * MB], [5 * MB] * 3])
+    wide = dataset.get_fragments()[1].fragment_id
+    dataset.delete("id = 'f1r0'")
+
+    sizing = size_compaction(lance.dataset(tmp_path / "deleted.lance"), 8 * MB)
+
+    assert sizing is not None
+    assert sizing.oversized == [wide]
+
+
+def test_null_blobs_add_nothing(tmp_path):
+    dataset = _write_blobs(tmp_path / "nulls.lance", [[None, 1 * MB]])
+
+    assert _target(dataset, 8 * MB) == pytest.approx(16, abs=2)
+
+
+def test_a_blob_column_is_a_payload_column():
+    assert has_payload_columns(
+        pa.schema([pa.field("id", pa.string()), blob_field("o")])
+    )
+    assert not has_payload_columns(pa.schema([pa.field("id", pa.string())]))
+
+
+async def test_sizing_runs_off_the_event_loop(temp_db_path, monkeypatch):
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    threads: list[threading.Thread] = []
+
+    def record(dataset, target_bytes):
+        threads.append(threading.current_thread())
+        return size_compaction(dataset, target_bytes)
+
+    async with Store(temp_db_path, config=config, create=True) as store:
+        monkeypatch.setattr(engine, "size_compaction", record)
+        await store._compact_to_target(store.documents_table)
+
+    assert threads and threading.main_thread() not in threads
+
+
+async def test_a_second_vacuum_leaves_a_compacted_blob_table_alone(temp_db_path):
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    config.storage.compaction_target_bytes = 8 * MB
+    schema = pa.schema([pa.field("id", pa.string()), blob_field("blob")])
+
+    async with Store(temp_db_path, config=config, create=True) as store:
+        table = await store.db.create_table("blobs", schema=schema)
+        for i in range(12):
+            await table.add([{"id": f"d{i}", "blob": os.urandom(1 * MB)}])
+        await store._compact_to_target(table)
+        compacted = [f.fragment_id for f in (await table.to_lance()).get_fragments()]
+
+        await store._compact_to_target(table)
+        again = [f.fragment_id for f in (await table.to_lance()).get_fragments()]
+
+    assert len(compacted) < 12
+    assert again == compacted
+
+
 class _FakeDataFile:
     def __init__(self, size):
         self.file_size_bytes = size
@@ -122,6 +230,8 @@ class _FakeDataset:
     Every file lance writes today records its size, so a mixed manifest can only
     come from a database written by a much older version.
     """
+
+    schema = pa.schema([pa.field("blob", pa.large_binary())])
 
     def __init__(self, fragments):
         self._fragments = fragments

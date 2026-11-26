@@ -54,12 +54,20 @@ class DocumentMetaRecord(LanceModel):
 
 
 def has_payload_columns(schema: pa.Schema) -> bool:
-    """Whether a table stores multi-megabyte values inline.
+    """Whether a table stores multi-megabyte values, inline or as blobs.
 
     Vacuum sizes compaction only for these; the rest are small enough that
     lance's own row target already bounds it.
     """
-    return any(pa.types.is_large_binary(field.type) for field in schema)
+    return any(pa.types.is_large_binary(f.type) or is_blob(f) for f in schema)
+
+
+def is_blob(field: pa.Field) -> bool:
+    """Whether `field` is a lance blob v2 column."""
+    return (
+        isinstance(field.type, pa.ExtensionType)
+        and field.type.extension_name == "lance.blob.v2"
+    )
 
 
 def get_documents_arrow_schema() -> pa.Schema:
