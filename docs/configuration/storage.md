@@ -71,10 +71,10 @@ storage:
 
 ### Vacuum memory
 
-Vacuum compacts small data files into larger ones. The `documents` and `document_items` tables, which hold the docling blobs, are compacted to fragments of about `compaction_target_bytes`, sized from the widest fragment's bytes per row. The other tables are compacted with LanceDB's default fragment size.
+Vacuum compacts small data files into larger ones. The `documents` and `document_items` tables, which hold the docling blobs, are compacted to fragments of about `compaction_target_bytes`. The rows per fragment come from the widest fragment's bytes per row and are kept in the table's metadata. A later vacuum lowers them when wider rows arrive and never raises them, so a compacted fragment is not rewritten to a new size. Deleting the widest documents leaves the fragments at the lower count. A fragment whose rows are wider than half of `compaction_target_bytes` is never merged with another one: it keeps its own fragment, and once deletions within it pass 10% it is rewritten on its own. The other tables are compacted with LanceDB's default fragment size.
 
 !!! warning "The target is not a memory cap"
-    `compaction_target_bytes` sizes the fragments that compaction **writes**. It cannot shrink a fragment that is already larger. LanceDB rewrites such a fragment in one piece, at roughly its own size, the first time deletions within it pass 10%, and splits it to the target. A single large ingest batch writes one large fragment.
+    `compaction_target_bytes` sizes the fragments that compaction **writes**. It cannot shrink a fragment that is already larger. LanceDB rewrites such a fragment in one piece, at roughly its own size, the first time deletions within it pass 10%, and splits it to the target. A fragment whose rows are wider than half the target is rewritten as one fragment again. A single large ingest batch writes one large fragment.
 
     Peak memory is the larger of `compaction_target_bytes` and the biggest existing fragment. Lower the first by reducing it, and the second by ingesting in smaller batches.
 
