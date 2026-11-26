@@ -76,7 +76,7 @@ Vacuum compacts small data files into larger ones. The `documents` and `document
 !!! warning "The target is not a memory cap"
     `compaction_target_bytes` sizes the fragments that compaction **writes**. It cannot shrink a fragment that is already larger. LanceDB rewrites such a fragment in one piece, at roughly its own size, the first time deletions within it pass 10%, and splits it to the target. A fragment whose rows are wider than half the target is rewritten as one fragment again. A single large ingest batch writes one large fragment.
 
-    Peak memory is the larger of `compaction_target_bytes` and the biggest existing fragment. Lower the first by reducing it, and the second by ingesting in smaller batches.
+    Compaction runs one task at a time. A task reads about `compaction_target_bytes`, or the whole of a fragment that is already larger, so peak memory follows the larger of the two rather than the size of the table. Lower the first by reducing `compaction_target_bytes`, and the second by ingesting in smaller batches.
 
 A row larger than the target costs roughly its own size. A `documents` row holds the text, the compressed docling structure without images, and the original PDF or image file, so it is about the size of the file. `store_originals: false` leaves the file out.
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `Store.vacuum` compacts `documents` and `document_items` on one thread.
+
 ### Fixed
 
 - `Store.vacuum` no longer rewrites every compacted fragment of `documents` and `document_items` after a write: the row target is stored in the table's metadata and only lowered. Rows wider than half of `storage.compaction_target_bytes` keep their own fragment, rewritten alone once more than 10% of its rows are deleted.

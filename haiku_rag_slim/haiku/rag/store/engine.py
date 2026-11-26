@@ -773,7 +773,9 @@ class Store:
         re-merges the whole table and its peak memory tracks the table rather
         than the delta. Going through lance directly is the only way to size it.
         The row target is stored on the table and only falls (`kept_target`),
-        and oversized fragments are kept out of the merge.
+        and oversized fragments are kept out of the merge. Tasks run one at a
+        time: lance's default of one per core multiplies the memory of a pass
+        and runs many-core hosts out of file descriptors.
         """
         dataset = await table.to_lance()
         sizing = size_compaction(dataset, self._config.storage.compaction_target_bytes)
@@ -810,6 +812,7 @@ class Store:
                     target_rows_per_fragment=target,
                     excluded_fragment_ids=oversized,
                     materialize_deletions_threshold=MATERIALIZE_DELETIONS_THRESHOLD,
+                    num_threads=1,
                 ),
             )
         for fragment in dataset.get_fragments():
@@ -833,6 +836,7 @@ class Store:
                             if f.fragment_id != keep
                         ],
                         materialize_deletions_threshold=MATERIALIZE_DELETIONS_THRESHOLD,
+                        num_threads=1,
                     )
                 ),
             )

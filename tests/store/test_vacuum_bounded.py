@@ -11,6 +11,7 @@ from typing import cast
 import lance
 import pyarrow as pa
 import pytest
+from lance.dataset import DatasetOptimizer
 from pydantic import ValidationError
 
 from haiku.rag.config.models import AppConfig, StorageConfig
@@ -461,6 +462,32 @@ async def test_deletions_in_an_oversized_fragment_are_compacted_alone(temp_db_pa
         assert narrow <= set(after)
         assert wide not in after
         assert await store.documents_table.count_rows() == 12
+
+
+async def test_payload_compaction_runs_on_one_thread(temp_db_path, monkeypatch):
+    """Every compaction of a payload table runs one task at a time."""
+    calls: list[tuple[str, int | None]] = []
+    real = DatasetOptimizer.compact_files
+
+    def record(self, *args, **kwargs):
+        calls.append((Path(self._dataset.uri).name, kwargs.get("num_threads")))
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(DatasetOptimizer, "compact_files", record)
+    async with Store(temp_db_path, config=_small_target_config(), create=True) as store:
+        await _add_each(store, [_doc(i, 200 * KB) for i in range(5)])
+        await store.documents_table.add([_doc(i, 5 * MB) for i in range(5, 8)])
+        await store.vacuum(retention_seconds=0)
+        await store.documents_table.delete("id = 'd6'")
+        calls.clear()
+        await store.vacuum(retention_seconds=0)
+
+    payload = [
+        n for name, n in calls if name in {"documents.lance", "document_items.lance"}
+    ]
+    # the merge passes and the oversized fragment's own pass
+    assert len([name for name, _ in calls if name == "documents.lance"]) == 2
+    assert payload and set(payload) == {1}
 
 
 async def test_a_table_of_oversized_rows_still_optimizes_indices(
