@@ -24,15 +24,18 @@ Its headline score is the mean over questions of correctness × completeness: co
 
 | Capability model | Cases | QA accuracy | Mean completeness | Mean `erb_score` | Mean `cited_map` |
 |------------------|------:|-------------|-------------------|------------------|------------------|
+| `Inkling-2-Mini` | 500 | 0.882 | 0.886 | 0.858 | 0.780 |
 | `Qwen3.8-27B-NVFP4` | 500 | 0.860 | 0.847 | 0.816 | 0.743 |
 | `Muse-Glimmer-30B-NVFP4-W4A4` | 500 | 0.828 | 0.827 | 0.791 | 0.699 |
 | `gemma-4-26B-A4B-it-FP8-Dynamic` | 500 | 0.642 | 0.667 | 0.588 | 0.489 |
 
 *v0.101.0, `google/embeddinggemma-2` (768, question-answering prefixes, served through sentence-transformers in fp32) with `nvidia/llama-nemotron-rerank-vl-1b-v2`, `search.limit` 10, `sandbox.code_timeout` 120, all judged by `Qwen3.8-27B` at `reasoning_effort: low`. Aborted cases count as failures, and completeness, `erb_score` and `cited_map` count them as 0. Qwen3.8: `max_tokens` 32768, `reasoning_effort: low`, 3 aborts, median 21 s per case, self-judged. Muse-Glimmer: `max_tokens` 16384, `reasoning_strength: high`, 14 aborts (6 past its 131,072-token context, 7 on tool calls that kept failing validation, 1 past `max_tokens`), median 37 s. Over the 486 cases it finished, its accuracy is 0.852. Gemma 4: `max_tokens` 8192, no thinking, 6 aborts, median 6 s, about one search per question against 2.6 for Qwen3.8. The database has an IVF_PQ vector index.*
 
+*Inkling-2-Mini ran on v0.113.0 with the same embedder, reranker, search settings, sandbox timeout and judge, and the same counting of aborts. The other rows ran on v0.101.0. vLLM nightly 0.34.1, 262,144-token context, fp8 KV cache, DSpark speculative decoding. `max_tokens` 32768, no temperature or reasoning setting, 1 abort past its context window, median 85 s per case.*
+
 #### Leaderboard
 
-The leaderboard scores answers with Onyx's scorer (`metrics_based_eval`) judged by GPT-5.4. Its headline is the same correctness × completeness as `erb_score`, with completeness from the same fact prompt, but correctness comes from Onyx's own prompt, citation markers are stripped before judging, and questions without an answer are skipped. To score a run, convert its per-case results file into Onyx's `answers.jsonl` and score it from a checkout of [their repository](https://github.com/onyx-dot-app/EnterpriseRAG-Bench). The rows above ran `configs/enterprise_rag.yaml`, and the Muse-Glimmer and Gemma 4 rows change only its `qa.model` block:
+The leaderboard scores answers with Onyx's scorer (`metrics_based_eval`) judged by GPT-5.4. Its headline is the same correctness × completeness as `erb_score`, with completeness from the same fact prompt, but correctness comes from Onyx's own prompt, citation markers are stripped before judging, and questions without an answer are skipped. To score a run, convert its per-case results file into Onyx's `answers.jsonl` and score it from a checkout of [their repository](https://github.com/onyx-dot-app/EnterpriseRAG-Bench). The rows above ran `configs/enterprise_rag.yaml`, and the Inkling-2-Mini, Muse-Glimmer and Gemma 4 rows change only its `qa.model` block:
 
 ```bash
 cd evaluations
