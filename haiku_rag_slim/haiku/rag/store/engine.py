@@ -730,7 +730,7 @@ class Store:
                 # Resource errors (e.g. disk pressure) skip the pass; lance
                 # errors surface as RuntimeError and must not be swallowed —
                 # a silently skipped cleanup hides tag-interaction bugs.
-                logger.debug(f"Vacuum skipped due to resource constraints: {e}")
+                logger.warning(f"Vacuum skipped due to resource constraints: {e}")
                 return False
         return True
 

@@ -490,6 +490,22 @@ async def test_payload_compaction_runs_on_one_thread(temp_db_path, monkeypatch):
     assert payload and set(payload) == {1}
 
 
+async def test_a_vacuum_skipped_by_an_os_error_logs_a_warning(
+    temp_db_path, monkeypatch
+):
+    async def fail(self, table, step):
+        raise OSError("Too many open files (os error 24)")
+
+    async with Store(temp_db_path, config=_small_target_config(), create=True) as store:
+        await _add_each(store, [_doc(0, 200 * KB)])
+        monkeypatch.setattr(Store, "_run_lance_maintenance", fail)
+        with capture_logs(engine.logger, logging.WARNING) as records:
+            assert await store.vacuum(retention_seconds=0) is False
+
+    assert [r.levelno for r in records] == [logging.WARNING]
+    assert "Too many open files" in records[0].getMessage()
+
+
 async def test_a_table_of_oversized_rows_still_optimizes_indices(
     temp_db_path, monkeypatch
 ):

@@ -5,6 +5,7 @@
 ### Changed
 
 - `Store.vacuum` compacts `documents` and `document_items` on one thread.
+- `Store.vacuum` logs a pass skipped on an `OSError` at WARNING instead of DEBUG.
 - pylance 14.0.3.
 
 ### Fixed
