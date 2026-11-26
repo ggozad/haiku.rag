@@ -5,6 +5,7 @@
 ### Changed
 
 - `Store.vacuum` compacts `documents` and `document_items` on one thread.
+- pylance 14.0.3.
 
 ### Fixed
 
