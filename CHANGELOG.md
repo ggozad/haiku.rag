@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `Store.vacuum` compacts `documents` and `document_items` on one thread.
+- `Store.vacuum` logs a pass skipped on an `OSError` at WARNING instead of DEBUG.
+- pylance 14.0.3.
+
+### Fixed
+
+- `Store.vacuum` no longer rewrites every compacted fragment of `documents` and `document_items` after a write: the row target is stored in the table's metadata and only lowered. Rows wider than half of `storage.compaction_target_bytes` keep their own fragment, rewritten alone once more than 10% of its rows are deleted.
+
 ## [0.113.2] - 2026-11-25
 
 ### Fixed

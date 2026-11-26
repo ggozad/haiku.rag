@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -10,12 +11,13 @@ from lancedb.table import AsyncTags
 
 from haiku.rag.client import HaikuRAG
 from haiku.rag.config import get_config
-from haiku.rag.store import ReadOnlyError
+from haiku.rag.store import ReadOnlyError, engine
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models import Document
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.schema import REQUIRED_TABLES
+from tests.conftest import capture_logs
 from tests.locks import ObservedLock, assert_waiting_for_lock
 
 
@@ -332,7 +334,10 @@ async def test_vacuum_reraises_runtime_error(temp_db_path, monkeypatch):
         monkeypatch.setattr(
             lance.LanceDataset, "cleanup_old_versions", failing_cleanup_os
         )
-        assert await store.vacuum(retention_seconds=0) is False
+        with capture_logs(engine.logger, logging.WARNING) as records:
+            assert await store.vacuum(retention_seconds=0) is False
+        assert [r.levelno for r in records] == [logging.WARNING]
+        assert "disk full" in records[0].getMessage()
 
 
 async def test_vacuum_partial_tag_protects_its_tables(temp_db_path):

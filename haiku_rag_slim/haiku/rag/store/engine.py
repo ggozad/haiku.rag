@@ -201,23 +201,43 @@ def embedder_drift(stored: dict, current: dict) -> list[str]:
     ]
 
 
-def compaction_target_rows(
+COMPACTION_TARGET_KEY = "lance.compaction.target_rows_per_fragment"
+
+# lance's default, passed explicitly so the oversized fragments' own passes use
+# the threshold the merge pass does.
+MATERIALIZE_DELETIONS_THRESHOLD = 0.1
+
+
+class CompactionSizing(NamedTuple):
+    """Rows per merged fragment, and the fragments too wide to merge.
+
+    `target_rows` is None when no fragment can merge: every one is oversized,
+    or the table is empty.
+    """
+
+    target_rows: int | None
+    oversized: list[int]
+
+
+def size_compaction(
     dataset: "lance.LanceDataset", target_bytes: int
-) -> int | None:
-    """Rows per fragment sized so one compaction task reads about `target_bytes`.
+) -> CompactionSizing | None:
+    """Size compaction so one task reads about `target_bytes`.
 
-    Taken from the widest fragment's bytes per row rather than the table
-    average: document payloads span kilobytes to hundreds of megabytes, so an
-    average lets a task pick up many outsized rows. Sizes come from the
-    manifest, so no payload is read.
+    The row target comes from the widest fragment's bytes per row rather than
+    the table average: document payloads span kilobytes to hundreds of
+    megabytes, so an average lets a task pick up many outsized rows. A fragment
+    wider than half of `target_bytes` per row is oversized: two of its rows
+    already pass the target, so it is left out of both the estimate and the
+    merge. Sizes come from the manifest, so no payload is read.
 
-    This sizes fragments compaction *writes*; it does not shrink fragments that
-    are already larger, which lance rewrites whole. Returns None when any
-    fragment cannot be measured, which means leave the table alone rather than
-    fall back to lance's unbounded default: sizing from the fragments that do
-    carry metadata would still hand an unmeasured one to compaction whole.
+    Returns None when any fragment cannot be measured, which means leave the
+    table alone rather than fall back to lance's unbounded default: sizing from
+    the fragments that do carry metadata would still hand an unmeasured one to
+    compaction whole.
     """
     widest = 0.0
+    oversized: list[int] = []
     for fragment in dataset.get_fragments():
         rows = fragment.physical_rows
         if not rows:
@@ -225,10 +245,21 @@ def compaction_target_rows(
         sizes = [f.file_size_bytes for f in fragment.data_files()]
         if not all(sizes):
             return None
-        widest = max(widest, sum(cast(list[int], sizes)) / rows)
-    if widest <= 0:
-        return None
-    return max(1, int(target_bytes // widest))
+        width = sum(cast(list[int], sizes)) / rows
+        if width > target_bytes / 2:
+            oversized.append(fragment.fragment_id)
+        else:
+            widest = max(widest, width)
+    target = int(target_bytes // widest) if widest else None
+    return CompactionSizing(target, oversized)
+
+
+def kept_target(stored: int | None, computed: int | None) -> int | None:
+    """The row target compaction runs with: the computed one when nothing is
+    stored or it is lower than the stored one, else the stored one."""
+    if computed is not None and (stored is None or computed < stored):
+        return computed
+    return stored
 
 
 # Restore order for multi-table restore and its rollback. documents restores
@@ -699,7 +730,7 @@ class Store:
                 # Resource errors (e.g. disk pressure) skip the pass; lance
                 # errors surface as RuntimeError and must not be swallowed —
                 # a silently skipped cleanup hides tag-interaction bugs.
-                logger.debug(f"Vacuum skipped due to resource constraints: {e}")
+                logger.warning(f"Vacuum skipped due to resource constraints: {e}")
                 return False
         return True
 
@@ -741,12 +772,14 @@ class Store:
         target is never reached by a table of multi-megabyte rows, so every pass
         re-merges the whole table and its peak memory tracks the table rather
         than the delta. Going through lance directly is the only way to size it.
+        The row target is stored on the table and only falls (`kept_target`),
+        and oversized fragments are kept out of the merge. Tasks run one at a
+        time: lance's default of one per core multiplies the memory of a pass
+        and runs many-core hosts out of file descriptors.
         """
         dataset = await table.to_lance()
-        target = compaction_target_rows(
-            dataset, self._config.storage.compaction_target_bytes
-        )
-        if target is None:
+        sizing = size_compaction(dataset, self._config.storage.compaction_target_bytes)
+        if sizing is None:
             if dataset.get_fragments():
                 logger.warning(
                     f"{table.name}: fragment sizes are absent from the manifest, "
@@ -754,18 +787,59 @@ class Store:
                     "are still pruned"
                 )
             return
+        stored = dataset.config().get(COMPACTION_TARGET_KEY)
+        stored_target = int(stored) if stored else None
+        target = kept_target(stored_target, sizing.target_rows)
+        if target is not None and target != stored_target:
+            await self._run_lance_maintenance(
+                table,
+                lambda ds: ds.update_config({COMPACTION_TARGET_KEY: str(target)}),
+            )
+        oversized = sizing.oversized
         # A compaction cannot be cancelled once it reaches the worker
         # thread, so a close waits it out. Say what is running, or an
         # operator cannot tell a long pass from a wedge.
-        logger.info(
-            f"{table.name}: compacting to {target} rows per fragment "
-            f"({len(dataset.get_fragments())} fragments)"
-        )
         started = monotonic()
-        await self._run_lance_maintenance(
-            table,
-            lambda ds: ds.optimize.compact_files(target_rows_per_fragment=target),
-        )
+        if target is not None and sizing.target_rows is not None:
+            logger.info(
+                f"{table.name}: compacting to {target} rows per fragment "
+                f"({len(dataset.get_fragments())} fragments, "
+                f"{len(oversized)} oversized left out)"
+            )
+            await self._run_lance_maintenance(
+                table,
+                lambda ds: ds.optimize.compact_files(
+                    target_rows_per_fragment=target,
+                    excluded_fragment_ids=oversized,
+                    materialize_deletions_threshold=MATERIALIZE_DELETIONS_THRESHOLD,
+                    num_threads=1,
+                ),
+            )
+        for fragment in dataset.get_fragments():
+            if fragment.fragment_id not in oversized:
+                continue
+            deleted = 1 - fragment.count_rows() / fragment.physical_rows
+            if deleted <= MATERIALIZE_DELETIONS_THRESHOLD:
+                continue
+            logger.info(
+                f"{table.name}: rewriting oversized fragment {fragment.fragment_id} "
+                f"({fragment.physical_rows} rows, {deleted:.0%} deleted)"
+            )
+            await self._run_lance_maintenance(
+                table,
+                lambda ds, keep=fragment.fragment_id, rows=fragment.physical_rows: (
+                    ds.optimize.compact_files(
+                        target_rows_per_fragment=rows,
+                        excluded_fragment_ids=[
+                            f.fragment_id
+                            for f in ds.get_fragments()
+                            if f.fragment_id != keep
+                        ],
+                        materialize_deletions_threshold=MATERIALIZE_DELETIONS_THRESHOLD,
+                        num_threads=1,
+                    )
+                ),
+            )
         logger.info(f"{table.name}: compacted in {monotonic() - started:.1f}s")
         # compact_files leaves indices covering the pre-compaction fragments.
         await self._run_lance_maintenance(table, _optimize_indices)
