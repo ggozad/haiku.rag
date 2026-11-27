@@ -108,6 +108,15 @@ original = await client.document_repository.get_original(doc.id)  # bytes or Non
 stored = await client.document_repository.get_original_and_sha256(doc.id)  # (bytes, sha256) or None
 ```
 
+`open_original` reads part of an original without loading the rest. The
+returned `StoredOriginal` stays at the version it was opened from:
+
+```python
+opened = await client.document_repository.open_original(doc.id)  # StoredOriginal or None
+if opened:
+    head = await opened.read(0, 1024)  # opened.size, opened.sha256
+```
+
 By ID, title or URI, tried in that order:
 ```python
 doc = await client.resolve_document("Q3 Financial Report")

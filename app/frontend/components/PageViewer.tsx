@@ -125,18 +125,19 @@ function usePdf(
 		setError(null);
 		void (async () => {
 			try {
-				const response = await fetch(
+				opened = await openPdf(
 					originalUrl(source, documentId, original.sha256),
-					{ signal: controller.signal },
+					{
+						onStale: () => {
+							if (!controller.signal.aborted) stale.current();
+						},
+						onError: (message) => {
+							if (!controller.signal.aborted) setError(message);
+						},
+						signal: controller.signal,
+					},
 				);
-				if (response.status === 409) {
-					stale.current();
-					return;
-				}
-				if (!response.ok) {
-					throw new Error(`The original answered ${response.status}.`);
-				}
-				opened = await openPdf(await response.arrayBuffer());
+				if (opened === null) return;
 				if (controller.signal.aborted) void opened.loadingTask.destroy();
 				else setDocument(opened);
 			} catch (err) {

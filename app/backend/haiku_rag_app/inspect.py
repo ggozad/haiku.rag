@@ -1,10 +1,11 @@
 import asyncio
 import json
+import re
 from typing import Any
 
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from haiku.rag.client import HaikuRAG
@@ -96,12 +97,21 @@ async def list_documents(request: Request) -> JSONResponse:
 IMMUTABLE = "private, max-age=31536000, immutable"
 
 
-async def _checked_original(request: Request, owner: HaikuRAG) -> bytes:
-    """The stored original, checked against the request's `sha256`: 400 without it,
-    404 without an original, 409 when it has changed."""
+# Bytes per read of a streamed original.
+_CHUNK = 1 << 20
+
+
+def _requested_sha256(request: Request) -> str:
     sha256 = request.query_params.get("sha256")
     if not sha256:
         raise HTTPException(400, "sha256 is required")
+    return sha256
+
+
+async def _checked_original(request: Request, owner: HaikuRAG) -> bytes:
+    """The stored original, checked against the request's `sha256`: 400 without it,
+    404 without an original, 409 when it has changed."""
+    sha256 = _requested_sha256(request)
     stored = await owner.document_repository.get_original_and_sha256(
         request.path_params["document_id"]
     )
@@ -110,6 +120,28 @@ async def _checked_original(request: Request, owner: HaikuRAG) -> bytes:
     if stored[1] != sha256:
         raise HTTPException(409, "the original has changed")
     return stored[0]
+
+
+def _byte_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """The first and last byte of a single `Range: bytes=` request, or None for
+    no range or one not understood, which is answered whole. 416 when the
+    range starts past the end."""
+    match = re.fullmatch(r"bytes=(\d*)-(\d*)", (header or "").strip())
+    if match is None or match.groups() == ("", ""):
+        return None
+    first, last = match.groups()
+    if first:
+        start = int(first)
+        if last and int(last) < start:
+            return None
+        end = min(int(last), size - 1) if last else size - 1
+    else:
+        start, end = max(size - int(last), 0), size - 1
+        if not int(last):
+            start = size
+    if start >= size:
+        raise HTTPException(416, headers={"Content-Range": f"bytes */{size}"})
+    return start, end
 
 
 async def get_document(request: Request) -> JSONResponse:
@@ -143,15 +175,35 @@ async def get_document(request: Request) -> JSONResponse:
 
 
 async def document_original(request: Request) -> Response:
-    """The stored original PDF, checked against the request's `sha256`."""
-    from haiku.rag.utils.images import original_layout
-
+    """The stored original PDF, checked against the request's `sha256`, whole or
+    the byte range a `Range` header asks for."""
+    sha256 = _requested_sha256(request)
     owner = await _reader(request)
-    original = await _checked_original(request, owner)
-    if not (await asyncio.to_thread(original_layout, original)).pdf:
+    original = await owner.document_repository.open_original(
+        request.path_params["document_id"]
+    )
+    if original is None:
+        raise HTTPException(404, "the document has no stored original")
+    if original.sha256 != sha256:
+        raise HTTPException(409, "the original has changed")
+    # pdfium accepts a PDF header anywhere in the first 1024 bytes.
+    if b"%PDF-" not in await original.read(0, min(original.size, 1024)):
         raise HTTPException(404, "the original is not a PDF")
-    return Response(
-        original, media_type="application/pdf", headers={"Cache-Control": IMMUTABLE}
+    headers = {"Cache-Control": IMMUTABLE, "Accept-Ranges": "bytes"}
+    span = _byte_range(request.headers.get("range"), original.size)
+    start, end = span or (0, original.size - 1)
+    if span is not None:
+        headers["Content-Range"] = f"bytes {start}-{end}/{original.size}"
+
+    async def chunks():
+        for offset in range(start, end + 1, _CHUNK):
+            yield await original.read(offset, min(_CHUNK, end + 1 - offset))
+
+    return StreamingResponse(
+        chunks(),
+        status_code=206 if span else 200,
+        media_type="application/pdf",
+        headers={**headers, "Content-Length": str(end - start + 1)},
     )
 
 

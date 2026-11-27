@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 import time
@@ -450,6 +451,40 @@ async def test_originals_round_trip_in_every_blob_tier(temp_db_path):
         for document, body in zip(created, bodies):
             assert document.id is not None
             assert await doc_repo.get_original(document.id) == body
+
+
+async def test_an_opened_original_reads_byte_ranges(temp_db_path):
+    body = os.urandom(9 * 2**20)
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        created = await doc_repo.create(Document(content="a"))
+        bare = await doc_repo.create(Document(content="b"))
+        assert created.id is not None and bare.id is not None
+        await doc_repo.store_originals({created.id: body})
+
+        original = await doc_repo.open_original(created.id)
+
+        assert original is not None
+        assert original.size == len(body)
+        assert original.sha256 == hashlib.sha256(body).hexdigest()
+        assert await original.read(1000, 64) == body[1000:1064]
+        assert await original.read(len(body) - 10, 10) == body[-10:]
+        assert await doc_repo.open_original(bare.id) is None
+        assert await doc_repo.open_original("nonexistent-id") is None
+
+
+async def test_an_opened_original_keeps_reading_its_version(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        created = await doc_repo.create(Document(content="a"))
+        assert created.id is not None
+        await doc_repo.store_originals({created.id: b"%PDF-one"})
+        original = await doc_repo.open_original(created.id)
+        assert original is not None
+
+        await doc_repo.store_originals({created.id: b"%PDF-two"})
+
+        assert await original.read(0, 8) == b"%PDF-one"
 
 
 async def test_stored_originals_leave_the_documents_without_one(temp_db_path):

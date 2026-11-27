@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `DocumentRepository.open_original` returns a `StoredOriginal`: the original's size and SHA-256, and `read(offset, length)` by byte range.
+- The web app's `/original` answers `Range` requests, and its page viewer reads a PDF by byte range.
+
 ### Changed
 
 - **Breaking:** the original's hash is SHA-256: `original_md5` → `original_sha256` (`DocumentRecord`, `Document`, `Grounding`), `get_original_and_md5` → `get_original_and_sha256`, and the web app's `?md5=` → `?sha256=`. The 0.114.0 migration computes it. `metadata["md5"]` stays the MD5 of the source.

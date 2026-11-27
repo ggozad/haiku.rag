@@ -1,9 +1,11 @@
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import overload
 from uuid import uuid4
 
+import lancedb
 import pyarrow as pa
 
 from haiku.rag.store.engine import Store
@@ -22,6 +24,25 @@ from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
 # Ids per `id IN (...)` content lookup. Keeps the filter string bounded on an
 # unpaginated listing of a large database.
 _CONTENT_BATCH = 512
+
+
+@dataclass(frozen=True)
+class StoredOriginal:
+    """An original at one table version: its size, its SHA-256 and its bytes."""
+
+    size: int
+    sha256: str
+    _table: lancedb.AsyncTable
+    _row_id: int
+
+    async def read(self, offset: int, length: int) -> bytes:
+        """`length` bytes from `offset`, which must lie within the original."""
+        [data] = (
+            await self._table.fetch_blob_ranges(
+                "original", [(self._row_id, offset, length)]
+            )
+        ).to_pylist()
+        return data
 
 
 class DocumentRepository:
@@ -293,13 +314,37 @@ class DocumentRepository:
             return None
         return original, row["original_sha256"]
 
+    async def open_original(self, entity_id: str) -> StoredOriginal | None:
+        """The stored original, read by byte range at the version it was opened."""
+        found = await self._pinned_row(entity_id, ["original", "original_sha256"])
+        if found is None:
+            return None
+        table, row = found
+        if row["original"] is None or row["original_sha256"] is None:
+            return None
+        return StoredOriginal(
+            row["original"]["size"], row["original_sha256"], table, row["_rowid"]
+        )
+
     async def _with_original(
         self, entity_id: str, columns: list[str]
     ) -> tuple[dict, bytes | None] | None:
-        """`columns` of the document's row and its original, read at one version.
+        """`columns` of the document's row and its original, read at one version."""
+        found = await self._pinned_row(entity_id, columns)
+        if found is None:
+            return None
+        table, row = found
+        [original] = (await table.fetch_blobs("original", [row["_rowid"]])).to_pylist()
+        return row, original
 
-        A query returns a blob's descriptor, so the bytes are fetched by row
-        id, on a handle checked out at the version the query read.
+    async def _pinned_row(
+        self, entity_id: str, columns: list[str]
+    ) -> tuple[lancedb.AsyncTable, dict] | None:
+        """The document's row with its row id, and a handle checked out at the
+        version it was read from.
+
+        A query returns a blob's descriptor, so its bytes are fetched by row id,
+        on that handle.
         """
         table = await self.store.db.open_table("documents")
         await table.checkout(await self.store.documents_table.version())
@@ -312,12 +357,7 @@ class DocumentRepository:
             .limit(1)
             .to_list()
         )
-        if not rows:
-            return None
-        [original] = (
-            await table.fetch_blobs("original", [rows[0]["_rowid"]])
-        ).to_pylist()
-        return rows[0], original
+        return (table, rows[0]) if rows else None
 
     async def ids_without_original(self, ids: list[str] | None = None) -> set[str]:
         """The documents, of `ids` when given, that have no stored original."""
