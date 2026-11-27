@@ -6,6 +6,7 @@ from evaluations.evaluators.judge import (
     LLMJudge,
     LLMJudgeResponseSchema,
 )
+from evaluations.evaluators.letter_match import LetterMatchEvaluator
 from evaluations.evaluators.map import MAPEvaluator
 from evaluations.evaluators.number_match import NumberMatchEvaluator
 from evaluations.evaluators.refusal import (
@@ -24,6 +25,7 @@ __all__ = [
     "REFUSAL_RUBRIC",
     "CitationMAPEvaluator",
     "ConversationEvaluator",
+    "LetterMatchEvaluator",
     "LLMJudge",
     "LLMJudgeResponseSchema",
     "MAPEvaluator",

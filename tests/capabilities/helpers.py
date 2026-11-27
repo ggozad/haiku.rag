@@ -53,7 +53,14 @@ async def send_first_request(run: RAGCapability, deps: Deps) -> None:
 
 
 async def stub_search(
-    self, query: str, _limit: int | None, _run_step: int, _sources=None
+    self,
+    query: str,
+    _limit: int | None,
+    _run_step: int,
+    _sources=None,
+    content=None,
+    window=None,
+    include_images=True,
 ) -> str:
     """Record a result the way the real search does, so citing resolves."""
     cast(Any, self.state).searches[query] = [
@@ -113,7 +120,7 @@ def stub_client(
     """A client covering `sources` whose successive searches return `batches`."""
     client = AsyncMock()
     client.search.side_effect = list(batches)
-    client.expand_context.side_effect = lambda results: results
+    client.expand_context.side_effect = lambda results, window=None: results
     client.source_names = sources
     return client
 

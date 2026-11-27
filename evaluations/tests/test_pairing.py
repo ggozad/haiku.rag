@@ -57,7 +57,31 @@ _MTRAG_CONVERSATION = {
         }
     ],
 }
+_VIDEO_MME_ROW = {
+    "video_id": "001",
+    "question_id": "001-1",
+    "question": "Q?",
+    "options": "A. X.\nB. Y.",
+    "answer": "A",
+    "group_type": "relevance",
+    "group_structure": "4",
+    "level": "1",
+    "second_head": "Frame-Only",
+    "third_head": "Basic Counting",
+}
+_CG_BENCH_ROW = {
+    "qid": "26",
+    "video_uid": "BV1s94y1G7RD",
+    "question": "Q?",
+    "choices": ["X", "Y"],
+    "right_answer": "B",
+    "clue_intervals": [[5, 7]],
+    "domain": "Life Record",
+    "sub_category": "Entity Perception",
+}
 _ROWS = {
+    "cg_bench": _CG_BENCH_ROW,
+    "cg_bench_sample": _CG_BENCH_ROW,
     "enterprise_rag": {
         "question_id": "qst_0001",
         "question_type": "basic",
@@ -89,6 +113,8 @@ _ROWS = {
     "mtrag_clapnq_rewrite": _MTRAG_TASK,
     "mtrag_clapnq_live": _MTRAG_CONVERSATION,
     "mtrag_clapnq_live_uncompacted": _MTRAG_CONVERSATION,
+    "video_mme_v2": _VIDEO_MME_ROW,
+    "video_mme_v2_pilot": _VIDEO_MME_ROW,
 }
 
 

@@ -17,7 +17,7 @@ from evaluations.capability_runner import (
     run_capability_conversation,
     run_capability_question,
 )
-from evaluations.config import ConversationInput, DatasetSpec
+from evaluations.config import ConversationInput, DatasetSpec, ScopedQuestion
 from evaluations.evaluators import (
     ANSWER_EQUIVALENCE_RUBRIC,
     REFUSAL_ELIGIBLE_LABELS,
@@ -315,6 +315,7 @@ async def run_qa_benchmark(
     case_ids: set[str] | None = None,
     document_filter: str | None = None,
     results_dir: Path | None = None,
+    concurrency: int = 1,
 ) -> ReportCaseFailure[str, str, dict[str, str]] | None:
     run = await _prepare_qa_run(
         spec,
@@ -327,6 +328,7 @@ async def run_qa_benchmark(
         document_filter,
     )
     cases, judge_config = run.cases, run.judge_config
+    run.experiment_metadata["qa_concurrency"] = concurrency
 
     _attach_relevant_uris(cases, spec, limit)
     citation_evaluator = spec.citation_evaluator
@@ -387,20 +389,30 @@ async def run_qa_benchmark(
         name=spec.key, cases=cases, evaluators=evaluators
     )
 
-    async def answer_question(inputs: str | ConversationInput) -> str:
+    async def answer_question(
+        inputs: str | ConversationInput | ScopedQuestion,
+    ) -> str:
+        case_filter = document_filter
+        message_history = None
         if isinstance(inputs, ConversationInput):
             question = inputs.question
             message_history = prefix_to_messages(inputs.prefix)
+        elif isinstance(inputs, ScopedQuestion):
+            question = inputs.question
+            case_filter = (
+                f"({document_filter}) AND ({inputs.document_filter})"
+                if document_filter
+                else inputs.document_filter
+            )
         else:
             question = inputs
-            message_history = None
         result = await run_capability_question(
             capability_factory=run.capability_factory,
             db_path=run.db,
             config=config,
             question=question,
             capability_model=run.capability_model,
-            document_filter=document_filter,
+            document_filter=case_filter,
             message_history=message_history,
         )
         set_eval_attribute("cited_uris", result.cited_uris)
@@ -414,6 +426,7 @@ async def run_qa_benchmark(
         set_eval_attribute("n_executions", result.n_executions)
         set_eval_attribute("n_sandbox_search_calls", result.n_sandbox_search_calls)
         set_eval_attribute("n_requests", result.n_requests)
+        set_eval_attribute("tool_calls", result.tool_calls)
         set_eval_attribute("citation_status", result.citation_status)
         return result.answer
 
@@ -422,7 +435,7 @@ async def run_qa_benchmark(
         report = await evaluation_dataset.evaluate(
             answer_question,
             name=run.eval_name,
-            max_concurrency=1,
+            max_concurrency=concurrency,
             progress=True,
             metadata=run.experiment_metadata,
             lifecycle=None

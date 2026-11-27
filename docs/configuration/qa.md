@@ -34,6 +34,7 @@ qa:
   max_searches: 5       # Maximum search units per question
   max_executions: 15    # Maximum execute_code calls per question
   max_images: null      # Maximum images in one model request (null: no limit)
+  media_tools: false    # Search recordings with their own tools
 ```
 
 - **model**: LLM configuration (see [Providers](providers.md#model-settings))
@@ -41,6 +42,7 @@ qa:
 - **max_searches**: Maximum number of search units a capability can spend per question (default: 5). Up to three searches emitted in the same model response share one unit, so a model that rephrases its query in one response spends one unit. A search in a later response starts a new unit, as does each further group of three within one response. Searches in one response also deduplicate their returns: evidence a sibling search already showed collapses to a reference line, and each picture attaches once per response.
 - **max_executions**: Maximum `execute_code` calls per question before the capability is told to answer from what it has (default: 15)
 - **max_images**: Maximum number of images in one model request (default: unset, no limit). Set it at or below the limit of the model server, for example vLLM's `--limit-mm-per-prompt`. See [Image limit](#image-limit).
+- **media_tools**: Give recordings their own tools in the RAG capability (default: false). `search` then leaves audio and video out, and the capability offers `search_audio`, `search_video` and `list_recordings`, with a section of its instructions on when to use which. Off, `search` covers recordings with documents. See [Tools](../capabilities/rag.md#tools).
 
 !!! note "Thinking on self-hosted models"
     `thinking` is sent as `reasoning_effort` to every self-hosted endpoint, and the accepted levels are the model's own. A chat template with a switch of its own takes it through `extra_body`. See [Thinking](providers.md#thinking).

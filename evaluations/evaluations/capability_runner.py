@@ -19,7 +19,12 @@ from pydantic_ai.models import Model
 from evaluations.config import Turn
 from haiku.rag.capabilities.compaction import create_capability as create_compaction
 from haiku.rag.capabilities.ledger import citation_status
-from haiku.rag.capabilities.rag import SEARCH_TOOL, RAGCapability, RAGState
+from haiku.rag.capabilities.rag import (
+    MEDIA_SEARCH_TOOLS,
+    SEARCH_TOOL,
+    RAGCapability,
+    RAGState,
+)
 from haiku.rag.config.models import AppConfig
 
 CapabilityFactory = Callable[..., RAGCapability]
@@ -52,6 +57,7 @@ class CapabilityRunResult:
     n_rejected_searches: int = 0
     n_failed_tools: int = 0
     n_requests: int = 0
+    tool_calls: dict[str, int] = field(default_factory=dict)
     citation_status: str | None = None
 
 
@@ -60,6 +66,7 @@ class ToolTraffic(NamedTuple):
     n_rejected_searches: int
     n_failed_tools: int
     n_requests: int
+    tool_calls: dict[str, int]
 
 
 def _count_tool_traffic(
@@ -78,23 +85,23 @@ def _count_tool_traffic(
     ``ToolFailed`` sets ``outcome="failed"``. Both are restricted to
     ``tool_names``, excluding host tools and output-validation retries.
 
+    ``tool_calls`` counts the calls of each of ``tool_names``.
+
     ``n_requests`` counts the run's requests, which matches the capability's own
     budget only while it stays loaded — a deferred capability skips hooks until
     it loads.
     """
-    search_tool = SEARCH_TOOL
-    search_calls = 0
+    searches = {SEARCH_TOOL, *MEDIA_SEARCH_TOOLS}
+    tool_calls: dict[str, int] = {}
     rejected_searches = 0
     failed_tools = 0
     requests = 0
     for message in messages:
         if isinstance(message, ModelResponse):
             requests += 1
-            search_calls += sum(
-                1
-                for part in message.parts
-                if isinstance(part, ToolCallPart) and part.tool_name == search_tool
-            )
+            for part in message.parts:
+                if isinstance(part, ToolCallPart) and part.tool_name in tool_names:
+                    tool_calls[part.tool_name] = tool_calls.get(part.tool_name, 0) + 1
             continue
         for part in message.parts:
             if not isinstance(part, ToolReturnPart):
@@ -105,13 +112,14 @@ def _count_tool_traffic(
                 failed_tools += 1
             elif part.outcome == "failed":
                 failed_tools += 1
-                if part.tool_name == search_tool:
+                if part.tool_name in searches:
                     rejected_searches += 1
     return ToolTraffic(
-        n_search_calls=search_calls,
+        n_search_calls=sum(tool_calls.get(name, 0) for name in searches),
         n_rejected_searches=rejected_searches,
         n_failed_tools=failed_tools,
         n_requests=requests,
+        tool_calls=tool_calls,
     )
 
 
@@ -278,5 +286,6 @@ def _result_from_run(
         n_rejected_searches=traffic.n_rejected_searches,
         n_failed_tools=traffic.n_failed_tools,
         n_requests=traffic.n_requests,
+        tool_calls=traffic.tool_calls,
         citation_status=status,
     )

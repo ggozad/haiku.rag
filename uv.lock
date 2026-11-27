@@ -1793,10 +1793,10 @@ wheels = [
 
 [[package]]
 name = "haiku-rag"
-version = "0.114.0"
+version = "0.115.0"
 source = { editable = "." }
 dependencies = [
-    { name = "haiku-rag-slim", extra = ["cohere", "cross-encoder", "docling", "jina", "tui", "voyageai", "zeroentropy"] },
+    { name = "haiku-rag-slim", extra = ["cohere", "cross-encoder", "docling", "jina", "media", "tui", "voyageai", "zeroentropy"] },
 ]
 
 [package.optional-dependencies]
@@ -1834,7 +1834,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "haiku-rag-slim", extras = ["cross-encoder"], marker = "extra == 'cross-encoder'", editable = "haiku_rag_slim" },
-    { name = "haiku-rag-slim", extras = ["docling", "voyageai", "cohere", "zeroentropy", "tui", "cross-encoder", "jina"], editable = "haiku_rag_slim" },
+    { name = "haiku-rag-slim", extras = ["docling", "media", "voyageai", "cohere", "zeroentropy", "tui", "cross-encoder", "jina"], editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["ingester"], marker = "extra == 'ingester'", editable = "haiku_rag_slim" },
     { name = "haiku-rag-slim", extras = ["s3"], marker = "extra == 's3'", editable = "haiku_rag_slim" },
     { name = "textual", marker = "extra == 'tui'", specifier = ">=8.2.4" },
@@ -1865,7 +1865,7 @@ dev = [
 
 [[package]]
 name = "haiku-rag-app"
-version = "0.114.0"
+version = "0.115.0"
 source = { editable = "app/backend" }
 dependencies = [
     { name = "aiosqlite" },
@@ -1890,7 +1890,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-evals"
-version = "0.114.0"
+version = "0.115.0"
 source = { editable = "evaluations" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1917,7 +1917,7 @@ requires-dist = [
 
 [[package]]
 name = "haiku-rag-slim"
-version = "0.114.0"
+version = "0.115.0"
 source = { editable = "haiku_rag_slim" }
 dependencies = [
     { name = "charset-normalizer" },
@@ -1985,6 +1985,10 @@ jina = [
     { name = "torch" },
     { name = "transformers" },
 ]
+media = [
+    { name = "huggingface-hub" },
+    { name = "onnxruntime" },
+]
 mistral = [
     { name = "pydantic-ai-slim", extra = ["mistral"] },
 ]
@@ -2021,11 +2025,13 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=4.0.2,<5.0.0" },
     { name = "haiku-rag-slim", extras = ["s3"], marker = "extra == 'ingester'", editable = "haiku_rag_slim" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "huggingface-hub", marker = "extra == 'media'", specifier = ">=1.0.0,<2.0.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "lancedb", specifier = "==0.41.0" },
     { name = "logfire", extras = ["fastapi"], marker = "extra == 'ingester'", specifier = ">=3.17.0" },
     { name = "obstore", marker = "extra == 's3'", specifier = ">=0.9,<0.10" },
     { name = "onnxruntime", marker = "extra == 'docling'", specifier = ">=1.24.1,<2.0.0" },
+    { name = "onnxruntime", marker = "extra == 'media'", specifier = ">=1.24.1,<2.0.0" },
     { name = "opencv-python-headless", marker = "extra == 'docling'", specifier = ">=4.6.0.66,<5.0.0.0" },
     { name = "opentelemetry-api", specifier = ">=1.45.1" },
     { name = "pathspec", specifier = ">=1.0.4" },
@@ -2063,7 +2069,7 @@ requires-dist = [
     { name = "zeroentropy", marker = "extra == 'zeroentropy'", specifier = ">=0.1.0a11" },
     { name = "zstandard", marker = "python_full_version < '3.14'", specifier = ">=0.23.0" },
 ]
-provides-extras = ["docling", "s3", "voyageai", "cohere", "zeroentropy", "jina", "cross-encoder", "ingester", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
+provides-extras = ["docling", "media", "s3", "voyageai", "cohere", "zeroentropy", "jina", "cross-encoder", "ingester", "tui", "anthropic", "groq", "google", "mistral", "bedrock", "vertexai"]
 
 [[package]]
 name = "hf-xet"

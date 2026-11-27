@@ -1,7 +1,13 @@
 import json
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, PrivateAttr
+
+from haiku.rag.store.models.document_item import PICTURE_REF_PREFIX
+from haiku.rag.utils.formatting import format_time_range
+from haiku.rag.utils.sql import escape_sql_string
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DocItem, DoclingDocument
@@ -28,12 +34,14 @@ class ChunkMetadata(BaseModel):
                   (e.g., ["Chapter 1", "Section 1.1"])
         labels: Semantic labels for each doc_item (e.g., ["paragraph", "table"])
         page_numbers: Page numbers where the chunk content appears
+        time_range: Start and end in seconds of the chunk's items in a recording
     """
 
     doc_item_refs: list[str] = []
     headings: list[str] | None = None
     labels: list[str] = []
     page_numbers: list[int] = []
+    time_range: tuple[float, float] | None = None
 
     def resolve_doc_items(self, docling_document: "DoclingDocument") -> list["DocItem"]:
         """Resolve doc_item_refs to actual DocItem objects.
@@ -87,6 +95,72 @@ class ChunkMetadata(BaseModel):
                     )
                 )
         return bounding_boxes
+
+
+Media = Literal["speech", "frame"]
+Content = Literal["documents", "speech", "frames"]
+
+
+@dataclass(frozen=True)
+class TimeWindow:
+    """A recording, narrowed to `start`..`end` seconds when either is set."""
+
+    document_id: str
+    start: float | None = None
+    end: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.start is not None and self.end is not None and self.end <= self.start:
+            raise ValueError("A time window must end after it starts")
+
+    @classmethod
+    def named(
+        cls, recording: str | None, start: float | None, end: float | None
+    ) -> "TimeWindow | None":
+        """The window a media search names, `None` for no recording. Times
+        without a recording raise `ValueError`."""
+        if recording is None:
+            if start is not None or end is not None:
+                raise ValueError(
+                    "A time window needs a recording: pass its document_id."
+                )
+            return None
+        return cls(recording, start=start, end=end)
+
+    @property
+    def clipped(self) -> bool:
+        return self.start is not None or self.end is not None
+
+    def overlaps(self, start: float | None, end: float | None) -> bool:
+        """Whether a span of the recording overlaps the window. An untimed span
+        never does."""
+        if start is None or end is None:
+            return False
+        return (self.end is None or start < self.end) and (
+            self.start is None or end > self.start
+        )
+
+    def where(self) -> str:
+        """SQL selecting the recording's rows whose times overlap the window."""
+        clauses = [f"document_id = '{escape_sql_string(self.document_id)}'"]
+        if self.end is not None:
+            clauses.append(f"start_time < {float(self.end)}")
+        if self.start is not None:
+            clauses.append(f"end_time > {float(self.start)}")
+        return " AND ".join(clauses)
+
+
+def chunk_media(
+    metadata: Mapping[str, Any],
+) -> tuple[Media | None, float | None, float | None]:
+    """A recording chunk's kind and times, from its metadata, or Nones for a
+    document chunk."""
+    times = metadata.get("time_range")
+    if not times:
+        return None, None, None
+    refs = metadata.get("doc_item_refs") or []
+    frame = len(refs) == 1 and refs[0].startswith(PICTURE_REF_PREFIX)
+    return ("frame" if frame else "speech"), times[0], times[1]
 
 
 class Chunk(BaseModel):
@@ -171,10 +245,12 @@ class SearchResult(BaseModel):
     order: int = 0
     doc_item_refs: list[str] = []
     page_numbers: list[int] = []
+    time_range: tuple[float, float] | None = None
     headings: list[str] | None = None
     labels: list[str] = []
     image_data: dict[str, str] | None = None
     picture_captions: dict[str, str] = {}
+    picture_times: dict[str, float] = {}
     annotations: list[str] | None = None
 
     @classmethod
@@ -197,6 +273,7 @@ class SearchResult(BaseModel):
             order=chunk.order,
             doc_item_refs=meta.doc_item_refs,
             page_numbers=meta.page_numbers,
+            time_range=meta.time_range,
             headings=meta.headings,
             labels=meta.labels,
             chunk_meta=chunk.metadata,
@@ -252,8 +329,15 @@ class SearchResult(BaseModel):
         if source_parts:
             parts.append(f"Source: {' > '.join(source_parts)}")
 
+        if self.time_range:
+            parts.append(f"Time: {format_time_range(self.time_range)}")
+
+        # A recording's chunk is speech or a frame, whatever its expansion's labels.
+        kind = chunk_media(self.chunk_meta)[0] if self.time_range else None
+        if kind:
+            parts.append(f"Type: {kind}")
         # Content type (use primary label if available)
-        if self.labels:
+        elif self.labels:
             primary_label = self._get_primary_label()
             if primary_label:
                 parts.append(f"Type: {primary_label}")

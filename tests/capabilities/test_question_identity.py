@@ -45,7 +45,14 @@ STORED = json.loads(
 
 
 async def stub_search(
-    self, query: str, _limit: int | None, _run_step: int, _sources=None
+    self,
+    query: str,
+    _limit: int | None,
+    _run_step: int,
+    _sources=None,
+    content=None,
+    window=None,
+    include_images=True,
 ) -> str:
     cast(Any, self.state).searches[query] = [
         SearchResult(content=f"evidence for {query}", score=1.0, chunk_id=query)

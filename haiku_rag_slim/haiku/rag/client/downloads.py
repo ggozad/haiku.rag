@@ -27,6 +27,7 @@ async def download_models(
     Yields DownloadProgress events for:
     - Docling models
     - HuggingFace tokenizer
+    - Silero VAD, when audio and video are configured
     - Sentence-transformers embedder (if configured)
     - HuggingFace reranker models (cross-encoder, jina-local)
     - Ollama models
@@ -47,6 +48,13 @@ async def download_models(
     yield DownloadProgress(model=tokenizer_name, status="start")
     await asyncio.to_thread(AutoTokenizer.from_pretrained, tokenizer_name)
     yield DownloadProgress(model=tokenizer_name, status="done")
+
+    if config.processing.media is not None:
+        from haiku.rag.converters.media import VAD_REPO, speech_detector
+
+        yield DownloadProgress(model=VAD_REPO, status="start")
+        await asyncio.to_thread(speech_detector)
+        yield DownloadProgress(model=VAD_REPO, status="done")
 
     # Sentence-transformers embedder
     if config.embeddings.model.provider == "sentence-transformers":  # pragma: no cover

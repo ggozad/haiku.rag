@@ -58,6 +58,12 @@ With `processing.pictures: description`, docling-serve calls the vision model it
 
 See [Picture handling](configuration/processing.md#picture-handling).
 
+## Audio and video
+
+haiku.rag converts audio and video itself, with `processing.media`, whichever
+converter is set: docling-serve never receives a recording. See
+[Audio and video](configuration/processing.md#audio-and-video).
+
 ## Operations
 
 Long-running docling-serve containers grow in memory ([docling-serve #366](https://github.com/docling-project/docling-serve/issues/366), [#474](https://github.com/docling-project/docling-serve/issues/474)), from leaks in docling itself. To keep ingesting through it:

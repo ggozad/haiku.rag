@@ -99,9 +99,17 @@ from haiku.rag.store.upgrades.v0_113_0 import (
 from haiku.rag.store.upgrades.v0_114_0 import (
     upgrade_blob_originals as upgrade_0_114_0_blob_originals,
 )
+from haiku.rag.store.upgrades.v0_115_0 import (
+    upgrade_chunk_media as upgrade_0_115_0_chunk_media,
+    upgrade_item_times as upgrade_0_115_0_item_times,
+    upgrade_original_subtitles as upgrade_0_115_0_original_subtitles,
+)
 
 upgrades.append(upgrade_0_75_0_index_hot_lookup_keys)
 upgrades.append(upgrade_0_89_0_record_embedder_only)
 upgrades.append(upgrade_0_91_0_fts_format_v2)
 upgrades.append(upgrade_0_113_0_original_columns)
 upgrades.append(upgrade_0_114_0_blob_originals)
+upgrades.append(upgrade_0_115_0_item_times)
+upgrades.append(upgrade_0_115_0_chunk_media)
+upgrades.append(upgrade_0_115_0_original_subtitles)

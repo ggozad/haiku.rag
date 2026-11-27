@@ -58,6 +58,46 @@ def vlm_api_params(model: "ModelConfig", max_tokens: int) -> dict[str, object]:
     return params
 
 
+AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac")
+VIDEO_EXTENSIONS = (".mp4", ".avi", ".mov", ".mkv", ".webm")
+MEDIA_EXTENSIONS = AUDIO_EXTENSIONS + VIDEO_EXTENSIONS
+
+
+def media_extensions(config: "AppConfig") -> list[str]:
+    """The recordings a converter accepts: audio once `processing.media` is set,
+    and video only under a multimodal embedder, since its frames are searched by
+    their image."""
+    if not config.processing.media:
+        return []
+    if config.embeddings.model.multimodal:
+        return list(MEDIA_EXTENSIONS)
+    return list(AUDIO_EXTENSIONS)
+
+
+def is_recording(doc: "DoclingDocument | None") -> bool:
+    """Whether the document was converted from audio or video."""
+    mimetype = doc.origin.mimetype if doc is not None and doc.origin else ""
+    return mimetype.startswith(("audio/", "video/"))
+
+
+def label_speakers(doc: "DoclingDocument") -> None:
+    """Prefix each text item with the `voice` of its `TrackSource`, so a chunk
+    that starts mid-turn still names who is talking."""
+    from docling_core.types.doc import TrackSource
+
+    for item in doc.texts:
+        voice = next(
+            (
+                s.voice
+                for s in item.source or []
+                if isinstance(s, TrackSource) and s.voice
+            ),
+            None,
+        )
+        if voice:
+            item.text = f"{voice}: {item.text}"
+
+
 def flatten_inline_groups(doc: "DoclingDocument") -> bool:
     """Replace every inline group of text runs with the one text item it renders as.
 

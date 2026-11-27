@@ -11,7 +11,7 @@ uv pip install haiku.rag        # full
 uv pip install haiku.rag-slim   # core, extras chosen by you
 ```
 
-`haiku.rag` is `haiku.rag-slim` with the `docling`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines four extras of its own, `tui`, `s3`, `cross-encoder` and `ingester`:
+`haiku.rag` is `haiku.rag-slim` with the `docling`, `media`, `voyageai`, `cohere`, `zeroentropy`, `cross-encoder`, `jina` and `tui` extras. It defines four extras of its own, `tui`, `s3`, `cross-encoder` and `ingester`:
 
 ```bash
 uv pip install 'haiku.rag[ingester]'   # the haiku-ingester service
@@ -31,6 +31,7 @@ Every extra `haiku.rag-slim` defines:
 | Extra | Provides | In `haiku.rag` |
 |---|---|---|
 | `docling` | PDF, DOCX, PPTX, XLSX, HTML, EPUB, LaTeX, email and images, converted locally | yes |
+| `media` | Speech detection for transcribing audio and video | yes |
 | `tui` | Terminal UI for `chat` and `inspect` | yes |
 | `voyageai` | VoyageAI embeddings | yes |
 | `cohere` | Cohere embeddings and reranking | yes |
@@ -65,7 +66,7 @@ fetches, ahead of first use:
 
 ## Docker
 
-The slim image is published, with the `ingester` extra and without `docling`, for use with docling-serve:
+The slim image is published, with the `ingester` and `media` extras and without `docling`, for use with docling-serve:
 
 ```bash
 docker pull ghcr.io/ggozad/haiku.rag-slim:latest

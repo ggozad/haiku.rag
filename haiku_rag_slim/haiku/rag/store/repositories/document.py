@@ -8,6 +8,7 @@ from uuid import uuid4
 import lancedb
 import pyarrow as pa
 
+from haiku.rag.store.compression import decompress_json
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.schema import (
@@ -21,17 +22,30 @@ from haiku.rag.store.schema import (
 )
 from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
 
+# Original bytes per `documents` write when many documents carry originals.
+ORIGINALS_WRITE_BYTES = 64 << 20
+
 # Ids per `id IN (...)` content lookup. Keeps the filter string bounded on an
 # unpaginated listing of a large database.
 _CONTENT_BATCH = 512
 
 
+def _is_recording(docling_document: bytes | None) -> bool:
+    """Whether a stored structure was converted from audio or video."""
+    if docling_document is None:
+        return False
+    origin = json.loads(decompress_json(docling_document)).get("origin") or {}
+    return (origin.get("mimetype") or "").startswith(("audio/", "video/"))
+
+
 @dataclass(frozen=True)
 class StoredOriginal:
-    """An original at one table version: its size, its SHA-256 and its bytes."""
+    """An original at one table version: its size, its SHA-256, the subtitles
+    read beside it and its bytes."""
 
     size: int
     sha256: str
+    subtitles: str | None
     _table: lancedb.AsyncTable
     _row_id: int
 
@@ -43,6 +57,15 @@ class StoredOriginal:
             )
         ).to_pylist()
         return data
+
+
+@dataclass(frozen=True)
+class StoredRecording:
+    """A recording's stored original, with the suffix naming its format."""
+
+    original: StoredOriginal
+    suffix: str
+    video: bool
 
 
 class DocumentRepository:
@@ -103,6 +126,7 @@ class DocumentRepository:
             docling_version=doc.docling_version,
             original=doc.original,
             original_sha256=doc.original_sha256,
+            original_subtitles=doc.original_subtitles,
             created_at=datetime.fromisoformat(created)
             if created
             else datetime.now(UTC),
@@ -119,6 +143,7 @@ class DocumentRepository:
             docling_version=entity.docling_version,
             original=entity.original,
             original_sha256=entity.original_sha256,
+            original_subtitles=entity.original_subtitles,
         )
 
     def _to_meta_record(
@@ -220,7 +245,7 @@ class DocumentRepository:
         "docling_document",
         "docling_version",
     ]
-    _ORIGINAL_COLUMNS = ["original", "original_sha256"]
+    _ORIGINAL_COLUMNS = ["original", "original_sha256", "original_subtitles"]
 
     async def _record_by_id(
         self, doc_id: str, include_blobs: bool
@@ -314,26 +339,105 @@ class DocumentRepository:
             return None
         return original, row["original_sha256"]
 
+    async def original_digest(
+        self, entity_id: str
+    ) -> tuple[str, int, bool, str | None] | None:
+        """The stored original's SHA-256, size, whether it is a recording's, and
+        its subtitles, without its bytes."""
+        safe_id = escape_sql_string(entity_id)
+        rows = await (
+            self.store.documents_table.query()
+            .select(
+                [
+                    "original",
+                    "original_sha256",
+                    "original_subtitles",
+                    "docling_document",
+                ]
+            )
+            .where(f"id = '{safe_id}' AND original_sha256 IS NOT NULL")
+            .limit(1)
+            .to_list()
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        return (
+            row["original_sha256"],
+            row["original"]["size"],
+            _is_recording(row["docling_document"]),
+            row["original_subtitles"],
+        )
+
     async def open_original(self, entity_id: str) -> StoredOriginal | None:
         """The stored original, read by byte range at the version it was opened."""
-        found = await self._pinned_row(entity_id, ["original", "original_sha256"])
+        found = await self._pinned_row(
+            entity_id, ["original", "original_sha256", "original_subtitles"]
+        )
         if found is None:
             return None
         table, row = found
         if row["original"] is None or row["original_sha256"] is None:
             return None
         return StoredOriginal(
-            row["original"]["size"], row["original_sha256"], table, row["_rowid"]
+            row["original"]["size"],
+            row["original_sha256"],
+            row["original_subtitles"],
+            table,
+            row["_rowid"],
+        )
+
+    async def open_recording(self, entity_id: str) -> StoredRecording | None:
+        """The stored file of a recording, read by byte range at one version,
+        when its structure names it."""
+        from pathlib import PurePosixPath
+
+        from haiku.rag.converters.base import is_recording
+        from haiku.rag.store.models.recording import names_file
+
+        found = await self._pinned_row(
+            entity_id,
+            ["original", "original_sha256", "original_subtitles", "docling_document"],
+        )
+        if found is None:
+            return None
+        table, row = found
+        if row["original"] is None or row["original_sha256"] is None:
+            return None
+        structure = Document(
+            content="", docling_document=row["docling_document"]
+        ).get_docling_document()
+        if not is_recording(structure):
+            return None
+        assert structure is not None and structure.origin is not None
+        if not names_file(structure, row["original_sha256"]):
+            return None
+        original = StoredOriginal(
+            row["original"]["size"],
+            row["original_sha256"],
+            row["original_subtitles"],
+            table,
+            row["_rowid"],
+        )
+        return StoredRecording(
+            original,
+            PurePosixPath(structure.origin.filename).suffix.lower(),
+            structure.origin.mimetype.startswith("video/"),
         )
 
     async def _with_original(
         self, entity_id: str, columns: list[str]
     ) -> tuple[dict, bytes | None] | None:
-        """`columns` of the document's row and its original, read at one version."""
-        found = await self._pinned_row(entity_id, columns)
+        """`columns` of the document's row and its original, read at one version.
+        A recording's original is read by range only, so it comes back None."""
+        found = await self._pinned_row(
+            entity_id, list(dict.fromkeys([*columns, "docling_document"]))
+        )
         if found is None:
             return None
         table, row = found
+        if _is_recording(row["docling_document"]):
+            return row, None
         [original] = (await table.fetch_blobs("original", [row["_rowid"]])).to_pylist()
         return row, original
 
@@ -387,6 +491,7 @@ class DocumentRepository:
                     "id": i,
                     "original": data,
                     "original_sha256": hashlib.sha256(data).hexdigest(),
+                    "original_subtitles": None,
                 }
                 for i, data in originals.items()
             ],

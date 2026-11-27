@@ -12,6 +12,7 @@ export interface Citation {
 	document_uri: string;
 	document_title: string | null;
 	page_numbers: number[];
+	time_range?: [number, number] | null;
 	headings: string[] | null;
 	content: string;
 	doc_item_refs?: string[];

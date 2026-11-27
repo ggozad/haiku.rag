@@ -2,7 +2,7 @@
 
 name = "haiku.rag-slim"
 description = "Local-first agentic RAG with citations - hybrid search, reranking and multimodal retrieval over your own documents, no database server required - Minimal dependencies"
-version = "0.114.0"
+version = "0.115.0"
 authors = [{ name = "Yiorgis Gozadinos", email = "ggozadinos@gmail.com" }]
 license = { text = "MIT" }
 readme = { file = "README.md", content-type = "text/markdown" }
@@ -82,6 +82,8 @@ docling = [
     "opencv-python-headless>=4.6.0.66,<5.0.0.0",
     "onnxruntime>=1.24.1,<2.0.0",
 ]
+# Speech detection for audio and video transcription
+media = ["onnxruntime>=1.24.1,<2.0.0", "huggingface-hub>=1.0.0,<2.0.0"]
 # S3 / object-storage monitoring
 s3 = ["obstore>=0.9,<0.10"]
 # Embedding providers

@@ -97,13 +97,14 @@ async def _rewrite_through_lance(store: Store) -> None:
 def _as_blobs(
     dataset: lance.LanceDataset, schema: pa.Schema
 ) -> Iterator[pa.RecordBatch]:
-    """The dataset's rows with each original as a blob value and its SHA-256.
+    """The dataset's rows with each original as a blob value and its SHA-256,
+    and null in the columns of `schema` the dataset lacks.
 
     lance stores a `large_binary` source written under a blob schema as
     `large_binary`, so the values are built as blobs here.
     """
     for batch in dataset.to_batches(
-        columns=[name for name in schema.names if name != "original_sha256"],
+        columns=[name for name in schema.names if name in dataset.schema.names],
         batch_size=_BATCH_ROWS,
         batch_readahead=1,
         fragment_readahead=1,
@@ -135,7 +136,11 @@ async def _rewrite_through_lancedb(store: Store) -> None:
     hashes = pa.array(
         [_sha256(o) for o in rows["original"].to_pylist()], type=pa.string()
     )
-    rows = rows.append_column("original_sha256", hashes).select(schema.names)
+    rows = rows.append_column("original_sha256", hashes)
+    for field in schema:
+        if field.name not in rows.schema.names:
+            rows = rows.append_column(field, pa.nulls(len(rows), field.type))
+    rows = rows.select(schema.names)
     store.documents_table = await store.db.create_table(
         "documents",
         rows,

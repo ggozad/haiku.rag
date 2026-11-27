@@ -21,6 +21,7 @@ from haiku.rag.client.processing import (
 from haiku.rag.client.session import SingleDatabaseSession
 from haiku.rag.client.titles import resolve_title
 from haiku.rag.converters import get_converter
+from haiku.rag.converters.base import MEDIA_EXTENSIONS, is_recording
 from haiku.rag.converters.exceptions import (
     ConversionFailedError,
     ConversionTimeoutError,
@@ -41,8 +42,11 @@ from haiku.rag.hooks import (
 from haiku.rag.store.models.chunk import Chunk
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
+from haiku.rag.store.models.recording import names_file
+from haiku.rag.store.repositories.document import ORIGINALS_WRITE_BYTES
 from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
+from haiku.rag.utils.formatting import format_bytes
 from haiku.rag.utils.images import ORIGINAL_EXTENSIONS, render_original_pages
 from haiku.rag.utils.sql import escape_like_pattern, escape_sql_string
 
@@ -62,7 +66,7 @@ class DocumentImport:
 
     Carries the same inputs as ``import_document``: a converted
     ``DoclingDocument``, its chunks (embeddings filled in if missing), and
-    optional uri/title/metadata/original.
+    optional uri/title/metadata, the original file and a recording's subtitles.
     """
 
     docling_document: "DoclingDocument"
@@ -71,6 +75,7 @@ class DocumentImport:
     title: str | None = None
     metadata: dict | None = field(default=None)
     original: bytes | None = None
+    original_subtitles: str | None = None
 
 
 # Maximum length of an attachment chain rooted at a top-level ingest. With
@@ -108,6 +113,7 @@ def _prepare_document_from_docling_sync(
     document: Document,
     docling_document: "DoclingDocument",
     original: bytes | None = None,
+    subtitles: str | None = None,
 ) -> str:
     """Populate content/docling blobs from a DoclingDocument.
 
@@ -118,7 +124,7 @@ def _prepare_document_from_docling_sync(
     """
     content = docling_document.export_to_markdown()
     document.content = content
-    document.set_docling(docling_document, original)
+    document.set_docling(docling_document, original, subtitles)
     return content
 
 
@@ -126,9 +132,14 @@ async def _prepare_document_from_docling(
     document: Document,
     docling_document: "DoclingDocument",
     original: bytes | None = None,
+    subtitles: str | None = None,
 ) -> str:
     return await asyncio.to_thread(
-        _prepare_document_from_docling_sync, document, docling_document, original
+        _prepare_document_from_docling_sync,
+        document,
+        docling_document,
+        original,
+        subtitles,
     )
 
 
@@ -139,9 +150,72 @@ def _kept_original(
     return original if session.config.storage.store_originals else None
 
 
-async def _check_original(original: bytes | None) -> None:
-    """Refuse a caller's original that renders neither as an image nor as a PDF."""
+async def _writes_original(
+    session: SingleDatabaseSession,
+    document: Document,
+    docling_document: "DoclingDocument",
+) -> bool:
+    """Whether a write replacing the structure with `docling_document` writes
+    `document`'s original columns. Supplied bytes are written. Without them, a
+    stored original stays when `docling_document` names it and is the same kind
+    of document, and any other is cleared."""
+    assert document.id is not None
+    if document.original is not None:
+        return True
+    stored = await session.document_repository.original_digest(document.id)
+    if stored is None:
+        return True
+    sha256, size, recording, subtitles = stored
+    if recording:
+        kept = _recording_refusal(sha256, docling_document) is None
+    else:
+        kept = not is_recording(docling_document) and names_file(
+            docling_document, sha256
+        )
+    if kept:
+        document.original_sha256, document.original_subtitles = sha256, subtitles
+        return False
+    logger.warning(
+        "Dropped the stored original of %s (%s): the new structure was not "
+        "converted from it",
+        document.id,
+        format_bytes(size),
+    )
+    return True
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _recording_refusal(sha256: str, docling_document: "DoclingDocument") -> str | None:
+    """Why the file with this SHA-256 cannot be stored as the recording
+    `docling_document`, or None when it can."""
+    if not is_recording(docling_document):
+        return "the document is not a recording"
+    assert docling_document.origin is not None
+    filename = docling_document.origin.filename
+    if Path(filename).suffix.lower() not in MEDIA_EXTENSIONS:
+        return f"{filename} is not an audio or video file"
+    if not names_file(docling_document, sha256):
+        return "the recording was not converted from this original"
+    return None
+
+
+async def _check_original(
+    original: bytes | None, docling_document: "DoclingDocument | None"
+) -> None:
+    """Refuse a caller's original that renders neither as an image nor as a PDF,
+    or a recording's original not named by its structure."""
     if original is None:
+        return
+    if is_recording(docling_document):
+        assert docling_document is not None
+        refusal = _recording_refusal(
+            await asyncio.to_thread(_sha256, original), docling_document
+        )
+        if refusal is not None:
+            raise ValueError(refusal)
         return
     try:
         await asyncio.to_thread(render_original_pages, original, [], 1.0)
@@ -154,6 +228,7 @@ async def _prepare_and_title(
     document: Document,
     docling_document: "DoclingDocument",
     original: bytes | None = None,
+    subtitles: str | None = None,
 ) -> None:
     """Fill the document from its converted form and title it if it has none.
 
@@ -162,7 +237,7 @@ async def _prepare_and_title(
     ``_prepare_document_from_docling`` directly instead.
     """
     stored_content = await _prepare_document_from_docling(
-        document, docling_document, _kept_original(session, original)
+        document, docling_document, _kept_original(session, original), subtitles
     )
     if document.title is None:
         document.title = await resolve_title(
@@ -264,7 +339,10 @@ async def _store_document_with_chunks(
                 document.created_at = existing.created_at
                 replaced_owner = (existing.metadata or {}).get("source_id")
                 stored_doc = await session.document_repository.update(
-                    document, with_original=True
+                    document,
+                    with_original=await _writes_original(
+                        session, document, docling_document
+                    ),
                 )
             else:
                 stored_doc = await session.document_repository.create(document)
@@ -370,7 +448,9 @@ async def _update_document_with_chunks(
                 document.uri, document.title = current.uri, current.title
                 document.metadata = current.metadata
             updated_doc = await session.document_repository.update(
-                document, with_original=docling_document is not None
+                document,
+                with_original=docling_document is not None
+                and await _writes_original(session, document, docling_document),
             )
 
             assert updated_doc.id is not None
@@ -444,6 +524,7 @@ async def import_document(
     title: str | None = None,
     metadata: dict | None = None,
     original: bytes | None = None,
+    original_subtitles: str | None = None,
 ) -> Document:
     """Import a pre-processed document with chunks.
 
@@ -452,8 +533,9 @@ async def import_document(
 
     The document is stored as given, since the chunks' ``doc_item_refs``
     index into it. Convert through :meth:`HaikuRAG.convert` to get one whose
-    inline groups are flattened. ``original`` is the PDF or image file the
-    document was converted from, which visual grounding renders.
+    inline groups are flattened. ``original`` is the file the document was
+    converted from: a PDF or image, which visual grounding renders, or a
+    recording, with ``original_subtitles`` the subtitles converted beside it.
     """
     document = Document(
         content="",
@@ -461,8 +543,10 @@ async def import_document(
         title=title,
         metadata=_caller_metadata(metadata),
     )
-    await _check_original(original)
-    await _prepare_and_title(session, document, docling_document, original)
+    await _check_original(original, docling_document)
+    await _prepare_and_title(
+        session, document, docling_document, original, original_subtitles
+    )
 
     return await _store_document_with_chunks(
         session, client, document, chunks, docling_document
@@ -474,10 +558,12 @@ async def _store_documents_with_chunks(
     client: "HaikuRAG",
     prepared: list[tuple[Document, list[Chunk], "DoclingDocument"]],
 ) -> list[Document]:
-    """Store many documents with their chunks in a single table version each.
+    """Store many documents with their chunks in one write transaction.
 
-    Embeds any chunks that lack embeddings, then writes the documents, chunks,
-    and document_items tables once apiece. Restores all tables on any failure.
+    Embeds any chunks that lack embeddings, then writes the chunks and
+    document_items tables once apiece, and the documents and document_meta
+    tables once per `ORIGINALS_WRITE_BYTES` of originals. Restores all tables
+    on any failure.
     """
     flat = await ensure_chunks_embedded(
         session.config,
@@ -508,9 +594,11 @@ async def _store_documents_with_chunks(
         chunks=len(flat),
     ):
         async with session.store.write_transaction():
-            created = await session.document_repository.create(
-                [doc for doc, _, _ in prepared]
-            )
+            created = [
+                doc
+                for group in _original_groups([doc for doc, _, _ in prepared])
+                for doc in await session.document_repository.create(group)
+            ]
 
             all_chunks: list[Chunk] = []
             all_items = []
@@ -535,6 +623,21 @@ async def _store_documents_with_chunks(
     return created
 
 
+def _original_groups(documents: list[Document]) -> list[list[Document]]:
+    """`documents` in order, grouped so a group's originals stay within
+    `ORIGINALS_WRITE_BYTES`, one document at least."""
+    groups: list[list[Document]] = []
+    size = 0
+    for doc in documents:
+        length = len(doc.original or b"")
+        if not groups or size + length > ORIGINALS_WRITE_BYTES:
+            groups.append([])
+            size = 0
+        groups[-1].append(doc)
+        size += length
+    return groups
+
+
 async def import_documents(
     session: SingleDatabaseSession,
     client: "HaikuRAG",
@@ -542,9 +645,10 @@ async def import_documents(
 ) -> list[Document]:
     """Batch-import pre-processed documents with their chunks.
 
-    The batch analog of ``import_document``: writes the documents, chunks, and
+    The batch analog of ``import_document``: writes the chunks and
     document_items tables once each regardless of how many documents are
-    imported. Chunks without embeddings are embedded automatically. Looks
+    imported, and the documents and document_meta tables once per
+    ``ORIGINALS_WRITE_BYTES`` of originals. Chunks without embeddings are embedded automatically. Looks
     up no URI: every import creates a new document, even for a stored or
     repeated URI.
     """
@@ -552,7 +656,7 @@ async def import_documents(
         return []
 
     for item in imports:
-        await _check_original(item.original)
+        await _check_original(item.original, item.docling_document)
     prepared: list[tuple[Document, list[Chunk], DoclingDocument]] = []
     for item in imports:
         document = Document(
@@ -562,7 +666,11 @@ async def import_documents(
             metadata=_caller_metadata(item.metadata),
         )
         await _prepare_and_title(
-            session, document, item.docling_document, item.original
+            session,
+            document,
+            item.docling_document,
+            item.original,
+            item.original_subtitles,
         )
         prepared.append((document, item.chunks, item.docling_document))
 
@@ -823,11 +931,14 @@ async def _ingest_fetch_result(
     if source_id is not None and depth == 0:
         source_metadata["source_id"] = source_id
 
-    # A stored original must be the bytes converted, so it never reads the live file.
-    has_original = (
-        session.config.storage.store_originals and file_extension in ORIGINAL_EXTENSIONS
+    is_media = file_extension in MEDIA_EXTENSIONS
+    has_original = session.config.storage.store_originals and (
+        file_extension in ORIGINAL_EXTENSIONS or is_media
     )
-    if result.disk_path is not None and not has_original:
+    # A stored original must be the bytes converted, so a document converts from
+    # them. A recording converts the live file, which its subtitles sit beside,
+    # and is checked against them after.
+    if result.disk_path is not None and (is_media or not has_original):
         target_path = result.disk_path
         cleanup_path: Path | None = None
     else:
@@ -835,11 +946,29 @@ async def _ingest_fetch_result(
         cleanup_path = target_path
     original = result.body if has_original else None
 
+    subtitles: str | None = None
+    original_sha256 = ""
     try:
         with logfire.span("document.convert", uri=result.uri):
+            if original is not None and is_media:
+                from haiku.rag.converters.media import subtitles_text
+
+                subtitles = subtitles_text(target_path)
+                original_sha256 = await asyncio.to_thread(_sha256, original)
             docling_document = await convert(
                 session.config, target_path, source_uri=result.uri
             )
+            # Conversion reads the file and its subtitles again, so the
+            # original stored is the one converted only if neither changed.
+            if (
+                original is not None
+                and is_media
+                and (
+                    not names_file(docling_document, original_sha256)
+                    or subtitles_text(target_path) != subtitles
+                )
+            ):
+                raise ValueError(f"{result.uri} changed while it was converted")
         docling_document = await _after_convert(
             client,
             ConvertedDocument(
@@ -849,6 +978,14 @@ async def _ingest_fetch_result(
                 docling_document=docling_document,
             ),
         )
+        refusal = (
+            _recording_refusal(original_sha256, docling_document)
+            if original is not None and is_media
+            else None
+        )
+        if refusal is not None:
+            logger.warning("%s is stored without its file: %s", stored_uri, refusal)
+            original = subtitles = None
         with logfire.span("document.chunk", uri=result.uri) as chunk_span:
             chunks = await chunk_document(session, docling_document)
             chunk_span.set_attribute("chunks_created", len(chunks))
@@ -873,7 +1010,9 @@ async def _ingest_fetch_result(
         document_id = existing_doc.id
         if title is not None:
             existing_doc.title = title
-        await _prepare_and_title(session, existing_doc, docling_document, original)
+        await _prepare_and_title(
+            session, existing_doc, docling_document, original, subtitles
+        )
 
         async def stored_meta() -> Document:
             current = await session.document_repository.get_by_id(document_id)
@@ -902,7 +1041,9 @@ async def _ingest_fetch_result(
             title=title,
             metadata=final_metadata,
         )
-        await _prepare_and_title(session, document, docling_document, original)
+        await _prepare_and_title(
+            session, document, docling_document, original, subtitles
+        )
         stored = await _store_document_with_chunks(
             session,
             client,
@@ -1049,7 +1190,9 @@ async def _reconcile_pdf_attachments(
 
     from haiku.rag.sources.base import FetchResult
 
-    supported_extensions = get_converter(session.config).supported_extensions
+    supported_extensions = set(
+        get_converter(session.config).supported_extensions
+    ) - set(MEDIA_EXTENSIONS)
     for child_uri, (name, data, content_type, content_hash) in new_attachments.items():
         if Path(name).suffix.lower() not in supported_extensions:
             logger.warning(
@@ -1151,10 +1294,9 @@ async def create_document_from_source(
 
     ``force`` skips both freshness checks, for the document and its PDF
     attachments, so an unchanged source is re-converted, re-chunked and
-    re-embedded into the existing document. Internal: rebuild uses it to refresh
-    a document in place instead of deleting and recreating it, passes
-    ``written_ids`` to collect the id of every document written, and
-    ``notify_hooks=False`` to fire no post-commit hooks.
+    re-embedded into the existing document. Rebuild also passes ``written_ids``
+    to collect the id of every document written, and ``notify_hooks=False`` to
+    fire no post-commit hooks.
 
     If ``uri`` is provided, it overrides the URI auto-derived from the source
     (which is normally ``file://`` for local files or the URL for remote
@@ -1419,13 +1561,15 @@ async def update_document(
 
     Updates specified fields. When content or docling_document is provided, the
     document is rechunked and re-embedded. Updates to only metadata or title
-    skip rechunking for efficiency. A new docling_document replaces the stored
-    original with ``original``, and new content without chunks clears it.
+    skip rechunking for efficiency. A new docling_document stores
+    ``original`` when given. Without it, as for new content without chunks,
+    the stored original stays while the new structure names it and is the
+    same kind of document, and is cleared otherwise.
 
     Raises:
         ValueError: If document not found, if both content and
             docling_document are provided, or if original is neither a PDF
-            nor an image.
+            nor an image nor a recording's file named by docling_document.
     """
 
     if content is not None and docling_document is not None:
@@ -1435,7 +1579,7 @@ async def update_document(
         )
     if original is not None and docling_document is None:
         raise ValueError("original needs the docling_document converted from it.")
-    await _check_original(original)
+    await _check_original(original, docling_document)
 
     async def read_and_apply(include_blobs: bool = False) -> Document:
         doc = await session.document_repository.get_by_id(

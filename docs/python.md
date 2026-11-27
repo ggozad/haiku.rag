@@ -82,6 +82,8 @@ doc = await client.create_document_from_source(
 )
 ```
 
+A source with unchanged bytes returns its stored document. `force=True` converts it again into the same document.
+
 Each file in a PDF's `/EmbeddedFiles` table is ingested as its own Document, linked to the wrapper through `metadata.parent_uri`. See [PDF Embedded Attachments](configuration/processing.md#pdf-embedded-attachments).
 
 ### Retrieving documents
@@ -353,6 +355,27 @@ results = await client.search(
 
 Image queries return picture chunks (synthetic per-figure chunks emitted at ingest under a multimodal embedder) and any text chunks whose vectors are near the image vector in the shared embedding space. Calling `client.search(bytes)` against a text-only embedder raises a `ValueError`.
 
+### Searching recordings
+
+`content` restricts a search to document chunks (`"documents"`), a recording's speech (`"speech"`) or its frames (`"frames"`). A `TimeWindow` restricts it to one recording, and to the chunks overlapping `start` to `end` seconds when either is set. `list_recordings` lists each recording with its title, URI, the time its last segment or frame ends (`last_time`), and whether it has frames.
+
+```python
+from haiku.rag.store.models.chunk import TimeWindow
+
+recordings = await client.list_recordings()
+talk = recordings[0]
+
+said = await client.search("why the budget was cut", content="speech")
+
+window = TimeWindow(talk.document_id, start=60.0, end=180.0)
+seen = await client.search("a man opening a red door", content="frames", window=window)
+around = await client.expand_context(
+    await client.search("budget", content="speech", window=window), window=window
+)
+```
+
+Frames have no text, so a frame search is vector-only, whatever `search_type` says, and skips a text-only reranker. A reranker with `reranking.multimodal: true` still orders frames. `expand_context` with a window expands that recording's results only over the items overlapping it, keeps only their frames inside it, and drops a result with nothing inside it. A segment keeps its own times, so text at the window's edges can run past it by up to one segment.
+
 ### Expanding search context
 
 Expand search results with surrounding content from the document:
@@ -458,11 +481,13 @@ doc = await client.import_document(
 )
 ```
 
-The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument. `original` is the PDF or image file the document was converted from, which visual grounding renders. Bytes that open neither as an image nor as a PDF raise `ValueError`. haiku.rag does not check that the file matches the document. `DocumentImport` and `update_document(docling_document=...)` take it too. Without it the document has no stored original. A new `docling_document`, or new `content` without `chunks`, replaces the structure and clears a stored one.
+The `docling_document` provides metadata for visual grounding, page numbers, and section headings. Content is automatically extracted from the DoclingDocument. `original` is the file the document was converted from. A PDF or an image is what visual grounding renders: bytes that open as neither raise `ValueError`, and haiku.rag does not check that the file matches the document. A recording's file, with `original_subtitles` the subtitles converted beside it, must be the file the document's `origin.binary_hash` names, under an `origin.filename` with an audio or video suffix, or it raises `ValueError` (see [Stored recordings](configuration/processing.md#stored-recordings)). `DocumentImport` takes both, and `update_document(docling_document=...)` takes `original`. Without it the document has no stored original. A new `docling_document`, or new `content` without `chunks`, replaces the structure. A stored original stays when the new structure's `origin.binary_hash` names it and the structure is of the same kind, and is otherwise cleared with a warning.
+
+Chunks are stored with the metadata you give them. `client.chunk(docling_doc)` fills `page_numbers` and, for a recording, `time_range` (start and end in seconds), and caller-built chunks carry them only if you set them. The document's items always get their pages and times from the `docling_document`.
 
 ### Batch import
 
-Each `create_document*` / `import_document` call writes new versions of the `documents`, `document_meta`, `chunks`, and `document_items` tables. Ingesting many documents in a loop therefore creates a table version per document. Use `import_documents()` to write the whole batch in a single version per table:
+Each `create_document*` / `import_document` call writes new versions of the `documents`, `document_meta`, `chunks`, and `document_items` tables. Ingesting many documents in a loop therefore creates a table version per document. Use `import_documents()` to write the whole batch in a single version of `chunks` and `document_items`, and one version of `documents` and `document_meta` per 64 MB of originals:
 
 ```python
 from haiku.rag.client import DocumentImport

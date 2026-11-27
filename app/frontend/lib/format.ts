@@ -42,3 +42,18 @@ export function formatBytes(n: number): string {
 	}
 	return `${value.toFixed(1)} ${units[unit]}`;
 }
+
+// `HH:MM:SS-HH:MM:SS`, or one time when both ends fall in the same second.
+export function formatTimeRange(
+	range: [number, number] | null | undefined,
+): string | null {
+	if (!range) return null;
+	const clock = (seconds: number) => {
+		const whole = Math.floor(seconds);
+		return [whole / 3600, (whole % 3600) / 60, whole % 60]
+			.map((n) => String(Math.floor(n)).padStart(2, "0"))
+			.join(":");
+	};
+	const [start, end] = range.map(clock);
+	return start === end ? start : `${start}-${end}`;
+}

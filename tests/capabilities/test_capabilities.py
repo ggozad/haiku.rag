@@ -62,7 +62,15 @@ def test_rag_capability_api(temp_db_path):
     assert isinstance(capability, RAGCapability)
     assert capability.id == "haiku-rag"
     assert capability.defer_loading is False
-    assert set(capability.get_toolset().tools) == {"search", "execute_code", "cite"}
+    assert set(capability.get_toolset().tools) == {
+        "search",
+        "execute_code",
+        "cite",
+        "search_audio",
+        "search_video",
+        "view",
+        "list_recordings",
+    }
     toolset = capability.get_toolset()
     assert toolset.max_retries == 3
     assert toolset.sequential is True
@@ -574,8 +582,13 @@ async def test_records_new_sandbox_search_results(temp_db_path):
     new = SearchResult(content="new", score=1, chunk_id="chunk-2")
     capability.state = RAGState(searches={"_sandbox": [existing]})
     sandbox = AsyncMock()
-    sandbox.execute.return_value = SandboxResult(stdout="done", stderr="", success=True)
-    sandbox.search_results = (existing, new)
+    sandbox.search_results = (existing,)
+
+    async def execute(code: str) -> SandboxResult:
+        sandbox.search_results = (existing, new)
+        return SandboxResult(stdout="done", stderr="", success=True)
+
+    sandbox.execute.side_effect = execute
     capability.sandbox = cast(Sandbox, sandbox)
 
     result = await capability._execute_code("print('done')")

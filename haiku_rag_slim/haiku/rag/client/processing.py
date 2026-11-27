@@ -9,8 +9,12 @@ from urllib.parse import urlparse
 from haiku.rag.client.exceptions import UnsupportedSourceError
 from haiku.rag.config import AppConfig
 from haiku.rag.converters import get_converter
-from haiku.rag.store.models.chunk import Chunk
-from haiku.rag.store.models.document_item import _picture_description_text
+from haiku.rag.converters.base import MEDIA_EXTENSIONS, is_recording
+from haiku.rag.store.models.chunk import Chunk, ChunkMetadata
+from haiku.rag.store.models.document_item import (
+    _picture_description_text,
+    time_range,
+)
 from haiku.rag.telemetry import logfire
 from haiku.rag.uri import is_local_uri, uri_to_path
 
@@ -38,7 +42,7 @@ def _warn_if_descriptions_missing(
     """
     if config.processing.pictures != "description":
         return
-    if not doc.pictures:
+    if not doc.pictures or is_recording(doc):
         return
     described = sum(1 for p in doc.pictures if _picture_description_text(p))
     if described == 0:
@@ -113,7 +117,11 @@ async def convert(
             return await convert_pdf_with_splitting(
                 converter, file_path, effective_uri, config.processing.split_pages
             )
-        return await converter.convert_file(file_path, source_uri=effective_uri)
+        if file_path.suffix.lower() not in MEDIA_EXTENSIONS:
+            return await converter.convert_file(file_path, source_uri=effective_uri)
+        from haiku.rag.converters.media import MediaConverter
+
+        return await MediaConverter(config).convert_file(file_path)
 
     if isinstance(source, Path):
         if not source.exists():
@@ -231,23 +239,36 @@ async def chunk(
     path where the docling is loaded from the stored blob.
     """
     from haiku.rag.chunkers import get_chunker
+    from haiku.rag.chunkers.transcript import TranscriptChunker
 
-    chunker = get_chunker(config)
-    text_chunks = await chunker.chunk(docling_document)
+    if is_recording(docling_document):
+        # A transcript is one text item, which the hierarchical chunker never splits.
+        hybrid = config.processing.model_copy(update={"chunker_type": "hybrid"})
+        chunker = TranscriptChunker(
+            get_chunker(config.model_copy(update={"processing": hybrid}))
+        )
+    else:
+        chunker = get_chunker(config)
+    chunks = await chunker.chunk(docling_document)
 
-    if not embedder.supports_images:
-        for i, c in enumerate(text_chunks):
+    if embedder.supports_images:
+        chunks = await asyncio.to_thread(
+            _merge_picture_chunks,
+            docling_document,
+            chunks,
+            document_id,
+            existing_picture_data,
+            config.processing.min_picture_size,
+        )
+    else:
+        for i, c in enumerate(chunks):
             c.order = i
-        return text_chunks
 
-    return await asyncio.to_thread(
-        _merge_picture_chunks,
-        docling_document,
-        text_chunks,
-        document_id,
-        existing_picture_data,
-        config.processing.min_picture_size,
-    )
+    for c in chunks:
+        meta = ChunkMetadata.model_validate(c.metadata)
+        if times := time_range(meta.resolve_doc_items(docling_document)):
+            c.metadata["time_range"] = list(times)
+    return chunks
 
 
 def _min_picture_side(picture: "PictureItem", data: bytes) -> float | None:
@@ -390,6 +411,18 @@ def get_extension_from_content_type_or_url(url: str, content_type: str) -> str:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
         "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+        "audio/mpeg": ".mp3",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+        "audio/mp4": ".m4a",
+        "audio/aac": ".aac",
+        "audio/ogg": ".ogg",
+        "audio/flac": ".flac",
+        "video/mp4": ".mp4",
+        "video/quicktime": ".mov",
+        "video/x-matroska": ".mkv",
+        "video/webm": ".webm",
+        "video/x-msvideo": ".avi",
     }
 
     for ct, ext in content_type_map.items():

@@ -1,10 +1,15 @@
 import json
 from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from haiku.rag.store.engine import Store
 from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.models.recording import DECODED_FRAME_PREFIX
 from haiku.rag.store.schema import DocumentItemRecord
 from haiku.rag.utils.sql import escape_sql_string
+
+if TYPE_CHECKING:
+    from haiku.rag.store.models.chunk import TimeWindow
 
 # Per-item metadata columns. The payload column ``picture_data`` is fetched
 # explicitly via ``get_picture_bytes`` / ``get_pictures_for_chunk`` /
@@ -18,6 +23,8 @@ _METADATA_COLUMNS = [
     "page_numbers",
     "heading_level",
     "tree_depth",
+    "start_time",
+    "end_time",
 ]
 
 
@@ -37,6 +44,8 @@ class DocumentItemRepository:
             page_numbers=json.loads(row.get("page_numbers", "[]")),
             heading_level=row.get("heading_level", 0) or 0,
             tree_depth=row.get("tree_depth", 0) or 0,
+            start_time=row.get("start_time"),
+            end_time=row.get("end_time"),
         )
 
     def _to_record(self, document_id: str, item: DocumentItem) -> DocumentItemRecord:
@@ -50,6 +59,8 @@ class DocumentItemRepository:
             picture_data=item.picture_data,
             heading_level=item.heading_level,
             tree_depth=item.tree_depth,
+            start_time=item.start_time,
+            end_time=item.end_time,
         )
 
     async def create_items(self, document_id: str, items: list[DocumentItem]) -> None:
@@ -108,6 +119,18 @@ class DocumentItemRepository:
         items = [self._record_to_item(row) for row in rows]
         items.sort(key=lambda x: x.position)
         return items
+
+    async def get_items_in_window(self, window: "TimeWindow") -> list[DocumentItem]:
+        """A recording's items whose times overlap `window`, sorted by position."""
+        rows = await (
+            self.store.document_items_table.query()
+            .select(_METADATA_COLUMNS)
+            .where(window.where())
+            .to_list()
+        )
+        return sorted(
+            (self._record_to_item(row) for row in rows), key=lambda x: x.position
+        )
 
     async def resolve_refs_grouped(
         self, refs_by_document: "Mapping[str, Sequence[str]]"
@@ -183,7 +206,10 @@ class DocumentItemRepository:
         await self.store.document_items_table.delete(f"document_id IN ({ids})")
 
     async def get_picture_bytes(self, document_id: str, self_ref: str) -> bytes | None:
-        """Fetch raw picture bytes for a single picture item by self_ref."""
+        """Fetch raw picture bytes for a single picture item by self_ref. A
+        decoded frame's ref is decoded again from the stored recording."""
+        if self_ref.startswith(DECODED_FRAME_PREFIX):
+            return await self._decoded_frame(document_id, self_ref)
         safe_id = escape_sql_string(document_id)
         safe_ref = escape_sql_string(self_ref)
         rows = await (
@@ -196,6 +222,25 @@ class DocumentItemRepository:
         if not rows:
             return None
         return rows[0].get("picture_data")
+
+    async def _decoded_frame(self, document_id: str, ref: str) -> bytes | None:
+        from haiku.rag.converters.media import (
+            decode_frames,
+            decode_width,
+            decoded_frame_time,
+        )
+        from haiku.rag.store.repositories.document import DocumentRepository
+
+        at = decoded_frame_time(ref)
+        if at is None:
+            return None
+        stored = await DocumentRepository(self.store).open_recording(document_id)
+        if stored is None:
+            return None
+        [(_, frame)] = await decode_frames(
+            stored, lambda _: [at], decode_width(self.store._config)
+        )
+        return frame
 
     async def get_all_picture_data(self, document_id: str) -> dict[str, bytes]:
         """Snapshot every picture row's bytes for a single document.
@@ -324,6 +369,35 @@ class DocumentItemRepository:
             if text:
                 texts.setdefault(row["document_id"], {})[row["self_ref"]] = text
         return blobs, texts
+
+    async def get_frame_times_grouped(
+        self, ranges_by_document: Mapping[str, Sequence[tuple[float, float]]]
+    ) -> dict[str, dict[str, float]]:
+        """`{document_id: {self_ref: start_time}}` of the pictures starting in
+        any of each document's `[start, end)` ranges, in one query. Every
+        document needs at least one range."""
+        clauses = []
+        for document_id, ranges in ranges_by_document.items():
+            within = " OR ".join(
+                f"(start_time >= {float(start)} AND start_time < {float(end)})"
+                for start, end in ranges
+            )
+            clauses.append(
+                f"(document_id = '{escape_sql_string(document_id)}' "
+                f"AND label = 'picture' AND ({within}))"
+            )
+        rows = await (
+            self.store.document_items_table.query()
+            .select(["document_id", "self_ref", "start_time"])
+            .where(" OR ".join(clauses))
+            .to_list()
+        )
+        frames: dict[str, dict[str, float]] = {}
+        for row in rows:
+            frames.setdefault(row["document_id"], {})[row["self_ref"]] = row[
+                "start_time"
+            ]
+        return frames
 
     async def get_caption_picture_refs_grouped(
         self, refs_by_document: "Mapping[str, list[str]]"

@@ -233,7 +233,7 @@ processing:
       max_tokens: 200
 ```
 
-The model is called at `/v1/chat/completions` under its `base_url`, which may be written with or without `/v1`. Without a `base_url`, only `ollama` and `openai` are accepted. Writing a `model` block replaces the default `thinking: false`, so set it explicitly on a model that thinks by default. `timeout` and `max_tokens` bound each call during conversion. `rebuild --descriptions` runs the same model through Pydantic AI and does not apply them.
+The model is called at `/v1/chat/completions` under its `base_url`, which may be written with or without `/v1`. Without a `base_url`, only `ollama` and `openai` are accepted. Writing a `model` block replaces the default `thinking: false`, so set it explicitly on a model that thinks by default. `timeout` and `max_tokens` bound each call during conversion. `rebuild --descriptions` and video frame descriptions run the same model through Pydantic AI and do not apply them.
 
 **Switching modes on an existing database** doesn't require reingesting when the bytes are already stored:
 
@@ -307,9 +307,148 @@ Only `docling-local` reads this. A docling-serve conversion is bounded by
   to be restarted. HTML and Markdown get a converter per call, so later
   conversions still run.
 
+### Audio and video
+
+```yaml
+processing:
+  media:
+    asr:
+      base_url: http://localhost:8000/v1     # OpenAI-compatible server
+      model: openai/whisper-large-v3-turbo
+      api_key: null
+      language: null                          # detected when unset
+      timeout: 600
+      extra_body: null                        # extra form fields, e.g. {vad_filter: false}
+    frames:
+      mode: fixed_interval                    # fixed_interval | scene_change
+      interval_seconds: 10
+      max_width: 1280                         # null keeps the video's width
+```
+
+Without `media`, audio and video files are not supported, and a source skips
+them. With it, `.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg` and `.flac` files are
+converted by haiku.rag itself, with either converter: docling and docling-serve
+never see a recording. `.mp4`, `.avi`, `.mov`, `.mkv` and `.webm` videos also
+need a multimodal embedder (`embeddings.model.multimodal: true`), since their
+frames are searched by their image. Under a text embedder they are not
+supported, and a source skips them.
+Conversion needs `ffmpeg` and `ffprobe` on `PATH`, and `haiku.rag-slim` needs
+the `media` extra. A transcript is a series of
+text items, each with its start and end time. Search results and citations
+carry the time range of their items.
+
+`asr` is a transcription server answering `/audio/transcriptions` with
+`response_format=verbose_json`, such as vLLM serving a Whisper model. The audio
+is cut into pieces of at most 29.5 s, within Whisper's 30 s window, each cut at the longest
+silence in the 10 s before it, and each piece goes to the server as 16 kHz mono
+MP3, up to four at a time. Each piece is decoded on its own, so a repetition
+loop ends with its piece. `timeout` bounds one request.
+
+`extra_body` adds form fields to every request. speaches filters the audio
+through its own voice activity detection by default (`vad_filter`), which drops
+speech over music. `extra_body: {vad_filter: false}` turns it off.
+
+haiku.rag asks for word and segment times
+(`timestamp_granularities[]=word,segment`). When the server returns word times,
+each sentence becomes one text item, timed from its first word to its last. A
+sentence ends at `.`, `?`, `!` or `…` (or their Chinese forms), and one still
+running after 10 s ends at its next pause of half a second or at the end of the
+server's segment, whichever comes first. A sentence never
+runs from one piece into the next. When the server returns no word times, each
+segment of its answer becomes one text item. vLLM does not return word times,
+and its segments can run to 30 s, so a time in a search result covers a
+longer stretch. speaches, faster-whisper's server, and OpenAI's `whisper-1`
+return them.
+
+Whisper writes text over music, noise and silence: "Thank you." across a
+30 s window, one line repeated through a song. This filter reads the server's
+segments, before any sentence is built. A segment is dropped when Silero
+VAD finds almost no speech within a second of it and its text repeats three
+times in the recording, repeats itself (Whisper's compression ratio above 2.4)
+or spreads a few words over 10 s or more. Silero
+misses speech over a music bed, so a segment with little detected speech and
+none of these shapes is kept. The VAD model (`onnx-community/silero-vad`, 2 MB) is
+downloaded on first use and by `download-models`.
+
+A WebVTT or SRT file beside a local recording, with the same stem
+(`talk.mp4` and `talk.vtt`), is its transcript, and the server is not called.
+Its cues are cut into sentences as word times are, the VAD filter does not
+run, and markup in cue text is removed. A recording fetched from a URL or
+object storage is always transcribed. `.vtt` and `.srt` files are not ingested
+as documents.
+A recording's revision and hash cover the recording alone, so a subtitle file
+added or changed later reaches its transcript only through
+`haiku-rag add-src --force`.
+
+A video also yields frames as pictures, each with its time. `fixed_interval`
+takes the frame shown every `interval_seconds` from time zero, in one ffmpeg
+pass. `scene_change` finds scenes with docling's scene-change detector and takes
+the frame in the middle of each. `pictures: none` turns sampling off. A video
+without an audio track has frames only.
+
+Frames are stored as JPEG, at most `max_width` pixels wide. The picture
+description model, the embedder, the reranker and the chat model all receive
+that image. A new width reaches a stored recording when it is ingested again
+with `force` (`add-src --force`).
+
+A search result from a recording shows one line per text item, each starting
+with its time, such as `[00:00:11] Introducing …`, and each frame it attaches
+as a `[00:00:12] (frame)` line among them. The times count against
+`search.max_context_chars`. A search result from a transcript carries up to four of the frames shown while
+it is spoken, spread over its time range, and a citation of it records them.
+Each frame is also its own chunk, found by its image.
+
+Frames are never described, whatever `pictures` says, and `rebuild
+--descriptions` leaves recordings alone.
+
+#### Stored recordings
+
+With `storage.store_originals` (default true), an ingested audio or video file
+is stored verbatim as its document's original, in the `documents` table, and the
+subtitles read beside it with it. It takes the file's own size, on top of the
+frames. A recording is read by byte range only: `get_original` and the visual
+grounding paths return none for one. An existing database gains the subtitles
+column with `haiku-rag migrate`.
+
+`view` decodes its frames from a stored video file: eight at even times across
+the part of the window inside the recording, fewer in a window only a few
+milliseconds wide, at `max_width` (1280 when `processing.media` is unset). Each joins the
+result of the chunk whose time holds it, or of the chunk nearest in time. When decoding fails or takes more
+than 60 s, `view` shows the frames sampled at ingest and says why. A cited
+decoded frame is decoded again when it is shown, so a process showing such a
+citation needs `ffmpeg`: the published slim image and the web app's backend
+image include it. The MCP server has no `view` and never cites a decoded frame.
+A full `rebuild` converts a recording again from its stored file and subtitles,
+and re-chunks a recording as stored when its file or subtitles change while it
+converts. `rebuild --descriptions` re-chunks and re-embeds recordings, as
+`--rechunk` does, and describes nothing in them.
+
+`import_document(original=, original_subtitles=)` and `DocumentImport` store
+the file of an imported recording and its subtitles. The import is refused
+unless the document is a recording converted from those bytes (its
+`origin.binary_hash`) and its `origin.filename` has an audio or video suffix. A
+source ingest whose `after_convert` hook returns a structure that fails the same
+check stores the document without its file and logs a warning. A write that
+replaces the structure keeps the stored file while the new structure names it
+(see [Storage](storage.md)). A recording without a stored file, an audio
+recording included, shows the frames sampled at ingest, and a full `rebuild`
+re-chunks it. `rebuild --originals` does not store recordings. A recording on
+LanceDB Cloud is stored the way any original is there, a path that is
+untested.
+
+`conversion_timeout` bounds the conversion of a recording, and a recording
+longer than a few minutes may need a larger one. A conversion that times out
+stops its ffmpeg processes, scene detection and transcription requests, and the process converts the next document normally.
+
 ### Chunking strategies
 
-`chunker_type` picks the docling chunker:
+`chunker_type` picks the docling chunker for documents. An audio or video
+transcript is joined into one text and split by the hybrid chunker of the
+configured `chunker` whatever `chunker_type` names, so chunks end between
+sentences wherever the transcript punctuates them. A chunk spanning more
+than 30 seconds is split between items into pieces of at most 30 seconds, and
+an item longer than that is a chunk of its own. A chunk references the text
+items covered by its text, and takes its time from them.
 
 - `hybrid` (default): docling's `HybridChunker`. Starts from the document's structure, splits items longer than `chunk_size` tokens of `chunking_tokenizer`, and with `chunking_merge_peers` merges undersized neighbours under the same headings.
 - `hierarchical`: docling's `HierarchicalChunker`. One chunk per document item (paragraph, list, table), with no token limit, so `chunk_size` does not apply.
@@ -318,10 +457,10 @@ Only `docling-local` reads this. A docling-serve conversion is bounded by
 
 ```yaml
 processing:
-  chunk_size: 256  # Maximum tokens per chunk
+  chunk_size: 256                # Maximum tokens per chunk
 ```
 
-`chunk_size` applies to the `hybrid` chunker. How much surrounding content a search result carries is set in `search`, see [Search settings](qa.md#search-settings).
+`chunk_size` applies to the `hybrid` chunker and to transcripts. How much surrounding content a search result carries is set in `search`, see [Search settings](qa.md#search-settings).
 
 ### Table serialization
 
@@ -386,7 +525,7 @@ Behavior:
 - `delete_document(child_id)` raises `AttachmentDeletionError` while the parent is stored. Delete the parent, or remove the file from the PDF and re-ingest it.
 - `parent_uri` is set by attachment extraction only. It is stripped from caller metadata and kept across `update_document`.
 - Nested attachments (a PDF whose attachment is itself a PDF with attachments) recurse up to 3 levels. Deeper chains log a warning and skip.
-- Attachments whose extension or content type the converter does not support log a warning and are skipped without aborting the rest of the set.
+- Attachments whose extension or content type the converter does not support log a warning and are skipped without aborting the rest of the set. Audio and video attachments are skipped the same way, also with `processing.media` set.
 - An attachment refused by `docling-local`, such as a MathML `.xml` file, or with an undetectable text encoding, logs a warning and is skipped the same way.
 - Under `docling-serve`, an attachment that fails to convert fails its PDF, a MathML `.xml` file included. docling-serve reports a refused file with the same error as a failure of the server. An undetectable text encoding is still skipped.
 

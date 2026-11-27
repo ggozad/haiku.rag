@@ -9,7 +9,7 @@ from textual.widgets import Input, ListItem, ListView, Static
 from haiku.rag.client import HaikuRAG
 from haiku.rag.inspector.widgets.detail_view import DetailView
 from haiku.rag.store.models import Chunk, SearchResult
-from haiku.rag.utils.formatting import truncated
+from haiku.rag.utils.formatting import format_time_range, truncated
 
 
 class SearchModal(Screen):
@@ -120,6 +120,8 @@ class SearchModal(Screen):
                 if result.page_numbers:
                     pages = ", ".join(str(p) for p in result.page_numbers[:3])
                     page_info = f" (p.{pages})"
+                if result.time_range:
+                    page_info += f" ({format_time_range(result.time_range)})"
                 item = ListItem(Static(f"[{score_str}]{page_info} {first_line}"))
                 await list_view.append(item)
 

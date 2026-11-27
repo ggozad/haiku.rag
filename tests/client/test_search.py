@@ -323,7 +323,13 @@ async def test_an_image_query_searches_vectors_only_through_embed_image(
     received_kwargs: dict = {}
 
     async def fake_chunk_search(
-        query="", limit=5, search_type="hybrid", filter=None, query_vector=None
+        query="",
+        limit=5,
+        search_type="hybrid",
+        filter=None,
+        query_vector=None,
+        content=None,
+        window=None,
     ):
         received_kwargs.update(
             {
@@ -386,7 +392,9 @@ async def test_reranker_built_once_across_searches(temp_db_path, monkeypatch):
 
     monkeypatch.setattr("haiku.rag.client.client.get_reranker", fake_get_reranker)
 
-    async def fake_chunk_search(query, limit, search_type, filter, query_vector):
+    async def fake_chunk_search(
+        query, limit, search_type, filter, query_vector, content, window
+    ):
         return [(Chunk(content="x", metadata={}), 0.5)]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:
@@ -433,7 +441,9 @@ async def test_search_attaches_picture_bytes_for_multimodal_reranker(
         metadata={"doc_item_refs": ["#/pictures/1"], "labels": ["picture"]},
     )
 
-    async def fake_chunk_search(query, limit, search_type, filter, query_vector):
+    async def fake_chunk_search(
+        query, limit, search_type, filter, query_vector, content, window
+    ):
         return [(text_chunk, 0.9), (picture_chunk, 0.8), (detached_chunk, 0.7)]
 
     async with HaikuRAG(temp_db_path, create=True) as rag:

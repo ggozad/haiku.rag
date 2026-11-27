@@ -10,7 +10,13 @@ if TYPE_CHECKING:
 from lancedb.rerankers import RRFReranker
 
 from haiku.rag.store.engine import Store
-from haiku.rag.store.models.chunk import Chunk, SearchType
+from haiku.rag.store.models.chunk import (
+    Chunk,
+    Content,
+    SearchType,
+    TimeWindow,
+    chunk_media,
+)
 from haiku.rag.store.schema import ensure_indexes, query_to_pydantic
 from haiku.rag.utils.sql import escape_sql_string
 
@@ -77,6 +83,7 @@ class ChunkRepository:
     def _to_record(self, chunk: Chunk, chunk_id: str):
         assert chunk.document_id is not None
         assert chunk.embedding is not None
+        media, start_time, end_time = chunk_media(chunk.metadata)
         return self.store.ChunkRecord(
             id=chunk_id,
             document_id=chunk.document_id,
@@ -86,6 +93,9 @@ class ChunkRepository:
                 {k: v for k, v in chunk.metadata.items() if k != "order"}
             ),
             order=int(chunk.order),
+            media=media,
+            start_time=start_time,
+            end_time=end_time,
             vector=chunk.embedding,
         )
 
@@ -234,6 +244,19 @@ class ChunkRepository:
             self.store.chunks_table, "chunks", self.store._config.search.fts_language
         )
 
+    async def get_time_spans(self, document_id: str) -> dict[str, tuple[float, float]]:
+        """The time span of every timed chunk of a document, by chunk id."""
+        rows = (
+            await self.store.chunks_table.query()
+            .where(
+                f"document_id = '{escape_sql_string(document_id)}' "
+                "AND start_time IS NOT NULL AND end_time IS NOT NULL"
+            )
+            .select(["id", "start_time", "end_time"])
+            .to_list()
+        )
+        return {row["id"]: (row["start_time"], row["end_time"]) for row in rows}
+
     async def delete_by_document_id(self, document_id: str) -> bool:
         """Delete all chunks for a document."""
         self.store._assert_writable()
@@ -266,6 +289,8 @@ class ChunkRepository:
         filter: str | None = None,
         query_vector: list[float] | None = None,
         with_vectors: bool = False,
+        content: Content | None = None,
+        window: TimeWindow | None = None,
     ) -> list[tuple[Chunk, float]]:
         """Search for relevant chunks using the specified search method.
 
@@ -276,6 +301,8 @@ class ChunkRepository:
             filter: Optional SQL WHERE clause to filter documents before searching chunks.
             query_vector: Pre-computed query embedding; when supplied, ``query``
                 is not embedded.
+            content: Only document chunks, speech or frames. Everything when None.
+            window: Only chunks of one recording, overlapping its times.
 
         Returns:
             List of (chunk, score) tuples ordered by relevance.
@@ -283,23 +310,15 @@ class ChunkRepository:
         if query_vector is None and not query.strip():
             return []
 
-        chunk_filter: str | None = None
+        clauses = _content_clauses(content, window)
         if filter:
-            # Translate the document-level filter into a chunk-level
-            # document_id IN (...) clause so LanceDB can combine it with
-            # limit. The previous two-step pattern (materialize top-N,
-            # filter in pandas, head(limit)) silently under-returned
-            # whenever the top-N window lacked `limit` matching chunks.
-            docs_df = await (
-                self.store.document_meta_table.query()
-                .select(["id"])
-                .where(filter)
-                .to_pandas()
-            )
-            if docs_df.empty:
+            # The document-level filter becomes a chunk-level clause, so
+            # LanceDB applies it before `limit`.
+            ids = await self._document_ids(filter)
+            if not ids:
                 return []
-            id_list = ", ".join(f"'{escape_sql_string(d)}'" for d in docs_df["id"])
-            chunk_filter = f"document_id IN ({id_list})"
+            clauses.append(_document_id_clause(ids))
+        chunk_filter = " AND ".join(clauses) if clauses else None
 
         if search_type != "vector" and query.strip():
             await self._warn_if_fts_uncovered()
@@ -332,6 +351,42 @@ class ChunkRepository:
             results = results.where(chunk_filter)
         results = results.limit(limit)
         return await self._process_search_results(results, with_vectors=with_vectors)
+
+    async def _document_ids(self, filter: str) -> list[str]:
+        """The ids of the documents matching a document-level filter."""
+        rows = await (
+            self.store.document_meta_table.query()
+            .select(["id"])
+            .where(filter)
+            .to_list()
+        )
+        return [row["id"] for row in rows]
+
+    async def recording_spans(
+        self, filter: str | None = None
+    ) -> dict[str, tuple[float, bool]]:
+        """Each recording's last segment or frame time and whether it has
+        frames, by document id."""
+        where = "media IS NOT NULL"
+        if filter:
+            ids = await self._document_ids(filter)
+            if not ids:
+                return {}
+            where = f"{where} AND {_document_id_clause(ids)}"
+        rows = await (
+            self.store.chunks_table.query()
+            .select(["document_id", "media", "end_time"])
+            .where(where)
+            .to_list()
+        )
+        spans: dict[str, tuple[float, bool]] = {}
+        for row in rows:
+            last, frames = spans.get(row["document_id"], (0.0, False))
+            spans[row["document_id"]] = (
+                max(last, row["end_time"]),
+                frames or row["media"] == "frame",
+            )
+        return spans
 
     async def get_by_document_id(
         self,
@@ -513,3 +568,22 @@ class ChunkRepository:
             chunks_with_scores.append((chunk, score))
 
         return chunks_with_scores
+
+
+def _document_id_clause(ids: list[str]) -> str:
+    return f"document_id IN ({', '.join(f"'{escape_sql_string(i)}'" for i in ids)})"
+
+
+_CONTENT_CLAUSES = {
+    "documents": "media IS NULL",
+    "speech": "media = 'speech'",
+    "frames": "media = 'frame'",
+}
+
+
+def _content_clauses(content: Content | None, window: TimeWindow | None) -> list[str]:
+    """The chunk-level clauses selecting `content` inside `window`."""
+    clauses = [] if content is None else [_CONTENT_CLAUSES[content]]
+    if window is not None:
+        clauses.append(window.where())
+    return clauses

@@ -37,7 +37,12 @@ from collections.abc import Set as AbstractSet
 from typing import Any
 
 from haiku.rag.store.models.chunk import SearchResult
-from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.models.document_item import (
+    DocumentItem,
+    merge_time_ranges,
+    spread_frames,
+)
+from haiku.rag.utils.formatting import format_time_range
 
 _NOISE_LABELS = {"page_header", "page_footer", "document_index"}
 _SECTION_BOUNDARY_LABELS = {"section_header", "title"}
@@ -118,18 +123,32 @@ def _clip_window(
     """
     if max_chars <= 0:
         return (0, 0)
-    evidence_start, evidence_len = -1, 0
+    return _window_around(
+        content, _locate_evidence(content, results, max_chars), max_chars
+    )
+
+
+def _locate_evidence(
+    content: str, results: list[SearchResult], max_chars: int
+) -> tuple[int, int] | None:
+    """Start and length of the first locatable result's anchor in ``content``."""
     for result in results:
         for anchor in _evidence_anchors(result.content, max_chars):
             idx = content.find(anchor)
             if idx != -1:
-                evidence_start, evidence_len = idx, len(anchor)
-                break
-        if evidence_start != -1:
-            break
-    if evidence_start == -1:
+                return idx, len(anchor)
+    return None
+
+
+def _window_around(
+    content: str, evidence: tuple[int, int] | None, max_chars: int
+) -> tuple[int, int]:
+    """A ``max_chars``-wide window centered on ``evidence``, or a prefix without it."""
+    if max_chars <= 0:
+        return (0, 0)
+    if evidence is None:
         return (0, min(len(content), max_chars))
-    center = evidence_start + evidence_len // 2
+    center = evidence[0] + evidence[1] // 2
     start = max(0, center - max_chars // 2)
     end = min(len(content), start + max_chars)
     start = max(0, end - max_chars)
@@ -144,17 +163,20 @@ def _clip_to_budget(content: str, results: list[SearchResult], max_chars: int) -
 
 def _collect_meta(
     spans: list[tuple[int, int, DocumentItem]],
-) -> tuple[set[int], list[str], set[str]]:
-    """Union the page numbers, refs, and labels of the given item spans."""
+) -> tuple[set[int], list[str], set[str], tuple[float, float] | None]:
+    """Union the page numbers, refs, labels and time range of the given item spans."""
     pages: set[int] = set()
     refs: list[str] = []
     labels: set[str] = set()
+    times: list[tuple[float, float] | None] = []
     for _start, _end, item in spans:
         refs.append(item.self_ref)
         if item.label:
             labels.add(item.label)
         pages.update(item.page_numbers)
-    return pages, refs, labels
+        if item.start_time is not None and item.end_time is not None:
+            times.append((item.start_time, item.end_time))
+    return pages, refs, labels, merge_time_ranges(times)
 
 
 def _span_in_window(
@@ -297,6 +319,39 @@ def _add_input_pages_for_surviving_refs(
             pages.update(result.page_numbers)
 
 
+def _input_times_for_surviving_refs(
+    refs: list[str], original_results: list[SearchResult]
+) -> list[tuple[float, float] | None]:
+    """Time ranges of the inputs whose own refs all survived."""
+    surviving = set(refs)
+    return [
+        r.time_range
+        for r in original_results
+        if r.doc_item_refs and set(r.doc_item_refs) <= surviving
+    ]
+
+
+def _timed_lines(
+    spans: list[tuple[int, int, DocumentItem]],
+    content: str,
+    win_start: int,
+    win_end: int,
+    frames: dict[str, float],
+) -> str:
+    """One line per speech item of a recording, its text inside the clip window,
+    and one ``(frame)`` line per frame the result attaches, each starting with
+    its time, in time order and a frame before speech at the same time."""
+    lines: list[tuple[float, int, str]] = [(at, 0, "(frame)") for at in frames.values()]
+    for start, end, item in spans:
+        if item.start_time is None or start == end:
+            continue
+        text = content[max(start, win_start) : min(end, win_end)].strip()
+        if text:  # pragma: no branch - a window edge on a space leaves none
+            lines.append((item.start_time, 1, text))
+    lines.sort(key=lambda line: (line[0], line[1]))
+    return "\n".join(f"[{format_time_range((at, at))}] {text}" for at, _, text in lines)
+
+
 def _build_result(
     range_start: int,
     range_end: int,
@@ -304,8 +359,12 @@ def _build_result(
     pos_to_item: dict[int, DocumentItem],
     noise: AbstractSet[int],
     max_chars: int,
+    clipped: bool = False,
 ) -> SearchResult:
-    """Build one expanded result from the items in ``[range_start, range_end]``."""
+    """Build one expanded result from the items in ``[range_start, range_end]``.
+
+    `clipped` items were filtered to a time window, so their text stands even
+    when it is shorter than the chunk's."""
     content_parts: list[str] = []
     # Char span of each contributing item within the joined content, so
     # metadata can be narrowed to whatever survives a budget clip.
@@ -347,65 +406,141 @@ def _build_result(
             chunk_ids.append(r.chunk_id)
 
     joined = separator.join(content_parts)
+    # A recording's items carry times, and its text is rendered one timed line
+    # per item, which the chunk's own content cannot stand in for.
+    timed = any(item.start_time is not None for _, _, item in item_spans)
 
     # Expansion should never return less content than the original chunk.
     # This can happen when item texts are fragmented (e.g., docling splits
     # formatted HTML list items into many small text nodes); fall back to
     # the chunk's own content, described by the chunk's own metadata.
-    if len(joined) < len(first.content):
+    if not clipped and not timed and len(joined) < len(first.content):
         base_content, base_spans = first.content, None
     else:
         base_content, base_spans = joined, item_spans
 
-    if len(base_content) > max_chars:
-        # Clip to the budget, anchored on the primary (highest-scoring)
-        # chunk, and narrow metadata to whatever survives the window.
-        win_start, win_end = _clip_window(
-            base_content, [first, *original_results], max_chars
+    # Clipping finds the hit by its chunk's untimed text, so it runs on the
+    # untimed text, with a budget that leaves room for the times added after.
+    # The hit is located once: a smaller budget's shorter anchor could match an
+    # earlier repeat of its middle.
+    evidence = _locate_evidence(base_content, [first, *original_results], max_chars)
+
+    def assemble(budget: int, with_frames: bool = True):
+        if len(base_content) > budget:
+            # Clip to the budget, anchored on the primary (highest-scoring)
+            # chunk, and narrow metadata to whatever survives the window.
+            win_start, win_end = _window_around(base_content, evidence, budget)
+        else:
+            win_start, win_end = 0, len(base_content)
+        if base_spans is None:
+            kept_spans = []
+            pages, refs, labels, times = (
+                set(first.page_numbers),
+                list(first.doc_item_refs),
+                set(first.labels),
+                first.time_range,
+            )
+        else:
+            kept_spans = [
+                s for s in base_spans if _span_in_window(s, win_start, win_end)
+            ]
+            pages, refs, labels, times = _collect_meta(kept_spans)
+
+        _add_input_pages_for_surviving_refs(pages, refs, original_results)
+        if base_spans is not None:
+            times = merge_time_ranges(
+                [times, *_input_times_for_surviving_refs(refs, original_results)]
+            )
+
+        # Carry image_data and picture_captions from the originally retrieved
+        # chunks, but only for constituents whose refs survive the window — a
+        # chunk clipped out of the budget must not still ship its image to the
+        # model. Pictures swept in by section expansion are referenced in
+        # ``refs`` but their bytes are never re-fetched, so the multimodal
+        # payload stays bounded to what was actually retrieved and shown.
+        surviving_refs = set(refs)
+        merged_image_data: dict[str, str] = {}
+        merged_captions: dict[str, str] = {}
+        merged_times: dict[str, float] = {}
+        merged_annotations: dict[str, None] = {}
+        for r in original_results:
+            if r.doc_item_refs and not surviving_refs.intersection(r.doc_item_refs):
+                continue
+            if r.image_data:
+                merged_image_data.update(r.image_data)
+            if r.picture_captions:
+                merged_captions.update(r.picture_captions)
+            merged_times.update(r.picture_times)
+            if r.annotations:
+                merged_annotations.update(dict.fromkeys(r.annotations))
+
+        if timed:
+            # A recording shows the frames inside the time its kept items span,
+            # each as an image and a marker line, or none of them.
+            spanned = merge_time_ranges(
+                (item.start_time, item.end_time)
+                for _, _, item in kept_spans
+                if item.start_time is not None and item.end_time is not None
+            )
+            shown = {
+                ref
+                for ref, at in merged_times.items()
+                if with_frames and spanned and spanned[0] <= at <= spanned[1]
+            }
+            for ref in set(merged_times) - shown:
+                merged_image_data.pop(ref, None)
+                merged_captions.pop(ref, None)
+                del merged_times[ref]
+        kept_frames = spread_frames(merged_times)
+        for ref in set(merged_times) - set(kept_frames):
+            merged_image_data.pop(ref, None)
+            merged_captions.pop(ref, None)
+            del merged_times[ref]
+
+        if timed:
+            content = _timed_lines(
+                kept_spans, base_content, win_start, win_end, merged_times
+            )
+        else:
+            content = base_content[win_start:win_end]
+        return (
+            content,
+            pages,
+            refs,
+            labels,
+            times,
+            merged_image_data,
+            merged_captions,
+            merged_times,
+            merged_annotations,
         )
-        expanded_content = base_content[win_start:win_end]
-        if base_spans is None:
-            pages, refs, labels = (
-                set(first.page_numbers),
-                list(first.doc_item_refs),
-                set(first.labels),
-            )
-        else:
-            pages, refs, labels = _collect_meta(
-                [s for s in base_spans if _span_in_window(s, win_start, win_end)]
-            )
-    else:
-        expanded_content = base_content
-        if base_spans is None:
-            pages, refs, labels = (
-                set(first.page_numbers),
-                list(first.doc_item_refs),
-                set(first.labels),
-            )
-        else:
-            pages, refs, labels = _collect_meta(base_spans)
 
-    _add_input_pages_for_surviving_refs(pages, refs, original_results)
-
-    # Carry image_data and picture_captions from the originally retrieved
-    # chunks, but only for constituents whose refs survive the window — a
-    # chunk clipped out of the budget must not still ship its image to the
-    # model. Pictures swept in by section expansion are referenced in
-    # ``refs`` but their bytes are never re-fetched, so the multimodal
-    # payload stays bounded to what was actually retrieved and shown.
-    surviving_refs = set(refs)
-    merged_image_data: dict[str, str] = {}
-    merged_captions: dict[str, str] = {}
-    merged_annotations: dict[str, None] = {}
-    for r in original_results:
-        if r.doc_item_refs and not surviving_refs.intersection(r.doc_item_refs):
-            continue
-        if r.image_data:
-            merged_image_data.update(r.image_data)
-        if r.picture_captions:
-            merged_captions.update(r.picture_captions)
-        if r.annotations:
-            merged_annotations.update(dict.fromkeys(r.annotations))
+    assembled = assemble(max_chars)
+    if len(assembled[0]) > max_chars:
+        # The time prefixes overran: the largest budget whose lines fit.
+        low, high = 0, max_chars - 1
+        assembled = assemble(0)
+        while low <= high:
+            middle = (low + high) // 2
+            attempt = assemble(middle)
+            if len(attempt[0]) <= max_chars:
+                assembled, low = attempt, middle + 1
+            else:
+                high = middle - 1
+        if len(assembled[0]) > max_chars:
+            # Not even a frame's marker fits.
+            assembled = assemble(0, with_frames=False)
+    (
+        expanded_content,
+        pages,
+        refs,
+        labels,
+        times,
+        merged_image_data,
+        merged_captions,
+        merged_times,
+        merged_annotations,
+    ) = assembled
 
     return SearchResult(
         content=expanded_content,
@@ -420,10 +555,12 @@ def _build_result(
         document_meta=first.document_meta,
         doc_item_refs=refs or first.doc_item_refs,
         page_numbers=sorted(pages) or first.page_numbers,
+        time_range=times,
         headings=all_headings or None,
         labels=sorted(labels) or first.labels,
         image_data=merged_image_data or None,
         picture_captions=merged_captions,
+        picture_times=merged_times,
         annotations=list(merged_annotations) or None,
     )
 
@@ -446,11 +583,13 @@ def expand_with_items(
     max_chars: int,
     ref_positions: dict[str, int],
     window_items: list[DocumentItem],
+    clipped: bool = False,
 ) -> list[SearchResult]:
     """Expand results from items already fetched.
 
     Fetching is the caller's, so one query can serve every document in a result
-    set rather than one per document.
+    set rather than one per document. `clipped` items were filtered to a time
+    window.
     """
     if not ref_positions or not window_items:
         return results
@@ -490,7 +629,13 @@ def expand_with_items(
     final_results: list[SearchResult] = []
     for range_start, range_end, group in merged:
         built = _build_result(
-            range_start, range_end, group, pos_to_item, noise_for(group), max_chars
+            range_start,
+            range_end,
+            group,
+            pos_to_item,
+            noise_for(group),
+            max_chars,
+            clipped,
         )
         if len(group) > 1 and _group_lost_constituent(built, group):
             # The merged window cannot afford every constituent's evidence:
@@ -500,7 +645,13 @@ def expand_with_items(
                 lo, hi = constituent_range[id(result)]
                 final_results.append(
                     _build_result(
-                        lo, hi, [result], pos_to_item, noise_for([result]), max_chars
+                        lo,
+                        hi,
+                        [result],
+                        pos_to_item,
+                        noise_for([result]),
+                        max_chars,
+                        clipped,
                     )
                 )
             continue

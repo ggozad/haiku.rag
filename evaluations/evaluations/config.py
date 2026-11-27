@@ -40,6 +40,13 @@ class ConversationInput(BaseModel):
         return "\n".join(f"{turn.speaker}: {turn.text}" for turn in self.turns)
 
 
+class ScopedQuestion(BaseModel):
+    """A question asked over the documents `document_filter` selects, within the run's filter."""
+
+    question: str
+    document_filter: str
+
+
 @dataclass
 class DocumentPayload:
     uri: str

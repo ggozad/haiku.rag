@@ -10,7 +10,13 @@ import pyarrow as pa
 import pytest
 
 from haiku.rag.config.models import AppConfig
-from haiku.rag.store.engine import COMPACTION_TARGET_KEY, ConnectionMode, Store
+from haiku.rag.store.compression import compress_json
+from haiku.rag.store.engine import (
+    COMPACTION_TARGET_KEY,
+    OVERSIZED_SHARE,
+    ConnectionMode,
+    Store,
+)
 from haiku.rag.store.exceptions import MigrationRequiredError
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.repositories.document import DocumentRepository
@@ -25,6 +31,9 @@ from tests.conftest import capture_logs
 MB = 1024**2
 # Inline, packed into a shared sidecar, and in a sidecar of its own.
 TIERS = [1_000, 200_000, 9 * MB]
+
+
+STRUCTURE = compress_json('{"name": "structure"}')
 
 
 def _previous_schema() -> pa.Schema:
@@ -52,7 +61,7 @@ async def at_previous_release(
         {
             "id": i,
             "content": f"doc {n}",
-            "docling_document": b"structure",
+            "docling_document": STRUCTURE,
             "docling_version": "1",
             "original": body,
             "original_md5": None if body is None else hashlib.md5(body).hexdigest(),
@@ -145,7 +154,7 @@ async def test_originals_become_blobs_at_format_2_2(temp_db_path):
             assert await repo.get_original_and_sha256(i) == expected
             document = await repo.get_docling_data(i)
             assert document is not None
-            assert document.docling_document == b"structure"
+            assert document.docling_document == STRUCTURE
         assert len(dataset.versions()) == 1
 
 
@@ -167,11 +176,11 @@ async def test_the_rewrite_keeps_fragments_within_the_compaction_target(
 
 
 async def test_the_migration_keeps_the_fragments_it_writes(temp_db_path):
-    """The 400 KB original sets a target of two rows. Every rewritten fragment
+    """The 60 KB original sets a target of about 17 rows. Every rewritten fragment
     mixes it with narrower ones, so sizing the new layout alone gives a higher
     target, and a vacuum with nothing stored would merge them all."""
     config = _config(target_bytes=1 * MB)
-    bodies = [os.urandom(400_000)] + [os.urandom(50_000) for _ in range(19)]
+    bodies = [os.urandom(60_000)] + [os.urandom(5_000) for _ in range(39)]
     async with Store(temp_db_path, config=config, create=True) as store:
         await at_previous_release(store, bodies)
 
@@ -179,13 +188,13 @@ async def test_the_migration_keeps_the_fragments_it_writes(temp_db_path):
 
     async with Store(temp_db_path, config=config, read_only=True) as store:
         dataset = await store.documents_table.to_lance()
-    assert dataset.config()[COMPACTION_TARGET_KEY] == "2"
-    assert max(f.physical_rows for f in dataset.get_fragments()) == 2
+    target = int(dataset.config()[COMPACTION_TARGET_KEY])
+    assert target >= OVERSIZED_SHARE
+    assert max(f.physical_rows for f in dataset.get_fragments()) == target
 
 
 async def test_an_oversized_original_is_written_alone(temp_db_path):
-    """Above half of the 1 MB target, a row would push any fragment it shares
-    past the target."""
+    """Above 1/16 of the 1 MB target, a row keeps its own fragment."""
     config = _config(target_bytes=1 * MB)
     bodies = [os.urandom(600_000)] + [os.urandom(50_000) for _ in range(10)]
     async with Store(temp_db_path, config=config, create=True) as store:
@@ -199,7 +208,7 @@ async def test_an_oversized_original_is_written_alone(temp_db_path):
         f.physical_rows
         for f in dataset.get_fragments()
         if any(
-            d is not None and d["size"] > MB // 2
+            d is not None and d["size"] > MB // OVERSIZED_SHARE
             for d in f.to_table(columns=["original"])["original"].to_pylist()
         )
     ]

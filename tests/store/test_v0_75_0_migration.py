@@ -8,7 +8,7 @@ from haiku.rag.store.upgrades.v0_75_0 import _apply_index_hot_lookup_keys
 # The indexes a pre-0.75.0 database lacked.
 LEGACY_DROPPED = {
     "documents": ["id_idx"],
-    "chunks": ["id_idx", "document_id_idx"],
+    "chunks": ["id_idx", "document_id_idx", "media_idx"],
     "document_items": ["label_idx"],
 }
 
@@ -60,6 +60,7 @@ async def test_adds_missing_indexes_idempotently_and_keeps_rows_and_indexes(
             "content_fts": "FTS",
             "id": "BTree",
             "document_id": "BTree",
+            "media": "Bitmap",
         }
         assert await _indexed(store.document_items_table) == {
             "document_id": "BTree",

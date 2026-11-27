@@ -501,7 +501,13 @@ class TestFusionWithoutAReranker:
             assert rag.reranker is None
             clients = await rag.clients_for(["alpha", "beta"])
             fused = await _fuse(
-                rag, clients, "cats", per_source, limit, query_vector=query_vector
+                rag,
+                None,
+                clients,
+                "cats",
+                per_source,
+                limit,
+                query_vector=query_vector,
             )
         return [(owner.source, chunk.id, score) for owner, chunk, score in fused]
 
@@ -734,7 +740,7 @@ class TestFusingWhatARerankerReturns:
             ]
 
             with pytest.raises(ValueError, match="objects from the list"):
-                await _fuse(rag, clients, "cats", per_source, 5)
+                await _fuse(rag, rag.reranker, clients, "cats", per_source, 5)
 
 
 class TestRememberingTheStoredEmbedder:

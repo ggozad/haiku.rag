@@ -49,7 +49,7 @@ const chunk = (n: number) => ({
 	id: `c${n}`,
 	order: n,
 	content: `Chunk ${n} text`,
-	metadata: { page_numbers: [1] },
+	metadata: n === 1 ? { time_range: [4.48, 10.001] } : { page_numbers: [1] },
 });
 
 let requested: string[];
@@ -124,6 +124,7 @@ function serve(
 						caption: null,
 						description: null,
 						page_numbers: [],
+						time_range: [10, 10.001],
 						chunk_id: "c9",
 					},
 				],
@@ -190,6 +191,7 @@ describe("DocumentView", () => {
 		render(<Stateful source="alpha" documentId="d1" onOpenChunk={opened} />);
 		await user.click(screen.getByRole("tab", { name: "Chunks" }));
 		await screen.findByText("Chunk 0 text");
+		expect(screen.getByText("00:00:04-00:00:10")).toBeTruthy();
 		await user.click(screen.getByRole("button", { name: "Next" }));
 		await screen.findByText("Chunk 50 text");
 		expect(screen.getByText(/51–100 of/)).toBeTruthy();
@@ -264,6 +266,7 @@ describe("DocumentView", () => {
 		render(<Stateful source="alpha" documentId="d1" onOpenChunk={opened} />);
 		await user.click(screen.getByRole("tab", { name: "Pictures" }));
 		await screen.findByText("No caption or description.");
+		expect(screen.getByText("00:00:10")).toBeTruthy();
 		await user.click(screen.getByRole("button", { name: "Open its chunk" }));
 		expect(opened).toHaveBeenCalledWith("c9");
 	});

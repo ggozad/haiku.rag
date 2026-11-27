@@ -28,7 +28,11 @@ if TYPE_CHECKING:
     from haiku.rag.store.engine import Store
     from haiku.rag.store.models import SearchResult
 from haiku.rag.config import redact_secrets
-from haiku.rag.utils.formatting import format_bytes, format_citations_rich
+from haiku.rag.utils.formatting import (
+    format_bytes,
+    format_citations_rich,
+    format_time_range,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -574,7 +578,11 @@ class HaikuRAGApp:
             )
 
     async def add_document_from_source(
-        self, source: str, title: str | None = None, metadata: dict | None = None
+        self,
+        source: str,
+        title: str | None = None,
+        metadata: dict | None = None,
+        force: bool = False,
     ) -> int:
         """Add a file, directory or URL. Returns the number of files that failed."""
         failed: list[str] = []
@@ -582,7 +590,7 @@ class HaikuRAGApp:
             self.scope, self.config, read_only=self.read_only
         ) as self.client:
             result = await self.client.create_document_from_source(
-                source, title=title, metadata=metadata, failed=failed
+                source, title=title, metadata=metadata, failed=failed, force=force
             )
             if isinstance(result, list):
                 for doc in result:
@@ -995,6 +1003,9 @@ class HaikuRAGApp:
         if result.page_numbers:
             self.console.print("[repr.attrib_name]pages[/repr.attrib_name]:")
             self.console.print(", ".join(str(p) for p in result.page_numbers))
+        if result.time_range:
+            self.console.print("[repr.attrib_name]time[/repr.attrib_name]:")
+            self.console.print(format_time_range(result.time_range))
         if result.headings:
             self.console.print("[repr.attrib_name]headings[/repr.attrib_name]:")
             self.console.print(escape(" > ".join(result.headings)))

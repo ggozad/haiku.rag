@@ -75,8 +75,9 @@ Without `--skip-db`, the run first populates the dataset's database. A document 
 | `--vacuum-interval N` | Vacuum every N documents while populating. Default 100 |
 | `--results DIR` | Directory for the per-case result file. Default `evaluations/results/` in the haiku.rag data directory |
 | `--no-telemetry` | Run without Logfire |
+| `--concurrency N` | Answer N questions at once in a single-question QA run. Default 1. Retrieval and live MTRAG run one case at a time |
 
-QA cases run one at a time, so a run's length is the number of cases times the mean case time. A `--limit` prefix checks the wiring and is a poor estimate of the full run's case time.
+QA cases run one at a time by default, so a run's length is the number of cases times the mean case time. `--concurrency N` runs up to N cases at once, judging included, and shortens a run by less than N times when the cases share model servers. A `--limit` prefix checks the wiring and is a poor estimate of the full run's case time.
 
 ### Models
 
@@ -96,7 +97,7 @@ The same values are in the run's experiment metadata, with the corpus fingerprin
 
 - `git_sha`, `git_dirty` (untracked files ignored) and `config_hash`, the SHA-256 of the resolved `AppConfig`.
 - `db_path`, `db_documents`, `db_chunks`, `db_embedder_provider`, `db_embedder_model`, `db_embedder_dim`, `db_version`, and `db_written_at`, the newest table version time. All are None when `lancedb.databases` places the databases.
-- The embedder, reranker, chunk size, `search_limit`, `max_context_chars`, `qa_max_searches`, `qa_max_executions`, `sandbox_code_timeout`, `sandbox_max_output_chars`, `document_filter` and `pair_key`.
+- The embedder, reranker, chunk size, `search_limit`, `max_context_chars`, `qa_max_searches`, `qa_max_executions`, `sandbox_code_timeout`, `sandbox_max_output_chars`, `document_filter`, `pair_key` and, on a single-question QA run, `qa_concurrency`.
 - `judge_*` and, on a QA run, `capability_*`: provider, model, temperature, max tokens, thinking and `extra_body`.
 
 Runs send spans to Logfire under `service_name = 'evals'`. A run refuses to start when Logfire finds no token, from `LOGFIRE_TOKEN` or a credentials file. `--no-telemetry` runs without Logfire, and the result file is then the only record of the run.

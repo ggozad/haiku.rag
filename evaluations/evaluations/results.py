@@ -57,9 +57,10 @@ def _passed(case: ReportCase) -> bool | None:
     verdict = case.assertions.get("answer_equivalent")
     if verdict is not None:
         return bool(verdict.value)
-    score = case.scores.get("number_match")
-    if score is not None:
-        return float(score.value) >= 1.0
+    for name in ("number_match", "letter_match"):
+        score = case.scores.get(name)
+        if score is not None:
+            return float(score.value) >= 1.0
     return None
 
 

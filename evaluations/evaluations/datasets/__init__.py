@@ -2,6 +2,7 @@ from importlib.metadata import EntryPoint, entry_points
 
 from evaluations.config import DatasetSpec
 
+from .cg_bench import CG_BENCH_SAMPLE_SPEC, CG_BENCH_SPEC
 from .enterprise_rag import ENTERPRISE_RAG_SPEC
 from .frames import FRAMES_SPEC
 from .hotpotqa import HOTPOTQA_SPEC
@@ -17,10 +18,13 @@ from .open_rag_bench import (
     ORB_TEXT_SPEC,
 )
 from .t2_ragbench import T2_FINQA_SPEC, T2_TATDQA_SPEC
+from .video_mme_v2 import VIDEO_MME_V2_PILOT_SPEC, VIDEO_MME_V2_SPEC
 
 DATASETS: dict[str, DatasetSpec] = {
     spec.key: spec
     for spec in (
+        CG_BENCH_SPEC,
+        CG_BENCH_SAMPLE_SPEC,
         ENTERPRISE_RAG_SPEC,
         FRAMES_SPEC,
         HOTPOTQA_SPEC,
@@ -33,6 +37,8 @@ DATASETS: dict[str, DatasetSpec] = {
         ORB_MULTIMODAL_NEMOTRON_SPEC,
         T2_FINQA_SPEC,
         T2_TATDQA_SPEC,
+        VIDEO_MME_V2_SPEC,
+        VIDEO_MME_V2_PILOT_SPEC,
     )
 }
 

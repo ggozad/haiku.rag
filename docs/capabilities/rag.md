@@ -24,6 +24,14 @@ print(result.output)
 | `search(query, limit?, sources?)` | Hybrid vector and full-text search with context expansion. `sources` narrows one search to named collections within the run. It is offered only when the run spans more than one. |
 | `execute_code(code)` | Run Python against the virtual document filesystem. |
 | `cite(chunk_ids)` | Register retrieved or filesystem-derived chunk IDs as answer citations. |
+| `search_audio(query, recording?, start?, end?, limit?, sources?)` | Search the speech of every recording, the soundtrack of a video included. Each hit returns the speech within 15 seconds of it. Under `qa.media_tools` only. |
+| `search_video(query, recording?, start?, end?, limit?, sources?)` | Search the frames of the videos by a description of the scene, vector-only. Frames are attached as images under `vision`, each with the speech within 15 seconds of it. Under `qa.media_tools` only. |
+| `view(recording, start, end, source?)` | Read one recording between two times: each sentence with its time, whole, up to `search.max_context_chars` plus any sentence that ends before the last one shown, then a note of where the transcript continues, and eight frames decoded at even times across the window from the stored video file, each in the result of the chunk whose time holds it, or of the chunk nearest in time. A recording without a stored file shows the frames sampled at ingest instead, all of them up to eight, or eight spread across a window holding more, and so does a decode that fails, with the reason. It registers a result per chunk it showed, each citable. `source` names the collection when the recording is in more than one. Under `qa.media_tools` only. |
+| `list_recordings(sources?)` | List the recordings with their `document_id`, title, where their transcript ends, and whether they are video. Under `qa.media_tools` only. |
+
+A recording's result is one line per transcript item, each starting with its time (`[00:00:11] Introducing …`), and a frame attached to the result appears among them as `[00:00:12] (frame)`. Its `Type:` line reads `speech` or `frame`. Citing a chunk again records the slice returned last, under its first number.
+
+Under `qa.media_tools`, `search` leaves recordings out. `recording` with `start` and `end` in seconds narrows a media search to that part of one recording, and its results expand only over items inside the window. A window without a recording fails the call. Media searches share the `qa.max_searches` budget with `search`, and searches in one response share one unit whichever of the four they are, `view` included. `list_recordings` costs nothing.
 
 ## Parameters
 
@@ -57,7 +65,7 @@ When `qa.max_searches` or `qa.max_executions` runs out, the exhausted tool keeps
 | `chunks.jsonl` | Chunk ids with their metadata |
 | `toc.json` | The section tree |
 
-Code can also `await search(query)`, whose rows carry `chunk_meta` and `picture_refs`, and `await list_documents()`, whose rows carry `metadata`.
+Code can also `await search(query)`, whose rows carry `chunk_meta` and `picture_refs`, and `await list_documents()`, whose rows carry `metadata`. `await search_audio(query, recording=None, start=None, end=None, limit=10)` and `await search_video(...)` search a recording's speech and frames as the tools do, and return `search()`'s rows with `time_range`. `await list_recordings()` returns `document_id`, `title`, `uri`, `source`, `last_time` and `has_frames`. Under `qa.media_tools`, `search()` and `list_documents()` leave recordings out, and a recording's files stay under `/documents`. In-code searches do not count against `qa.max_searches`.
 
 Monty is a Python subset. Useful modules include `json`, `re`, `math`, `pathlib`, `datetime`, `collections`, `itertools`, `functools`, `dataclasses` and `decimal`. `statistics` is absent. Class inheritance and generators are not supported. Files are read-only, and there is no network and no filesystem beyond `/documents`, which is the working directory. `time.sleep()` returns immediately.
 

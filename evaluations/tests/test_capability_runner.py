@@ -166,7 +166,7 @@ class TestCitationStatusDerivation:
         from haiku.rag.capabilities.rag import RAGState
 
         state = RAGState(evidence=record)
-        return _result_from_run("answer", state, ToolTraffic(0, 0, 0, 1))
+        return _result_from_run("answer", state, ToolTraffic(0, 0, 0, 1, {}))
 
     def test_grounded(self) -> None:
         from haiku.rag.capabilities.ledger import (
@@ -374,7 +374,7 @@ def test_records_the_database_each_citation_came_from():
         evidence=CapabilityEvidenceRecord(question=1),
     )
 
-    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0, {}))
 
     assert result.cited_sources == ["alpha", "beta", "alpha", ""]
 
@@ -393,7 +393,7 @@ def test_in_code_search_calls_are_summed_across_executions():
         evidence=CapabilityEvidenceRecord(question=1),
     )
 
-    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0))
+    result = _result_from_run("answer", state, ToolTraffic(0, 0, 0, 0, {}))
 
     assert result.n_executions == 3
     assert result.n_sandbox_search_calls == 3
@@ -419,3 +419,40 @@ async def test_counts_a_cite_the_capability_rejected(tmp_path):
     )
 
     assert result.n_failed_tools == 1
+
+
+def test_count_tool_traffic_counts_each_tool_and_media_search_refusals():
+    messages = [
+        ModelRequest(parts=[UserPromptPart(content="q")]),
+        ModelResponse(
+            parts=[
+                ToolCallPart("list_recordings", {}, tool_call_id="1"),
+                ToolCallPart("search_audio", {"query": "a"}, tool_call_id="2"),
+                ToolCallPart("search_video", {"query": "b"}, tool_call_id="3"),
+            ]
+        ),
+        ModelRequest(
+            parts=[
+                ToolReturnPart("list_recordings", "-", tool_call_id="1"),
+                ToolReturnPart("search_audio", "-", tool_call_id="2"),
+                ToolReturnPart(
+                    "search_video",
+                    "Search limit reached.",
+                    tool_call_id="3",
+                    outcome="failed",
+                ),
+            ]
+        ),
+        ModelResponse(parts=[ToolCallPart("search_audio", {"query": "c"})]),
+        ModelResponse(parts=[TextPart("done")]),
+    ]
+
+    traffic = _count_tool_traffic(messages, TOOL_NAMES)
+
+    assert traffic.tool_calls == {
+        "list_recordings": 1,
+        "search_audio": 2,
+        "search_video": 1,
+    }
+    assert traffic.n_search_calls == 3
+    assert traffic.n_rejected_searches == 1

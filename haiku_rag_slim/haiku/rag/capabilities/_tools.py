@@ -1,6 +1,8 @@
+import base64
+import logging
 from collections.abc import Iterable, Sequence
 from collections.abc import Set as AbstractSet
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic import BaseModel
@@ -16,8 +18,25 @@ from pydantic_ai.messages import (
 from pydantic_ai.tools import ToolDefinition
 
 from haiku.rag.client import HaikuRAG
-from haiku.rag.store.models.chunk import SearchResult, qualified_id
+from haiku.rag.client.search import expand_near
+from haiku.rag.store.models.chunk import (
+    Content,
+    SearchResult,
+    TimeWindow,
+    qualified_id,
+)
+from haiku.rag.store.models.document import Recording
+from haiku.rag.store.models.document_item import (
+    DocumentItem,
+    merge_time_ranges,
+    spread_frames,
+)
+from haiku.rag.utils.formatting import format_time_range
 from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, picture_keys
+
+logger = logging.getLogger(__name__)
+
+VIEW_MAX_FRAMES = 8
 
 IMAGES_OMITTED = (
     "[Page images retrieved from the knowledge base are omitted here: the request "
@@ -67,15 +86,17 @@ def require_collections(requested: Sequence[str], available: Sequence[str]) -> N
 
 
 def without_sources(tool_def: ToolDefinition) -> ToolDefinition:
-    """The tool's definition without its `sources` parameter."""
+    """The tool's definition without its `sources` or `source` parameter."""
     schema = dict(tool_def.parameters_json_schema)
     schema["properties"] = {
         name: spec
         for name, spec in schema.get("properties", {}).items()
-        if name != "sources"
+        if name not in ("sources", "source")
     }
     if "required" in schema:
-        schema["required"] = [name for name in schema["required"] if name != "sources"]
+        schema["required"] = [
+            name for name in schema["required"] if name not in ("sources", "source")
+        ]
     return replace(tool_def, parameters_json_schema=schema)
 
 
@@ -88,6 +109,9 @@ async def search_corpus(
     shown: AbstractSet[EvidenceKey] = frozenset(),
     *,
     include_collection: bool,
+    content: Content | None = None,
+    window: TimeWindow | None = None,
+    include_images: bool = True,
 ) -> tuple[str, list[SearchResult], set[EvidenceKey]]:
     """Search and context-expand results, eliding evidence already shown.
 
@@ -95,12 +119,22 @@ async def search_corpus(
     the formatting rendered in full. ``include_collection`` names each result's
     collection, a decision about the run that the caller makes. A result whose
     key is in ``shown`` keeps its slot but collapses to one line; the result
-    list is never filtered.
+    list is never filtered. `content`, `window` and `include_images` pass to
+    `HaikuRAG.search`, and `window` to the expansion.
     """
     results = await rag.search(
-        query, limit=limit, filter=document_filter, sources=sources
+        query,
+        limit=limit,
+        filter=document_filter,
+        include_images=include_images,
+        sources=sources,
+        content=content,
+        window=window,
     )
-    results = await rag.expand_context(results)
+    if content in ("speech", "frames"):
+        results = await expand_near(rag, results, window)
+    else:
+        results = await rag.expand_context(results, window=window)
     rendered: set[EvidenceKey] = set()
     parts: list[str] = []
     total = len(results)
@@ -122,6 +156,192 @@ async def search_corpus(
     return formatted or "No results found.", list(results), rendered
 
 
+@dataclass
+class RecordingView:
+    """What `view` returned: a result per speech chunk holding only the lines
+    shown, and one per frame chunk holding only its frame, in time order."""
+
+    results: list[SearchResult]
+    continues_at: float | None
+    # Why the frames shown are the ones sampled at ingest, when decoding failed.
+    note: str | None = None
+
+
+async def view_recording(
+    rag: HaikuRAG,
+    recording: Recording,
+    window: TimeWindow,
+    max_chars: int,
+    include_images: bool,
+) -> RecordingView:
+    """The sentences of `recording` inside `window`, whole, up to `max_chars`
+    (at least one), and `VIEW_MAX_FRAMES` frames decoded at even times from
+    its stored file. Without a stored file, or when decoding fails, the frames
+    sampled at ingest, spread across the window down to `VIEW_MAX_FRAMES`."""
+    items = await rag.document_item_repository.get_items_in_window(window)
+    lines = [
+        item
+        for item in items
+        if item.label != "picture" and item.text and item.start_time is not None
+    ]
+    shown: list[DocumentItem] = []
+    used = 0
+    continues_at = None
+    for index, item in enumerate(lines):
+        # The line adds `[HH:MM:SS] ` before the text and a newline after it.
+        cost = len(item.text) + 12
+        if shown and used + cost > max_chars:
+            # Past the end of everything shown, so reading on from here skips
+            # every item already returned, an overlapping one included. Items
+            # ending before it are never read on, so they stay on this page.
+            continues_at = max(i.end_time for i in shown if i.end_time is not None)
+            shown.extend(
+                rest
+                for rest in lines[index:]
+                if rest.end_time is not None and rest.end_time <= continues_at
+            )
+            break
+        shown.append(item)
+        used += cost
+    index = (
+        await rag.chunk_repository.get_chunk_ids_by_self_ref_grouped(
+            [recording.document_id]
+        )
+    ).get(recording.document_id, {})
+    # An item two chunks share is shown once, under the first of them.
+    members: dict[str, list[DocumentItem]] = {}
+    for item in shown:
+        for chunk_id in index.get(item.self_ref, [])[:1]:
+            members.setdefault(chunk_id, []).append(item)
+
+    decoded, note = (
+        await _decoded_frames(rag, recording, window) if include_images else ({}, None)
+    )
+    if decoded:
+        owners = _frame_owners(
+            await rag.chunk_repository.get_time_spans(recording.document_id),
+            {ref: t for ref, (t, _) in decoded.items()},
+        )
+        for ref, chunk_id in owners.items():
+            at = decoded[ref][0]
+            members.setdefault(chunk_id, []).append(
+                DocumentItem(
+                    document_id=recording.document_id,
+                    position=-1,
+                    self_ref=ref,
+                    label="picture",
+                    start_time=at,
+                    end_time=at,
+                )
+            )
+    else:
+        frames = spread_frames(
+            {
+                item.self_ref: item.start_time
+                for item in items
+                if item.label == "picture" and item.start_time is not None
+            },
+            VIEW_MAX_FRAMES,
+        )
+        frame_items = {item.self_ref: item for item in items if item.self_ref in frames}
+        for ref in frames:
+            for chunk_id in index.get(ref, []):
+                members.setdefault(chunk_id, []).append(frame_items[ref])
+
+    results = []
+    for chunk_id, chunk_items in members.items():
+        chunk = await rag.chunk_repository.get_by_id(chunk_id)
+        if chunk is None:  # pragma: no cover - the index was read from the table
+            continue
+        result = SearchResult.from_chunk(chunk, score=1.0)
+        result.source = recording.source
+        result.document_title = recording.title
+        result.document_uri = recording.uri
+        lines, pictures, spans = [], {}, []
+        # A decoded frame joins its chunk after the sentences shown.
+        for item in sorted(chunk_items, key=lambda item: item.start_time or 0.0):
+            assert item.start_time is not None and item.end_time is not None
+            spans.append((item.start_time, item.end_time))
+            clock = format_time_range((item.start_time, item.start_time))
+            if item.label == "picture":
+                lines.append(f"[{clock}] (frame)")
+                pictures[item.self_ref] = item.start_time
+            else:
+                lines.append(f"[{clock}] {item.text}")
+        result.content = "\n".join(lines)
+        result.doc_item_refs = [item.self_ref for item in chunk_items]
+        result.time_range = merge_time_ranges(spans)
+        result.picture_times = pictures
+        result.image_data = None
+        if include_images and pictures:
+            result.image_data = {}
+            for ref in pictures:
+                data = (
+                    decoded[ref][1]
+                    if ref in decoded
+                    else await rag.document_item_repository.get_picture_bytes(
+                        recording.document_id, ref
+                    )
+                )
+                if data:  # pragma: no branch - every stored frame has its bytes
+                    result.image_data[ref] = base64.b64encode(data).decode("ascii")
+        results.append(result)
+    results.sort(
+        key=lambda r: (r.time_range[0] if r.time_range else 0.0, not r.picture_times)
+    )
+    return RecordingView(results, continues_at, note)
+
+
+async def _decoded_frames(
+    rag: HaikuRAG, recording: Recording, window: TimeWindow
+) -> tuple[dict[str, tuple[float, bytes]], str | None]:
+    """The frames decoded across `window` from the stored file, by ref, or
+    why none could be."""
+    from haiku.rag.converters.exceptions import ConversionFailedError
+    from haiku.rag.converters.media import (
+        decode_frames,
+        decode_width,
+        decoded_frame_ref,
+        frame_times,
+    )
+
+    def times(duration: float) -> list[float]:
+        end = duration if window.end is None else window.end
+        return frame_times(window.start or 0.0, end, duration, VIEW_MAX_FRAMES)
+
+    try:
+        stored = await rag.document_repository.open_recording(recording.document_id)
+        if stored is None or not stored.video:
+            return {}, None
+        frames = await decode_frames(stored, times, decode_width(rag._config))
+    except (ConversionFailedError, TimeoutError, OSError) as exc:
+        logger.warning("Decoding frames of %s failed: %s", recording.document_id, exc)
+        reason = str(exc) or "it timed out"
+        return {}, (
+            f"Frames could not be decoded from the recording ({reason}). "
+            "The frames shown were sampled at ingest."
+        )
+    return {decoded_frame_ref(t): (t, data) for t, data in frames}, None
+
+
+def _frame_owners(
+    spans: dict[str, tuple[float, float]], times: dict[str, float]
+) -> dict[str, str]:
+    """The chunk each decoded frame belongs to: the one whose time span holds
+    it, else the one nearest in time."""
+    if not spans:  # pragma: no cover - a listed recording has a timed chunk
+        return {}
+    ordered = sorted(spans.items(), key=lambda entry: entry[1])
+
+    def distance(span: tuple[float, float], at: float) -> float:
+        return max(span[0] - at, at - span[1], 0.0)
+
+    return {
+        ref: min(ordered, key=lambda entry: distance(entry[1], at))[0]
+        for ref, at in times.items()
+    }
+
+
 def merge_results(
     existing: list[SearchResult], incoming: Iterable[SearchResult]
 ) -> None:
@@ -136,6 +356,22 @@ def merge_results(
         if key not in seen:
             existing.append(result)
             seen.add(key)
+
+
+def refresh_results(
+    held: Iterable[list[SearchResult]], incoming: Iterable[SearchResult]
+) -> None:
+    """Replace every held version of an incoming chunk with the incoming one."""
+    latest = {
+        qualified_id(result.source, result.chunk_id): result
+        for result in incoming
+        if result.chunk_id is not None
+    }
+    for results in held:
+        for index, result in enumerate(results):
+            key = qualified_id(result.source, result.chunk_id)
+            if result.chunk_id is not None and key in latest:
+                results[index] = latest[key]
 
 
 def retrieved_pictures(content: Sequence[Any]) -> list[int]:
@@ -206,6 +442,7 @@ __all__ = [
     "evidence_key",
     "evidence_signature",
     "merge_results",
+    "refresh_results",
     "require_collections",
     "retrieved_pictures",
     "search_corpus",

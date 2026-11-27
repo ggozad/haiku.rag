@@ -16,7 +16,7 @@ from haiku.rag.store.engine import (
     require_complete_tag,
     require_current_tag,
 )
-from haiku.rag.store.schema import REQUIRED_TABLES, vector_index_name
+from haiku.rag.store.schema import REQUIRED_TABLES, is_blob, vector_index_name
 
 
 async def get_database_stats(
@@ -64,6 +64,9 @@ async def get_database_stats(
             ),
         }
 
+    if stats["documents"]["exists"]:
+        stats["documents"]["total_bytes"] += await _blob_file_bytes(tables["documents"])
+
     if stats["chunks"]["exists"]:
         chunks_tbl = tables["chunks"]
         vector_index = await vector_index_name(chunks_tbl)
@@ -75,6 +78,22 @@ async def get_database_stats(
                 stats["chunks"]["num_unindexed_rows"] = index_stats.num_unindexed_rows
 
     return stats
+
+
+_INLINE_BLOB = 0
+
+
+async def _blob_file_bytes(table: lancedb.AsyncTable) -> int:
+    """Bytes of the originals lance keeps in blob files, which table stats omit."""
+    schema = await table.schema()
+    if "original" not in schema.names or not is_blob(schema.field("original")):
+        return 0
+    rows = await table.query().select(["original"]).to_list()
+    return sum(
+        r["original"]["size"]
+        for r in rows
+        if r["original"] is not None and r["original"]["kind"] != _INLINE_BLOB
+    )
 
 
 class EmbeddingsInfo(BaseModel):

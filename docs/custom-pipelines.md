@@ -60,7 +60,7 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     )
 ```
 
-`original` is the converted PDF or image file, which visual grounding renders. Without it the document has no visual grounding.
+`original` is the converted file: a PDF or image, which visual grounding renders, or a recording's audio or video file (see [Stored recordings](configuration/processing.md#stored-recordings)). Without it a PDF or image has no visual grounding.
 
 ## Convert
 
@@ -122,7 +122,7 @@ Chunks are returned with:
 
 - `content` - The chunk text
 - `order` - Position in document (0-indexed)
-- `metadata` - Dict with `doc_item_refs`, `headings`, `labels`, `page_numbers`
+- `metadata` - Dict with `doc_item_refs`, `headings`, `labels`, `page_numbers`, and `time_range` for a recording
 - `embedding` - `None` (not yet embedded)
 - `document_id` - `None` (not yet stored)
 
