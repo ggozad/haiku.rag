@@ -19,6 +19,7 @@ from haiku.rag.config.models import AppConfig, StorageConfig
 from haiku.rag.store import engine
 from haiku.rag.store.engine import (
     COMPACTION_TARGET_KEY,
+    OVERSIZED_SHARE,
     CompactionSizing,
     Store,
     kept_target,
@@ -63,9 +64,9 @@ def _target(dataset, target_bytes):
 def test_target_scales_inversely_with_row_size(tmp_path):
     dataset = _write(tmp_path / "wide.lance", 20, 1 * MB)
 
-    assert _target(dataset, 8 * MB) == pytest.approx(8, abs=1)
+    assert _target(dataset, 64 * MB) == pytest.approx(64, abs=1)
     # halving the budget halves the rows a task may take
-    assert _target(dataset, 4 * MB) == pytest.approx(4, abs=1)
+    assert _target(dataset, 32 * MB) == pytest.approx(32, abs=1)
 
 
 def test_target_uses_widest_fragment_not_the_average(tmp_path):
@@ -75,14 +76,14 @@ def test_target_uses_widest_fragment_not_the_average(tmp_path):
     _write(path, 10, 64 * 1024)  # a second, much narrower fragment
     dataset = lance.dataset(path)
 
-    target = _target(dataset, 16 * MB)
+    target = _target(dataset, 128 * MB)
 
-    # the average row is ~2 MB, which would allow ~8 rows; the widest is 4 MB
-    assert target is not None and target <= 5
+    # the average row is ~2 MB, which would allow ~64 rows; the widest is 4 MB
+    assert target is not None and target <= 33
 
 
 def test_a_table_of_oversized_rows_has_nothing_to_merge(tmp_path):
-    """Rows wider than half the target cannot share a fragment within it."""
+    """Rows wider than 1/16 of the target keep their own fragments."""
     dataset = _write(tmp_path / "huge.lance", 10, 2 * MB)
 
     sizing = size_compaction(dataset, 1024)
@@ -129,7 +130,7 @@ def _write_blobs(path, fragments):
 def test_blob_sidecar_bytes_count_toward_row_width(tmp_path):
     dataset = _write_blobs(tmp_path / "wide.lance", [[1 * MB]] * 4)
 
-    assert _target(dataset, 8 * MB) == pytest.approx(8, abs=1)
+    assert _target(dataset, 64 * MB) == pytest.approx(64, abs=1)
 
 
 def test_inline_blobs_are_counted_once(tmp_path):
@@ -142,11 +143,11 @@ def test_a_wide_blob_row_is_oversized(tmp_path):
     dataset = _write_blobs(tmp_path / "huge.lance", [[1 * MB], [5 * MB]])
     wide = dataset.get_fragments()[1].fragment_id
 
-    sizing = size_compaction(dataset, 8 * MB)
+    sizing = size_compaction(dataset, 64 * MB)
 
     assert sizing is not None
     assert sizing.oversized == [wide]
-    assert sizing.target_rows == pytest.approx(8, abs=1)
+    assert sizing.target_rows == pytest.approx(64, abs=1)
 
 
 def test_deleted_blob_rows_do_not_narrow_the_fragment(tmp_path):
@@ -154,7 +155,7 @@ def test_deleted_blob_rows_do_not_narrow_the_fragment(tmp_path):
     wide = dataset.get_fragments()[1].fragment_id
     dataset.delete("id = 'f1r0'")
 
-    sizing = size_compaction(lance.dataset(tmp_path / "deleted.lance"), 8 * MB)
+    sizing = size_compaction(lance.dataset(tmp_path / "deleted.lance"), 64 * MB)
 
     assert sizing is not None
     assert sizing.oversized == [wide]
@@ -163,7 +164,7 @@ def test_deleted_blob_rows_do_not_narrow_the_fragment(tmp_path):
 def test_null_blobs_add_nothing(tmp_path):
     dataset = _write_blobs(tmp_path / "nulls.lance", [[None, 1 * MB]])
 
-    assert _target(dataset, 8 * MB) == pytest.approx(16, abs=2)
+    assert _target(dataset, 64 * MB) == pytest.approx(128, abs=4)
 
 
 def test_a_blob_column_is_a_payload_column():
@@ -192,7 +193,7 @@ async def test_sizing_runs_off_the_event_loop(temp_db_path, monkeypatch):
 async def test_a_second_vacuum_leaves_a_compacted_blob_table_alone(temp_db_path):
     config = AppConfig()
     config.storage.auto_vacuum = False
-    config.storage.compaction_target_bytes = 8 * MB
+    config.storage.compaction_target_bytes = 32 * MB
     schema = pa.schema([pa.field("id", pa.string()), blob_field("blob")])
 
     async with Store(temp_db_path, config=config, create=True) as store:
@@ -261,39 +262,40 @@ def test_empty_fragments_do_not_block_sizing():
         ]
     )
 
-    assert _target(cast("lance.LanceDataset", dataset), 8 * MB) == 8
+    assert _target(cast("lance.LanceDataset", dataset), 64 * MB) == 64
 
 
-def test_a_row_of_half_the_target_still_sets_it():
-    """At exactly half the target two rows fit, so the target is two."""
-    dataset = _FakeDataset([_FakeFragment(rows=1, sizes=[4 * MB], fragment_id=7)])
+def test_a_row_of_the_oversized_share_still_sets_the_target():
+    """At exactly 1/16 of the target, sixteen rows fit."""
+    dataset = _FakeDataset([_FakeFragment(rows=1, sizes=[1 * MB], fragment_id=7)])
 
-    sizing = size_compaction(cast("lance.LanceDataset", dataset), 8 * MB)
+    sizing = size_compaction(cast("lance.LanceDataset", dataset), 16 * MB)
 
-    assert sizing == CompactionSizing(target_rows=2, oversized=[])
+    assert sizing == CompactionSizing(target_rows=OVERSIZED_SHARE, oversized=[])
 
 
-def test_a_row_wider_than_half_the_target_is_oversized():
+def test_a_row_wider_than_the_oversized_share_is_oversized():
     dataset = _FakeDataset(
         [
             _FakeFragment(rows=8, sizes=[1 * MB], fragment_id=1),
-            _FakeFragment(rows=1, sizes=[4 * MB + 1], fragment_id=2),
+            _FakeFragment(rows=1, sizes=[1 * MB + 1], fragment_id=2),
         ]
     )
 
-    sizing = size_compaction(cast("lance.LanceDataset", dataset), 8 * MB)
+    sizing = size_compaction(cast("lance.LanceDataset", dataset), 16 * MB)
 
-    # the oversized row does not pull the target down to one
-    assert sizing == CompactionSizing(target_rows=64, oversized=[2])
+    # the wide row does not pull the target down to sixteen
+    assert sizing == CompactionSizing(target_rows=128, oversized=[2])
 
 
 @pytest.mark.parametrize(
     ("stored", "computed", "kept"),
     [
         (None, 40, 40),  # nothing stored: the computed target
-        (40, 4, 4),  # a lower target replaces the stored one
-        (4, 12, 4),  # a higher one never does
-        (4, None, 4),  # every fragment oversized: the stored target stays
+        (40, 20, 20),  # a lower target replaces the stored one
+        (20, 40, 20),  # a higher one never does
+        (20, None, 20),  # every fragment oversized: the stored target stays
+        (4, 40, 40),  # a stored target below the share is replaced
         (None, None, None),
     ],
 )
@@ -514,7 +516,7 @@ async def test_a_rising_target_does_not_rewrite_compacted_fragments(temp_db_path
 
         wide = 21
         await _add_each(
-            store, [_doc(i, 2 * MB if i == wide else 200 * KB) for i in range(20, 28)]
+            store, [_doc(i, 480 * KB if i == wide else 200 * KB) for i in range(20, 28)]
         )
         await store.vacuum(retention_seconds=0)
         fallen = await _stored_target(store)
@@ -549,10 +551,13 @@ async def test_oversized_documents_are_never_merged(temp_db_path):
         assert sorted(rows for _, rows in after) == [1, 1, 1, 5, 5]
 
 
-async def test_deletions_in_an_oversized_fragment_are_compacted_alone(temp_db_path):
+@pytest.mark.parametrize("wide", [1 * MB, 5 * MB], ids=["over-the-share", "over-half"])
+async def test_deletions_in_an_oversized_fragment_are_compacted_alone(
+    temp_db_path, wide
+):
     async with Store(temp_db_path, config=_small_target_config(), create=True) as store:
         await _add_each(store, [_doc(i, 200 * KB) for i in range(5)])
-        await store.documents_table.add([_doc(i, 5 * MB) for i in range(5, 8)])
+        await store.documents_table.add([_doc(i, wide) for i in range(5, 8)])
         await _add_each(store, [_doc(i, 200 * KB) for i in range(8, 13)])
         # compaction appends what it writes, so the second pass finds the two
         # narrow runs adjacent and merges them
@@ -572,6 +577,39 @@ async def test_deletions_in_an_oversized_fragment_are_compacted_alone(temp_db_pa
         assert narrow <= set(after)
         assert wide not in after
         assert await store.documents_table.count_rows() == 12
+
+
+async def test_one_wide_row_leaves_the_target_of_the_narrow_ones(temp_db_path):
+    """A row wider than the share keeps its fragment, and the narrow rows
+    merge at the target their own width sets."""
+    async with Store(temp_db_path, config=_small_target_config(), create=True) as store:
+        await _add_each(store, [_doc(0, 2 * MB)])
+        [(wide, _)] = await _fragments(store)
+        await _add_each(store, [_doc(i, 200 * KB) for i in range(1, 21)])
+
+        await store.vacuum(retention_seconds=0)
+
+        after = dict(await _fragments(store))
+        sizing = size_compaction(await store.documents_table.to_lance(), 8 * MB)
+        assert sizing is not None and sizing.target_rows is not None
+        assert sizing.target_rows > OVERSIZED_SHARE
+        assert await _stored_target(store) == sizing.target_rows
+        assert after[wide] == 1
+        assert sorted(rows for fid, rows in after.items() if fid != wide) == [20]
+
+
+async def test_a_stored_target_below_the_share_is_replaced(temp_db_path):
+    async with Store(temp_db_path, config=_small_target_config(), create=True) as store:
+        await _add_each(store, [_doc(i, 200 * KB) for i in range(20)])
+        await store.documents_table.add([_doc(99, 1)])
+        dataset = await store.documents_table.to_lance()
+        dataset.update_config({COMPACTION_TARGET_KEY: "2"})
+        await store.documents_table.checkout_latest()
+
+        await store.vacuum(retention_seconds=0)
+
+        assert await _stored_target(store) > OVERSIZED_SHARE
+        assert len(await _fragments(store)) < 10
 
 
 async def test_payload_compaction_runs_on_one_thread(temp_db_path, monkeypatch):
@@ -644,7 +682,7 @@ async def test_restoring_a_tag_restores_its_target(temp_db_path):
         tagged = await _stored_target(store)
         await store.create_tag("before-wide")
 
-        await _add_each(store, [_doc(10, 2 * MB)])
+        await _add_each(store, [_doc(10, 480 * KB)])
         await store.vacuum(retention_seconds=0)
         assert await _stored_target(store) < tagged
 
@@ -746,13 +784,13 @@ def test_a_fragment_larger_than_the_target_is_rewritten_whole(tmp_path):
     Recorded because it is the ceiling the config knob cannot lower.
     """
     path = tmp_path / "batched.lance"
-    _write(path, 40, 2 * MB, per_fragment=40)  # one 80 MB fragment
+    _write(path, 80, 256 * KB, per_fragment=80)  # one 20 MB fragment
     dataset = lance.dataset(path)
     target = _target(dataset, 8 * MB)
-    assert target is not None and target <= 4
+    assert target is not None and target <= 32
 
     # deletions must pass lance's 10% threshold for the fragment to be a candidate
-    dataset.delete("id in ('d0','d1','d2','d3','d4','d5')")
+    dataset.delete("id in (" + ",".join(f"'d{i}'" for i in range(13)) + ")")
     dataset = lance.dataset(path)
     metrics = dataset.optimize.compact_files(target_rows_per_fragment=target)
 

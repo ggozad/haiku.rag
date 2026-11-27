@@ -20,6 +20,7 @@
 - A write that replaces a document's structure without supplying an original keeps the stored original when the new structure's `origin.binary_hash` names it, and clears it otherwise with a WARNING. Applies to `update_document(docling_document=)`, a create or import over a stored URI, and a full `rebuild`.
 - `import_documents` writes `documents` and `document_meta` once per 64 MB of originals.
 - `info` counts the original bytes that lance keeps in blob files in the `documents` size.
+- `Store.vacuum` keeps a row wider than 1/16 of `storage.compaction_target_bytes` in its own fragment, so the rows per compacted fragment never fall below 16. A stored row target below 16 is replaced on the next vacuum.
 - A full `rebuild` re-chunks and re-embeds an audio or video document without a stored file from its stored transcript.
 - The RAG capability records a chunk cited again with the content returned last, under its first citation number.
 

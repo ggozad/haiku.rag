@@ -204,6 +204,10 @@ def embedder_drift(stored: dict, current: dict) -> list[str]:
 
 COMPACTION_TARGET_KEY = "lance.compaction.target_rows_per_fragment"
 
+# A fragment whose rows are wider than this share of the compaction target
+# keeps its own fragment, so a large file cannot lower the target below it.
+OVERSIZED_SHARE = 16
+
 # lance's default, passed explicitly so the oversized fragments' own passes use
 # the threshold the merge pass does.
 MATERIALIZE_DELETIONS_THRESHOLD = 0.1
@@ -228,9 +232,9 @@ def size_compaction(
     The row target comes from the widest fragment's bytes per row rather than
     the table average: document payloads span kilobytes to hundreds of
     megabytes, so an average lets a task pick up many outsized rows. A fragment
-    wider than half of `target_bytes` per row is oversized: two of its rows
-    already pass the target, so it is left out of both the estimate and the
-    merge. Data-file sizes come from the manifest and blob sizes from their
+    wider than `target_bytes / OVERSIZED_SHARE` per row is oversized: it is left
+    out of both the estimate and the merge, so the target never falls below
+    `OVERSIZED_SHARE`. Data-file sizes come from the manifest and blob sizes from their
     descriptors, so no payload is read.
 
     Returns None when any fragment cannot be measured, which means leave the
@@ -249,7 +253,7 @@ def size_compaction(
         if not all(sizes):
             return None
         width = sum(cast(list[int], sizes)) / rows + _sidecar_width(fragment, blobs)
-        if width > target_bytes / 2:
+        if width > target_bytes / OVERSIZED_SHARE:
             oversized.append(fragment.fragment_id)
         else:
             widest = max(widest, width)
@@ -274,8 +278,11 @@ def _sidecar_width(fragment: "lance.LanceFragment", blobs: list[str]) -> float:
 
 def kept_target(stored: int | None, computed: int | None) -> int | None:
     """The row target compaction runs with: the computed one when nothing is
-    stored or it is lower than the stored one, else the stored one."""
-    if computed is not None and (stored is None or computed < stored):
+    stored, the stored one is below `OVERSIZED_SHARE`, or the computed one is
+    lower, else the stored one."""
+    if computed is not None and (
+        stored is None or stored < OVERSIZED_SHARE or computed < stored
+    ):
         return computed
     return stored
 
