@@ -131,7 +131,10 @@ async def grounding_response(
                 {
                     "source": owner.source,
                     "document_id": grounding.document_id,
-                    "original": {"md5": grounding.original_md5, "pdf": layout.pdf},
+                    "original": {
+                        "sha256": grounding.original_sha256,
+                        "pdf": layout.pdf,
+                    },
                     "pages": pages,
                     "message": None,
                 }

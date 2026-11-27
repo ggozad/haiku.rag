@@ -6,14 +6,13 @@ const REQUEST_HEADERS_DROPPED = [
 	"keep-alive",
 	"transfer-encoding",
 ];
-// fetch has already decoded the upstream body.
 const RESPONSE_HEADERS_DROPPED = [
 	"connection",
-	"content-encoding",
-	"content-length",
 	"keep-alive",
 	"transfer-encoding",
 ];
+// fetch has already decoded a compressed upstream body, so its length is stale.
+const ENCODED_RESPONSE_HEADERS_DROPPED = ["content-encoding", "content-length"];
 
 // Forwards a request to `base` + `path`, streaming both bodies. The incoming
 // request's abort signal is passed on, so a browser that stops reading closes
@@ -58,6 +57,11 @@ export async function proxy(
 
 	const responseHeaders = new Headers(upstream.headers);
 	for (const name of RESPONSE_HEADERS_DROPPED) responseHeaders.delete(name);
+	if (upstream.headers.has("content-encoding")) {
+		for (const name of ENCODED_RESPONSE_HEADERS_DROPPED) {
+			responseHeaders.delete(name);
+		}
+	}
 	return new Response(upstream.body, {
 		status: upstream.status,
 		statusText: upstream.statusText,

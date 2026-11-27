@@ -585,7 +585,7 @@ class Grounding(NamedTuple):
 
     document_id: str
     original: bytes
-    original_md5: str
+    original_sha256: str
     pages: dict[int, list[GroundingBox]]
 
 
@@ -663,7 +663,7 @@ async def chunk_grounding(
     if (
         (not matched_boxes and not swept_boxes)
         or doc.original is None
-        or doc.original_md5 is None
+        or doc.original_sha256 is None
     ):
         return None
 
@@ -672,7 +672,7 @@ async def chunk_grounding(
         GroundingBox(b, True) for b in matched_boxes
     ]:
         pages.setdefault(box.box.page_no, []).append(box)
-    return Grounding(document_id, doc.original, doc.original_md5, pages)
+    return Grounding(document_id, doc.original, doc.original_sha256, pages)
 
 
 async def visualize_chunk(

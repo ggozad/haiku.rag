@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PdfLoading } from "@/lib/pdf";
 import PageViewer, { GroundingPages } from "./PageViewer";
 
 const openPdf = vi.hoisted(() => vi.fn());
@@ -59,13 +60,11 @@ afterEach(() => {
 
 describe("PageViewer", () => {
 	it("renders a PDF's pages from the original and draws the boxes on them", async () => {
-		const fetched = vi.fn(async () => new Response(new Uint8Array([1, 2])));
-		vi.stubGlobal("fetch", fetched);
 		render(
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				focus={2}
 				onStale={() => {}}
@@ -73,12 +72,10 @@ describe("PageViewer", () => {
 		);
 
 		await waitFor(() => expect(rendered.sort()).toEqual([1, 2]));
-		expect(fetched).toHaveBeenCalledWith(
-			"/api/backend/api/inspect/alpha/documents/d1/original?md5=m",
-			expect.anything(),
+		expect(openPdf).toHaveBeenCalledWith(
+			"/api/backend/api/inspect/alpha/documents/d1/original?sha256=m",
+			expect.objectContaining({ signal: expect.any(AbortSignal) }),
 		);
-		const [data] = openPdf.mock.calls[0];
-		expect(new Uint8Array(data)).toEqual(new Uint8Array([1, 2]));
 
 		const sideways = screen.getByRole("img", { name: "Page 2" });
 		expect(sideways.style.aspectRatio).toBe("792 / 612");
@@ -94,34 +91,31 @@ describe("PageViewer", () => {
 	});
 
 	it("reports a replaced original instead of opening it", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response(null, { status: 409 })),
-		);
+		openPdf.mockImplementation(async (_url, loading: PdfLoading) => {
+			loading.onStale();
+			return null;
+		});
 		const onStale = vi.fn();
 		render(
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={onStale}
 			/>,
 		);
 		await waitFor(() => expect(onStale).toHaveBeenCalledOnce());
-		expect(openPdf).not.toHaveBeenCalled();
+		expect(rendered).toEqual([]);
 	});
 
 	it("says when the original cannot be read", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response(null, { status: 404 })),
-		);
+		openPdf.mockRejectedValue(new Error("The original answered 404."));
 		render(
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={() => {}}
 			/>,
@@ -129,16 +123,52 @@ describe("PageViewer", () => {
 		await screen.findByText("The original answered 404.");
 	});
 
-	it("closes the PDF it opened when it unmounts", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response(new Uint8Array([1]))),
+	it("says when a later read of the original fails", async () => {
+		openPdf.mockImplementation(async (_url, loading: PdfLoading) => {
+			setTimeout(() => loading.onError("The original answered 500."));
+			return fakePdf();
+		});
+		render(
+			<PageViewer
+				source="alpha"
+				documentId="d1"
+				original={{ sha256: "m", pdf: true }}
+				pages={pages}
+				onStale={() => {}}
+			/>,
 		);
+		await screen.findByText("The original answered 500.");
+	});
+
+	it("ignores what the original reports after it unmounts", async () => {
+		let loading: PdfLoading | undefined;
+		openPdf.mockImplementation(async (_url, given: PdfLoading) => {
+			loading = given;
+			return fakePdf();
+		});
+		const onStale = vi.fn();
 		const shown = render(
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
+				pages={pages}
+				onStale={onStale}
+			/>,
+		);
+		await waitFor(() => expect(loading).toBeDefined());
+		shown.unmount();
+		loading?.onStale();
+		loading?.onError("late");
+		expect(onStale).not.toHaveBeenCalled();
+	});
+
+	it("closes the PDF it opened when it unmounts", async () => {
+		const shown = render(
+			<PageViewer
+				source="alpha"
+				documentId="d1"
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={() => {}}
 			/>,
@@ -149,10 +179,6 @@ describe("PageViewer", () => {
 	});
 
 	it("says when a page fails to render, and not when its render is cancelled", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response(new Uint8Array([1]))),
-		);
 		const cancelled = Object.assign(new Error("cancelled"), {
 			name: "RenderingCancelledException",
 		});
@@ -173,7 +199,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={() => {}}
 			/>,
@@ -195,7 +221,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: false }}
+				original={{ sha256: "m", pdf: false }}
 				pages={pages.slice(0, 1)}
 				onStale={onStale}
 			/>,
@@ -204,7 +230,7 @@ describe("PageViewer", () => {
 			.getByRole("img", { name: "Page 1" })
 			.querySelector("img") as HTMLImageElement;
 		expect(image.getAttribute("src")).toBe(
-			"/api/backend/api/inspect/alpha/documents/d1/pages/1?md5=m",
+			"/api/backend/api/inspect/alpha/documents/d1/pages/1?sha256=m",
 		);
 		image.dispatchEvent(new Event("error"));
 		expect(onStale).toHaveBeenCalledOnce();
@@ -214,32 +240,35 @@ describe("PageViewer", () => {
 });
 
 describe("GroundingPages", () => {
-	const grounded = (md5: string) => ({
+	const grounded = (sha256: string) => ({
 		source: "beta",
 		document_id: "d1",
-		original: { md5, pdf: true },
+		original: { sha256, pdf: true },
 		pages: pages.slice(0, 1),
 		message: null,
 	});
 
 	it("draws the chunks on the original the answer names, read again when it changed", async () => {
 		const answers = [grounded("old"), grounded("new")];
-		const fetched = vi.fn(async (url: string) => {
-			if (url.startsWith("/api/backend/api/visualize/"))
-				return Response.json(answers.shift());
-			return url.endsWith("md5=old")
-				? new Response(null, { status: 409 })
-				: new Response(new Uint8Array([1]));
-		});
+		const fetched = vi.fn(async (_url: string) =>
+			Response.json(answers.shift()),
+		);
 		vi.stubGlobal("fetch", fetched);
+		openPdf.mockImplementation(async (url: string, loading: PdfLoading) => {
+			if (!url.endsWith("sha256=old")) return fakePdf();
+			loading.onStale();
+			return null;
+		});
 		render(<GroundingPages url="/api/backend/api/visualize/c1?source=beta" />);
 
 		await waitFor(() => expect(rendered).toEqual([1]));
 		expect(fetched.mock.calls.map(([url]) => url)).toEqual([
 			"/api/backend/api/visualize/c1?source=beta",
-			"/api/backend/api/inspect/beta/documents/d1/original?md5=old",
 			"/api/backend/api/visualize/c1?source=beta",
-			"/api/backend/api/inspect/beta/documents/d1/original?md5=new",
+		]);
+		expect(openPdf.mock.calls.map(([url]) => url)).toEqual([
+			"/api/backend/api/inspect/beta/documents/d1/original?sha256=old",
+			"/api/backend/api/inspect/beta/documents/d1/original?sha256=new",
 		]);
 		expect(
 			screen
@@ -257,9 +286,13 @@ describe("GroundingPages", () => {
 					return reads++
 						? Response.json({ detail: "chunk not found" }, { status: 404 })
 						: Response.json(grounded("old"));
-				return new Response(null, { status: 409 });
+				throw new Error(`unexpected ${url}`);
 			}),
 		);
+		openPdf.mockImplementation(async (_url, loading: PdfLoading) => {
+			loading.onStale();
+			return null;
+		});
 		render(<GroundingPages url="/api/backend/api/visualize/c1?source=beta" />);
 		await screen.findByText(/chunk not found/);
 		expect(screen.queryByRole("img", { name: "Page 1" })).toBeNull();

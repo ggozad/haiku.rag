@@ -1,9 +1,11 @@
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import overload
 from uuid import uuid4
 
+import lancedb
 import pyarrow as pa
 
 from haiku.rag.store.engine import Store
@@ -15,12 +17,32 @@ from haiku.rag.store.schema import (
     get_document_items_arrow_schema,
     get_documents_arrow_schema,
     query_to_pydantic,
+    write_source_schema,
 )
 from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
 
 # Ids per `id IN (...)` content lookup. Keeps the filter string bounded on an
 # unpaginated listing of a large database.
 _CONTENT_BATCH = 512
+
+
+@dataclass(frozen=True)
+class StoredOriginal:
+    """An original at one table version: its size, its SHA-256 and its bytes."""
+
+    size: int
+    sha256: str
+    _table: lancedb.AsyncTable
+    _row_id: int
+
+    async def read(self, offset: int, length: int) -> bytes:
+        """`length` bytes from `offset`, which must lie within the original."""
+        [data] = (
+            await self._table.fetch_blob_ranges(
+                "original", [(self._row_id, offset, length)]
+            )
+        ).to_pylist()
+        return data
 
 
 class DocumentRepository:
@@ -80,7 +102,7 @@ class DocumentRepository:
             docling_document=doc.docling_document,
             docling_version=doc.docling_version,
             original=doc.original,
-            original_md5=doc.original_md5,
+            original_sha256=doc.original_sha256,
             created_at=datetime.fromisoformat(created)
             if created
             else datetime.now(UTC),
@@ -96,7 +118,7 @@ class DocumentRepository:
             docling_document=entity.docling_document,
             docling_version=entity.docling_version,
             original=entity.original,
-            original_md5=entity.original_md5,
+            original_sha256=entity.original_sha256,
         )
 
     def _to_meta_record(
@@ -198,7 +220,7 @@ class DocumentRepository:
         "docling_document",
         "docling_version",
     ]
-    _ORIGINAL_COLUMNS = ["original", "original_md5"]
+    _ORIGINAL_COLUMNS = ["original", "original_sha256"]
 
     async def _record_by_id(
         self, doc_id: str, include_blobs: bool
@@ -246,59 +268,100 @@ class DocumentRepository:
     ) -> Document | None:
         """Get a document with only docling data loaded (skips content blob).
 
-        `with_original` adds the original and its MD5 from the same row version.
+        `with_original` adds the original and its SHA-256 from the same row version.
         """
-        safe_id = escape_sql_string(entity_id)
-        columns = self._DOCLING_COLUMNS + (
-            self._ORIGINAL_COLUMNS if with_original else []
-        )
-        results = await (
-            self.store.documents_table.query()
-            .select(columns)
-            .where(f"id = '{safe_id}'")
-            .limit(1)
-            .to_list()
-        )
+        if with_original:
+            read = await self._with_original(
+                entity_id, [*self._DOCLING_COLUMNS, "original_sha256"]
+            )
+            if read is None:
+                return None
+            row, original = read
+        else:
+            safe_id = escape_sql_string(entity_id)
+            results = await (
+                self.store.documents_table.query()
+                .select(self._DOCLING_COLUMNS)
+                .where(f"id = '{safe_id}'")
+                .limit(1)
+                .to_list()
+            )
+            if not results:
+                return None
+            row, original = results[0], None
 
-        if not results:
-            return None
-
-        row = results[0]
         return Document(
             id=row["id"],
             content="",
             docling_document=row.get("docling_document"),
             docling_version=row.get("docling_version"),
-            original=row.get("original"),
-            original_md5=row.get("original_md5"),
+            original=original,
+            original_sha256=row.get("original_sha256"),
         )
 
     async def get_original(self, entity_id: str) -> bytes | None:
         """The file the document's structure was converted from, if stored."""
-        row = await self._original_row(entity_id, ["original"])
-        return row["original"] if row else None
+        read = await self._with_original(entity_id, ["id"])
+        return read[1] if read else None
 
-    async def get_original_and_md5(self, entity_id: str) -> tuple[bytes, str] | None:
-        """The stored original and its MD5, from the same row version."""
-        row = await self._original_row(entity_id, self._ORIGINAL_COLUMNS)
-        if row is None or row["original"] is None or row["original_md5"] is None:
+    async def get_original_and_sha256(self, entity_id: str) -> tuple[bytes, str] | None:
+        """The stored original and its SHA-256, from the same row version."""
+        read = await self._with_original(entity_id, ["original_sha256"])
+        if read is None:
             return None
-        return row["original"], row["original_md5"]
+        row, original = read
+        if original is None or row["original_sha256"] is None:
+            return None
+        return original, row["original_sha256"]
 
-    async def _original_row(self, entity_id: str, columns: list[str]) -> dict | None:
+    async def open_original(self, entity_id: str) -> StoredOriginal | None:
+        """The stored original, read by byte range at the version it was opened."""
+        found = await self._pinned_row(entity_id, ["original", "original_sha256"])
+        if found is None:
+            return None
+        table, row = found
+        if row["original"] is None or row["original_sha256"] is None:
+            return None
+        return StoredOriginal(
+            row["original"]["size"], row["original_sha256"], table, row["_rowid"]
+        )
+
+    async def _with_original(
+        self, entity_id: str, columns: list[str]
+    ) -> tuple[dict, bytes | None] | None:
+        """`columns` of the document's row and its original, read at one version."""
+        found = await self._pinned_row(entity_id, columns)
+        if found is None:
+            return None
+        table, row = found
+        [original] = (await table.fetch_blobs("original", [row["_rowid"]])).to_pylist()
+        return row, original
+
+    async def _pinned_row(
+        self, entity_id: str, columns: list[str]
+    ) -> tuple[lancedb.AsyncTable, dict] | None:
+        """The document's row with its row id, and a handle checked out at the
+        version it was read from.
+
+        A query returns a blob's descriptor, so its bytes are fetched by row id,
+        on that handle.
+        """
+        table = await self.store.db.open_table("documents")
+        await table.checkout(await self.store.documents_table.version())
         safe_id = escape_sql_string(entity_id)
-        results = await (
-            self.store.documents_table.query()
+        rows = await (
+            table.query()
             .select(columns)
             .where(f"id = '{safe_id}'")
+            .with_row_id()
             .limit(1)
             .to_list()
         )
-        return results[0] if results else None
+        return (table, rows[0]) if rows else None
 
     async def ids_without_original(self, ids: list[str] | None = None) -> set[str]:
         """The documents, of `ids` when given, that have no stored original."""
-        predicate = "original_md5 IS NULL"
+        predicate = "original_sha256 IS NULL"
         if ids is not None:
             id_filter = build_document_id_filter(ids)
             if id_filter is None:
@@ -313,7 +376,7 @@ class DocumentRepository:
         return {row["id"] for row in rows}
 
     async def store_originals(self, originals: dict[str, bytes]) -> None:
-        """Write the original file of each document id, and its MD5."""
+        """Write the original file of each document id, and its SHA-256."""
         self.store._assert_writable()
         if not originals:
             return
@@ -323,15 +386,11 @@ class DocumentRepository:
                 {
                     "id": i,
                     "original": data,
-                    "original_md5": hashlib.md5(
-                        data, usedforsecurity=False
-                    ).hexdigest(),
+                    "original_sha256": hashlib.sha256(data).hexdigest(),
                 }
                 for i, data in originals.items()
             ],
-            schema=pa.schema(
-                [schema.field(c) for c in ("id", *self._ORIGINAL_COLUMNS)]
-            ),
+            schema=write_source_schema(schema, ("id", *self._ORIGINAL_COLUMNS)),
         )
         await (
             self.store.documents_table.merge_insert("id")
@@ -397,7 +456,7 @@ class DocumentRepository:
         schema = await self.store.documents_table.schema()
         source = pa.Table.from_pylist(
             [{c: getattr(doc_record, c) for c in columns}],
-            schema=pa.schema([schema.field(c) for c in columns]),
+            schema=write_source_schema(schema, columns),
         )
         # Update-only: a partial source with an insert branch is rejected.
         # The indexed plan holds the blobs in lance's query memory pool, unspillable.
@@ -526,12 +585,7 @@ class DocumentRepository:
             self.store._config.search.fts_language,
         )
 
-        count = len(
-            await query_to_pydantic(
-                self.store.documents_table.query().limit(1), DocumentRecord
-            )
-        )
-        if count > 0:
+        if await self.store.documents_table.count_rows() > 0:
             # Drop and recreate tables to clear all data
             await self.store.db.drop_table("documents")
             self.store.documents_table = await self.store.db.create_table(

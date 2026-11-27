@@ -105,7 +105,16 @@ original file are loaded separately:
 loaded = await client.document_repository.get_docling_data(doc.id)  # Document or None
 docling = loaded.get_docling_document() if loaded else None
 original = await client.document_repository.get_original(doc.id)  # bytes or None
-stored = await client.document_repository.get_original_and_md5(doc.id)  # (bytes, md5) or None
+stored = await client.document_repository.get_original_and_sha256(doc.id)  # (bytes, sha256) or None
+```
+
+`open_original` reads part of an original without loading the rest. The
+returned `StoredOriginal` stays at the version it was opened from:
+
+```python
+opened = await client.document_repository.open_original(doc.id)  # StoredOriginal or None
+if opened:
+    head = await opened.read(0, 1024)  # opened.size, opened.sha256
 ```
 
 By ID, title or URI, tried in that order:
@@ -374,7 +383,7 @@ for page_number, image in enumerate(images, start=1):
 
 `source` is required when the client covers several databases. `expand=False` draws only the chunk, without its expanded context.
 
-`chunk_grounding` takes the same arguments and returns the boxes without drawing them: a `Grounding` with the document id, the original and its MD5, and the boxes by page in the original's coordinates, origin at the bottom left. A box's `matched` is true for the chunk's own items and false for its context. It returns `None` when `visualize_chunk` returns nothing.
+`chunk_grounding` takes the same arguments and returns the boxes without drawing them: a `Grounding` with the document id, the original and its SHA-256, and the boxes by page in the original's coordinates, origin at the bottom left. A box's `matched` is true for the chunk's own items and false for its context. It returns `None` when `visualize_chunk` returns nothing.
 
 ## Question answering
 
@@ -574,7 +583,7 @@ async for doc_id in client.rebuild_database(mode=RebuildMode.ORIGINALS):
 - `RebuildMode.TITLE_ONLY` - Generate titles for untitled documents (no re-chunking or re-embedding)
 - `RebuildMode.SET_EMBEDDER` - Adopt the configured embedder's provider, name and `query_prefix` without re-embedding. Raises `ConfigMismatchError` when the vector dimension or `document_prefix` differs
 - `RebuildMode.REINDEX` - Rebuild the full-text and scalar indexes from scratch, rewriting no rows. Leaves the vector index alone
-- `RebuildMode.ORIGINALS` - Store the original PDF or image of every document that has none, fetched from its source when its MD5 equals the one recorded at ingest. An attachment's bytes come from its parent PDF. Writes `original` and `original_md5` only. Yields the id of each document whose original it stored. Raises `ValueError` while `storage.store_originals` is off
+- `RebuildMode.ORIGINALS` - Store the original PDF or image of every document that has none, fetched from its source when its MD5 equals the one recorded at ingest. An attachment's bytes come from its parent PDF. Writes `original` and `original_sha256` only. Yields the id of each document whose original it stored. Raises `ValueError` while `storage.store_originals` is off
 - `RebuildMode.DESCRIPTIONS` - Run the VLM over picture bytes already stored on `document_items.picture_data`, patch descriptions into the docling blob, re-chunk + re-embed. Skips the docling parse entirely. Idempotent: pictures already carrying `meta.description.text` are not re-described, so the operation is safe to re-run.
 
 Every mode except `TITLE_ONLY`, `SET_EMBEDDER` and `ORIGINALS` ends by rebuilding the full-text and scalar indexes, whatever `storage.auto_vacuum` says. `FULL`, `RECHUNK`, `EMBED_ONLY` and `DESCRIPTIONS` also retrain the vector index if the database had one.

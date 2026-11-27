@@ -184,6 +184,8 @@ Back up the database first. `migrate` exits 1 on failure.
 
 The 0.113.0 migration deletes the stored page images and reclaims their space at once: it rewrites every row of `documents`, then vacuums the database at zero retention. Stop every other process using the database before running it. Its memory grows with the size of the `documents` table without the page images. A tag taken before it keeps its page images on disk, and `migrate` names such tags. Visual grounding renders from a document's original file. An existing document gets it from [`rebuild --originals`](#rebuild), or when it is re-ingested, a full rebuild included. In the web app's compose stack, run both in the ingester container, as [Database maintenance](apps.md#database-maintenance) shows.
 
+The 0.114.0 migration stores each original as a lance blob, so a byte range of it can be read without the rest. It rewrites `documents` at lance file format 2.2 and vacuums at zero retention, so stop every other process using the database before running it. On a local or object-storage database it reads a few rows at a time, and its memory stays near that of a vacuum. On LanceDB Cloud, which is untested, it holds the whole `documents` table in memory. Blobs are stored uncompressed, so `documents` grows by about a seventh. A tag taken before it keeps the earlier `documents` on disk, and `migrate` names such tags.
+
 `init` and `migrate` record the schema the release writes as `schema_version`. A release refuses to write to a database whose `schema_version` is newer than its own schema, and a read-only open warns:
 
 ```

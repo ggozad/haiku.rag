@@ -82,7 +82,7 @@ export default function PageViewer({
 					) : (
 						// biome-ignore lint/performance/noImgElement: page render from the backend
 						<img
-							src={pageImageUrl(source, documentId, page.page, original.md5)}
+							src={pageImageUrl(source, documentId, page.page, original.sha256)}
 							alt=""
 							className="absolute inset-0 size-full"
 							onError={onStale}
@@ -125,18 +125,19 @@ function usePdf(
 		setError(null);
 		void (async () => {
 			try {
-				const response = await fetch(
-					originalUrl(source, documentId, original.md5),
-					{ signal: controller.signal },
+				opened = await openPdf(
+					originalUrl(source, documentId, original.sha256),
+					{
+						onStale: () => {
+							if (!controller.signal.aborted) stale.current();
+						},
+						onError: (message) => {
+							if (!controller.signal.aborted) setError(message);
+						},
+						signal: controller.signal,
+					},
 				);
-				if (response.status === 409) {
-					stale.current();
-					return;
-				}
-				if (!response.ok) {
-					throw new Error(`The original answered ${response.status}.`);
-				}
-				opened = await openPdf(await response.arrayBuffer());
+				if (opened === null) return;
 				if (controller.signal.aborted) void opened.loadingTask.destroy();
 				else setDocument(opened);
 			} catch (err) {
@@ -149,7 +150,7 @@ function usePdf(
 			void opened?.loadingTask.destroy();
 			setDocument(null);
 		};
-	}, [source, documentId, original.md5, original.pdf]);
+	}, [source, documentId, original.sha256, original.pdf]);
 
 	return { document, error };
 }

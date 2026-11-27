@@ -230,7 +230,9 @@ async def reload(request: Request) -> JSONResponse:
 
 async def http_error(_: Request, error: Exception) -> JSONResponse:
     assert isinstance(error, HTTPException)
-    return JSONResponse({"error": error.detail}, status_code=error.status_code)
+    return JSONResponse(
+        {"error": error.detail}, status_code=error.status_code, headers=error.headers
+    )
 
 
 def create_app(

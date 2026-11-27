@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
 
+import pyarrow as pa
 import pytest
 from docling_core.types.doc.base import BoundingBox, Size
 from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
@@ -31,6 +32,10 @@ from tests.conftest import build_pdf, capture_logs, serving_url, writing
 
 def _md5(data: bytes) -> str:
     return hashlib.md5(data, usedforsecurity=False).hexdigest()
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 def _png(width: int = 300, height: int = 200) -> bytes:
@@ -77,13 +82,11 @@ async def _client(path: Path, config: AppConfig | None = None):
 async def _stored(
     client: HaikuRAG, document_id: str
 ) -> tuple[bytes | None, str | None]:
-    [row] = await (
-        client.store.documents_table.query()
-        .select(["original", "original_md5"])
-        .where(f"id = '{document_id}'")
-        .to_list()
+    document = await client.document_repository.get_docling_data(
+        document_id, with_original=True
     )
-    return row["original"], row["original_md5"]
+    assert document is not None
+    return document.original, document.original_sha256
 
 
 @pytest.fixture
@@ -112,7 +115,7 @@ async def test_a_source_ingest_stores_the_converted_bytes(
         doc = await client.create_document_from_source(path)
         assert not isinstance(doc, list) and doc.id is not None
 
-        assert await _stored(client, doc.id) == (body, _md5(body))
+        assert await _stored(client, doc.id) == (body, _sha256(body))
         assert converted == [body]
 
 
@@ -187,7 +190,7 @@ async def test_a_pdf_without_a_pdf_content_type_stores_its_original(
         )
         assert doc.id is not None
 
-        assert await _stored(client, doc.id) == (body, _md5(body))
+        assert await _stored(client, doc.id) == (body, _sha256(body))
 
 
 async def test_a_before_ingest_body_is_the_stored_original(
@@ -209,7 +212,7 @@ async def test_a_before_ingest_body_is_the_stored_original(
         doc = await client.create_document_from_source(path)
         assert not isinstance(doc, list) and doc.id is not None
 
-        assert await _stored(client, doc.id) == (rewritten, _md5(rewritten))
+        assert await _stored(client, doc.id) == (rewritten, _sha256(rewritten))
         assert converted == [rewritten]
 
 
@@ -231,7 +234,7 @@ async def test_a_file_replaced_after_its_fetch_is_stored_as_fetched(
         doc = await client.create_document_from_source(path)
         assert not isinstance(doc, list) and doc.id is not None
 
-        assert await _stored(client, doc.id) == (fetched, _md5(fetched))
+        assert await _stored(client, doc.id) == (fetched, _sha256(fetched))
         assert converted == [fetched]
 
 
@@ -249,7 +252,7 @@ async def test_an_import_with_an_original_stores_it_and_renders_from_it(
         assert doc.id is not None
         [chunk] = await client.chunk_repository.get_by_document_id(doc.id)
 
-        assert await _stored(client, doc.id) == (original, _md5(original))
+        assert await _stored(client, doc.id) == (original, _sha256(original))
         [image] = await client.visualize_chunk(chunk)
         assert image.size == (400, 400)
 
@@ -294,9 +297,9 @@ async def test_a_batch_import_stores_each_original(temp_db_path):
         )
 
         assert [await _stored(client, d.id) for d in stored if d.id] == [
-            (first, _md5(first)),
+            (first, _sha256(first)),
             (None, None),
-            (second, _md5(second)),
+            (second, _sha256(second)),
         ]
 
 
@@ -337,7 +340,7 @@ async def test_a_new_structure_with_an_original_replaces_it(temp_db_path):
 
         assert await _stored(client, document_id) == (
             replacement,
-            _md5(replacement),
+            _sha256(replacement),
         )
 
 
@@ -458,7 +461,7 @@ async def test_a_document_regains_its_original_and_renders(
     async with _client(temp_db_path) as client:
         assert await _backfill(client) == [doc_id]
 
-        assert await _stored(client, doc_id) == (body, _md5(body))
+        assert await _stored(client, doc_id) == (body, _sha256(body))
         [chunk] = await client.chunk_repository.get_by_document_id(doc_id)
         assert len(await client.visualize_chunk(chunk)) == 1
 
@@ -502,8 +505,8 @@ async def test_attachments_two_levels_deep_regain_their_originals(
         assert stored == set(ids.values())
         inner_uri = f"{path.as_uri()}#attachment=inner.pdf"
         leaf_uri = f"{inner_uri}#attachment=leaf.png"
-        assert await _stored(client, ids[inner_uri]) == (inner, _md5(inner))
-        assert await _stored(client, ids[leaf_uri]) == (leaf, _md5(leaf))
+        assert await _stored(client, ids[inner_uri]) == (inner, _sha256(inner))
+        assert await _stored(client, ids[leaf_uri]) == (leaf, _sha256(leaf))
 
 
 async def test_a_sibling_sorting_between_a_parent_and_its_attachment(
@@ -532,15 +535,28 @@ async def test_an_attachment_is_filled_from_its_parents_stored_original(
     async with _client(temp_db_path) as client:
         await client.create_document_from_source(path)
         leaf_id = (await _by_uri(client))[f"{path.as_uri()}#attachment=leaf.png"]
-        await client.store.documents_table.update(
-            {"original": None, "original_md5": None}, where=f"id = '{leaf_id}'"
+        await (
+            client.store.documents_table.merge_insert("id")
+            .when_matched_update_all()
+            .execute(
+                pa.table(
+                    {"id": [leaf_id], "original": [None], "original_sha256": [None]},
+                    schema=pa.schema(
+                        [
+                            pa.field("id", pa.string()),
+                            pa.field("original", pa.large_binary()),
+                            pa.field("original_sha256", pa.string()),
+                        ]
+                    ),
+                )
+            )
         )
     path.unlink()
 
     async with _client(temp_db_path) as client:
         assert await _backfill(client) == [leaf_id]
 
-        assert await _stored(client, leaf_id) == (leaf, _md5(leaf))
+        assert await _stored(client, leaf_id) == (leaf, _sha256(leaf))
 
 
 @pytest.mark.parametrize("change", ["edited", "deleted"])

@@ -918,9 +918,7 @@ async def test_rebuild_descriptions_patches_blob_and_chunks(temp_db_path, monkey
         assert created.id is not None
 
         sentinel_original = b"%PDF-SENTINEL"
-        await rag.store.documents_table.update(
-            {"original": sentinel_original}, where=f"id = '{created.id}'"
-        )
+        await rag.document_repository.store_originals({created.id: sentinel_original})
 
         from_blob = (
             await rag.document_repository.get_by_id(created.id, include_blobs=True)
@@ -1695,9 +1693,7 @@ async def test_rebuild_holds_no_original(temp_db_path, monkeypatch, mode):
         )
         assert created.id is not None
         original = b"%PDF-SENTINEL"
-        await rag.store.documents_table.update(
-            {"original": original}, where=f"id = '{created.id}'"
-        )
+        await rag.document_repository.store_originals({created.id: original})
 
         async for _ in rag.rebuild_database(mode=mode):
             pass

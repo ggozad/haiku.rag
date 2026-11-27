@@ -9,8 +9,8 @@ from haiku.rag.store.models import Chunk
 from tests.support import image_bytes, letter_pdf, paged_document, served
 
 
-def _md5(data: bytes) -> str:
-    return hashlib.md5(data).hexdigest()
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
 
 async def _store_original(config, source: str, document_id: str, data: bytes):
@@ -30,7 +30,7 @@ async def test_a_chunk_grounding_gives_the_original_and_the_boxes_by_page(
     assert body == {
         "source": "beta",
         "document_id": ids["beta"]["document_id"],
-        "original": {"md5": _md5(letter_pdf(1)), "pdf": True},
+        "original": {"sha256": _sha256(letter_pdf(1)), "pdf": True},
         "pages": [
             {
                 "page": 1,
@@ -119,7 +119,7 @@ async def test_a_document_reads_with_its_original_and_pages(client, seeded):
     base = "/api/inspect/alpha/documents"
 
     seeded_doc = (await client.get(f"{base}/{ids['alpha']['document_id']}")).json()
-    assert seeded_doc["original"] == {"md5": _md5(letter_pdf(1)), "pdf": True}
+    assert seeded_doc["original"] == {"sha256": _sha256(letter_pdf(1)), "pdf": True}
     assert seeded_doc["pages"] == [{"page": 1, "width": 612.0, "height": 792.0}]
 
     scan_doc = (await client.get(f"{base}/{scan.id}")).json()
@@ -141,7 +141,7 @@ async def test_the_document_and_its_original_read_without_the_structure(
     monkeypatch.setattr(DocumentRepository, "get_docling_data", no_structure)
     _, ids = seeded
     base = f"/api/inspect/alpha/documents/{ids['alpha']['document_id']}"
-    params = {"md5": _md5(letter_pdf(1))}
+    params = {"sha256": _sha256(letter_pdf(1))}
 
     assert (await client.get(base)).status_code == 200
     assert (await client.get(f"{base}/original", params=params)).status_code == 200
@@ -159,12 +159,82 @@ async def test_the_original_pdf_is_served_from_the_selected_database(tmp_path, s
         for source, original in (("alpha", letter_pdf(1)), ("beta", letter_pdf(2))):
             response = await client.get(
                 f"/api/inspect/{source}/documents/{document_id}/original",
-                params={"md5": _md5(original)},
+                params={"sha256": _sha256(original)},
             )
             assert response.status_code == 200
             assert response.content == original
             assert response.headers["content-type"] == "application/pdf"
             assert "immutable" in response.headers["cache-control"]
+
+
+async def test_the_original_answers_byte_ranges(client, seeded, monkeypatch):
+    import lancedb
+
+    async def whole(*_args, **_kwargs):
+        raise AssertionError("the whole original was read")
+
+    monkeypatch.setattr(lancedb.AsyncTable, "fetch_blobs", whole)
+    _, ids = seeded
+    pdf = letter_pdf(1)
+    size = len(pdf)
+    url = f"/api/inspect/alpha/documents/{ids['alpha']['document_id']}/original"
+    params = {"sha256": _sha256(pdf)}
+
+    for header, start, end in (
+        ("bytes=10-19", 10, 19),
+        (f"bytes={size - 7}-", size - 7, size - 1),
+        ("bytes=-5", size - 5, size - 1),
+        (f"bytes=10-{size + 100}", 10, size - 1),
+    ):
+        response = await client.get(url, params=params, headers={"Range": header})
+        assert response.status_code == 206, header
+        assert response.content == pdf[start : end + 1], header
+        assert response.headers["content-range"] == f"bytes {start}-{end}/{size}"
+        assert response.headers["accept-ranges"] == "bytes"
+        assert "immutable" in response.headers["cache-control"]
+
+    whole_file = await client.get(url, params=params)
+    assert whole_file.status_code == 200
+    assert whole_file.content == pdf
+    assert whole_file.headers["content-length"] == str(size)
+    assert whole_file.headers["accept-ranges"] == "bytes"
+
+    for beyond in (f"bytes={size}-", "bytes=-0"):
+        response = await client.get(url, params=params, headers={"Range": beyond})
+        assert response.status_code == 416, beyond
+        assert response.headers["content-range"] == f"bytes */{size}"
+
+    for unread in ("bytes=5-2", "lines=1-2", "bytes=1-2,4-5", "bytes=-"):
+        response = await client.get(url, params=params, headers={"Range": unread})
+        assert response.status_code == 200, unread
+        assert response.content == pdf
+
+
+async def test_an_original_is_read_a_chunk_at_a_time(client, seeded, monkeypatch):
+    from haiku.rag.store.repositories.document import StoredOriginal
+    from haiku_rag_app import inspect
+
+    monkeypatch.setattr(inspect, "_CHUNK", 256)
+    reads: list[int] = []
+    read = StoredOriginal.read
+
+    async def recorded(self, offset, length):
+        reads.append(length)
+        return await read(self, offset, length)
+
+    monkeypatch.setattr(StoredOriginal, "read", recorded)
+    _, ids = seeded
+    pdf = letter_pdf(1)
+    url = f"/api/inspect/alpha/documents/{ids['alpha']['document_id']}/original"
+    params = {"sha256": _sha256(pdf)}
+
+    for headers, body in (({"Range": "bytes=3-"}, pdf[3:]), ({}, pdf)):
+        reads.clear()
+        response = await client.get(url, params=params, headers=headers)
+        assert response.content == body
+        assert response.headers["content-length"] == str(len(body))
+        # The first read checks the PDF header.
+        assert len(reads) > 2 and max(reads[1:]) <= 256
 
 
 async def test_a_replaced_original_answers_conflict(tmp_path, seeded):
@@ -178,13 +248,17 @@ async def test_a_replaced_original_answers_conflict(tmp_path, seeded):
         await _store_original(config, "alpha", document_id, letter_pdf(2))
 
         base = f"/api/inspect/alpha/documents/{document_id}"
-        params = {"md5": grounding["original"]["md5"]}
+        params = {"sha256": grounding["original"]["sha256"]}
         original = await client.get(f"{base}/original", params=params)
         assert original.status_code == 409
+        ranged = await client.get(
+            f"{base}/original", params=params, headers={"Range": "bytes=0-9"}
+        )
+        assert ranged.status_code == 409
         assert (await client.get(f"{base}/pages/1", params=params)).status_code == 409
 
 
-async def test_an_original_needs_its_md5(client, seeded):
+async def test_an_original_needs_its_sha256(client, seeded):
     _, ids = seeded
     base = f"/api/inspect/alpha/documents/{ids['alpha']['document_id']}"
     assert (await client.get(f"{base}/original")).status_code == 400
@@ -202,15 +276,17 @@ async def test_only_a_stored_pdf_is_served_as_the_original(client, seeded):
             paged_document("scan"), [], uri="test://alpha/scan.png", original=scan_bytes
         )
     base = "/api/inspect/alpha/documents"
-    for document_id, md5 in (
-        (scan.id, _md5(scan_bytes)),
+    for document_id, sha256 in (
+        (scan.id, _sha256(scan_bytes)),
         (bare.id, "x"),
         ("nope", "x"),
     ):
         response = await client.get(
-            f"{base}/{document_id}/original", params={"md5": md5}
+            f"{base}/{document_id}/original", params={"sha256": sha256}
         )
         assert response.status_code == 404
+    page = await client.get(f"{base}/{bare.id}/pages/1", params={"sha256": "x"})
+    assert page.status_code == 404
 
 
 async def test_an_image_page_renders_plain(client, seeded):
@@ -221,7 +297,7 @@ async def test_an_image_page_renders_plain(client, seeded):
             paged_document("scan"), [], uri="test://alpha/scan.png", original=scan_bytes
         )
     base = f"/api/inspect/alpha/documents/{scan.id}/pages"
-    params = {"md5": _md5(scan_bytes)}
+    params = {"sha256": _sha256(scan_bytes)}
 
     response = await client.get(f"{base}/1", params=params)
     assert response.headers["content-type"] == "image/png"
@@ -236,6 +312,6 @@ async def test_only_an_image_original_renders_its_pages(client, seeded):
     _, ids = seeded
     response = await client.get(
         f"/api/inspect/alpha/documents/{ids['alpha']['document_id']}/pages/1",
-        params={"md5": _md5(letter_pdf(1))},
+        params={"sha256": _sha256(letter_pdf(1))},
     )
     assert response.status_code == 404

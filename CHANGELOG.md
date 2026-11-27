@@ -2,8 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `DocumentRepository.open_original` returns a `StoredOriginal`: the original's size and SHA-256, and `read(offset, length)` by byte range.
+- The web app's `/original` answers `Range` requests, and its page viewer reads a PDF by byte range.
+
 ### Changed
 
+- **Breaking:** the original's hash is SHA-256: `original_md5` → `original_sha256` (`DocumentRecord`, `Document`, `Grounding`), `get_original_and_md5` → `get_original_and_sha256`, and the web app's `?md5=` → `?sha256=`. The 0.114.0 migration computes it. `metadata["md5"]` stays the MD5 of the source.
+- `documents.original` is a lance blob column at lance file format 2.2. The 0.114.0 migration rewrites `documents` and vacuums at zero retention: stop every other process using the database first.
 - `Store.vacuum` compacts `documents` and `document_items` on one thread.
 - `Store.vacuum` logs a pass skipped on an `OSError` at WARNING instead of DEBUG.
 - pylance 14.0.3.

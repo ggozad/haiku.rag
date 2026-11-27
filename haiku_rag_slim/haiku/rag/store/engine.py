@@ -36,6 +36,7 @@ from haiku.rag.store.schema import (
     get_document_items_arrow_schema,
     get_documents_arrow_schema,
     has_payload_columns,
+    is_blob,
     query_to_pydantic,
     rebuild_indexes,
 )
@@ -229,7 +230,8 @@ def size_compaction(
     megabytes, so an average lets a task pick up many outsized rows. A fragment
     wider than half of `target_bytes` per row is oversized: two of its rows
     already pass the target, so it is left out of both the estimate and the
-    merge. Sizes come from the manifest, so no payload is read.
+    merge. Data-file sizes come from the manifest and blob sizes from their
+    descriptors, so no payload is read.
 
     Returns None when any fragment cannot be measured, which means leave the
     table alone rather than fall back to lance's unbounded default: sizing from
@@ -238,6 +240,7 @@ def size_compaction(
     """
     widest = 0.0
     oversized: list[int] = []
+    blobs = [field.name for field in dataset.schema if is_blob(field)]
     for fragment in dataset.get_fragments():
         rows = fragment.physical_rows
         if not rows:
@@ -245,13 +248,28 @@ def size_compaction(
         sizes = [f.file_size_bytes for f in fragment.data_files()]
         if not all(sizes):
             return None
-        width = sum(cast(list[int], sizes)) / rows
+        width = sum(cast(list[int], sizes)) / rows + _sidecar_width(fragment, blobs)
         if width > target_bytes / 2:
             oversized.append(fragment.fragment_id)
         else:
             widest = max(widest, width)
     target = int(target_bytes // widest) if widest else None
     return CompactionSizing(target, oversized)
+
+
+def _sidecar_width(fragment: "lance.LanceFragment", blobs: list[str]) -> float:
+    """Bytes per live row of the fragment's blob values stored outside its
+    data files."""
+    if not blobs:
+        return 0.0
+    descriptors = fragment.to_table(columns=blobs)
+    outside = sum(
+        value["size"]
+        for name in blobs
+        for value in descriptors[name].to_pylist()
+        if value is not None and value["kind"] != 0
+    )
+    return outside / descriptors.num_rows
 
 
 def kept_target(stored: int | None, computed: int | None) -> int | None:
@@ -778,7 +796,9 @@ class Store:
         and runs many-core hosts out of file descriptors.
         """
         dataset = await table.to_lance()
-        sizing = size_compaction(dataset, self._config.storage.compaction_target_bytes)
+        sizing = await asyncio.to_thread(
+            size_compaction, dataset, self._config.storage.compaction_target_bytes
+        )
         if sizing is None:
             if dataset.get_fragments():
                 logger.warning(

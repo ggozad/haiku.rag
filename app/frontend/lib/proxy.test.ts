@@ -57,6 +57,50 @@ describe("proxy", () => {
 		expect(await response.text()).toBe("streamed");
 	});
 
+	it("passes a byte range through with the length of an uncompressed answer", async () => {
+		const calls = stubFetch(
+			() =>
+				new Response("bytes", {
+					status: 206,
+					headers: {
+						"content-length": "5",
+						"accept-ranges": "bytes",
+						"content-range": "bytes 10-14/900",
+					},
+				}),
+		);
+		const response = await proxy(
+			new Request("http://app/api/backend/original", {
+				headers: { range: "bytes=10-14" },
+			}),
+			"http://backend:8000",
+			["original"],
+		);
+
+		expect((calls[0].init.headers as Headers).get("range")).toBe("bytes=10-14");
+		expect(response.status).toBe(206);
+		expect(response.headers.get("content-length")).toBe("5");
+		expect(response.headers.get("accept-ranges")).toBe("bytes");
+		expect(response.headers.get("content-range")).toBe("bytes 10-14/900");
+	});
+
+	it("drops the length of a compressed answer, which fetch has decoded", async () => {
+		stubFetch(
+			() =>
+				new Response("decoded", {
+					headers: { "content-length": "3", "content-encoding": "gzip" },
+				}),
+		);
+		const response = await proxy(
+			new Request("http://app/api/backend/x"),
+			"http://backend:8000",
+			["x"],
+		);
+
+		expect(response.headers.get("content-length")).toBeNull();
+		expect(response.headers.get("content-encoding")).toBeNull();
+	});
+
 	it("hands each upstream chunk on before the upstream finishes", async () => {
 		let push: (text: string) => void = () => {};
 		const upstream = new ReadableStream<Uint8Array>({
