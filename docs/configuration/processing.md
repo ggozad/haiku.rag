@@ -403,13 +403,12 @@ Frames are never described, whatever `pictures` says, and `rebuild
 
 #### Stored recordings
 
-Every ingested audio and video file is stored in the database, verbatim, in a
-`recordings` table, together with its duration and any subtitles read beside
-it. It takes the file's own size, on top of the frames. The file is written,
-replaced and deleted with its document, and tags and `tag restore` cover it.
-Vacuum removes old versions of the table and never compacts it, since
-compaction would rewrite every stored file. An existing database gains the
-table with `haiku-rag migrate`.
+With `storage.store_originals` (default true), an ingested audio or video file
+is stored verbatim as its document's original, in the `documents` table, and the
+subtitles read beside it with it. It takes the file's own size, on top of the
+frames. A recording is read by byte range only: `get_original` and the visual
+grounding paths return none for one. An existing database gains the subtitles
+column with `haiku-rag migrate`.
 
 `view` decodes its frames from a stored video file: eight at even times across
 the part of the window inside the recording, fewer in a window only a few
@@ -419,17 +418,23 @@ than 60 s, `view` shows the frames sampled at ingest and says why. A cited
 decoded frame is decoded again when it is shown, so a process showing such a
 citation needs `ffmpeg`: the published slim image and the web app's backend
 image include it. The MCP server has no `view` and never cites a decoded frame.
-A full `rebuild` converts a recording again from its stored file and
-subtitles.
+A full `rebuild` converts a recording again from its stored file and subtitles,
+and re-chunks a recording as stored when its file or subtitles change while it
+converts. `rebuild --descriptions` re-chunks and re-embeds recordings, as
+`--rechunk` does, and describes nothing in them.
 
-`import_document(recording=)` and `DocumentImport.recording` store the file of
-an imported recording, as a `RecordingFile(content, suffix, subtitles)`. The
-import is refused unless the document is a recording converted from those
-bytes (its `origin.binary_hash`). An import without a file keeps a stored file
-with a hash matching the document. A recording without a stored file, an
-audio recording included, shows the frames sampled at ingest, and a full
-`rebuild` re-chunks it. LanceDB Cloud stores no recordings: ingesting one there
-raises `UnsupportedRecordingStorageError`.
+`import_document(original=, original_subtitles=)` and `DocumentImport` store
+the file of an imported recording and its subtitles. The import is refused
+unless the document is a recording converted from those bytes (its
+`origin.binary_hash`) and its `origin.filename` has an audio or video suffix. A
+source ingest whose `after_convert` hook returns a structure that fails the same
+check stores the document without its file and logs a warning. A write that
+replaces the structure keeps the stored file while the new structure names it
+(see [Storage](storage.md)). A recording without a stored file, an audio
+recording included, shows the frames sampled at ingest, and a full `rebuild`
+re-chunks it. `rebuild --originals` does not store recordings. A recording on
+LanceDB Cloud is stored the way any original is there, a path that is
+untested.
 
 `conversion_timeout` bounds the conversion of a recording, and a recording
 longer than a few minutes may need a larger one. A conversion that times out

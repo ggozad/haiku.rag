@@ -60,7 +60,7 @@ async with HaikuRAG("database.lancedb", create=True) as client:
     )
 ```
 
-`original` is the converted PDF or image file, which visual grounding renders. Without it the document has no visual grounding.
+`original` is the converted file: a PDF or image, which visual grounding renders, or a recording's audio or video file (see [Stored recordings](configuration/processing.md#stored-recordings)). Without it a PDF or image has no visual grounding.
 
 ## Convert
 

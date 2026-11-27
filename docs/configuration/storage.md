@@ -57,14 +57,14 @@ storage:
   auto_vacuum: true  # Enable automatic vacuuming after operations
   vacuum_retention_seconds: 86400  # Cleanup threshold in seconds
   compaction_target_bytes: 2147483648  # Target size for a compacted fragment
-  store_originals: true  # Store PDF and image files for visual grounding
+  store_originals: true  # Store PDF, image, audio and video files
 ```
 
 - **data_dir**: Directory for local database storage. When empty, uses platform-specific default locations
 - **auto_vacuum**: When enabled (default), automatically runs vacuum after document create/update/delete operations and database rebuilds. Background vacuums are throttled to at most one every 5 minutes, so sustained ingestion does not trigger continuous compaction, and a final vacuum runs when the client closes. Set to `false` to vacuum only with `haiku-rag vacuum`. Vacuum is also what adds newly written rows to the indexes, so with `false` they stay outside them until `haiku-rag vacuum`, or `haiku-rag rebuild --reindex` for the full-text and scalar indexes. With the ingester's [maintenance](../ingester/running.md#maintenance) enabled, the ingester's clients ignore it and the maintenance pass vacuums
 - **vacuum_retention_seconds**: When vacuum runs, old table versions older than this threshold are removed. Default: 86400 seconds (1 day). Set to 0 for aggressive cleanup (removes all old versions immediately)
 - **compaction_target_bytes**: Target size for the fragments compaction writes on the tables that store docling blobs. Default: 2 GiB. Advisory rather than a cap, see [Vacuum memory](#vacuum-memory) below
-- **store_originals**: When enabled (default), ingesting a PDF or an image stores the file in the `documents` table, and visual grounding renders its pages from it. When disabled, no file is stored and documents ingested meanwhile have no visual grounding until `haiku-rag rebuild --originals` stores their files. The setting governs writes only: a stored file renders either way
+- **store_originals**: When enabled (default), ingesting a PDF, an image, an audio or a video file stores the file in the `documents` table. Visual grounding renders a PDF's or image's pages from it, and `view` decodes a video's frames from it (see [Stored recordings](processing.md#stored-recordings)). When disabled, no file is stored and documents ingested meanwhile have no visual grounding until `haiku-rag rebuild --originals` stores their files, which it does for PDFs and images only. The setting governs writes only: a stored file is read either way. A write that replaces a document's structure without supplying a file keeps the stored one when the new structure's `origin.binary_hash` names it and the structure is of the same kind, and otherwise clears it with a warning
 
 !!! warning "Vacuum retention"
     Keep `vacuum_retention_seconds` above the time a document takes to process and write. A lower value lets vacuum remove table versions an in-flight operation still needs.
