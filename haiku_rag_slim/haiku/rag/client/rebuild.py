@@ -40,6 +40,7 @@ from haiku.rag.store.schema import (
     create_chunk_model,
     ensure_indexes,
     has_vector_index,
+    write_source_schema,
 )
 
 if TYPE_CHECKING:
@@ -897,7 +898,7 @@ async def _flush_rebuild_batch(
             columns = ("id", *document_columns)
             rows = [{c: getattr(doc, c) for c in columns} for doc in documents]
             source = pa.Table.from_pylist(
-                rows, schema=pa.schema([schema.field(c) for c in columns])
+                rows, schema=write_source_schema(schema, columns)
             )
             # Update-only: a partial source with an insert branch is rejected.
             # The indexed plan holds the blobs in lance's query memory pool, unspillable.

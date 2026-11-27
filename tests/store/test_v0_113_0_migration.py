@@ -133,7 +133,10 @@ async def test_migrate_deletes_page_images(temp_db_path):
         rows = await table.query().to_list()
         assert sorted(i.name for i in await table.list_indices()) == indexes
     assert "docling_pages" not in fields
-    assert (fields["original"], fields["original_md5"]) == ("large_binary", "string")
+    assert (fields["original"], fields["original_md5"]) == (
+        "extension<lance.blob.v2<BlobType>>",
+        "string",
+    )
     assert {r["id"]: r["docling_document"] for r in rows} == structures
     for row in rows:
         assert row["content"] == f"doc {ids.index(row['id'])}"

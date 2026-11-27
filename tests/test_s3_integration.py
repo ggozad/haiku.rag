@@ -3,6 +3,7 @@
 # Stop after:
 #   docker compose -f tests/docker/docker-compose.yml down -v
 
+import os
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
@@ -15,7 +16,10 @@ from haiku.rag.client.scope import DatabaseScope
 from haiku.rag.config.models import AppConfig, LanceDBConfig
 from haiku.rag.s3 import make_s3_store
 from haiku.rag.store.engine import ConnectionMode, Store
+from haiku.rag.store.repositories.document import DocumentRepository
+from haiku.rag.store.schema import is_blob
 from tests.services import reachable
+from tests.store.test_v0_114_0_migration import at_previous_release
 
 S3_ENDPOINT = "http://localhost:8333"
 S3_BUCKET = "test-bucket"
@@ -116,6 +120,21 @@ async def test_store_add_document(tmp_path, config):
 
         stats = await get_database_stats(store.db)
         assert stats["documents"]["num_rows"] == 1
+
+
+async def test_a_migration_stores_originals_as_blobs_on_object_storage(config):
+    config.storage.auto_vacuum = False
+    bodies = [os.urandom(1_000), os.urandom(200_000), os.urandom(9 * 2**20), None]
+    async with Store(_uri(config), config=config, create=True) as store:
+        ids = await at_previous_release(store, bodies)
+
+    async with Store(_uri(config), config=config, skip_migration_check=True) as store:
+        await store.migrate()
+
+    async with Store(_uri(config), config=config, read_only=True) as store:
+        assert is_blob((await store.documents_table.schema()).field("original"))
+        repo = DocumentRepository(store)
+        assert [await repo.get_original(i) for i in ids] == bodies
 
 
 async def test_client_create_document(config):

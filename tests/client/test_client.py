@@ -1743,9 +1743,7 @@ async def test_update_document_with_chunks_keeps_the_structure(
         assert doc.id is not None
         before = await client.document_repository.get_by_id(doc.id, include_blobs=True)
         assert before is not None and before.docling_document is not None
-        await client.store.documents_table.update(
-            {"original": b"%PDF-sentinel"}, where=f"id = '{doc.id}'"
-        )
+        await client.document_repository.store_originals({doc.id: b"%PDF-sentinel"})
 
         await client.update_document(
             doc.id,

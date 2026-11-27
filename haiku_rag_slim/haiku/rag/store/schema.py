@@ -5,11 +5,13 @@ table, or imports a client layer.
 """
 
 import logging
+from collections.abc import Iterable
 from typing import cast
 from uuid import uuid4
 
 import lancedb
 import pyarrow as pa
+from lance.blob import blob_field
 from lancedb.index import FTS, Bitmap, BTree
 from lancedb.pydantic import LanceModel, Vector
 from lancedb.query import AsyncQueryBase
@@ -62,6 +64,15 @@ def has_payload_columns(schema: pa.Schema) -> bool:
     return any(pa.types.is_large_binary(f.type) or is_blob(f) for f in schema)
 
 
+def write_source_schema(table_schema: pa.Schema, columns: Iterable[str]) -> pa.Schema:
+    """The schema of a write into `columns` of a table: blob values go in as
+    `large_binary`, which lance stores as blobs."""
+    fields = [table_schema.field(c) for c in columns]
+    return pa.schema(
+        pa.field(f.name, pa.large_binary()) if is_blob(f) else f for f in fields
+    )
+
+
 def is_blob(field: pa.Field) -> bool:
     """Whether `field` is a lance blob v2 column."""
     return (
@@ -79,14 +90,15 @@ def get_documents_arrow_schema() -> pa.Schema:
     exceeded, causing "byte array offset overflow" panics.
 
     This function overrides the default mapping to use `large_binary` instead,
-    which has 64-bit offsets and no practical size limit.
+    which has 64-bit offsets and no practical size limit. `original` is a lance
+    blob, so a byte range of it can be read without the rest.
     """
-    base_schema = DocumentRecord.to_arrow_schema()
-    large_binary_columns = {"docling_document", "original"}
     fields = []
-    for field in base_schema:
-        if field.name in large_binary_columns:
+    for field in DocumentRecord.to_arrow_schema():
+        if field.name == "docling_document":
             fields.append(pa.field(field.name, pa.large_binary()))
+        elif field.name == "original":
+            fields.append(blob_field(field.name))
         else:
             fields.append(field)
     return pa.schema(fields)

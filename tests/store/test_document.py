@@ -3,6 +3,7 @@ import sys
 import time
 from datetime import UTC, datetime
 
+import lancedb
 import pytest
 
 from haiku.rag.store.engine import Store
@@ -386,6 +387,69 @@ async def test_get_original_loads_only_the_original(temp_db_path):
         assert await doc_repo.get_original(stored.id) == b"%PDF-"
         assert await doc_repo.get_original(bare.id) is None
         assert await doc_repo.get_original("nonexistent-id") is None
+
+
+async def test_a_read_returns_the_version_it_queried(temp_db_path, monkeypatch):
+    """A write landing between the row query and the blob fetch is not seen."""
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        first = Document(content="a", docling_document=b"one", docling_version="1")
+        first.original, first.original_md5 = b"%PDF-one", "md5-one"
+        created = await doc_repo.create(first)
+        assert created.id is not None
+        fetch_blobs = lancedb.AsyncTable.fetch_blobs
+        replaced = False
+
+        async def write_then_fetch(self, column, row_ids):
+            nonlocal replaced
+            if not replaced:
+                replaced = True
+                second = created.model_copy()
+                second.docling_document = b"two"
+                second.original, second.original_md5 = b"%PDF-two", "md5-two"
+                await doc_repo.update(second, with_original=True)
+            return await fetch_blobs(self, column, row_ids)
+
+        monkeypatch.setattr(lancedb.AsyncTable, "fetch_blobs", write_then_fetch)
+        read = await doc_repo.get_docling_data(created.id, with_original=True)
+        monkeypatch.undo()
+
+        assert read is not None
+        assert (read.docling_document, read.original, read.original_md5) == (
+            b"one",
+            b"%PDF-one",
+            "md5-one",
+        )
+        assert await doc_repo.get_original_and_md5(created.id) == (
+            b"%PDF-two",
+            "md5-two",
+        )
+
+
+async def test_a_read_at_a_tag_returns_the_tagged_original(temp_db_path):
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        created = await doc_repo.create(Document(content="a", original=b"%PDF-one"))
+        assert created.id is not None
+        await store.create_tag("before")
+        await doc_repo.store_originals({created.id: b"%PDF-two"})
+
+    async with Store(temp_db_path, tag="before") as store:
+        assert await DocumentRepository(store).get_original(created.id) == b"%PDF-one"
+
+
+async def test_originals_round_trip_in_every_blob_tier(temp_db_path):
+    sizes = [1_000, 200_000, 9 * 2**20]
+    async with Store(temp_db_path, create=True) as store:
+        doc_repo = DocumentRepository(store)
+        bodies = [os.urandom(n) for n in sizes]
+        created = await doc_repo.create(
+            [Document(content=str(n), original=b) for n, b in zip(sizes, bodies)]
+        )
+
+        for document, body in zip(created, bodies):
+            assert document.id is not None
+            assert await doc_repo.get_original(document.id) == body
 
 
 async def test_stored_originals_leave_the_documents_without_one(temp_db_path):

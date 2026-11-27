@@ -4,6 +4,7 @@
 
 ### Changed
 
+- `documents.original` is a lance blob column at lance file format 2.2. The 0.114.0 migration rewrites `documents` and vacuums at zero retention: stop every other process using the database first.
 - `Store.vacuum` compacts `documents` and `document_items` on one thread.
 - `Store.vacuum` logs a pass skipped on an `OSError` at WARNING instead of DEBUG.
 - pylance 14.0.3.

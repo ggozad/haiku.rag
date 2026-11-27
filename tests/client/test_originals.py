@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
 
+import pyarrow as pa
 import pytest
 from docling_core.types.doc.base import BoundingBox, Size
 from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
@@ -77,13 +78,11 @@ async def _client(path: Path, config: AppConfig | None = None):
 async def _stored(
     client: HaikuRAG, document_id: str
 ) -> tuple[bytes | None, str | None]:
-    [row] = await (
-        client.store.documents_table.query()
-        .select(["original", "original_md5"])
-        .where(f"id = '{document_id}'")
-        .to_list()
+    document = await client.document_repository.get_docling_data(
+        document_id, with_original=True
     )
-    return row["original"], row["original_md5"]
+    assert document is not None
+    return document.original, document.original_md5
 
 
 @pytest.fixture
@@ -532,8 +531,21 @@ async def test_an_attachment_is_filled_from_its_parents_stored_original(
     async with _client(temp_db_path) as client:
         await client.create_document_from_source(path)
         leaf_id = (await _by_uri(client))[f"{path.as_uri()}#attachment=leaf.png"]
-        await client.store.documents_table.update(
-            {"original": None, "original_md5": None}, where=f"id = '{leaf_id}'"
+        await (
+            client.store.documents_table.merge_insert("id")
+            .when_matched_update_all()
+            .execute(
+                pa.table(
+                    {"id": [leaf_id], "original": [None], "original_md5": [None]},
+                    schema=pa.schema(
+                        [
+                            pa.field("id", pa.string()),
+                            pa.field("original", pa.large_binary()),
+                            pa.field("original_md5", pa.string()),
+                        ]
+                    ),
+                )
+            )
         )
     path.unlink()
 

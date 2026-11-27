@@ -72,9 +72,11 @@ async def test_vacuum_at_zero_retention_removes_the_old_settings_from_disk(
 ):
     from haiku.rag.client import HaikuRAG
 
-    # The 0.113.0 step vacuums at zero retention itself.
+    # The 0.113.0 and 0.114.0 steps vacuum at zero retention themselves.
     monkeypatch.setattr(
-        upgrades, "upgrades", [u for u in upgrades.upgrades if u.version != "0.113.0"]
+        upgrades,
+        "upgrades",
+        [u for u in upgrades.upgrades if u.version not in ("0.113.0", "0.114.0")],
     )
     async with Store(temp_db_path, create=True) as store:
         await _write_row(store, _full_settings("0.88.2"))

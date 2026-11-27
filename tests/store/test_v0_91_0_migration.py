@@ -91,7 +91,9 @@ async def test_migrating_a_v2_database_writes_only_the_version(
     temp_db_path, monkeypatch
 ):
     monkeypatch.setattr(
-        upgrades, "upgrades", [u for u in upgrades.upgrades if u.version != "0.113.0"]
+        upgrades,
+        "upgrades",
+        [u for u in upgrades.upgrades if u.version not in ("0.113.0", "0.114.0")],
     )
     async with Store(temp_db_path, create=True) as store:
         await _add_chunks(store)

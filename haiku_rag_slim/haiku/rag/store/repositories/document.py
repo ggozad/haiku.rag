@@ -15,6 +15,7 @@ from haiku.rag.store.schema import (
     get_document_items_arrow_schema,
     get_documents_arrow_schema,
     query_to_pydantic,
+    write_source_schema,
 )
 from haiku.rag.utils.sql import build_document_id_filter, escape_sql_string
 
@@ -248,53 +249,75 @@ class DocumentRepository:
 
         `with_original` adds the original and its MD5 from the same row version.
         """
-        safe_id = escape_sql_string(entity_id)
-        columns = self._DOCLING_COLUMNS + (
-            self._ORIGINAL_COLUMNS if with_original else []
-        )
-        results = await (
-            self.store.documents_table.query()
-            .select(columns)
-            .where(f"id = '{safe_id}'")
-            .limit(1)
-            .to_list()
-        )
+        if with_original:
+            read = await self._with_original(
+                entity_id, [*self._DOCLING_COLUMNS, "original_md5"]
+            )
+            if read is None:
+                return None
+            row, original = read
+        else:
+            safe_id = escape_sql_string(entity_id)
+            results = await (
+                self.store.documents_table.query()
+                .select(self._DOCLING_COLUMNS)
+                .where(f"id = '{safe_id}'")
+                .limit(1)
+                .to_list()
+            )
+            if not results:
+                return None
+            row, original = results[0], None
 
-        if not results:
-            return None
-
-        row = results[0]
         return Document(
             id=row["id"],
             content="",
             docling_document=row.get("docling_document"),
             docling_version=row.get("docling_version"),
-            original=row.get("original"),
+            original=original,
             original_md5=row.get("original_md5"),
         )
 
     async def get_original(self, entity_id: str) -> bytes | None:
         """The file the document's structure was converted from, if stored."""
-        row = await self._original_row(entity_id, ["original"])
-        return row["original"] if row else None
+        read = await self._with_original(entity_id, ["id"])
+        return read[1] if read else None
 
     async def get_original_and_md5(self, entity_id: str) -> tuple[bytes, str] | None:
         """The stored original and its MD5, from the same row version."""
-        row = await self._original_row(entity_id, self._ORIGINAL_COLUMNS)
-        if row is None or row["original"] is None or row["original_md5"] is None:
+        read = await self._with_original(entity_id, ["original_md5"])
+        if read is None:
             return None
-        return row["original"], row["original_md5"]
+        row, original = read
+        if original is None or row["original_md5"] is None:
+            return None
+        return original, row["original_md5"]
 
-    async def _original_row(self, entity_id: str, columns: list[str]) -> dict | None:
+    async def _with_original(
+        self, entity_id: str, columns: list[str]
+    ) -> tuple[dict, bytes | None] | None:
+        """`columns` of the document's row and its original, read at one version.
+
+        A query returns a blob's descriptor, so the bytes are fetched by row
+        id, on a handle checked out at the version the query read.
+        """
+        table = await self.store.db.open_table("documents")
+        await table.checkout(await self.store.documents_table.version())
         safe_id = escape_sql_string(entity_id)
-        results = await (
-            self.store.documents_table.query()
+        rows = await (
+            table.query()
             .select(columns)
             .where(f"id = '{safe_id}'")
+            .with_row_id()
             .limit(1)
             .to_list()
         )
-        return results[0] if results else None
+        if not rows:
+            return None
+        [original] = (
+            await table.fetch_blobs("original", [rows[0]["_rowid"]])
+        ).to_pylist()
+        return rows[0], original
 
     async def ids_without_original(self, ids: list[str] | None = None) -> set[str]:
         """The documents, of `ids` when given, that have no stored original."""
@@ -329,9 +352,7 @@ class DocumentRepository:
                 }
                 for i, data in originals.items()
             ],
-            schema=pa.schema(
-                [schema.field(c) for c in ("id", *self._ORIGINAL_COLUMNS)]
-            ),
+            schema=write_source_schema(schema, ("id", *self._ORIGINAL_COLUMNS)),
         )
         await (
             self.store.documents_table.merge_insert("id")
@@ -397,7 +418,7 @@ class DocumentRepository:
         schema = await self.store.documents_table.schema()
         source = pa.Table.from_pylist(
             [{c: getattr(doc_record, c) for c in columns}],
-            schema=pa.schema([schema.field(c) for c in columns]),
+            schema=write_source_schema(schema, columns),
         )
         # Update-only: a partial source with an insert branch is rejected.
         # The indexed plan holds the blobs in lance's query memory pool, unspillable.
@@ -526,12 +547,7 @@ class DocumentRepository:
             self.store._config.search.fts_language,
         )
 
-        count = len(
-            await query_to_pydantic(
-                self.store.documents_table.query().limit(1), DocumentRecord
-            )
-        )
-        if count > 0:
+        if await self.store.documents_table.count_rows() > 0:
             # Drop and recreate tables to clear all data
             await self.store.db.drop_table("documents")
             self.store.documents_table = await self.store.db.create_table(
