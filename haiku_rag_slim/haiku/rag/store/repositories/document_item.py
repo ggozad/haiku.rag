@@ -229,13 +229,17 @@ class DocumentItemRepository:
             decode_width,
             decoded_frame_time,
         )
-        from haiku.rag.store.repositories.recording import RecordingRepository
+        from haiku.rag.store.repositories.document import DocumentRepository
 
         at = decoded_frame_time(ref)
-        stored = await RecordingRepository(self.store).open(document_id)
-        if at is None or stored is None:
+        if at is None:
             return None
-        [frame] = await decode_frames(stored, [at], decode_width(self.store._config))
+        stored = await DocumentRepository(self.store).open_recording(document_id)
+        if stored is None:
+            return None
+        [(_, frame)] = await decode_frames(
+            stored, lambda _: [at], decode_width(self.store._config)
+        )
         return frame
 
     async def get_all_picture_data(self, document_id: str) -> dict[str, bytes]:

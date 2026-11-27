@@ -61,7 +61,3 @@ class SourceUnavailableError(Exception):
     error message travels into logs and into whatever a consumer renders, and
     the point of naming databases is that locations stay in the configuration.
     """
-
-
-class UnsupportedRecordingStorageError(Exception):
-    """Raised when a recording would be stored where recordings cannot be."""

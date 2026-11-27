@@ -16,7 +16,7 @@ from haiku.rag.store.engine import (
     require_complete_tag,
     require_current_tag,
 )
-from haiku.rag.store.schema import REQUIRED_TABLES, vector_index_name
+from haiku.rag.store.schema import REQUIRED_TABLES, is_blob, vector_index_name
 
 
 async def get_database_stats(
@@ -37,10 +37,9 @@ async def get_database_stats(
         name: await db.open_table(name) for name in REQUIRED_TABLES if name in existing
     }
     if tag is not None:
-        await require_complete_tag(db, tables, tag)
+        await require_complete_tag(tables, tag)
         for tbl in tables.values():
-            if tag in await tbl.tags.list():
-                await tbl.checkout(tag)
+            await tbl.checkout(tag)
 
     for name in REQUIRED_TABLES:
         if name not in tables:
@@ -65,10 +64,8 @@ async def get_database_stats(
             ),
         }
 
-    if stats["recordings"]["exists"]:
-        stats["recordings"]["total_bytes"] += await _blob_file_bytes(
-            tables["recordings"]
-        )
+    if stats["documents"]["exists"]:
+        stats["documents"]["total_bytes"] += await _blob_file_bytes(tables["documents"])
 
     if stats["chunks"]["exists"]:
         chunks_tbl = tables["chunks"]
@@ -87,10 +84,15 @@ _INLINE_BLOB = 0
 
 
 async def _blob_file_bytes(table: lancedb.AsyncTable) -> int:
-    """Bytes of the recordings lance keeps in blob files, which table stats omit."""
-    rows = await table.query().select(["content"]).to_list()
+    """Bytes of the originals lance keeps in blob files, which table stats omit."""
+    schema = await table.schema()
+    if "original" not in schema.names or not is_blob(schema.field("original")):
+        return 0
+    rows = await table.query().select(["original"]).to_list()
     return sum(
-        r["content"]["size"] for r in rows if r["content"]["kind"] != _INLINE_BLOB
+        r["original"]["size"]
+        for r in rows
+        if r["original"] is not None and r["original"]["kind"] != _INLINE_BLOB
     )
 
 
@@ -185,13 +187,7 @@ async def gather_database_info(
             num_versions=stats[name].get("num_versions", 0),
             latest_version_at=stats[name].get("latest_version_at"),
         )
-        for name in (
-            "documents",
-            "document_meta",
-            "chunks",
-            "document_items",
-            "recordings",
-        )
+        for name in ("documents", "document_meta", "chunks", "document_items")
     ]
 
     vector_index = VectorIndexInfo()

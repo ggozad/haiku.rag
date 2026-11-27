@@ -394,7 +394,10 @@ async def test_a_read_returns_the_version_it_queried(temp_db_path, monkeypatch):
     """A write landing between the row query and the blob fetch is not seen."""
     async with Store(temp_db_path, create=True) as store:
         doc_repo = DocumentRepository(store)
-        first = Document(content="a", docling_document=b"one", docling_version="1")
+        from haiku.rag.store.compression import compress_json
+
+        one, two = compress_json('{"name": "one"}'), compress_json('{"name": "two"}')
+        first = Document(content="a", docling_document=one, docling_version="1")
         first.original, first.original_sha256 = b"%PDF-one", "md5-one"
         created = await doc_repo.create(first)
         assert created.id is not None
@@ -406,7 +409,7 @@ async def test_a_read_returns_the_version_it_queried(temp_db_path, monkeypatch):
             if not replaced:
                 replaced = True
                 second = created.model_copy()
-                second.docling_document = b"two"
+                second.docling_document = two
                 second.original, second.original_sha256 = b"%PDF-two", "md5-two"
                 await doc_repo.update(second, with_original=True)
             return await fetch_blobs(self, column, row_ids)
@@ -417,7 +420,7 @@ async def test_a_read_returns_the_version_it_queried(temp_db_path, monkeypatch):
 
         assert read is not None
         assert (read.docling_document, read.original, read.original_sha256) == (
-            b"one",
+            one,
             b"%PDF-one",
             "md5-one",
         )

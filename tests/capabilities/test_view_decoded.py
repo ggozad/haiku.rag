@@ -7,7 +7,6 @@ from haiku.rag.capabilities.rag import RAGState
 from haiku.rag.client import HaikuRAG
 from haiku.rag.converters import media
 from haiku.rag.converters.exceptions import ConversionFailedError
-from haiku.rag.store.models.recording import RecordingFile
 from tests.capabilities.test_media_tools import images, returns
 from tests.capabilities.test_view import _film, view
 from tests.platform import needs_ffmpeg
@@ -41,7 +40,7 @@ def film_file(tmp_path_factory) -> bytes:
 @pytest.fixture
 async def stored_film(tmp_path, film_file):
     path = tmp_path / "film.lancedb"
-    return path, await _film(path, recording=RecordingFile(film_file, ".mp4"))
+    return path, await _film(path, original=film_file)
 
 
 def _frames(state: RAGState) -> dict[str, float]:
@@ -159,15 +158,20 @@ async def test_a_malformed_decoded_frame_ref_fetches_nothing(stored_film):
         assert await rag.get_picture_bytes(film_id, "#/frames/later") is None
 
 
-class _Stored:
-    suffix = ".mp4"
-
+class _Original:
     def __init__(self, content: bytes):
         self.content = content
         self.size = len(content)
 
-    def read_range(self, offset: int, length: int) -> bytes:
+    async def read(self, offset: int, length: int) -> bytes:
         return self.content[offset : offset + length]
+
+
+class _Stored:
+    suffix = ".mp4"
+
+    def __init__(self, content: bytes):
+        self.original = _Original(content)
 
 
 async def test_the_recording_server_answers_byte_ranges_at_its_secret_path_only(
@@ -285,7 +289,9 @@ def test_frame_times_stay_inside_a_window_narrower_than_a_millisecond():
 
 async def test_a_stored_audio_file_is_not_decoded_for_frames(tmp_path, film_file):
     path = tmp_path / "film.lancedb"
-    film_id = await _film(path, recording=RecordingFile(film_file, ".mp3"))
+    film_id = await _film(
+        path, original=film_file, filename="f.mp3", mimetype="audio/mpeg"
+    )
 
     result, state = await view(path, [{"recording": film_id, "start": 0, "end": 100}])
 
@@ -310,7 +316,7 @@ async def test_a_request_still_open_ends_with_the_server(film_file):
 
 async def test_an_uppercase_video_suffix_is_decoded(tmp_path, film_file):
     path = tmp_path / "film.lancedb"
-    film_id = await _film(path, recording=RecordingFile(film_file, ".MP4"))
+    film_id = await _film(path, original=film_file, filename="F.MP4")
 
     _, state = await view(path, [{"recording": film_id, "start": 20, "end": 36}])
 

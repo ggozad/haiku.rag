@@ -30,6 +30,7 @@ class Document(BaseModel):
     docling_version: str | None = Field(default=None, exclude=True)
     original: bytes | None = Field(default=None, exclude=True)
     original_sha256: str | None = Field(default=None, exclude=True)
+    original_subtitles: str | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -39,13 +40,17 @@ class Document(BaseModel):
         return value if value.tzinfo else value.astimezone(UTC)
 
     def set_docling(
-        self, docling_doc: "DoclingDocument", original: bytes | None = None
+        self,
+        docling_doc: "DoclingDocument",
+        original: bytes | None = None,
+        subtitles: str | None = None,
     ) -> None:
         """Serialize and store a DoclingDocument without its images.
 
         Sets docling_document (zstd-compressed) and docling_version.
-        ``original`` is the file the structure was converted from: it replaces
-        any stored one, and None clears it.
+        ``original`` is the file the structure was converted from, and
+        ``subtitles`` the WebVTT or SRT text read beside a recording. They
+        replace any stored ones, and None clears them.
         """
         self.docling_document = compress_docling(docling_doc.model_dump(mode="json"))
         self.docling_version = docling_doc.version
@@ -53,6 +58,7 @@ class Document(BaseModel):
         self.original_sha256 = (
             hashlib.sha256(original).hexdigest() if original is not None else None
         )
+        self.original_subtitles = subtitles if original is not None else None
 
     def get_docling_document(self) -> "DoclingDocument | None":
         """Parse and return the stored DoclingDocument, without its images.

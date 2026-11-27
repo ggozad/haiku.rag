@@ -7,7 +7,11 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 from docling_core.types.doc.base import BoundingBox, Size
-from docling_core.types.doc.document import DoclingDocument, ProvenanceItem
+from docling_core.types.doc.document import (
+    DoclingDocument,
+    DocumentOrigin,
+    ProvenanceItem,
+)
 from docling_core.types.doc.labels import DocItemLabel
 from PIL import Image
 from pydantic_ai.embeddings import TestEmbeddingModel
@@ -303,6 +307,36 @@ async def test_a_batch_import_stores_each_original(temp_db_path):
         ]
 
 
+async def test_a_batch_import_writes_its_originals_in_bounded_groups(
+    temp_db_path, monkeypatch
+):
+    """Each write stays within the bytes limit unless one original exceeds it."""
+    small, large = build_pdf([]), _png(2000, 2000)
+    monkeypatch.setattr(documents, "ORIGINALS_WRITE_BYTES", len(small) * 2 + 1)
+    imports = [(small, "a"), (small, "b"), (None, "c"), (large, "d"), (small, "e")]
+    config = AppConfig()
+    config.storage.auto_vacuum = False
+    async with _client(temp_db_path, config) as client:
+        dim = client.embedder.vector_dim
+        before = await client.store.documents_table.version()
+        meta_before = await client.store.document_meta_table.version()
+        stored = await client.import_documents(
+            [
+                DocumentImport(
+                    _paged_doc(), _chunks(dim), uri=f"test://{uri}", original=body
+                )
+                for body, uri in imports
+            ]
+        )
+        written = await client.store.documents_table.version() - before
+        meta_written = await client.store.document_meta_table.version() - meta_before
+
+        assert [await _stored(client, d.id) for d in stored if d.id] == [
+            (body, _sha256(body)) if body else (None, None) for body, _ in imports
+        ]
+    assert written == meta_written == 3
+
+
 async def _imported(client: HaikuRAG) -> str:
     doc = await client.import_document(
         _paged_doc(),
@@ -316,17 +350,93 @@ async def _imported(client: HaikuRAG) -> str:
 
 async def test_a_new_structure_without_an_original_clears_it(temp_db_path):
     async with _client(temp_db_path) as client:
-        replaced_by_content = await _imported(client)
-        await client.update_document(replaced_by_content, content="# New text")
-        replaced_by_structure = await _imported(client)
-        await client.update_document(
-            replaced_by_structure, docling_document=_paged_doc()
-        )
-        recreated = await _imported(client)
-        await client.create_document("# Same URI", uri="test://kept")
+        with capture_logs(documents.logger, logging.WARNING) as records:
+            replaced_by_content = await _imported(client)
+            await client.update_document(replaced_by_content, content="# New text")
+            replaced_by_structure = await _imported(client)
+            await client.update_document(
+                replaced_by_structure, docling_document=_paged_doc()
+            )
+            recreated = await _imported(client)
+            await client.create_document("# Same URI", uri="test://kept")
 
-        for document_id in (replaced_by_content, replaced_by_structure, recreated):
+        cleared = (replaced_by_content, replaced_by_structure, recreated)
+        for document_id in cleared:
             assert await _stored(client, document_id) == (None, None)
+        assert [
+            any(document_id in r.getMessage() for r in records)
+            for document_id in cleared
+        ] == [True, True, True]
+
+
+def _converted_from(body: bytes, name: str, mimetype: str) -> DoclingDocument:
+    """A structure naming `body` as docling names the file it converted."""
+    doc = _paged_doc()
+    doc.origin = DocumentOrigin(
+        filename=name,
+        mimetype=mimetype,
+        binary_hash=int(_sha256(body), 16) & (2**64 - 1),
+    )
+    return doc
+
+
+_ORIGINALS = pytest.mark.parametrize(
+    ("name", "mimetype", "body"),
+    [
+        ("scan.pdf", "application/pdf", build_pdf([])),
+        ("scan.png", "image/png", _png()),
+    ],
+)
+
+
+@_ORIGINALS
+async def test_a_new_structure_converted_from_the_original_keeps_it(
+    temp_db_path, name, mimetype, body
+):
+    async with _client(temp_db_path) as client:
+        doc = await client.import_document(
+            _converted_from(body, name, mimetype),
+            _chunks(client.embedder.vector_dim),
+            uri="test://kept",
+            original=body,
+        )
+        assert doc.id is not None
+
+        with capture_logs(documents.logger, logging.WARNING) as records:
+            await client.update_document(
+                doc.id, docling_document=_converted_from(body, name, mimetype)
+            )
+            await client.import_document(
+                _converted_from(body, name, mimetype),
+                _chunks(client.embedder.vector_dim),
+                uri="test://kept",
+            )
+
+        assert await _stored(client, doc.id) == (body, _sha256(body))
+        assert records == []
+
+
+@_ORIGINALS
+async def test_a_new_structure_converted_from_another_file_clears_the_original(
+    temp_db_path, name, mimetype, body
+):
+    async with _client(temp_db_path) as client:
+        doc = await client.import_document(
+            _converted_from(body, name, mimetype),
+            _chunks(client.embedder.vector_dim),
+            uri="test://kept",
+            original=body,
+        )
+        assert doc.id is not None
+
+        with capture_logs(documents.logger, logging.WARNING) as records:
+            await client.update_document(
+                doc.id, docling_document=_converted_from(b"other", name, mimetype)
+            )
+
+        assert await _stored(client, doc.id) == (None, None)
+        [record] = records
+        assert doc.id in record.getMessage()
 
 
 async def test_a_new_structure_with_an_original_replaces_it(temp_db_path):
@@ -406,10 +516,44 @@ async def test_a_full_rebuild_from_stored_content_clears_the_original(
     async with _client(temp_db_path) as client:
         document_id = await _imported(client)
 
+        with capture_logs(documents.logger, logging.WARNING) as records:
+            async for _ in client.rebuild_database(mode=RebuildMode.FULL):
+                pass
+
+        assert await _stored(client, document_id) == (None, None)
+        assert any(document_id in r.getMessage() for r in records)
+
+
+@_ORIGINALS
+async def test_a_full_rebuild_keeps_an_original_that_its_structure_names(
+    temp_db_path, name, mimetype, body
+):
+    """A hook returning a structure converted from the stored file keeps it."""
+    from haiku.rag.hooks import ConvertedDocument
+
+    class Restore(Hook):
+        async def after_convert(self, client, document):
+            return ConvertedDocument(
+                uri=document.uri,
+                source_id=document.source_id,
+                content_type=document.content_type,
+                docling_document=_converted_from(body, name, mimetype),
+            )
+
+    async with _client(temp_db_path) as client:
+        doc = await client.import_document(
+            _converted_from(body, name, mimetype),
+            _chunks(client.embedder.vector_dim),
+            uri="test://kept",
+            original=body,
+        )
+        assert doc.id is not None
+        client._hooks = [Restore()]
+
         async for _ in client.rebuild_database(mode=RebuildMode.FULL):
             pass
 
-        assert await _stored(client, document_id) == (None, None)
+        assert await _stored(client, doc.id) == (body, _sha256(body))
 
 
 async def test_an_original_without_a_new_structure_is_refused(temp_db_path):
@@ -745,7 +889,7 @@ async def test_originals_are_written_in_batches(
     paths[0].write_bytes(build_pdf([]))
     paths[1].write_bytes(_png())
     ids = await _ingest(temp_db_path, *paths)
-    monkeypatch.setattr(rebuild, "_ORIGINALS_WRITE_BYTES", 1)
+    monkeypatch.setattr(rebuild, "ORIGINALS_WRITE_BYTES", 1)
     writes: list[list[str]] = []
     store_originals = DocumentRepository.store_originals
 

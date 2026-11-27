@@ -19,6 +19,7 @@ from haiku.rag.client.documents import (
     _extract_pdf_attachments,
     _prepare_document_from_docling,
     _update_document_with_chunks,
+    _writes_original,
     check_source_accessible,
     chunk_document,
     create_document_from_source,
@@ -37,8 +38,10 @@ from haiku.rag.store.engine import REBUILD_COMMANDS
 from haiku.rag.store.models.chunk import Chunk, chunk_media
 from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem, extract_items
-from haiku.rag.store.models.recording import StoredRecording
-from haiku.rag.store.repositories.recording import RecordingRepository
+from haiku.rag.store.repositories.document import (
+    ORIGINALS_WRITE_BYTES,
+    StoredRecording,
+)
 from haiku.rag.store.repositories.settings import SettingsRepository
 from haiku.rag.store.schema import (
     INCOMPLETE_REBUILD_TABLE,
@@ -58,20 +61,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _REBUILD_BATCH_SIZE = 50
-# Original bytes per write while storing originals.
-_ORIGINALS_WRITE_BYTES = 64 << 20
 _ATTACHMENT = "#attachment="
 _ITEMS_WRITE_BYTES = 16 << 20
 _STAGING_TABLE_NAME = "chunks_rebuild_staging"
 _STAGING_MARKER_TABLE_NAME = "chunks_rebuild_marker"
 _STAGING_COPY_BATCH_SIZE = 1000
 _DESCRIPTION_COLUMNS = ("docling_document", "docling_version")
-_FULL_FALLBACK_COLUMNS = (
-    "docling_document",
-    "docling_version",
-    "original",
-    "original_sha256",
-)
+_ORIGINAL_COLUMNS = ("original", "original_sha256", "original_subtitles")
+_FULL_FALLBACK_COLUMNS = ("docling_document", "docling_version", *_ORIGINAL_COLUMNS)
 
 
 class _StagingChunkRecord(LanceModel):
@@ -312,7 +309,7 @@ async def _rebuild_originals(
         assert body is not None
         pending[doc.id] = (doc, body)
         pending_bytes += len(body)
-        if pending_bytes >= _ORIGINALS_WRITE_BYTES:
+        if pending_bytes >= ORIGINALS_WRITE_BYTES:
             for doc_id in await _write_originals(session, pending):
                 stored += 1
                 yield doc_id
@@ -877,6 +874,31 @@ async def _rebuild_embed_only(
             yield doc.id
 
 
+async def _merge_document_columns(
+    session: SingleDatabaseSession,
+    documents: list[Document],
+    columns: tuple[str, ...],
+) -> None:
+    """Write `columns` of each document's `documents` row."""
+    if not documents:
+        return
+    table = session.store.documents_table
+    schema = await table.schema()
+    names = ("id", *columns)
+    source = pa.Table.from_pylist(
+        [{c: getattr(doc, c) for c in names} for doc in documents],
+        schema=write_source_schema(schema, names),
+    )
+    # Update-only: a partial source with an insert branch is rejected.
+    # The indexed plan holds the blobs in lance's query memory pool, unspillable.
+    await (
+        table.merge_insert("id")
+        .when_matched_update_all()
+        .use_index(False)
+        .execute(source)
+    )
+
+
 async def _flush_rebuild_batch(
     session: SingleDatabaseSession,
     documents: list[Document],
@@ -905,20 +927,22 @@ async def _flush_rebuild_batch(
         await session.chunk_repository.delete_by_document_ids(document_ids)
 
         if document_columns:
-            table = session.store.documents_table
-            schema = await table.schema()
-            columns = ("id", *document_columns)
-            rows = [{c: getattr(doc, c) for c in columns} for doc in documents]
-            source = pa.Table.from_pylist(
-                rows, schema=write_source_schema(schema, columns)
+            keeping: set[str | None] = set()
+            if "original" in document_columns:
+                for doc in documents:
+                    structure = doc.get_docling_document()
+                    assert structure is not None
+                    if not await _writes_original(session, doc, structure):
+                        keeping.add(doc.id)
+            await _merge_document_columns(
+                session,
+                [d for d in documents if d.id not in keeping],
+                document_columns,
             )
-            # Update-only: a partial source with an insert branch is rejected.
-            # The indexed plan holds the blobs in lance's query memory pool, unspillable.
-            await (
-                table.merge_insert("id")
-                .when_matched_update_all()
-                .use_index(False)
-                .execute(source)
+            await _merge_document_columns(
+                session,
+                [d for d in documents if d.id in keeping],
+                tuple(c for c in document_columns if c not in _ORIGINAL_COLUMNS),
             )
 
         # A rebuild changes no document's uri, title or metadata, and its copy
@@ -1099,12 +1123,14 @@ async def _rebuild_descriptions(
 
     Skips the docling parse entirely (the blob is already there); only the VLM
     cost remains. Idempotent: pictures whose ``meta.description.text`` is
-    already populated are not re-described.
+    already populated are not re-described. A recording is re-chunked and
+    re-embedded as RECHUNK does, and nothing in it is described.
     """
     from haiku.rag.embeddings import embed_chunks
 
     pending_chunks: list[Chunk] = []
     pending_docs: list[Document] = []
+    recordings: list[Document] = []
     embedder = session.store.embedder
 
     described_total = 0
@@ -1116,6 +1142,9 @@ async def _rebuild_descriptions(
                 f"Document {doc.id} has no stored docling document; "
                 "rebuild --descriptions requires it. Run a full rebuild instead."
             )
+        if is_recording(docling_document):
+            recordings.append(doc)
+            continue
 
         n = await _patch_picture_descriptions(session, doc)
         described_total += n
@@ -1164,6 +1193,9 @@ async def _rebuild_descriptions(
             assert written.id is not None
             yield written.id
 
+    async for doc_id in _rebuild_rechunk(session, recordings):
+        yield doc_id
+
     logger.info(
         "rebuild --descriptions: %d new picture descriptions added across %d documents",
         described_total,
@@ -1185,14 +1217,17 @@ async def _rebuild_from_stored_file(
     stored: StoredRecording,
 ) -> None:
     """Convert a recording again from its stored file, with its stored
-    subtitles beside it, under the name it was ingested with."""
+    subtitles beside it, under the name it was ingested with. Raises
+    `_OriginalReplaced`, writing nothing, when another write replaced the file
+    or its subtitles meanwhile."""
     assert document.id is not None
     name = PurePosixPath(document.uri or "").stem or "recording"
+    subtitles = stored.original.subtitles
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / f"{name}{stored.suffix}"
-        await asyncio.to_thread(_write_stored_file, stored, path)
-        if stored.subtitles is not None:
-            path.with_suffix(".vtt").write_text(stored.subtitles, encoding="utf-8")
+        await _write_stored_file(stored, path)
+        if subtitles is not None:
+            path.with_suffix(".vtt").write_text(subtitles, encoding="utf-8")
         converted = await convert(session.config, path, source_uri=document.uri)
     docling_document = await _after_convert(
         client,
@@ -1212,6 +1247,12 @@ async def _rebuild_from_stored_file(
         current = await session.document_repository.get_by_id(document_id)
         if current is None:
             raise ValueError(f"Document with ID {document_id} not found")
+        original = await session.document_repository.open_original(document_id)
+        if original is None or (original.sha256, original.subtitles) != (
+            stored.original.sha256,
+            subtitles,
+        ):
+            raise _OriginalReplaced(document_id)
         return current
 
     await _update_document_with_chunks(
@@ -1225,14 +1266,19 @@ async def _rebuild_from_stored_file(
     )
 
 
+class _OriginalReplaced(Exception):
+    """A recording's stored file or subtitles changed while it was rebuilt."""
+
+
 _STORED_FILE_READ_BYTES = 8 * 2**20
 
 
-def _write_stored_file(stored: StoredRecording, path: Path) -> None:
+async def _write_stored_file(stored: StoredRecording, path: Path) -> None:
+    size = stored.original.size
     with path.open("wb") as out:
-        for offset in range(0, stored.size, _STORED_FILE_READ_BYTES):
-            length = min(_STORED_FILE_READ_BYTES, stored.size - offset)
-            out.write(stored.read_range(offset, length))
+        for offset in range(0, size, _STORED_FILE_READ_BYTES):
+            length = min(_STORED_FILE_READ_BYTES, size - offset)
+            out.write(await stored.original.read(offset, length))
 
 
 async def _rebuild_full(
@@ -1244,8 +1290,9 @@ async def _rebuild_full(
     the rebuild. No post-commit hooks run.
 
     A recording is converted again from its stored file and subtitles. One
-    without a stored file is re-chunked from its stored docling document, as
-    RECHUNK does, so its transcript and frames stay.
+    without a stored file, or whose file or subtitles change while it
+    converts, is re-chunked from its stored docling document, as RECHUNK
+    does, so its transcript and frames stay.
     """
     from haiku.rag.embeddings import embed_chunks
 
@@ -1253,12 +1300,20 @@ async def _rebuild_full(
     unstored = []
     for recording in recordings:
         assert recording.id is not None
-        stored = await RecordingRepository(session.store).open(recording.id)
+        stored = await session.document_repository.open_recording(recording.id)
         if stored is None:
             unstored.append(recording)
-        else:
+            continue
+        try:
             await _rebuild_from_stored_file(session, client, recording, stored)
-            yield recording.id
+        except _OriginalReplaced:
+            logger.warning(
+                "%s changed while it was rebuilt and is re-chunked as stored",
+                recording.uri,
+            )
+            unstored.append(recording)
+            continue
+        yield recording.id
     async for doc_id in _rebuild_rechunk(session, unstored):
         yield doc_id
     rebuilt = {d.id for d in recordings}

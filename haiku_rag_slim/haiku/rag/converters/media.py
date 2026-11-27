@@ -33,11 +33,7 @@ from haiku.rag.converters.exceptions import (
     ConversionFailedError,
     ConversionTimeoutError,
 )
-from haiku.rag.store.models.recording import (
-    DECODED_FRAME_PREFIX,
-    RecordingFile,
-    StoredRecording,
-)
+from haiku.rag.store.models.recording import DECODED_FRAME_PREFIX
 from haiku.rag.utils.dependencies import raise_missing_extra
 from haiku.rag.utils.http import pooled_client, post_retrying_dropped_connection
 
@@ -46,6 +42,8 @@ if TYPE_CHECKING:
     import numpy as np
     from docling_core.types.doc.document import DoclingDocument
     from onnxruntime import InferenceSession
+
+    from haiku.rag.store.repositories.document import StoredRecording
 
 MEDIA_MIMETYPES = {
     ".wav": "audio/x-wav",
@@ -149,7 +147,7 @@ async def _run(*args: str) -> tuple[bytes, bytes]:
     return out, err
 
 
-async def probe(path: Path) -> tuple[float, bool]:
+async def probe(path: Path | str) -> tuple[float, bool]:
     """The duration of `path` in seconds, and whether it has an audio stream."""
     out, _ = await _run(
         "ffprobe",
@@ -456,32 +454,6 @@ def sentences(utterances: list[Utterance]) -> list[Utterance]:
     return result
 
 
-async def recording_file(
-    path: Path, content: bytes | None = None
-) -> tuple[RecordingFile, float]:
-    """`path` as it is stored: its bytes (`content` when the caller holds them),
-    suffix and sidecar subtitles, with its duration."""
-    sidecar = subtitles(path)
-    duration, _ = await probe(path)
-    return (
-        RecordingFile(
-            content=path.read_bytes() if content is None else content,
-            suffix=path.suffix.lower(),
-            subtitles=sidecar.read_text(encoding="utf-8") if sidecar else None,
-        ),
-        duration,
-    )
-
-
-async def recording_duration(recording: RecordingFile) -> float:
-    """The duration of a recording held in memory."""
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / f"recording{recording.suffix}"
-        path.write_bytes(recording.content)
-        duration, _ = await probe(path)
-    return duration
-
-
 def subtitles(path: Path) -> Path | None:
     """The WebVTT or SRT file beside `path` with its stem, if there is one."""
     for suffix in SUBTITLE_EXTENSIONS:
@@ -489,6 +461,12 @@ def subtitles(path: Path) -> Path | None:
         if sidecar.is_file():
             return sidecar
     return None
+
+
+def subtitles_text(path: Path) -> str | None:
+    """The text of the subtitles beside `path`, if there are any."""
+    sidecar = subtitles(path)
+    return sidecar.read_text(encoding="utf-8") if sidecar else None
 
 
 def _cue_seconds(stamp: str) -> float:
@@ -683,13 +661,17 @@ def frame_times(start: float, end: float, duration: float, count: int) -> list[f
 
 
 async def decode_frames(
-    recording: StoredRecording, times: list[float], max_width: int | None
-) -> list[bytes]:
-    """JPEG frames of a stored recording at `times`. ffmpeg reads the file
-    over loopback HTTP, by range, so nothing is copied out of the store."""
+    recording: "StoredRecording",
+    times: Callable[[float], list[float]],
+    max_width: int | None,
+) -> list[tuple[float, bytes]]:
+    """JPEG frames of a stored recording at the times `times` picks from its
+    duration. ffmpeg reads the file over loopback HTTP, by range, so nothing
+    is copied out of the store."""
     require_ffmpeg()
     async with _served(recording) as url, asyncio.timeout(DECODE_TIMEOUT_SECONDS):
-        return [await _frame_at(url, time, max_width) for time in times]
+        duration, _ = await probe(url)
+        return [(at, await _frame_at(url, at, max_width)) for at in times(duration)]
 
 
 def _byte_range(header: str | None, size: int) -> tuple[int, int] | None:
@@ -712,14 +694,21 @@ def _byte_range(header: str | None, size: int) -> tuple[int, int] | None:
 
 
 @asynccontextmanager
-async def _served(recording: StoredRecording) -> AsyncGenerator[str]:
+async def _served(recording: "StoredRecording") -> AsyncGenerator[str]:
     """A loopback URL answering byte ranges of the recording. Its path is a
     secret, and any other path is not found."""
     import http.server
     import secrets
 
     path = f"/{secrets.token_urlsafe(16)}{recording.suffix}"
-    size = recording.size
+    size = recording.original.size
+    loop = asyncio.get_running_loop()
+
+    def read(offset: int, length: int) -> bytes:
+        return asyncio.run_coroutine_threadsafe(
+            recording.original.read(offset, length), loop
+        ).result()
+
     connections: set[socket.socket] = set()
 
     class Ranges(http.server.BaseHTTPRequestHandler):
@@ -746,7 +735,7 @@ async def _served(recording: StoredRecording) -> AsyncGenerator[str]:
             try:
                 for offset in range(first, last + 1, _SERVED_READ_BYTES):
                     length = min(_SERVED_READ_BYTES, last + 1 - offset)
-                    self.wfile.write(recording.read_range(offset, length))
+                    self.wfile.write(read(offset, length))
             except (  # pragma: no cover - ffmpeg closing a connection mid-response
                 BrokenPipeError,
                 ConnectionResetError,

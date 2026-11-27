@@ -1,10 +1,13 @@
 import pytest
 
 from haiku.rag.store.engine import Store
+from haiku.rag.store.models.document import Document
 from haiku.rag.store.models.document_item import DocumentItem
+from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from haiku.rag.store.upgrades import get_pending_upgrades
 from haiku.rag.store.upgrades.v0_115_0 import _apply_chunk_media, _apply_item_times
+from tests.store.test_v0_114_0_migration import _config, _migrate, at_previous_release
 
 
 async def _columns(store: Store) -> set[str]:
@@ -66,7 +69,7 @@ async def test_migrate_fills_chunk_media_from_the_metadata(temp_db_path, version
     async with Store(temp_db_path, skip_migration_check=True) as store:
         applied = await store.migrate()
 
-        assert applied[-1] == "0.115.0: Add media, start_time and end_time to chunks"
+        assert "0.115.0: Add media, start_time and end_time to chunks" in applied
         rows = (await store.chunks_table.query().to_arrow()).to_pylist()
         assert {
             r["content"]: (r["media"], r["start_time"], r["end_time"]) for r in rows
@@ -129,3 +132,42 @@ async def test_an_interrupted_chunk_media_fill_resumes(temp_db_path, monkeypatch
         assert {
             r["content"]: (r["media"], r["start_time"], r["end_time"]) for r in rows
         } == EXPECTED
+
+
+async def test_a_0_113_database_migrates_to_original_subtitles(temp_db_path):
+    """0.114.0's step rewrites `documents` with the column this release adds,
+    null, and a tag from before both steps restores and migrates again."""
+    async with Store(temp_db_path, config=_config(), create=True) as store:
+        [doc_id] = await at_previous_release(store, [b"%PDF-original"])
+        await store.create_tag("before")
+
+    await _migrate(temp_db_path)
+    async with Store(temp_db_path, skip_migration_check=True) as store:
+        assert "original_subtitles" in (await store.documents_table.schema()).names
+        stored = await DocumentRepository(store).open_original(doc_id)
+        assert stored is not None and stored.subtitles is None
+        await store.restore_tag("before")
+
+    await _migrate(temp_db_path)
+    async with Store(temp_db_path, read_only=True) as store:
+        assert "original_subtitles" in (await store.documents_table.schema()).names
+        repo = DocumentRepository(store)
+        assert await repo.get_original(doc_id) == b"%PDF-original"
+
+
+async def test_a_0_114_database_gains_original_subtitles(temp_db_path):
+    async with Store(temp_db_path, config=_config(), create=True) as store:
+        doc = await DocumentRepository(store).create(Document(content="kept"))
+        assert doc.id is not None
+        await DocumentRepository(store).store_originals({doc.id: b"\x00" * 200_000})
+        await store.documents_table.drop_columns(["original_subtitles"])
+        await store._write_settings(version="0.114.0", schema_version="0.114.0")
+
+    await _migrate(temp_db_path)
+
+    async with Store(temp_db_path, read_only=True) as store:
+        assert "original_subtitles" in (await store.documents_table.schema()).names
+        stored = await DocumentRepository(store).get_by_id(doc.id)
+        assert stored is not None and stored.content == "kept"
+        original = await DocumentRepository(store).get_original(doc.id)
+        assert original == b"\x00" * 200_000

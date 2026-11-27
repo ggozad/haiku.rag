@@ -16,10 +16,16 @@ from tests.capabilities.helpers import Deps
 from tests.capabilities.test_media_tools import UUID, _config, images, returns, scripted
 
 
-async def _film(path, frames: bool = True, recording=None):
+async def _film(
+    path,
+    frames: bool = True,
+    original: bytes | None = None,
+    filename: str = "f.mp4",
+    mimetype: str = "video/mp4",
+):
     """Ten ten-second sentences, each its own chunk, and a frame five seconds
-    into each, each its own chunk. `recording`, a `RecordingFile`, is stored
-    as the file the film was converted from."""
+    into each, each its own chunk. `original` is stored as the file the film
+    was converted from, named `filename`."""
     from docling_core.types.doc import (
         ContentLayer,
         DocItemLabel,
@@ -73,15 +79,15 @@ async def _film(path, frames: bool = True, recording=None):
                     },
                 )
             )
-    digest = hashlib.sha256(recording.content).hexdigest() if recording else "1"
+    digest = hashlib.sha256(original).hexdigest() if original else "1"
     doc.origin = DocumentOrigin(
-        mimetype="video/mp4",
-        filename="f.mp4",
+        mimetype=mimetype,
+        filename=filename,
         binary_hash=int(digest, 16) & (2**64 - 1),
     )
     async with HaikuRAG(path, create=True) as rag:
         stored = await rag.import_document(
-            doc, chunks, uri="file:///film.mp4", recording=recording
+            doc, chunks, uri="file:///film.mp4", original=original
         )
         await rag.create_document("A manual.", uri="file:///manual.md")
     assert stored.id is not None

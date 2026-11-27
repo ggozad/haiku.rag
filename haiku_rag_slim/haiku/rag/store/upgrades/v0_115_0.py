@@ -82,3 +82,18 @@ upgrade_chunk_media = Upgrade(
     apply=_apply_chunk_media,
     description="Add media, start_time and end_time to chunks",
 )
+
+
+async def _apply_original_subtitles(store: Store) -> None:
+    """Add the nullable `original_subtitles` column to `documents`."""
+    if "original_subtitles" not in (await store.documents_table.schema()).names:
+        await store.documents_table.add_columns(
+            pa.schema([pa.field("original_subtitles", pa.string())])
+        )
+
+
+upgrade_original_subtitles = Upgrade(
+    version="0.115.0",
+    apply=_apply_original_subtitles,
+    description="Add original_subtitles to documents",
+)

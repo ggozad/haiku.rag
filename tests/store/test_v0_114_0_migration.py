@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 
 from haiku.rag.config.models import AppConfig
+from haiku.rag.store.compression import compress_json
 from haiku.rag.store.engine import COMPACTION_TARGET_KEY, ConnectionMode, Store
 from haiku.rag.store.exceptions import MigrationRequiredError
 from haiku.rag.store.models.document import Document
@@ -25,6 +26,9 @@ from tests.conftest import capture_logs
 MB = 1024**2
 # Inline, packed into a shared sidecar, and in a sidecar of its own.
 TIERS = [1_000, 200_000, 9 * MB]
+
+
+STRUCTURE = compress_json('{"name": "structure"}')
 
 
 def _previous_schema() -> pa.Schema:
@@ -52,7 +56,7 @@ async def at_previous_release(
         {
             "id": i,
             "content": f"doc {n}",
-            "docling_document": b"structure",
+            "docling_document": STRUCTURE,
             "docling_version": "1",
             "original": body,
             "original_md5": None if body is None else hashlib.md5(body).hexdigest(),
@@ -145,7 +149,7 @@ async def test_originals_become_blobs_at_format_2_2(temp_db_path):
             assert await repo.get_original_and_sha256(i) == expected
             document = await repo.get_docling_data(i)
             assert document is not None
-            assert document.docling_document == b"structure"
+            assert document.docling_document == STRUCTURE
         assert len(dataset.versions()) == 1
 
 

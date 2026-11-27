@@ -168,13 +168,7 @@ class HaikuRAGApp:
 
         # Per-table row counts and sizes. Missing required tables are
         # reported as "absent".
-        for name in (
-            "documents",
-            "document_meta",
-            "chunks",
-            "document_items",
-            "recordings",
-        ):
+        for name in ("documents", "document_meta", "chunks", "document_items"):
             entry = tables[name]
             if entry.exists:
                 self.console.print(
@@ -392,7 +386,6 @@ class HaikuRAGApp:
                 "document_meta",
                 "chunks",
                 "document_items",
-                "recordings",
                 "settings",
             ]
             if table:
@@ -522,7 +515,7 @@ class HaikuRAGApp:
                 is missing a table.
         """
         from haiku.rag.store.engine import Store, connect_lancedb
-        from haiku.rag.store.schema import REQUIRED_TABLES, TABLE_INTRODUCED_IN
+        from haiku.rag.store.schema import REQUIRED_TABLES
         from haiku.rag.store.upgrades import get_pending_upgrades
 
         if self.database_missing:
@@ -532,11 +525,7 @@ class HaikuRAGApp:
             existing = set((await db.list_tables()).tables)
         finally:
             db.close()
-        missing = [
-            t
-            for t in REQUIRED_TABLES
-            if t not in existing and t not in TABLE_INTRODUCED_IN
-        ]
+        missing = [t for t in REQUIRED_TABLES if t not in existing]
         if missing:
             raise ValueError(
                 f"Cannot restore tag '{name}': the database is missing "

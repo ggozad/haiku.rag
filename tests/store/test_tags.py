@@ -250,8 +250,7 @@ def _unreferenced_files(table_path: Path) -> set[str]:
         for fragment in at.get_fragments():
             data.update(f.path for f in fragment.metadata.files)
         indices.update(index["uuid"] for index in at.list_indices())
-    data_dir = table_path / "data"
-    on_disk = set(os.listdir(data_dir)) if data_dir.exists() else set()
+    on_disk = set(os.listdir(table_path / "data"))
     index_dir = table_path / "_indices"
     on_disk |= set(os.listdir(index_dir)) if index_dir.exists() else set()
     return on_disk - data - indices

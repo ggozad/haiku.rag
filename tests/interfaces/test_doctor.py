@@ -48,7 +48,6 @@ from haiku.rag.store.schema import (
     DocumentRecord,
     SettingsRecord,
     create_chunk_model,
-    get_recordings_arrow_schema,
 )
 from haiku.rag.store.upgrades import latest_schema_version
 
@@ -106,7 +105,6 @@ async def _build_db(
     meta_tbl = await db.create_table("document_meta", schema=DocumentMetaRecord)
     chunks_tbl = await db.create_table("chunks", schema=create_chunk_model(vector_dim))
     items_tbl = await db.create_table("document_items", schema=DocumentItemRecord)
-    await db.create_table("recordings", schema=get_recordings_arrow_schema())
     if fts_index == "empty":
         await chunks_tbl.create_index("content_fts", config=FTS())
 
@@ -1455,7 +1453,6 @@ async def _build_dup_db(path, docs: dict[str, list[int]], *, vector_dim: int = 8
     chunk_model = create_chunk_model(vector_dim)
     chunks_tbl = await db.create_table("chunks", schema=chunk_model)
     items_tbl = await db.create_table("document_items", schema=DocumentItemRecord)
-    await db.create_table("recordings", schema=get_recordings_arrow_schema())
 
     await settings_tbl.add(
         [

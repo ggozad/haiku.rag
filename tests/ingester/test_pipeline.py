@@ -24,7 +24,6 @@ from haiku.rag.ingester.workers.pipeline import run_job
 from haiku.rag.sources.base import FetchResult, FileTooLargeError, Source
 from haiku.rag.sources.fs import FSSource
 from haiku.rag.sources.http import HTTPSource
-from haiku.rag.store.exceptions import UnsupportedRecordingStorageError
 from haiku.rag.store.models.document import Document
 from tests.conftest import capture_logs
 from tests.platform import converts_pdf_locally
@@ -516,7 +515,6 @@ async def test_a_hook_failure_caused_by_a_transient_error_is_retried(cause):
         (UnauthenticatedError("bad config"), "object store"),
         (UnknownConfigurationKeyError("bad config"), "object store"),
         (InvalidPathError("bad config"), "object store"),
-        (UnsupportedRecordingStorageError("on LanceDB Cloud"), "LanceDB Cloud"),
     ],
 )
 async def test_ingest_errors_classified_permanent(exc, match):

@@ -31,7 +31,6 @@ from haiku.rag.store.models.document_item import (
     merge_time_ranges,
     spread_frames,
 )
-from haiku.rag.store.repositories.recording import RecordingRepository
 from haiku.rag.utils.formatting import format_time_range
 from haiku.rag.utils.images import CITED_EVIDENCE, RETRIEVED_IMAGE_TAG, picture_keys
 
@@ -298,7 +297,6 @@ async def _decoded_frames(
 ) -> tuple[dict[str, tuple[float, bytes]], str | None]:
     """The frames decoded across `window` from the stored file, by ref, or
     why none could be."""
-    from haiku.rag.converters.base import VIDEO_EXTENSIONS
     from haiku.rag.converters.exceptions import ConversionFailedError
     from haiku.rag.converters.media import (
         decode_frames,
@@ -307,17 +305,13 @@ async def _decoded_frames(
         frame_times,
     )
 
+    def times(duration: float) -> list[float]:
+        end = duration if window.end is None else window.end
+        return frame_times(window.start or 0.0, end, duration, VIEW_MAX_FRAMES)
+
     try:
-        stored = await RecordingRepository(rag.store).open(recording.document_id)
-        if stored is None or stored.suffix.lower() not in VIDEO_EXTENSIONS:
-            return {}, None
-        times = frame_times(
-            window.start or 0.0,
-            stored.duration if window.end is None else window.end,
-            stored.duration,
-            VIEW_MAX_FRAMES,
-        )
-        if not times:
+        stored = await rag.document_repository.open_recording(recording.document_id)
+        if stored is None or not stored.video:
             return {}, None
         frames = await decode_frames(stored, times, decode_width(rag._config))
     except (ConversionFailedError, TimeoutError, OSError) as exc:
@@ -327,7 +321,7 @@ async def _decoded_frames(
             f"Frames could not be decoded from the recording ({reason}). "
             "The frames shown were sampled at ingest."
         )
-    return {decoded_frame_ref(t): (t, data) for t, data in zip(times, frames)}, None
+    return {decoded_frame_ref(t): (t, data) for t, data in frames}, None
 
 
 def _frame_owners(

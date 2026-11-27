@@ -1,40 +1,10 @@
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 # The ref of a frame decoded from a stored recording on demand, then its time.
 DECODED_FRAME_PREFIX = "#/frames/"
 
 if TYPE_CHECKING:
     from docling_core.types.doc.document import DoclingDocument
-
-
-@dataclass(frozen=True)
-class RecordingFile:
-    """An audio or video file as ingested: its bytes, the suffix naming its
-    format, and the subtitles read beside it, if any."""
-
-    content: bytes
-    suffix: str
-    subtitles: str | None = None
-
-
-@dataclass(frozen=True)
-class StoredRecording:
-    """A stored recording, its bytes read by range on demand."""
-
-    document_id: str
-    suffix: str
-    sha256: str
-    duration: float
-    subtitles: str | None
-    blob: Any
-
-    @property
-    def size(self) -> int:
-        return self.blob.size()
-
-    def read_range(self, offset: int, length: int) -> bytes:
-        return self.blob.read_range(offset, length)
 
 
 def names_file(docling_document: "DoclingDocument", sha256: str) -> bool:
