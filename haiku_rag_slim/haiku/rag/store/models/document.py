@@ -29,7 +29,7 @@ class Document(BaseModel):
     docling_document: bytes | None = Field(default=None, exclude=True)
     docling_version: str | None = Field(default=None, exclude=True)
     original: bytes | None = Field(default=None, exclude=True)
-    original_md5: str | None = Field(default=None, exclude=True)
+    original_sha256: str | None = Field(default=None, exclude=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -50,10 +50,8 @@ class Document(BaseModel):
         self.docling_document = compress_docling(docling_doc.model_dump(mode="json"))
         self.docling_version = docling_doc.version
         self.original = original
-        self.original_md5 = (
-            hashlib.md5(original, usedforsecurity=False).hexdigest()
-            if original is not None
-            else None
+        self.original_sha256 = (
+            hashlib.sha256(original).hexdigest() if original is not None else None
         )
 
     def get_docling_document(self) -> "DoclingDocument | None":

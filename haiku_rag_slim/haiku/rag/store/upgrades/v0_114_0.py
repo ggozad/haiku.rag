@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from collections.abc import Iterator
 
@@ -96,22 +97,24 @@ async def _rewrite_through_lance(store: Store) -> None:
 def _as_blobs(
     dataset: lance.LanceDataset, schema: pa.Schema
 ) -> Iterator[pa.RecordBatch]:
-    """The dataset's rows with each original as a blob value.
+    """The dataset's rows with each original as a blob value and its SHA-256.
 
     lance stores a `large_binary` source written under a blob schema as
     `large_binary`, so the values are built as blobs here.
     """
     for batch in dataset.to_batches(
-        columns=schema.names,
+        columns=[name for name in schema.names if name != "original_sha256"],
         batch_size=_BATCH_ROWS,
         batch_readahead=1,
         fragment_readahead=1,
     ):
         rows = batch.to_pylist()
         for row in rows:
-            if row["original"] is not None:
+            original = row["original"]
+            row["original_sha256"] = _sha256(original)
+            if original is not None:
                 row["original"] = {
-                    "data": row["original"],
+                    "data": original,
                     "uri": None,
                     "position": None,
                     "size": None,
@@ -119,15 +122,24 @@ def _as_blobs(
         yield pa.RecordBatch.from_pylist(rows, schema=schema)
 
 
+def _sha256(original: bytes | None) -> str | None:
+    return None if original is None else hashlib.sha256(original).hexdigest()
+
+
 async def _rewrite_through_lancedb(store: Store) -> None:
     """The rewrite on LanceDB Cloud, where pylance cannot reach the table."""
     # ponytail: reads the whole table into memory; stream it if a Cloud
     # database outgrows that.
+    schema = get_documents_arrow_schema()
     rows = await store.documents_table.query().to_arrow()
+    hashes = pa.array(
+        [_sha256(o) for o in rows["original"].to_pylist()], type=pa.string()
+    )
+    rows = rows.append_column("original_sha256", hashes).select(schema.names)
     store.documents_table = await store.db.create_table(
         "documents",
-        rows.select(get_documents_arrow_schema().names),
-        schema=get_documents_arrow_schema(),
+        rows,
+        schema=schema,
         mode="overwrite",
         storage_options={"new_table_data_storage_version": "2.2"},
     )

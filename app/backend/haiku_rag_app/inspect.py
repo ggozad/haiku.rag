@@ -97,33 +97,33 @@ IMMUTABLE = "private, max-age=31536000, immutable"
 
 
 async def _checked_original(request: Request, owner: HaikuRAG) -> bytes:
-    """The stored original, checked against the request's `md5`: 400 without it,
+    """The stored original, checked against the request's `sha256`: 400 without it,
     404 without an original, 409 when it has changed."""
-    md5 = request.query_params.get("md5")
-    if not md5:
-        raise HTTPException(400, "md5 is required")
-    stored = await owner.document_repository.get_original_and_md5(
+    sha256 = request.query_params.get("sha256")
+    if not sha256:
+        raise HTTPException(400, "sha256 is required")
+    stored = await owner.document_repository.get_original_and_sha256(
         request.path_params["document_id"]
     )
     if stored is None:
         raise HTTPException(404, "the document has no stored original")
-    if stored[1] != md5:
+    if stored[1] != sha256:
         raise HTTPException(409, "the original has changed")
     return stored[0]
 
 
 async def get_document(request: Request) -> JSONResponse:
-    """The document, and its original's MD5 and pages when one is stored."""
+    """The document, and its original's SHA-256 and pages when one is stored."""
     from haiku.rag.utils.images import original_layout
 
     owner = await _reader(request)
     document = await _document(owner, request.path_params["document_id"])
     assert document.id is not None
-    stored = await owner.document_repository.get_original_and_md5(document.id)
+    stored = await owner.document_repository.get_original_and_sha256(document.id)
     original, pages = None, []
     if stored is not None:
         layout = await asyncio.to_thread(original_layout, stored[0])
-        original = {"md5": stored[1], "pdf": layout.pdf}
+        original = {"sha256": stored[1], "pdf": layout.pdf}
         pages = [
             {"page": n, "width": width, "height": height}
             for n, (width, height) in sorted(layout.sizes.items())
@@ -143,7 +143,7 @@ async def get_document(request: Request) -> JSONResponse:
 
 
 async def document_original(request: Request) -> Response:
-    """The stored original PDF, checked against the request's `md5`."""
+    """The stored original PDF, checked against the request's `sha256`."""
     from haiku.rag.utils.images import original_layout
 
     owner = await _reader(request)
@@ -367,7 +367,7 @@ async def page_boxes(request: Request) -> JSONResponse:
 
 async def page_image(request: Request) -> Response:
     """A page of a stored image original as PNG, checked against the request's
-    `md5`. The browser renders a PDF original itself."""
+    `sha256`. The browser renders a PDF original itself."""
     from io import BytesIO
 
     from haiku.rag.utils.images import original_layout, render_original_pages

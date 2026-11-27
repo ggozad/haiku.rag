@@ -81,7 +81,7 @@ class DocumentRepository:
             docling_document=doc.docling_document,
             docling_version=doc.docling_version,
             original=doc.original,
-            original_md5=doc.original_md5,
+            original_sha256=doc.original_sha256,
             created_at=datetime.fromisoformat(created)
             if created
             else datetime.now(UTC),
@@ -97,7 +97,7 @@ class DocumentRepository:
             docling_document=entity.docling_document,
             docling_version=entity.docling_version,
             original=entity.original,
-            original_md5=entity.original_md5,
+            original_sha256=entity.original_sha256,
         )
 
     def _to_meta_record(
@@ -199,7 +199,7 @@ class DocumentRepository:
         "docling_document",
         "docling_version",
     ]
-    _ORIGINAL_COLUMNS = ["original", "original_md5"]
+    _ORIGINAL_COLUMNS = ["original", "original_sha256"]
 
     async def _record_by_id(
         self, doc_id: str, include_blobs: bool
@@ -247,11 +247,11 @@ class DocumentRepository:
     ) -> Document | None:
         """Get a document with only docling data loaded (skips content blob).
 
-        `with_original` adds the original and its MD5 from the same row version.
+        `with_original` adds the original and its SHA-256 from the same row version.
         """
         if with_original:
             read = await self._with_original(
-                entity_id, [*self._DOCLING_COLUMNS, "original_md5"]
+                entity_id, [*self._DOCLING_COLUMNS, "original_sha256"]
             )
             if read is None:
                 return None
@@ -275,7 +275,7 @@ class DocumentRepository:
             docling_document=row.get("docling_document"),
             docling_version=row.get("docling_version"),
             original=original,
-            original_md5=row.get("original_md5"),
+            original_sha256=row.get("original_sha256"),
         )
 
     async def get_original(self, entity_id: str) -> bytes | None:
@@ -283,15 +283,15 @@ class DocumentRepository:
         read = await self._with_original(entity_id, ["id"])
         return read[1] if read else None
 
-    async def get_original_and_md5(self, entity_id: str) -> tuple[bytes, str] | None:
-        """The stored original and its MD5, from the same row version."""
-        read = await self._with_original(entity_id, ["original_md5"])
+    async def get_original_and_sha256(self, entity_id: str) -> tuple[bytes, str] | None:
+        """The stored original and its SHA-256, from the same row version."""
+        read = await self._with_original(entity_id, ["original_sha256"])
         if read is None:
             return None
         row, original = read
-        if original is None or row["original_md5"] is None:
+        if original is None or row["original_sha256"] is None:
             return None
-        return original, row["original_md5"]
+        return original, row["original_sha256"]
 
     async def _with_original(
         self, entity_id: str, columns: list[str]
@@ -321,7 +321,7 @@ class DocumentRepository:
 
     async def ids_without_original(self, ids: list[str] | None = None) -> set[str]:
         """The documents, of `ids` when given, that have no stored original."""
-        predicate = "original_md5 IS NULL"
+        predicate = "original_sha256 IS NULL"
         if ids is not None:
             id_filter = build_document_id_filter(ids)
             if id_filter is None:
@@ -336,7 +336,7 @@ class DocumentRepository:
         return {row["id"] for row in rows}
 
     async def store_originals(self, originals: dict[str, bytes]) -> None:
-        """Write the original file of each document id, and its MD5."""
+        """Write the original file of each document id, and its SHA-256."""
         self.store._assert_writable()
         if not originals:
             return
@@ -346,9 +346,7 @@ class DocumentRepository:
                 {
                     "id": i,
                     "original": data,
-                    "original_md5": hashlib.md5(
-                        data, usedforsecurity=False
-                    ).hexdigest(),
+                    "original_sha256": hashlib.sha256(data).hexdigest(),
                 }
                 for i, data in originals.items()
             ],

@@ -65,7 +65,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				focus={2}
 				onStale={() => {}}
@@ -74,7 +74,7 @@ describe("PageViewer", () => {
 
 		await waitFor(() => expect(rendered.sort()).toEqual([1, 2]));
 		expect(fetched).toHaveBeenCalledWith(
-			"/api/backend/api/inspect/alpha/documents/d1/original?md5=m",
+			"/api/backend/api/inspect/alpha/documents/d1/original?sha256=m",
 			expect.anything(),
 		);
 		const [data] = openPdf.mock.calls[0];
@@ -103,7 +103,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={onStale}
 			/>,
@@ -121,7 +121,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={() => {}}
 			/>,
@@ -138,7 +138,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={() => {}}
 			/>,
@@ -173,7 +173,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: true }}
+				original={{ sha256: "m", pdf: true }}
 				pages={pages}
 				onStale={() => {}}
 			/>,
@@ -195,7 +195,7 @@ describe("PageViewer", () => {
 			<PageViewer
 				source="alpha"
 				documentId="d1"
-				original={{ md5: "m", pdf: false }}
+				original={{ sha256: "m", pdf: false }}
 				pages={pages.slice(0, 1)}
 				onStale={onStale}
 			/>,
@@ -204,7 +204,7 @@ describe("PageViewer", () => {
 			.getByRole("img", { name: "Page 1" })
 			.querySelector("img") as HTMLImageElement;
 		expect(image.getAttribute("src")).toBe(
-			"/api/backend/api/inspect/alpha/documents/d1/pages/1?md5=m",
+			"/api/backend/api/inspect/alpha/documents/d1/pages/1?sha256=m",
 		);
 		image.dispatchEvent(new Event("error"));
 		expect(onStale).toHaveBeenCalledOnce();
@@ -214,10 +214,10 @@ describe("PageViewer", () => {
 });
 
 describe("GroundingPages", () => {
-	const grounded = (md5: string) => ({
+	const grounded = (sha256: string) => ({
 		source: "beta",
 		document_id: "d1",
-		original: { md5, pdf: true },
+		original: { sha256, pdf: true },
 		pages: pages.slice(0, 1),
 		message: null,
 	});
@@ -227,7 +227,7 @@ describe("GroundingPages", () => {
 		const fetched = vi.fn(async (url: string) => {
 			if (url.startsWith("/api/backend/api/visualize/"))
 				return Response.json(answers.shift());
-			return url.endsWith("md5=old")
+			return url.endsWith("sha256=old")
 				? new Response(null, { status: 409 })
 				: new Response(new Uint8Array([1]));
 		});
@@ -237,9 +237,9 @@ describe("GroundingPages", () => {
 		await waitFor(() => expect(rendered).toEqual([1]));
 		expect(fetched.mock.calls.map(([url]) => url)).toEqual([
 			"/api/backend/api/visualize/c1?source=beta",
-			"/api/backend/api/inspect/beta/documents/d1/original?md5=old",
+			"/api/backend/api/inspect/beta/documents/d1/original?sha256=old",
 			"/api/backend/api/visualize/c1?source=beta",
-			"/api/backend/api/inspect/beta/documents/d1/original?md5=new",
+			"/api/backend/api/inspect/beta/documents/d1/original?sha256=new",
 		]);
 		expect(
 			screen

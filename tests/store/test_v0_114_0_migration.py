@@ -77,6 +77,10 @@ async def at_previous_release(
     return ids
 
 
+def _sha256(body: bytes) -> str:
+    return hashlib.sha256(body).hexdigest()
+
+
 def _config(target_bytes: int | None = None) -> AppConfig:
     config = AppConfig()
     config.storage.auto_vacuum = False
@@ -109,11 +113,10 @@ def test_rows_are_read_with_their_originals_as_blob_values(tmp_path):
     )
     schema = get_documents_arrow_schema()
 
-    batches = list(v0_114_0._as_blobs(dataset, schema))
+    rows = [r for b in v0_114_0._as_blobs(dataset, schema) for r in b.to_pylist()]
 
-    assert all(b.schema == schema for b in batches)
-    originals = [r["original"] for b in batches for r in b.to_pylist()]
-    assert [o if o is None else o["data"] for o in originals] == [b"%PDF-a", None]
+    assert [r["original"] and r["original"]["data"] for r in rows] == [b"%PDF-a", None]
+    assert [r["original_sha256"] for r in rows] == [_sha256(b"%PDF-a"), None]
 
 
 async def test_originals_become_blobs_at_format_2_2(temp_db_path):
@@ -131,11 +134,15 @@ async def test_originals_become_blobs_at_format_2_2(temp_db_path):
         table = store.documents_table
         dataset = await table.to_lance()
         assert dataset.data_storage_version == "2.2"
+        names = (await table.schema()).names
         assert is_blob((await table.schema()).field("original"))
+        assert "original_md5" not in names
         assert sorted(i.name for i in await table.list_indices()) == indexes
         repo = DocumentRepository(store)
         for i, body in zip(ids, bodies):
             assert await repo.get_original(i) == body
+            expected = None if body is None else (body, _sha256(body))
+            assert await repo.get_original_and_sha256(i) == expected
             document = await repo.get_docling_data(i)
             assert document is not None
             assert document.docling_document == b"structure"
@@ -329,7 +336,8 @@ async def test_a_tag_from_before_reads_and_restores_as_it_was(temp_db_path):
 
 async def test_the_cloud_rewrite_goes_through_lancedb(temp_db_path, monkeypatch):
     """Runs the Cloud branch on a local table. LanceDB Cloud itself is untested."""
-    bodies = [os.urandom(200_000), None]
+    body = os.urandom(200_000)
+    bodies = [body, None]
     async with Store(temp_db_path, config=_config(), create=True) as store:
         ids = await at_previous_release(store, bodies)
 
@@ -349,3 +357,4 @@ async def test_the_cloud_rewrite_goes_through_lancedb(temp_db_path, monkeypatch)
         assert is_blob((await store.documents_table.schema()).field("original"))
         repo = DocumentRepository(store)
         assert [await repo.get_original(i) for i in ids] == bodies
+        assert await repo.get_original_and_sha256(ids[0]) == (body, _sha256(body))

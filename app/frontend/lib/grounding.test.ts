@@ -46,12 +46,12 @@ describe("withBoxes", () => {
 });
 
 describe("original URLs", () => {
-	it("address the original and its pages by database, document and MD5", () => {
+	it("address the original and its pages by database, document and SHA-256", () => {
 		expect(originalUrl("my db", "doc/1", "abc")).toBe(
-			"/api/backend/api/inspect/my%20db/documents/doc%2F1/original?md5=abc",
+			"/api/backend/api/inspect/my%20db/documents/doc%2F1/original?sha256=abc",
 		);
 		expect(pageImageUrl("my db", "doc/1", 3, "abc")).toBe(
-			"/api/backend/api/inspect/my%20db/documents/doc%2F1/pages/3?md5=abc",
+			"/api/backend/api/inspect/my%20db/documents/doc%2F1/pages/3?sha256=abc",
 		);
 		expect(pageBoxesUrl("my db", "doc/1", 3)).toBe(
 			"/api/backend/api/inspect/my%20db/documents/doc%2F1/pages/3/boxes",

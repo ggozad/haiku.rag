@@ -82,7 +82,7 @@ export default function PageViewer({
 					) : (
 						// biome-ignore lint/performance/noImgElement: page render from the backend
 						<img
-							src={pageImageUrl(source, documentId, page.page, original.md5)}
+							src={pageImageUrl(source, documentId, page.page, original.sha256)}
 							alt=""
 							className="absolute inset-0 size-full"
 							onError={onStale}
@@ -126,7 +126,7 @@ function usePdf(
 		void (async () => {
 			try {
 				const response = await fetch(
-					originalUrl(source, documentId, original.md5),
+					originalUrl(source, documentId, original.sha256),
 					{ signal: controller.signal },
 				);
 				if (response.status === 409) {
@@ -149,7 +149,7 @@ function usePdf(
 			void opened?.loadingTask.destroy();
 			setDocument(null);
 		};
-	}, [source, documentId, original.md5, original.pdf]);
+	}, [source, documentId, original.sha256, original.pdf]);
 
 	return { document, error };
 }

@@ -51,12 +51,12 @@ export default function PagesTab({
 			: null,
 		reads,
 	);
-	const drawnOn = grounding.data?.original?.md5;
+	const drawnOn = grounding.data?.original?.sha256;
 	// The document read names another original than the boxes: read both again.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: fires once per disagreeing pair
 	useEffect(() => {
-		if (drawnOn && original && drawnOn !== original.md5) onStale();
-	}, [drawnOn, original?.md5]);
+		if (drawnOn && original && drawnOn !== original.sha256) onStale();
+	}, [drawnOn, original?.sha256]);
 	if (original === undefined) return null;
 	if (original === null)
 		return (
@@ -66,7 +66,7 @@ export default function PagesTab({
 		);
 	// Boxes read from another version of the original would land anywhere.
 	const boxes =
-		drawnOn === original.md5 && grounding.data
+		drawnOn === original.sha256 && grounding.data
 			? grounding.data.pages.filter((drawn) => drawn.page === page)
 			: [];
 

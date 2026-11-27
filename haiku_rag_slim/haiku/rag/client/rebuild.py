@@ -63,7 +63,7 @@ _FULL_FALLBACK_COLUMNS = (
     "docling_document",
     "docling_version",
     "original",
-    "original_md5",
+    "original_sha256",
 )
 
 

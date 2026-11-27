@@ -557,7 +557,7 @@ async def test_chunk_grounding_gives_the_boxes_by_page_with_the_original(
     assert grounding is not None
     assert grounding.document_id == doc.id
     assert grounding.original == original
-    assert grounding.original_md5 == hashlib.md5(original).hexdigest()
+    assert grounding.original_sha256 == hashlib.sha256(original).hexdigest()
 
     def box(page_no: int) -> BoundingBox:
         return BoundingBox(page_no=page_no, left=50, top=700, right=550, bottom=650)

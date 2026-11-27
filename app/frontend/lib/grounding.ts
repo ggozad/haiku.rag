@@ -19,7 +19,7 @@ export interface GroundingPage extends PageSize {
 }
 
 export interface Original {
-	md5: string;
+	sha256: string;
 	pdf: boolean;
 }
 
@@ -66,10 +66,10 @@ function documentPath(source: string, documentId: string): string {
 export function originalUrl(
 	source: string,
 	documentId: string,
-	md5: string,
+	sha256: string,
 ): string {
 	return withBasePath(
-		`${documentPath(source, documentId)}/original?${new URLSearchParams({ md5 })}`,
+		`${documentPath(source, documentId)}/original?${new URLSearchParams({ sha256 })}`,
 	);
 }
 
@@ -87,9 +87,9 @@ export function pageImageUrl(
 	source: string,
 	documentId: string,
 	page: number,
-	md5: string,
+	sha256: string,
 ): string {
 	return withBasePath(
-		`${documentPath(source, documentId)}/pages/${page}?${new URLSearchParams({ md5 })}`,
+		`${documentPath(source, documentId)}/pages/${page}?${new URLSearchParams({ sha256 })}`,
 	);
 }

@@ -58,7 +58,10 @@ let scrolled: string[];
 function serve(
 	documentId: string,
 	metadata: Record<string, unknown> = {},
-	original: { md5: string; pdf: boolean } | null = { md5: "m", pdf: true },
+	original: { sha256: string; pdf: boolean } | null = {
+		sha256: "m",
+		pdf: true,
+	},
 ) {
 	return vi.fn(async (url: string) => {
 		requested.push(url);
@@ -230,7 +233,7 @@ describe("DocumentView", () => {
 				return Response.json(
 					documentReads++
 						? read
-						: { ...read, original: { md5: "old", pdf: true } },
+						: { ...read, original: { sha256: "old", pdf: true } },
 				);
 			}),
 		);

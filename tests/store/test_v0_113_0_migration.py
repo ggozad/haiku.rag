@@ -60,7 +60,7 @@ async def _at_previous_release(store: Store, docs: dict[str, DoclingDocument]):
     """Rewrite the documents table to the 0.112 schema with stored rasters,
     and record the release before 0.113.0."""
     table = store.documents_table
-    await table.drop_columns(["original", "original_md5"])
+    await table.drop_columns(["original", "original_sha256"])
     await table.add_columns([pa.field("docling_pages", pa.large_binary())])
     schema = await table.schema()
     columns = ["id", "docling_document", "docling_pages"]
@@ -133,14 +133,14 @@ async def test_migrate_deletes_page_images(temp_db_path):
         rows = await table.query().to_list()
         assert sorted(i.name for i in await table.list_indices()) == indexes
     assert "docling_pages" not in fields
-    assert (fields["original"], fields["original_md5"]) == (
+    assert (fields["original"], fields["original_sha256"]) == (
         "extension<lance.blob.v2<BlobType>>",
         "string",
     )
     assert {r["id"]: r["docling_document"] for r in rows} == structures
     for row in rows:
         assert row["content"] == f"doc {ids.index(row['id'])}"
-        assert (row["original"], row["original_md5"]) == (None, None)
+        assert (row["original"], row["original_sha256"]) == (None, None)
     assert _table_bytes(temp_db_path) < before / 10
 
 

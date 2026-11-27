@@ -39,7 +39,7 @@ class DocumentRecord(LanceModel):
     docling_document: bytes | None = None
     docling_version: str | None = None
     original: bytes | None = None
-    original_md5: str | None = None
+    original_sha256: str | None = None
 
 
 class DocumentMetaRecord(LanceModel):
